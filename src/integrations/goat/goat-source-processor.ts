@@ -36,7 +36,7 @@ function images(value: JsonValue | undefined, title: string): ProductImageDTO[] 
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "1.0.0";
+  readonly version = "1.1.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -73,13 +73,19 @@ export class GoatSourceProcessor implements SourceProcessor {
           ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } });
     }
     const title = text(product.name);
+    const description = text(product.story) || text(product.description);
+    const model = text(product.silhouette);
+    const gender = text(product.singleGender) || text(product.gender);
+    const categoryRaw = Array.isArray(product.category) ? text(product.category[0]) : text(product.productCategory);
     const taxonomy: Record<string, JsonValue> = {};
     for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) if (product[key] !== undefined) taxonomy[key] = product[key]!;
     // TODO: Map GOAT brand, gender, category and condition values to internal references.
-    return { sourceProductId: context.sourceProduct.id, title, description: text(product.description), sku: text(product.sku),
+    return { sourceProductId: context.sourceProduct.id, title, description, sku: text(product.sku),
       brandReferenceId: null, categoryReferenceIds: [], genderReferenceId: null,
       images: images(product.images, title), variants,
-      attributes: { brand: product.brandName ?? product.brand ?? null, gender: product.gender ?? null, color: product.color ?? null,
+      attributes: { brand: product.brandName ?? product.brand ?? null, model, gender, color: product.color ?? null,
+        story: product.story ?? product.description ?? null, details: product.details ?? null, upperMaterial: product.upperMaterial ?? null,
+        midsole: product.midsole ?? null, categoryRaw,
         productCategory: product.productCategory ?? null, productType: product.productType ?? null, taxonomy,
         season: product.season ?? null, releaseDate: product.releaseDate ?? null, status: product.status ?? null },
       metadata: { source: "goat", productId, slug: product.slug ?? context.sourceProduct.slug ?? null, countryCode,

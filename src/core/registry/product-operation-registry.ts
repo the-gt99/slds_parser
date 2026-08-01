@@ -1,5 +1,8 @@
 import type { ProductOperation } from "../../contracts/index.js";
-import { DuplicateRegistrationError } from "../errors/index.js";
+import {
+  DuplicateRegistrationError,
+  ProductOperationDependencyError,
+} from "../errors/index.js";
 
 export class ProductOperationRegistry {
   readonly #operations = new Map<string, ProductOperation>();
@@ -13,10 +16,22 @@ export class ProductOperationRegistry {
   }
 
   listForSource(sourceCode: string): readonly ProductOperation[] {
-    return [...this.#operations.values()].filter(
+    const applicable = [...this.#operations.values()].filter(
       (operation) =>
         operation.sourceCodes === undefined ||
         operation.sourceCodes.includes(sourceCode),
     );
+    const earlier = new Set<string>();
+
+    for (const operation of applicable) {
+      for (const dependency of operation.dependsOn ?? []) {
+        if (!earlier.has(dependency)) {
+          throw new ProductOperationDependencyError(operation.code, dependency);
+        }
+      }
+      earlier.add(operation.code);
+    }
+
+    return applicable;
   }
 }

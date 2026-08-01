@@ -1,20 +1,33 @@
 import { CollectionRunner, ExportRunner, JobDispatcher, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
-import { loadWorkerConfig, type WorkerEnvironment } from "./config/index.js";
+import { loadProcessingConfig, loadWorkerConfig, type ProcessingEnvironment, type WorkerEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
-import { GoatSourceAdapter, GoatSourceProcessor } from "./integrations/index.js";
+import { LocalImageStore } from "./infrastructure/media/index.js";
+import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
+import { GoatImageDownloader, GoatSourceAdapter, GoatSourceProcessor, type GoatHttpEnvironment } from "./integrations/index.js";
+import { ConvertImagesToWebpOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ReferenceMappingService } from "./services/index.js";
 
-export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment;
+export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment;
+export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
 
 export function registerPipelineComponents(registries: {
   readonly adapters: SourceAdapterRegistry;
   readonly processors: SourceProcessorRegistry;
   readonly operations: ProductOperationRegistry;
   readonly exporters: TargetExporterRegistry;
-}): void {
-  registries.adapters.register(GoatSourceAdapter.create());
+}, environment: PipelineEnvironment = process.env): void {
+  const processing = loadProcessingConfig(environment);
+  const imageStore = new LocalImageStore(processing.image);
+  const translationProvider = new LegacyGoogleTranslationProvider(processing.translation);
+  registries.adapters.register(GoatSourceAdapter.create(environment));
   registries.processors.register(new GoatSourceProcessor());
+  registries.operations.register(new NormalizeProductOperation());
+  registries.operations.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
+  registries.operations.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registries.operations.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registries.operations.register(new PublishImagesOperation(imageStore, ["goat"]));
+  registries.operations.register(new ValidateProcessedProductOperation(["goat"]));
 }
 
 export function createApplication(environment: ApplicationEnvironment = process.env) {
@@ -25,7 +38,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const processors = new SourceProcessorRegistry();
   const operations = new ProductOperationRegistry();
   const exporters = new TargetExporterRegistry();
-  registerPipelineComponents({ adapters, processors, operations, exporters });
+  registerPipelineComponents({ adapters, processors, operations, exporters }, environment);
   const mappings = new ReferenceMappingService(repositories.references);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
   const operationPipeline = new ProductOperationPipeline(operations);

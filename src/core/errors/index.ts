@@ -8,6 +8,7 @@ export {
   InvalidJobPayloadError,
   MappingMissingError,
   PermanentError,
+  ProductOperationDependencyError,
   ProcessorNotRegisteredError,
   RetryableError,
   SourceIdentityConflictError,

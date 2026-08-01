@@ -132,10 +132,28 @@ export interface InventoryDTO {
 }
 
 export interface ProductImageDTO {
+  /** Original source URL. Set by normalization before local media processing. */
+  readonly sourceUrl?: string;
   readonly url: string;
   readonly position: number;
   readonly alt: string;
+  readonly localPath?: string;
+  readonly webpLocalPath?: string;
+  readonly mimeType?: string;
+  readonly storedFormat?: string;
+  readonly width?: number;
+  readonly height?: number;
   readonly attributes: JsonObject;
+}
+
+export interface ProductTranslatedContentDTO {
+  readonly sourceLocale: string;
+  readonly targetLocale: string;
+  readonly description: string;
+  readonly story: string;
+  readonly color: string;
+  readonly details: string;
+  readonly upperMaterial: string;
 }
 
 export interface ProductSizeDTO {
@@ -164,6 +182,7 @@ export interface UniversalProductDTO {
   readonly genderReferenceId: EntityId | null;
   readonly images: readonly ProductImageDTO[];
   readonly variants: readonly ProductVariantDTO[];
+  readonly translatedContent?: ProductTranslatedContentDTO;
   readonly attributes: JsonObject;
   readonly metadata: JsonObject;
 }

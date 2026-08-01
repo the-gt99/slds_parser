@@ -27,6 +27,8 @@ export interface SourceProcessor {
 export interface ProductOperation {
   readonly code: string;
   readonly version: string;
+  /** Dependencies must be registered earlier and apply to the same source. */
+  readonly dependsOn?: readonly string[];
   /** Omit to run the operation for every source. */
   readonly sourceCodes?: readonly string[];
   /** Non-secret settings that affect the result and must invalidate cached processing. */

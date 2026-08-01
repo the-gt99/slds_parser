@@ -68,6 +68,15 @@ export class ProcessorNotRegisteredError extends PermanentError {
   }
 }
 
+export class ProductOperationDependencyError extends PermanentError {
+  constructor(operationCode: string, dependencyCode: string) {
+    super(
+      `Product operation ${operationCode} requires an earlier applicable operation: ${dependencyCode}`,
+      { code: "PRODUCT_OPERATION_DEPENDENCY" },
+    );
+  }
+}
+
 export class ExporterNotRegisteredError extends PermanentError {
   constructor(key: string) {
     super(`Target exporter is not registered: ${key}`, {

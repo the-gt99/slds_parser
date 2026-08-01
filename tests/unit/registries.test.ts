@@ -46,7 +46,7 @@ const operation: ProductOperation = {
 };
 
 describe("component registries", () => {
-  it("registers the GOAT adapter and processor in bootstrap", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const operations = new ProductOperationRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, operations, exporters }); expect(adapters.get("goat").code).toBe("goat"); expect(processors.get("goat").sourceCode).toBe("goat"); expect(operations.listForSource("goat")).toEqual([]); });
+  it("registers the GOAT pipeline components in bootstrap", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const operations = new ProductOperationRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, operations, exporters }, { PARSER_PUBLIC_BASE_URL: "https://parser.example/images" }); expect(adapters.get("goat").code).toBe("goat"); expect(processors.get("goat").sourceCode).toBe("goat"); expect(operations.listForSource("goat").map((item) => item.code)).toEqual(["normalize-product", "translate-content", "download-images", "convert-images-to-webp", "publish-images", "validate-processed-product"]); });
   it("registers and returns implementations by their own code", () => {
     const adapterRegistry = new SourceAdapterRegistry();
     const processorRegistry = new SourceProcessorRegistry();

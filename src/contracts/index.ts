@@ -26,6 +26,7 @@ export type {
   ProductOperationContext,
   ProductImageDTO,
   ProductSizeDTO,
+  ProductTranslatedContentDTO,
   ProductVariantDTO,
   SourceDTO,
   SourceProductDTO,

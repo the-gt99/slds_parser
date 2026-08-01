@@ -5,7 +5,10 @@ import type {
   ProductOperation,
   ProductOperationContext,
 } from "../../src/contracts/index.js";
-import { IntegrationContractError } from "../../src/core/errors/index.js";
+import {
+  IntegrationContractError,
+  ProductOperationDependencyError,
+} from "../../src/core/errors/index.js";
 import { ProductOperationRegistry } from "../../src/core/registry/index.js";
 import { validProduct } from "../support/in-memory.js";
 
@@ -72,11 +75,13 @@ describe("product operation pipeline", () => {
       {
         code: "normalize",
         version: "2.1.0",
+        dependsOn: [],
         configuration: { locale: "ru" },
       },
       {
         code: "goat-only",
         version: "1.0.0",
+        dependsOn: [],
         configuration: null,
       },
     ]);
@@ -93,5 +98,31 @@ describe("product operation pipeline", () => {
     await expect(
       new ProductOperationPipeline(registry).run(validProduct(), context),
     ).rejects.toBeInstanceOf(IntegrationContractError);
+  });
+
+  it("rejects a missing or later operation dependency", () => {
+    const registry = new ProductOperationRegistry();
+    registry.register({
+      ...operation("process-images", "processed"),
+      dependsOn: ["download-images"],
+    });
+    registry.register(operation("download-images", "downloaded"));
+
+    expect(() => registry.listForSource("goat")).toThrow(
+      ProductOperationDependencyError,
+    );
+  });
+
+  it("rejects a dependency that does not apply to the source", () => {
+    const registry = new ProductOperationRegistry();
+    registry.register(operation("download-images", "downloaded", ["other"]));
+    registry.register({
+      ...operation("process-images", "processed", ["goat"]),
+      dependsOn: ["download-images"],
+    });
+
+    expect(() => registry.listForSource("goat")).toThrow(
+      ProductOperationDependencyError,
+    );
   });
 });

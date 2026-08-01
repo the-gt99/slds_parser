@@ -13,6 +13,7 @@ export class ProductOperationPipeline {
     return this.operations.listForSource(sourceCode).map((operation) => ({
       code: operation.code,
       version: operation.version,
+      dependsOn: operation.dependsOn ?? [],
       configuration: operation.configurationFingerprint ?? null,
     }));
   }

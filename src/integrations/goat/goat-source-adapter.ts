@@ -35,10 +35,41 @@ function array(value: JsonValue, label: string): readonly JsonValue[] {
   if (!Array.isArray(value)) throw new IntegrationContractError(`GOAT ${label} response must be an array`);
   return value;
 }
+function isPlaceholderImageUrl(value: string): boolean {
+  let path: string;
+  try {
+    path = new URL(value).pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return path.includes("/placeholders/product_templates/") || path.endsWith("/missing.png") || path.endsWith("/missing.webp");
+}
+function productImages(card: JsonObject, discoveryMetadata: JsonObject): readonly string[] {
+  const values: string[] = [];
+  const add = (value: JsonValue | undefined): void => {
+    if (typeof value === "string" && value.trim() !== "" && !values.includes(value.trim())) values.push(value.trim());
+  };
+  const main = typeof card.pictureUrl === "string" ? card.pictureUrl.trim() : "";
+  add(main);
+  if (Array.isArray(card.productTemplateExternalPictures)) {
+    for (const [index, value] of card.productTemplateExternalPictures.entries()) {
+      if (main !== "" && !isPlaceholderImageUrl(main) && index === 0) continue;
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) add(value.mainPictureUrl);
+    }
+  }
+  if (values.length === 0) {
+    const direct = Array.isArray(card.pictureUrls) ? card.pictureUrls : Array.isArray(card.images) ? card.images : [];
+    for (const value of direct) add(value);
+  }
+  if (values.length === 0 && Array.isArray(discoveryMetadata.images)) {
+    for (const value of discoveryMetadata.images) add(value);
+  }
+  return values;
+}
 
 export class GoatSourceAdapter implements SourceAdapter {
   readonly code = "goat";
-  readonly version = "1.0.0";
+  readonly version = "1.1.0";
   readonly #children = new Map<string, readonly GoatSitemapProduct[]>();
   readonly #indexes = new Map<string, readonly string[]>();
   // TODO: Add ETag/304 revalidation when sitemap refresh scheduling is implemented.
@@ -105,7 +136,7 @@ export class GoatSourceAdapter implements SourceAdapter {
       rawProduct = await this.#json(url, "product", settings.requestDelayMs);
       const card = object(rawProduct, "product");
       if ((typeof card.id !== "string" && typeof card.id !== "number") || typeof card.name !== "string") throw new IntegrationContractError("GOAT product response is missing id or name");
-      const images = Array.isArray(card.pictureUrls) ? card.pictureUrls : Array.isArray(card.images) ? card.images : [];
+      const images = productImages(card, input.product.metadata);
       parsedProduct = { ...card, id: String(card.id), images };
     };
     const parts = [];

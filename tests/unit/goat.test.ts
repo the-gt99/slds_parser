@@ -36,6 +36,25 @@ describe("GOAT adapter and processor", () => {
     expect(collected.parts.map((part) => part.partKey)).toEqual(["offers", "product"]);
     expect((collected.parts[0]?.parsedPayload as JsonObject).offers).toEqual([]);
   });
+  it("extracts the exact image fields used by the old GOAT parser", async () => {
+    const productPayload = {
+      ...(jsonFixture("product.json") as JsonObject),
+      pictureUrl: "https://image.example/main.jpg",
+      productTemplateExternalPictures: [
+        { mainPictureUrl: "https://image.example/main-duplicate.jpg" },
+        { mainPictureUrl: "https://image.example/side.jpg" },
+      ],
+      images: ["https://image.example/not-used.jpg"],
+    } satisfies JsonObject;
+    const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0), async (_url, expected) => expected === "product" ? productPayload : jsonFixture("offers-empty.json"));
+
+    const collected = await adapter.collectProduct({ source: source(), product: { sourceKey: "test-shirt", slug: "test-shirt", metadata: {} }, requestedPartKeys: ["product"] });
+
+    expect((collected.parts[0]?.parsedPayload as JsonObject).images).toEqual([
+      "https://image.example/main.jpg",
+      "https://image.example/side.jpg",
+    ]);
+  });
   it("rejects an unknown requested part", async () => { const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0)); await expect(adapter.collectProduct({ source: source(), product: { sourceKey: "x", metadata: {} }, requestedPartKeys: ["unknown"] })).rejects.toBeInstanceOf(PermanentError); });
   it("keeps nullable prices, clothing size strings, conditions and additional prices", async () => {
     const processor = new GoatSourceProcessor();
@@ -49,6 +68,38 @@ describe("GOAT adapter and processor", () => {
     const offerRows = jsonFixture("offers.json") as readonly JsonValue[];
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
+  });
+  it("maps only product fields confirmed by the old GOAT processor", async () => {
+    const processor = new GoatSourceProcessor();
+    const productPayload = {
+      ...(jsonFixture("product.json") as JsonObject),
+      story: "Source story",
+      silhouette: "Air Test",
+      singleGender: "men",
+      category: ["sneakers", "ignored"],
+      details: "Leather details",
+      upperMaterial: "Mesh",
+      midsole: "Foam",
+    } satisfies JsonObject;
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, references: { resolveReference: vi.fn() }, parts: [
+      { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+      { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { market: "US", countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+    ] } satisfies ProcessingContext;
+
+    const product = await processor.process(context);
+
+    expect(product).toMatchObject({
+      description: "Source story",
+      attributes: {
+        model: "Air Test",
+        gender: "men",
+        categoryRaw: "sneakers",
+        story: "Source story",
+        details: "Leather details",
+        upperMaterial: "Mesh",
+        midsole: "Foam",
+      },
+    });
   });
 });
 
