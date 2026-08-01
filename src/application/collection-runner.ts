@@ -82,21 +82,19 @@ export class CollectionRunner {
     for (const requested of payload.requestedPartKeys ?? []) {
       if (!parts.has(requested)) throw new IntegrationContractError(`Requested part is missing: ${requested}`);
     }
-    const identityChanged = (collected.externalId !== undefined && collected.externalId !== product.externalId)
-      || (collected.slug !== undefined && collected.slug !== product.slug) || (collected.url !== undefined && collected.url !== product.url);
     await this.unitOfWork.transaction(async (repositories) => {
       await repositories.sourceProducts.updateIdentity(product.id, {
         ...(collected.externalId === undefined ? {} : { externalId: collected.externalId }),
         ...(collected.slug === undefined ? {} : { slug: collected.slug }), ...(collected.url === undefined ? {} : { url: collected.url }),
       });
-      let changed = identityChanged;
       for (const part of parts.values()) {
-        const result = await repositories.sourceProducts.upsertPart({ sourceProductId: product.id, partKey: part.partKey,
+        await repositories.sourceProducts.upsertPart({ sourceProductId: product.id, partKey: part.partKey,
           rawPayload: part.rawPayload, parsedPayload: part.parsedPayload, contentHash: hashStableJson(part.parsedPayload),
           ...(part.sourceUpdatedAt === undefined ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), fetchedAt: now(), adapterVersion: part.adapterVersion });
-        changed ||= result.changed;
       }
-      if (changed) await repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
+      // ProcessingRunner owns the full input hash, including processor and operation versions.
+      // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
+      await repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
     });
     return { status: "completed" };
   }

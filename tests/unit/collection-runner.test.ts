@@ -27,13 +27,14 @@ describe("CollectionRunner", () => {
     expect(adapter.discover).toHaveBeenCalledWith(expect.objectContaining({ runType: "delta", checkpoint: { page: 4 } }));
   });
 
-  it("stores arbitrary parts and enqueues processing only after change", async () => {
+  it("enqueues hash-checked processing after every successful collection", async () => {
     const collectProduct = vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [{ partKey: "custom", rawPayload: {}, parsedPayload: { value: 1 }, adapterVersion: "1" }] });
     const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn(), collectProduct };
     const { runner, store } = setup(adapter); seedProduct(store);
     await runner.collectProduct({ sourceProductId: "2" });
     store.jobs.clear(); await runner.collectProduct({ sourceProductId: "2" });
-    expect(store.parts.get("2/custom")?.parsedPayload).toEqual({ value: 1 }); expect(store.jobs).toHaveLength(0);
+    expect(store.parts.get("2/custom")?.parsedPayload).toEqual({ value: 1 });
+    expect([...store.jobs.values()].map((job) => job.jobType)).toEqual(["process_product"]);
   });
 
   it("rejects missing requested parts without overwriting old parts", async () => {
