@@ -26,6 +26,8 @@ export function registerPipelineComponents(registries: {
   registries.operations.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
   registries.operations.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
   registries.operations.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  // TODO(target): Keep this only if WordPress imports media by public URL. If the exporter uploads files directly,
+  // remove this operation and PARSER_PUBLIC_BASE_URL, then pass webpLocalPath to the exporter.
   registries.operations.register(new PublishImagesOperation(imageStore, ["goat"]));
   registries.operations.register(new ValidateProcessedProductOperation(["goat"]));
 }
