@@ -91,13 +91,14 @@ export interface SourceProductDTO {
 
 export interface SourceReferenceResolutionInput {
   readonly referenceType: string;
+  readonly scope: string;
   readonly sourceValue: string;
 }
 
 export interface SourceReferenceResolver {
   resolveReference(
     input: SourceReferenceResolutionInput,
-  ): Promise<EntityId | undefined>;
+  ): Promise<EntityId>;
 }
 
 export interface ProcessingContext {
@@ -165,12 +166,13 @@ export interface UniversalProductDTO {
 export interface TargetReferenceResolutionInput {
   readonly referenceId: EntityId;
   readonly referenceType: string;
+  readonly targetScope: string;
 }
 
 export interface TargetReferenceResolver {
   resolveReference(
     input: TargetReferenceResolutionInput,
-  ): Promise<string | undefined>;
+  ): Promise<string>;
 }
 
 export interface ExportContext {
