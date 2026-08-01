@@ -4,6 +4,7 @@ import type {
   ProductImageDTO,
   ProductOperation,
   ProductOperationContext,
+  ReferenceCandidateDTO,
   ProductVariantDTO,
   UniversalProductDTO,
 } from "../../contracts/index.js";
@@ -25,6 +26,7 @@ const SPREADSHEET_ERROR_TOKENS = new Set([
 
 const PRODUCT_ATTRIBUTE_TEXT_FIELDS = [
   "brand",
+  "family",
   "model",
   "gender",
   "color",
@@ -118,9 +120,25 @@ function normalizeVariant(variant: ProductVariantDTO): ProductVariantDTO {
   };
 }
 
+function normalizeCandidate(candidate: ReferenceCandidateDTO): ReferenceCandidateDTO {
+  const cleanObject = (value: JsonObject): JsonObject => Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, typeof entry === "string" ? cleanSourceText(entry) : entry]),
+  );
+  return {
+    ...candidate,
+    key: candidate.key.trim(),
+    typeCode: candidate.typeCode.trim(),
+    scope: candidate.scope.trim(),
+    ...(candidate.subjectKey === undefined ? {} : { subjectKey: cleanSourceText(candidate.subjectKey) }),
+    sourceValue: cleanSourceText(candidate.sourceValue),
+    context: cleanObject(candidate.context),
+    evidence: cleanObject(candidate.evidence),
+  };
+}
+
 export class NormalizeProductOperation implements ProductOperation {
   readonly code = "normalize-product";
-  readonly version = "1.0.0";
+  readonly version = "2.0.0";
 
   async execute(
     product: UniversalProductDTO,
@@ -133,6 +151,7 @@ export class NormalizeProductOperation implements ProductOperation {
       sku: cleanSourceText(product.sku),
       images: normalizeImages(product.images, context),
       variants: product.variants.map(normalizeVariant),
+      referenceCandidates: product.referenceCandidates.map(normalizeCandidate),
       attributes: cleanTextFields(product.attributes, PRODUCT_ATTRIBUTE_TEXT_FIELDS),
       metadata: cleanTextFields(product.metadata, METADATA_TEXT_FIELDS),
     };

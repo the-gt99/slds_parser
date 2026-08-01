@@ -35,11 +35,9 @@ describe("pipeline DTO contracts", () => {
       title: "Product",
       description: "Description",
       sku: "SKU-1",
-      brandReferenceId: null,
-      categoryReferenceIds: ["42"],
-      genderReferenceId: null,
       images: [],
       variants: [],
+      referenceCandidates: [],
       attributes: {},
       metadata: {},
     } satisfies UniversalProductDTO;

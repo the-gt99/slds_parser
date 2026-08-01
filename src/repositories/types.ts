@@ -1,8 +1,11 @@
 import type {
+  ClassificationIssueReason,
   DiscoveryCompleteness,
   EntityId,
   JsonObject,
   JsonValue,
+  ReferenceCandidateDTO,
+  ReferenceResolutionKind,
   UniversalProductDTO,
 } from "../contracts/index.js";
 
@@ -169,12 +172,70 @@ export interface ReferenceValueRecord {
   readonly enabled: boolean;
 }
 
-export interface ResolveSourceValueInput {
-  readonly sourceId: EntityId;
+export interface ClassificationReferenceTypeRecord {
+  readonly code: string;
+  readonly cardinality: "single" | "multiple";
+  readonly allowedSubjectKinds: readonly ("product" | "variant")[];
+  readonly metadata: JsonObject;
+}
+
+export interface ClassificationLookupInput {
+  readonly candidateKey: string;
   readonly typeCode: string;
   readonly scope: string;
   readonly normalizedSourceValue: string;
-  readonly status: "confirmed";
+  readonly contextKey: string;
+}
+
+export interface ClassificationMappingMatchRecord {
+  readonly candidateKey: string;
+  readonly mappingId: EntityId;
+  readonly referenceValueId: EntityId | null;
+  readonly status: "confirmed" | "ignored";
+  readonly revision: string;
+}
+
+export type ClassificationRuleOperator =
+  | "equals"
+  | "contains"
+  | "all_words"
+  | "regex";
+
+export interface ClassificationRuleConditionRecord {
+  readonly field: string;
+  readonly operator: ClassificationRuleOperator;
+  readonly value: string;
+}
+
+export interface ClassificationRuleRecord {
+  readonly id: EntityId;
+  readonly sourceId: EntityId | null;
+  readonly typeCode: string;
+  readonly name: string;
+  readonly priority: number;
+  readonly conditions: readonly ClassificationRuleConditionRecord[];
+  readonly referenceValueId: EntityId;
+  readonly revision: string;
+}
+
+export interface ProductClassificationObservationInput {
+  readonly candidate: ReferenceCandidateDTO;
+  readonly normalizedSourceValue: string;
+  readonly contextKey: string;
+  readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
+  readonly issueReason: ClassificationIssueReason | null;
+  readonly referenceValueId: EntityId | null;
+  readonly resolutionKind: ReferenceResolutionKind | null;
+  readonly resolutionId: EntityId | null;
+  readonly resolutionRevision: string | null;
+}
+
+export interface SaveProductClassificationInput {
+  readonly sourceId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly classifierVersion: string;
+  readonly fingerprint: string;
+  readonly observations: readonly ProductClassificationObservationInput[];
 }
 
 export interface TargetValueMappingRecord {

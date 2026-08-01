@@ -3,7 +3,7 @@ import { EntityNotFoundError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import type { InternalProductRepository, TargetRepository } from "../repositories/index.js";
-import type { ReferenceMappingService } from "../services/index.js";
+import type { TargetReferenceMappingService } from "../services/index.js";
 import type { ExportProductPayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
 
@@ -16,7 +16,7 @@ export class ExportRunner {
   constructor(
     private readonly repositories: ExportRunnerRepositories,
     private readonly exporters: TargetExporterRegistry,
-    private readonly mappings: ReferenceMappingService,
+    private readonly mappings: TargetReferenceMappingService,
   ) {}
 
   async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {

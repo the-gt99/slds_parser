@@ -6,7 +6,7 @@ import { CollectionRunner, ExportRunner, JobDispatcher, ProcessingRunner, Produc
 import type { JsonValue } from "../../src/contracts/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { GoatSourceAdapter, GoatSourceProcessor } from "../../src/integrations/index.js";
-import { ReferenceMappingService } from "../../src/services/index.js";
+import { ProductClassifier, TargetReferenceMappingService } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, sourceRecord } from "../support/in-memory.js";
 
 const fixture = (name: string): Buffer => readFileSync(new URL(`../fixtures/goat/${name}`, import.meta.url));
@@ -23,8 +23,9 @@ describe("GOAT fixture pipeline", () => {
     const adapters = new SourceAdapterRegistry(); adapters.register(adapter);
     const processors = new SourceProcessorRegistry(); processors.register(new GoatSourceProcessor());
     const exporters = new TargetExporterRegistry();
-    const mappings = new ReferenceMappingService(repositories.references);
-    const dispatcher = new JobDispatcher(new CollectionRunner(repositories, unit, adapters), new ProcessingRunner(repositories, unit, processors, new ProductOperationPipeline(new ProductOperationRegistry()), mappings), new ExportRunner(repositories, exporters, mappings), repositories.sourceRuns);
+    const classifier = new ProductClassifier(repositories.classifications);
+    const targetMappings = new TargetReferenceMappingService(repositories.references);
+    const dispatcher = new JobDispatcher(new CollectionRunner(repositories, unit, adapters), new ProcessingRunner(repositories, unit, processors, new ProductOperationPipeline(new ProductOperationRegistry()), classifier), new ExportRunner(repositories, exporters, targetMappings), repositories.sourceRuns);
     await repositories.jobs.enqueue({ jobType: "discover_source", payload: { sourceId: "1", runType: "smoke", coverage: "limited" }, uniqueKey: "goat-smoke" });
     const worker = new Worker(repositories.jobs, dispatcher, { workerId: "test", pollIntervalMs: 1, lockTimeoutMs: 100, maxJobAttempts: 3, retryBaseMs: 1, retryMaxMs: 10 });
     while (await worker.processNext()) {}

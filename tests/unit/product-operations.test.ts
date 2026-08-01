@@ -25,7 +25,7 @@ function product(overrides: Partial<UniversalProductDTO> = {}): UniversalProduct
     ...validProduct(),
     attributes: { brand: "Example Brand", story: "Source story", color: "blue / white", details: "Leather", upperMaterial: "Mesh" },
     images: [{ url: "https://image.example/main.png", position: 0, alt: "Product", attributes: {} }],
-    variants: [{ sourceVariantKey: "product|S", sku: "SKU-S", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, conditionReferenceId: null, attributes: {} }],
+    variants: [{ sourceVariantKey: "product|S", sku: "SKU-S", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: {} }],
     ...overrides,
   };
 }
@@ -42,7 +42,7 @@ describe("product operations", () => {
         { url: "https://image.example/main.png", position: 6, alt: "Duplicate", attributes: {} },
         { url: "https://image.example/placeholders/product_templates/missing.png", position: 7, alt: "Missing", attributes: {} },
       ],
-      variants: [{ sourceVariantKey: " key ", sku: " SKU-S ", size: { sourceValue: " 103 ", displayValue: " S " }, price: { amount: " 123.45 ", currency: " usd " }, inventory: { availability: "available" }, conditionReferenceId: null, attributes: { shoeCondition: " new_no_defects " } }],
+      variants: [{ sourceVariantKey: " key ", sku: " SKU-S ", size: { sourceValue: " 103 ", displayValue: " S " }, price: { amount: " 123.45 ", currency: " usd " }, inventory: { availability: "available" }, attributes: { shoeCondition: " new_no_defects " } }],
     });
 
     const result = await new NormalizeProductOperation().execute(input, context);

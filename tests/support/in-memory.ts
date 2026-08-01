@@ -1,5 +1,5 @@
 import type { EntityId } from "../../src/contracts/index.js";
-import type { CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, RecordSourceRunPageInput, ReferenceRepository, ReferenceValueRecord, ResolveSourceValueInput, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
+import type { ClassificationMappingMatchRecord, ClassificationRuleRecord, CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, ProductClassificationObservationInput, RecordSourceRunPageInput, ReferenceRepository, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
@@ -12,6 +12,10 @@ export class MemoryStore {
   readonly targets = new Map<string, TargetRecord>();
   readonly targetProducts = new Map<string, TargetProductRecord>();
   readonly jobs = new Map<string, JobRecord>();
+  readonly classificationTypes = new Set(["brand", "category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height"]);
+  readonly classificationDecisions = new Map<string, Omit<ClassificationMappingMatchRecord, "candidateKey">>();
+  readonly classificationRules: ClassificationRuleRecord[] = [];
+  readonly classificationObservations = new Map<string, ProductClassificationObservationInput>();
   mappingRevision = "revision-1";
   transactionCount = 0;
   #ids = 0;
@@ -27,6 +31,23 @@ export function targetRecord(overrides: Partial<TargetRecord> = {}): TargetRecor
 
 export function createMemoryRepositories(store: MemoryStore): TransactionRepositories {
   return {
+    classifications: {
+      listReferenceTypes: async (typeCodes) => typeCodes.filter((typeCode) => store.classificationTypes.has(typeCode)).map((code) => ({
+        code,
+        cardinality: ["category", "tag", "material"].includes(code) ? "multiple" as const : "single" as const,
+        allowedSubjectKinds: ["size", "condition", "box_condition"].includes(code) ? ["variant"] as const : ["product"] as const,
+        metadata: {},
+      })),
+      findSourceDecisions: async (sourceId, inputs) => inputs.flatMap((input) => {
+        const decision = store.classificationDecisions.get(`${sourceId}/${input.typeCode}/${input.scope}/${input.normalizedSourceValue}/${input.contextKey}`);
+        return decision === undefined ? [] : [{ candidateKey: input.candidateKey, ...decision }];
+      }),
+      listActiveRules: async (sourceId, typeCodes) => store.classificationRules.filter((rule) => (rule.sourceId === null || rule.sourceId === sourceId) && typeCodes.includes(rule.typeCode)),
+      saveProductResult: async (input) => {
+        for (const key of [...store.classificationObservations.keys()]) if (key.startsWith(`${input.sourceProductId}/`)) store.classificationObservations.delete(key);
+        for (const observation of input.observations) store.classificationObservations.set(`${input.sourceProductId}/${observation.candidate.key}`, observation);
+      },
+    },
     sources: {
       getById: async (id) => store.sources.get(id) ?? null,
       listEnabled: async () => [...store.sources.values()].filter((item) => item.enabled),
@@ -52,7 +73,6 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       upsert: async (input: UpsertInternalProductInput) => { const old = [...store.internals.values()].find((item) => item.sourceProductId === input.sourceProductId); const record: InternalProductRecord = { id: old?.id ?? store.id(), ...input, processedAt: input.processedAt ?? null, lastError: input.lastError ?? null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.internals.set(record.id, record); return record; },
     },
     references: {
-      resolveSourceValue: async (_input: ResolveSourceValueInput): Promise<ReferenceValueRecord | null> => null,
       resolveTargetValue: async (_targetId: string, _referenceValueId: string, _scope: string): Promise<TargetValueMappingRecord | null> => null,
       getTargetMappingRevision: async () => store.mappingRevision,
     } satisfies ReferenceRepository,
@@ -85,4 +105,4 @@ export function seedProduct(store: MemoryStore, overrides: Partial<SourceProduct
   const record: SourceProductRecord = { id: "2", sourceId: "1", sourceKey: "product-1", externalId: null, slug: null, url: null, discoveryMetadata: {}, status: "discovered", firstSeenAt: timestamp, lastSeenAt: timestamp, lastSeenRunId: null, createdAt: timestamp, updatedAt: timestamp, ...overrides }; store.products.set(record.id, record); return record;
 }
 
-export const validProduct = (sourceProductId = "2") => ({ sourceProductId, title: "Product", description: "Description", sku: "SKU", brandReferenceId: null, categoryReferenceIds: [], genderReferenceId: null, images: [], variants: [], attributes: {}, metadata: {} });
+export const validProduct = (sourceProductId = "2") => ({ sourceProductId, title: "Product", description: "Description", sku: "SKU", images: [], variants: [], referenceCandidates: [], attributes: {}, metadata: {} });

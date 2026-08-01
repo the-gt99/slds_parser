@@ -6,7 +6,7 @@ import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { GoatImageDownloader, GoatSourceAdapter, GoatSourceProcessor, type GoatHttpEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
-import { ReferenceMappingService } from "./services/index.js";
+import { ProductClassifier, TargetReferenceMappingService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -41,13 +41,14 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const operations = new ProductOperationRegistry();
   const exporters = new TargetExporterRegistry();
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment);
-  const mappings = new ReferenceMappingService(repositories.references);
+  const classifier = new ProductClassifier(repositories.classifications);
+  const targetMappings = new TargetReferenceMappingService(repositories.references);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
   const operationPipeline = new ProductOperationPipeline(operations);
-  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, mappings);
-  const exportRunner = new ExportRunner(repositories, exporters, mappings);
+  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
+  const exportRunner = new ExportRunner(repositories, exporters, targetMappings);
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns);
   const worker = new Worker(repositories.jobs, dispatcher, loadWorkerConfig(environment));
-  return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, mappings, collectionRunner, operationPipeline, processingRunner,
+  return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
     exportRunner, dispatcher, worker, close: () => pool.end() };
 }

@@ -58,13 +58,18 @@ describe("GOAT adapter and processor", () => {
   it("rejects an unknown requested part", async () => { const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0)); await expect(adapter.collectProduct({ source: source(), product: { sourceKey: "x", metadata: {} }, requestedPartKeys: ["unknown"] })).rejects.toBeInstanceOf(PermanentError); });
   it("keeps nullable prices, clothing size strings, conditions and additional prices", async () => {
     const processor = new GoatSourceProcessor();
-    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, references: { resolveReference: vi.fn() }, parts: [
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, parts: [
       { partKey: "product", rawPayload: jsonFixture("product.json"), parsedPayload: jsonFixture("product.json"), adapterVersion: "1.0.0" },
       { partKey: "offers", rawPayload: jsonFixture("offers.json"), parsedPayload: { market: "US", countryCode: "US", offers: jsonFixture("offers.json") }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
     const product = await processor.process(context);
-    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, conditionReferenceId: null, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
+    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
     expect(product.variants[1]).toMatchObject({ price: null, inventory: { availability: "unavailable" } });
+    expect(product.referenceCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
+      expect.objectContaining({ key: "variant:product-100|US|103|new_no_defects|good_condition:size", typeCode: "size", sourceValue: "S", subjectKind: "variant" }),
+      expect.objectContaining({ key: "variant:product-100|US|103|new_no_defects|good_condition:condition", typeCode: "condition", sourceValue: "new_no_defects" }),
+    ]));
     const offerRows = jsonFixture("offers.json") as readonly JsonValue[];
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
@@ -81,7 +86,7 @@ describe("GOAT adapter and processor", () => {
       upperMaterial: "Mesh",
       midsole: "Foam",
     } satisfies JsonObject;
-    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, references: { resolveReference: vi.fn() }, parts: [
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, parts: [
       { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
       { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { market: "US", countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
@@ -91,7 +96,7 @@ describe("GOAT adapter and processor", () => {
     expect(product).toMatchObject({
       description: "Source story",
       attributes: {
-        model: "Air Test",
+        family: "Air Test",
         gender: "men",
         categoryRaw: "sneakers",
         story: "Source story",
@@ -100,6 +105,10 @@ describe("GOAT adapter and processor", () => {
         midsole: "Foam",
       },
     });
+    expect(product.referenceCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "product:family", typeCode: "product_family", sourceValue: "Air Test" }),
+      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
+    ]));
   });
 });
 

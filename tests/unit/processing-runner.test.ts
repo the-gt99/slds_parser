@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ProcessingRunner, ProductOperationPipeline } from "../../src/application/index.js";
 import type { ProductOperation, SourceProcessor } from "../../src/contracts/index.js";
 import { ProductOperationRegistry, SourceProcessorRegistry } from "../../src/core/registry/index.js";
-import { ReferenceMappingService } from "../../src/services/index.js";
+import { ProductClassifier } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
 async function setup(version = "1", operation?: ProductOperation) {
@@ -11,20 +11,21 @@ async function setup(version = "1", operation?: ProductOperation) {
   const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
-  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, new ProductOperationPipeline(operationRegistry), new ReferenceMappingService(repositories.references)) };
+  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, new ProductOperationPipeline(operationRegistry), new ProductClassifier(repositories.classifications)) };
 }
 
 describe("ProcessingRunner", () => {
   it("selects processor, saves DTO and enqueues enabled targets", async () => {
     const { runner, store, process } = await setup(); await runner.processProduct({ sourceProductId: "2", force: false });
-    expect(process).toHaveBeenCalledOnce(); expect([...store.internals.values()][0]?.data).toEqual(validProduct());
+    expect(process).toHaveBeenCalledOnce(); expect([...store.internals.values()][0]?.data).toMatchObject({ ...validProduct(), classification: { status: "complete", resolved: [], ignored: [], unresolved: [] } });
+    expect([...store.internals.values()][0]?.status).toBe("classified");
     expect([...store.jobs.values()][0]?.uniqueKey).toMatch(/internal-product:.*:target:10:export/);
   });
   it("skips unchanged input and version changes input hash", async () => {
     const first = await setup("1"); await first.runner.processProduct({ sourceProductId: "2", force: false }); const hash1 = [...first.store.internals.values()][0]!.inputHash;
     first.store.jobs.clear(); await first.runner.processProduct({ sourceProductId: "2", force: false }); expect(first.process).toHaveBeenCalledTimes(1);
     const secondProcess = vi.fn().mockResolvedValue(validProduct()); const registry = new SourceProcessorRegistry(); registry.register({ sourceCode: "fake", version: "2", process: secondProcess });
-    const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), registry, new ProductOperationPipeline(new ProductOperationRegistry()), new ReferenceMappingService(first.repositories.references));
+    const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), registry, new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications));
     await runner.processProduct({ sourceProductId: "2", force: false }); expect([...first.store.internals.values()][0]!.inputHash).not.toBe(hash1); expect(secondProcess).toHaveBeenCalledOnce();
   });
   it("does not enqueue exports when content is unchanged", async () => {
@@ -43,5 +44,20 @@ describe("ProcessingRunner", () => {
     const previous = store.sources.get("1")!; store.sources.set("1", { ...previous, config: { locale: "ru" } });
     await runner.processProduct({ sourceProductId: "2", force: false });
     expect(process).toHaveBeenCalledTimes(2);
+  });
+  it("reclassifies after a mapping change without rerunning source processing", async () => {
+    const { runner, store, process } = await setup();
+    process.mockResolvedValue({ ...validProduct(), referenceCandidates: [{ key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product", sourceValue: "Nike", context: {}, evidence: { title: "Nike Product" } }] });
+    await runner.processProduct({ sourceProductId: "2", force: false });
+    expect([...store.internals.values()][0]?.status).toBe("classification_pending");
+    expect(store.jobs.size).toBe(0);
+
+    store.classificationDecisions.set("1/brand/product.brand/nike/{}", { mappingId: "20", referenceValueId: "30", status: "confirmed", revision: "1" });
+    await runner.processProduct({ sourceProductId: "2", force: false });
+
+    expect(process).toHaveBeenCalledOnce();
+    expect([...store.internals.values()][0]?.status).toBe("classified");
+    expect([...store.internals.values()][0]?.data.classification?.resolved[0]).toMatchObject({ referenceValueId: "30", resolutionKind: "mapping" });
+    expect([...store.jobs.values()][0]?.jobType).toBe("export_product");
   });
 });

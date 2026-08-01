@@ -89,23 +89,10 @@ export interface SourceProductDTO {
   readonly metadata: JsonObject;
 }
 
-export interface SourceReferenceResolutionInput {
-  readonly referenceType: string;
-  readonly scope: string;
-  readonly sourceValue: string;
-}
-
-export interface SourceReferenceResolver {
-  resolveReference(
-    input: SourceReferenceResolutionInput,
-  ): Promise<EntityId>;
-}
-
 export interface ProcessingContext {
   readonly source: SourceDTO;
   readonly sourceProduct: SourceProductDTO;
   readonly parts: readonly SourceProductPartDTO[];
-  readonly references: SourceReferenceResolver;
 }
 
 export interface ProductOperationContext {
@@ -156,10 +143,78 @@ export interface ProductTranslatedContentDTO {
   readonly upperMaterial: string;
 }
 
+export type ReferenceSubjectKind = "product" | "variant";
+
+/**
+ * A source-neutral value that may be linked to an internal reference value.
+ * Source processors and enrichment operations produce candidates; the
+ * classifier resolves them without knowing the source payload shape.
+ */
+export interface ReferenceCandidateDTO {
+  /** Stable and unique inside one product, for example `product:brand`. */
+  readonly key: string;
+  readonly typeCode: string;
+  /** Distinguishes semantic uses of the same reference type. */
+  readonly scope: string;
+  readonly subjectKind: ReferenceSubjectKind;
+  /** Required when subjectKind is `variant`. */
+  readonly subjectKey?: string;
+  readonly sourceValue: string;
+  /** Values that make exact source mappings context-sensitive. */
+  readonly context: JsonObject;
+  /** Additional source-neutral facts available to classification rules. */
+  readonly evidence: JsonObject;
+}
+
+export type ReferenceResolutionKind = "mapping" | "rule";
+
+export interface ClassifiedReferenceDTO {
+  readonly candidateKey: string;
+  readonly typeCode: string;
+  readonly scope: string;
+  readonly subjectKind: ReferenceSubjectKind;
+  readonly subjectKey?: string;
+  readonly referenceValueId: EntityId;
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+  readonly resolutionRevision: string;
+}
+
+export type ClassificationIssueReason = "mapping_missing" | "rule_ambiguous";
+
+export interface UnresolvedReferenceDTO {
+  readonly candidateKey: string;
+  readonly typeCode: string;
+  readonly scope: string;
+  readonly subjectKind: ReferenceSubjectKind;
+  readonly subjectKey?: string;
+  readonly sourceValue: string;
+  readonly reason: ClassificationIssueReason;
+}
+
+export interface IgnoredReferenceDTO {
+  readonly candidateKey: string;
+  readonly typeCode: string;
+  readonly scope: string;
+  readonly subjectKind: ReferenceSubjectKind;
+  readonly subjectKey?: string;
+  readonly sourceValue: string;
+  readonly mappingId: EntityId;
+  readonly mappingRevision: string;
+}
+
+export interface ProductClassificationDTO {
+  readonly status: "complete" | "partial";
+  readonly classifierVersion: string;
+  readonly fingerprint: string;
+  readonly resolved: readonly ClassifiedReferenceDTO[];
+  readonly ignored: readonly IgnoredReferenceDTO[];
+  readonly unresolved: readonly UnresolvedReferenceDTO[];
+}
+
 export interface ProductSizeDTO {
   readonly sourceValue: string;
   readonly displayValue: string;
-  readonly sizeSystemReferenceId?: EntityId;
 }
 
 export interface ProductVariantDTO {
@@ -168,7 +223,6 @@ export interface ProductVariantDTO {
   readonly size: ProductSizeDTO;
   readonly price: MoneyDTO | null;
   readonly inventory: InventoryDTO;
-  readonly conditionReferenceId: EntityId | null;
   readonly attributes: JsonObject;
 }
 
@@ -177,11 +231,10 @@ export interface UniversalProductDTO {
   readonly title: string;
   readonly description: string;
   readonly sku: string;
-  readonly brandReferenceId: EntityId | null;
-  readonly categoryReferenceIds: readonly EntityId[];
-  readonly genderReferenceId: EntityId | null;
   readonly images: readonly ProductImageDTO[];
   readonly variants: readonly ProductVariantDTO[];
+  readonly referenceCandidates: readonly ReferenceCandidateDTO[];
+  readonly classification?: ProductClassificationDTO;
   readonly translatedContent?: ProductTranslatedContentDTO;
   readonly attributes: JsonObject;
   readonly metadata: JsonObject;

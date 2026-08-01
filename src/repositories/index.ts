@@ -1,3 +1,4 @@
+export type { ClassificationRepository } from "./classification-repository.js";
 export type { InternalProductRepository } from "./internal-product-repository.js";
 export type { JobRepository } from "./job-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";

@@ -3,7 +3,7 @@ import { EntityNotFoundError, IntegrationContractError } from "../core/errors/in
 import type { SourceProcessorRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository, UnitOfWork } from "../repositories/index.js";
-import type { ReferenceMappingService } from "../services/index.js";
+import type { ProductClassifier, ProductClassifierRun } from "../services/index.js";
 import type { ProcessProductPayload } from "./job-payloads.js";
 import type { ProductOperationPipeline } from "./product-operation-pipeline.js";
 import type { RunnerResult } from "./runner-result.js";
@@ -21,7 +21,7 @@ export class ProcessingRunner {
     private readonly unitOfWork: UnitOfWork,
     private readonly processors: SourceProcessorRegistry,
     private readonly operations: ProductOperationPipeline,
-    private readonly mappings: ReferenceMappingService,
+    private readonly classifier: ProductClassifier,
   ) {}
 
   async processProduct(payload: ProcessProductPayload): Promise<RunnerResult> {
@@ -49,25 +49,39 @@ export class ProcessingRunner {
         }))
         .sort((a, b) => a.partKey.localeCompare(b.partKey)),
     });
-    const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
-    if (!payload.force && existing?.inputHash === inputHash) return { status: "skipped" };
-
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const productDto: SourceProductDTO = { id: product.id, sourceId: product.sourceId, sourceKey: product.sourceKey,
       ...(product.externalId === null ? {} : { externalId: product.externalId }), ...(product.slug === null ? {} : { slug: product.slug }),
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
-    const partDtos: SourceProductPartDTO[] = parts.map((part) => ({ partKey: part.partKey, rawPayload: part.rawPayload, parsedPayload: part.parsedPayload,
+    const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
+    let classificationRun: ProductClassifierRun;
+    if (!payload.force && existing?.inputHash === inputHash) {
+      classificationRun = await this.classifier.classify(source.id, existing.data);
+      const reclassifiedHash = hashStableJson(classificationRun.product as unknown as JsonValue);
+      if (existing.contentHash === reclassifiedHash) return { status: "skipped" };
+    } else {
+      const partDtos: SourceProductPartDTO[] = parts.map((part) => ({ partKey: part.partKey, rawPayload: part.rawPayload, parsedPayload: part.parsedPayload,
       ...(part.sourceUpdatedAt === null ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), adapterVersion: part.adapterVersion }));
-    const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos,
-      references: { resolveReference: (input) => this.mappings.resolveSourceValue(source.id, input.referenceType, input.scope, input.sourceValue) } });
-    if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
-    const data = await this.operations.run(baseProduct, { source: sourceDto, sourceProduct: productDto });
+      const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos });
+      if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
+      const operatedProduct = await this.operations.run(baseProduct, { source: sourceDto, sourceProduct: productDto });
+      classificationRun = await this.classifier.classify(source.id, operatedProduct);
+    }
+    const data = classificationRun.product;
     const contentHash = hashStableJson(data as unknown as JsonValue);
     const targets = await this.repositories.targets.listEnabled();
     await this.unitOfWork.transaction(async (repositories) => {
       const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
-        processorVersion: processor.version, status: "processed", processedAt: new Date().toISOString(), lastError: null });
-      if (existing?.contentHash !== contentHash) {
+        processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
+        processedAt: new Date().toISOString(), lastError: null });
+      await repositories.classifications.saveProductResult({
+        sourceId: source.id,
+        sourceProductId: product.id,
+        classifierVersion: this.classifier.version,
+        fingerprint: data.classification.fingerprint,
+        observations: classificationRun.observations,
+      });
+      if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
         for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
           payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
       }

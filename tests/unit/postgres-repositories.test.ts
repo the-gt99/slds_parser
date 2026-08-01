@@ -2,6 +2,7 @@ import type { QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 
 import {
+  PostgresClassificationRepository,
   PostgresJobRepository,
   PostgresReferenceRepository,
   PostgresSourceProductRepository,
@@ -91,11 +92,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("previous.content_hash IS DISTINCT FROM $5");
   });
 
-  it("passes every source mapping criterion", async () => {
-    const executor = new FakeExecutor([[]]);
-    await new PostgresReferenceRepository(executor).resolveSourceValue({ sourceId: "4", typeCode: "brand", scope: "catalog", normalizedSourceValue: "nike", status: "confirmed" });
-    expect(executor.calls[0]?.values).toEqual(["brand", "4", "catalog", "nike", "confirmed"]);
-    expect(executor.calls[0]?.text).toContain("rv.enabled = TRUE");
+  it("resolves contextual source decisions in one batch", async () => {
+    const executor = new FakeExecutor([[{ candidate_key: "product:brand", mapping_id: "12", reference_value_id: "13", status: "confirmed", revision: "2" }]]);
+    const decisions = await new PostgresClassificationRepository(executor).findSourceDecisions("4", [{ candidateKey: "product:brand", typeCode: "brand", scope: "product.brand", normalizedSourceValue: "nike", contextKey: "{}" }]);
+    expect(decisions).toEqual([{ candidateKey: "product:brand", mappingId: "12", referenceValueId: "13", status: "confirmed", revision: "2" }]);
+    expect(executor.calls[0]?.values[0]).toBe("4");
+    expect(executor.calls[0]?.values[1]).toContain('"context_key":"{}"');
+    expect(executor.calls[0]?.text).toContain("JSONB_TO_RECORDSET");
+    expect(executor.calls[0]?.text).toContain("mapping.context_key = requested.context_key");
   });
 
   it("builds mapping revision from sorted mapping contents", async () => {

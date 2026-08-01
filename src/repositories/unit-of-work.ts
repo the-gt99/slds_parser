@@ -1,3 +1,4 @@
+import type { ClassificationRepository } from "./classification-repository.js";
 import type { InternalProductRepository } from "./internal-product-repository.js";
 import type { JobRepository } from "./job-repository.js";
 import type { ReferenceRepository } from "./reference-repository.js";
@@ -7,6 +8,7 @@ import type { SourceRepository } from "./source-repository.js";
 import type { TargetRepository } from "./target-repository.js";
 
 export interface TransactionRepositories {
+  readonly classifications: ClassificationRepository;
   readonly sources: SourceRepository;
   readonly sourceRuns: SourceRunRepository;
   readonly sourceProducts: SourceProductRepository;
