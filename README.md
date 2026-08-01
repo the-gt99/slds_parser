@@ -13,6 +13,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - первый вертикальный срез GOAT: sitemap, карточка, offers и `UniversalProductDTO`;
 - цепочка обработки товара: нормализация, перевод, скачивание изображений, проверка и конвертация в WebP, публикация ссылок и финальная проверка;
 - unit-тесты на Vitest, не требующие запущенного PostgreSQL или сети.
+- отдельный Fastify API с проверкой доступности PostgreSQL.
 
 ## Конвейер
 
@@ -158,6 +159,7 @@ CLI создаёт или обновляет source `goat`, записывает
 
 ## Команды
 
+- `npm run api` — запустить собранный API на `PARSER_HTTP_HOST` и `PARSER_HTTP_PORT`;
 - `npm run dev` — запуск точки входа через `tsx` в watch-режиме;
 - `npm run db:migrate` — применить PostgreSQL-миграции;
 - `npm run goat:enqueue-smoke` — создать ограниченный GOAT source и поставить discovery-задачу;
@@ -166,3 +168,9 @@ CLI создаёт или обновляет source `goat`, записывает
 - `npm test` — однократно запустить unit-тесты;
 - `npm run test:watch` — запустить тесты в watch-режиме;
 - `npm run build` — собрать проект в `dist`.
+
+## HTTP API
+
+API запускается отдельным процессом после `npm run build` и по умолчанию слушает только `127.0.0.1:3000`. Адрес и порт задаются через `PARSER_HTTP_HOST` и `PARSER_HTTP_PORT`. `GET /api/health` выполняет `SELECT 1`: при доступной PostgreSQL возвращает `200` и `{"status":"ok"}`, при недоступной — `503` и `{"status":"unavailable"}`. Ответ не содержит версий, настроек и деталей ошибки подключения.
+
+Процесс корректно закрывает HTTP-сервер и PostgreSQL pool по `SIGINT` и `SIGTERM`. Для production API следует запускать как отдельную службу за reverse proxy, не открывая внутренний порт наружу.

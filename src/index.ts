@@ -5,6 +5,7 @@ export * from "./core/utils/index.js";
 export * from "./infrastructure/db/index.js";
 export * from "./infrastructure/media/index.js";
 export * from "./infrastructure/translation/index.js";
+export * from "./http/index.js";
 export * from "./repositories/index.js";
 export * from "./processing/index.js";
 export * from "./services/index.js";
