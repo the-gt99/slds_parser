@@ -7,6 +7,11 @@ import { mapInternalProduct, type DatabaseRow } from "./row-mappers.js";
 export class PostgresInternalProductRepository implements InternalProductRepository {
   constructor(private readonly executor: SqlExecutor) {}
 
+  async getById(id: EntityId): Promise<InternalProductRecord | null> {
+    const result = await this.executor.query<DatabaseRow>("SELECT * FROM internal_products WHERE id = $1", [id]);
+    return result.rows[0] ? mapInternalProduct(result.rows[0]) : null;
+  }
+
   async findBySourceProductId(sourceProductId: EntityId): Promise<InternalProductRecord | null> {
     const result = await this.executor.query<DatabaseRow>("SELECT * FROM internal_products WHERE source_product_id = $1", [sourceProductId]);
     return result.rows[0] ? mapInternalProduct(result.rows[0]) : null;

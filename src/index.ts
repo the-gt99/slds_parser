@@ -5,3 +5,6 @@ export * from "./core/utils/index.js";
 export * from "./infrastructure/db/index.js";
 export * from "./repositories/index.js";
 export * from "./services/index.js";
+export * from "./application/index.js";
+export * from "./bootstrap.js";
+export * from "./config/index.js";

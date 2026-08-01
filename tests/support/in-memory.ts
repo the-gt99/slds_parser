@@ -1,0 +1,87 @@
+import type { EntityId } from "../../src/contracts/index.js";
+import type { CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, RecordSourceRunPageInput, ReferenceRepository, ReferenceValueRecord, ResolveSourceValueInput, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
+
+const timestamp = "2026-01-01T00:00:00.000Z";
+
+export class MemoryStore {
+  readonly sources = new Map<string, SourceRecord>();
+  readonly runs = new Map<string, SourceRunRecord>();
+  readonly products = new Map<string, SourceProductRecord>();
+  readonly parts = new Map<string, SourceProductPartRecord>();
+  readonly internals = new Map<string, InternalProductRecord>();
+  readonly targets = new Map<string, TargetRecord>();
+  readonly targetProducts = new Map<string, TargetProductRecord>();
+  readonly jobs = new Map<string, JobRecord>();
+  mappingRevision = "revision-1";
+  transactionCount = 0;
+  #ids = 0;
+  id(): string { return String(++this.#ids); }
+}
+
+export function sourceRecord(overrides: Partial<SourceRecord> = {}): SourceRecord {
+  return { id: "1", code: "fake", name: "Fake", adapterCode: "fake-adapter", config: {}, enabled: true, createdAt: timestamp, updatedAt: timestamp, ...overrides };
+}
+export function targetRecord(overrides: Partial<TargetRecord> = {}): TargetRecord {
+  return { id: "10", code: "fake-target", name: "Target", exporterCode: "fake-exporter", config: {}, enabled: true, createdAt: timestamp, updatedAt: timestamp, ...overrides };
+}
+
+export function createMemoryRepositories(store: MemoryStore): TransactionRepositories {
+  return {
+    sources: {
+      getById: async (id) => store.sources.get(id) ?? null,
+      listEnabled: async () => [...store.sources.values()].filter((item) => item.enabled),
+    },
+    sourceRuns: {
+      findActiveBySource: async (sourceId) => [...store.runs.values()].find((run) => run.sourceId === sourceId && run.status === "running") ?? null,
+      create: async (input: CreateSourceRunInput) => { const id = store.id(); const run: SourceRunRecord = { id, ...input, status: "running", completeness: "unknown", processedCount: "0", discoveredCount: "0", errorCount: "0", startedAt: timestamp, finishedAt: null, lastError: null }; store.runs.set(id, run); return run; },
+      recordPage: async (id: EntityId, input: RecordSourceRunPageInput) => { const old = store.runs.get(id)!; const run: SourceRunRecord = { ...old, checkpoint: input.checkpoint, processedCount: String(Number(old.processedCount) + Number(input.processedCount)), discoveredCount: String(Number(old.discoveredCount) + Number(input.discoveredCount)), errorCount: String(Number(old.errorCount) + Number(input.errorCount)), completeness: input.completeness }; store.runs.set(id, run); return run; },
+      complete: async (id: EntityId, input: CompleteSourceRunInput) => { const run: SourceRunRecord = { ...store.runs.get(id)!, ...input, status: "completed", lastError: null }; store.runs.set(id, run); return run; },
+      fail: async (id: EntityId, input: FailSourceRunInput) => { const run: SourceRunRecord = { ...store.runs.get(id)!, checkpoint: input.checkpoint, status: "failed", finishedAt: input.finishedAt, lastError: input.error }; store.runs.set(id, run); return run; },
+    },
+    sourceProducts: {
+      getById: async (id) => store.products.get(id) ?? null,
+      listParts: async (id) => [...store.parts.values()].filter((part) => part.sourceProductId === id).sort((a, b) => a.partKey.localeCompare(b.partKey)),
+      upsertDiscovered: async (input: UpsertDiscoveredSourceProductInput) => { const previous = [...store.products.values()].find((item) => item.sourceId === input.sourceId && item.sourceKey === input.sourceKey); const id = previous?.id ?? store.id(); const record: SourceProductRecord = { id, sourceId: input.sourceId, sourceKey: input.sourceKey, externalId: input.externalId ?? previous?.externalId ?? null, slug: input.slug ?? previous?.slug ?? null, url: input.url ?? previous?.url ?? null, discoveryMetadata: input.discoveryMetadata, status: input.status, firstSeenAt: previous?.firstSeenAt ?? input.seenAt, lastSeenAt: input.seenAt, lastSeenRunId: input.runId, createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp }; store.products.set(id, record); return record; },
+      updateIdentity: async (id: EntityId, input: UpdateSourceProductIdentityInput) => { const old = store.products.get(id)!; const record = { ...old, ...(input.externalId === undefined ? {} : { externalId: input.externalId }), ...(input.slug === undefined ? {} : { slug: input.slug }), ...(input.url === undefined ? {} : { url: input.url }) }; store.products.set(id, record); return record; },
+      upsertPart: async (input: UpsertSourceProductPartInput): Promise<UpsertSourceProductPartResult> => { const key = `${input.sourceProductId}/${input.partKey}`; const old = store.parts.get(key); const part: SourceProductPartRecord = { id: old?.id ?? store.id(), sourceProductId: input.sourceProductId, partKey: input.partKey, rawPayload: input.rawPayload, parsedPayload: input.parsedPayload, contentHash: input.contentHash, sourceUpdatedAt: input.sourceUpdatedAt ?? null, fetchedAt: input.fetchedAt, adapterVersion: input.adapterVersion, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.parts.set(key, part); return { part, changed: old?.contentHash !== input.contentHash }; },
+    },
+    internalProducts: {
+      getById: async (id) => store.internals.get(id) ?? null,
+      findBySourceProductId: async (id) => [...store.internals.values()].find((item) => item.sourceProductId === id) ?? null,
+      upsert: async (input: UpsertInternalProductInput) => { const old = [...store.internals.values()].find((item) => item.sourceProductId === input.sourceProductId); const record: InternalProductRecord = { id: old?.id ?? store.id(), ...input, processedAt: input.processedAt ?? null, lastError: input.lastError ?? null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.internals.set(record.id, record); return record; },
+    },
+    references: {
+      resolveSourceValue: async (_input: ResolveSourceValueInput): Promise<ReferenceValueRecord | null> => null,
+      resolveTargetValue: async (_targetId: string, _referenceValueId: string, _scope: string): Promise<TargetValueMappingRecord | null> => null,
+      getTargetMappingRevision: async () => store.mappingRevision,
+    } satisfies ReferenceRepository,
+    targets: {
+      getById: async (id) => store.targets.get(id) ?? null,
+      listEnabled: async () => [...store.targets.values()].filter((item) => item.enabled),
+      findTargetProduct: async (targetId, internalId) => store.targetProducts.get(`${targetId}/${internalId}`) ?? null,
+      saveExportSuccess: async (input: SaveExportSuccessInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: input.externalId, status: input.status, lastExportedHash: input.exportedHash, lastExportFingerprint: input.exportFingerprint, lastAttemptAt: input.attemptedAt, syncedAt: input.syncedAt, lastError: null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
+      saveExportFailure: async (input: SaveExportFailureInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: old?.externalId ?? null, status: input.status, lastExportedHash: old?.lastExportedHash ?? null, lastExportFingerprint: old?.lastExportFingerprint ?? null, lastAttemptAt: input.attemptedAt, syncedAt: old?.syncedAt ?? null, lastError: input.error, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
+    },
+    jobs: new MemoryJobRepository(store),
+  };
+}
+
+export class MemoryJobRepository implements JobRepository {
+  constructor(private readonly store: MemoryStore) {}
+  async enqueue(input: EnqueueJobInput): Promise<JobRecord> { const active = [...this.store.jobs.values()].find((j) => j.jobType === input.jobType && j.uniqueKey === input.uniqueKey && ["pending", "running", "retry"].includes(j.status)); if (active) return active; const id = this.store.id(); const job: JobRecord = { id, jobType: input.jobType, payload: input.payload, status: "pending", attempts: 0, availableAt: input.availableAt ?? timestamp, lockedAt: null, lockedBy: null, uniqueKey: input.uniqueKey, lastError: null, createdAt: timestamp, updatedAt: timestamp, finishedAt: null }; this.store.jobs.set(id, job); return job; }
+  async claimNext(workerId: string, _lockTimeoutMs: number): Promise<JobRecord | null> { const job = [...this.store.jobs.values()].find((j) => ["pending", "retry"].includes(j.status)); if (!job) return null; const claimed: JobRecord = { ...job, status: "running", attempts: job.attempts + 1, lockedAt: timestamp, lockedBy: workerId }; this.store.jobs.set(job.id, claimed); return claimed; }
+  async complete(id: EntityId): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "completed", lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
+  async retry(id: EntityId, input: RetryJobInput): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "retry", availableAt: input.availableAt, lastError: input.error, lockedAt: null, lockedBy: null }); }
+  async fail(id: EntityId, error: string): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "failed", lastError: error, lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
+}
+
+export class MemoryUnitOfWork implements UnitOfWork {
+  constructor(private readonly store: MemoryStore, private readonly repositories: TransactionRepositories) {}
+  async transaction<Result>(callback: (repositories: TransactionRepositories) => Promise<Result>): Promise<Result> { this.store.transactionCount++; return callback(this.repositories); }
+}
+
+export function seedProduct(store: MemoryStore, overrides: Partial<SourceProductRecord> = {}): SourceProductRecord {
+  const record: SourceProductRecord = { id: "2", sourceId: "1", sourceKey: "product-1", externalId: null, slug: null, url: null, discoveryMetadata: {}, status: "discovered", firstSeenAt: timestamp, lastSeenAt: timestamp, lastSeenRunId: null, createdAt: timestamp, updatedAt: timestamp, ...overrides }; store.products.set(record.id, record); return record;
+}
+
+export const validProduct = (sourceProductId = "2") => ({ sourceProductId, title: "Product", description: "Description", sku: "SKU", brandReferenceId: null, categoryReferenceIds: [], genderReferenceId: null, images: [], variants: [], attributes: {}, metadata: {} });

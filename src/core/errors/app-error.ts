@@ -17,6 +17,24 @@ export class RetryableError extends AppError {}
 
 export class PermanentError extends AppError {}
 
+export class InvalidJobPayloadError extends PermanentError {
+  constructor(jobType: string) {
+    super(`Invalid payload for job: ${jobType}`, { code: "INVALID_JOB_PAYLOAD" });
+  }
+}
+
+export class EntityNotFoundError extends PermanentError {
+  constructor(entity: string, id: string) {
+    super(`${entity} not found: ${id}`, { code: "ENTITY_NOT_FOUND" });
+  }
+}
+
+export class IntegrationContractError extends PermanentError {
+  constructor(message: string) {
+    super(message, { code: "INTEGRATION_CONTRACT" });
+  }
+}
+
 export class SourceIdentityConflictError extends PermanentError {
   constructor(sourceId: string, externalId: string, options?: { readonly cause?: unknown }) {
     super(
