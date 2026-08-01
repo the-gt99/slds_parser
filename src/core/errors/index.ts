@@ -1,6 +1,7 @@
 export {
   AdapterNotRegisteredError,
   AppError,
+  DuplicateRegistrationError,
   ExporterNotRegisteredError,
   MappingMissingError,
   PermanentError,

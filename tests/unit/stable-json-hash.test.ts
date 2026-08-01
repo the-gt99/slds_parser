@@ -6,13 +6,20 @@ import {
 } from "../../src/core/utils/index.js";
 
 describe("stable JSON hashing", () => {
-  it("sorts object keys recursively", () => {
+  it("does not depend on object key order", () => {
     const first = { z: 1, nested: { b: true, a: null }, a: "value" };
     const second = { a: "value", nested: { a: null, b: true }, z: 1 };
 
     expect(stableJsonStringify(first)).toBe(
       '{"a":"value","nested":{"a":null,"b":true},"z":1}',
     );
+    expect(hashStableJson(first)).toBe(hashStableJson(second));
+  });
+
+  it("stabilizes objects nested inside arrays", () => {
+    const first = { values: [{ outer: { z: 2, a: 1 } }] };
+    const second = { values: [{ outer: { a: 1, z: 2 } }] };
+
     expect(hashStableJson(first)).toBe(hashStableJson(second));
   });
 

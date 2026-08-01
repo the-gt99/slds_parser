@@ -1,25 +1,29 @@
 import type {
   CollectedSourceProduct,
+  CollectProductInput,
+  DiscoveryInput,
   DiscoveryResult,
+  ExportContext,
   ExportResult,
-  SourceProductReference,
+  ProcessingContext,
   UniversalProductDTO,
 } from "./products.js";
 
 export interface SourceAdapter {
+  readonly code: string;
   readonly version: string;
-  discover(): Promise<DiscoveryResult>;
-  collectProduct(
-    reference: SourceProductReference,
-  ): Promise<CollectedSourceProduct>;
+  discover(input: DiscoveryInput): Promise<DiscoveryResult>;
+  collectProduct(input: CollectProductInput): Promise<CollectedSourceProduct>;
 }
 
 export interface SourceProcessor {
+  readonly sourceCode: string;
   readonly version: string;
-  process(product: CollectedSourceProduct): Promise<UniversalProductDTO>;
+  process(context: ProcessingContext): Promise<UniversalProductDTO>;
 }
 
 export interface TargetExporter {
+  readonly targetCode: string;
   readonly version: string;
-  export(product: UniversalProductDTO): Promise<ExportResult>;
+  export(context: ExportContext): Promise<ExportResult>;
 }

@@ -48,3 +48,11 @@ export class ExporterNotRegisteredError extends PermanentError {
     });
   }
 }
+
+export class DuplicateRegistrationError extends PermanentError {
+  constructor(componentType: string, code: string) {
+    super(`${componentType} is already registered: ${code}`, {
+      code: "DUPLICATE_REGISTRATION",
+    });
+  }
+}

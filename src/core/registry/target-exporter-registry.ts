@@ -1,18 +1,28 @@
 import type { TargetExporter } from "../../contracts/index.js";
-import { ExporterNotRegisteredError } from "../errors/index.js";
+import {
+  DuplicateRegistrationError,
+  ExporterNotRegisteredError,
+} from "../errors/index.js";
 
 export class TargetExporterRegistry {
   readonly #exporters = new Map<string, TargetExporter>();
 
-  register(key: string, exporter: TargetExporter): void {
-    this.#exporters.set(key, exporter);
+  register(exporter: TargetExporter): void {
+    if (this.#exporters.has(exporter.targetCode)) {
+      throw new DuplicateRegistrationError(
+        "Target exporter",
+        exporter.targetCode,
+      );
+    }
+
+    this.#exporters.set(exporter.targetCode, exporter);
   }
 
-  get(key: string): TargetExporter {
-    const exporter = this.#exporters.get(key);
+  get(code: string): TargetExporter {
+    const exporter = this.#exporters.get(code);
 
     if (exporter === undefined) {
-      throw new ExporterNotRegisteredError(key);
+      throw new ExporterNotRegisteredError(code);
     }
 
     return exporter;
