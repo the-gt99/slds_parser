@@ -17,6 +17,15 @@ export class RetryableError extends AppError {}
 
 export class PermanentError extends AppError {}
 
+export class SourceIdentityConflictError extends PermanentError {
+  constructor(sourceId: string, externalId: string, options?: { readonly cause?: unknown }) {
+    super(
+      `External product identity already exists for source ${sourceId}: ${externalId}`,
+      { code: "SOURCE_IDENTITY_CONFLICT", ...options },
+    );
+  }
+}
+
 export class MappingMissingError extends PermanentError {
   constructor(mappingKey: string) {
     super(`Mapping is missing: ${mappingKey}`, {

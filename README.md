@@ -6,7 +6,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 - универсальные DTO и контракты адаптера, процессора и экспортера;
 - PostgreSQL-схема и последовательный migration runner с транзакциями и advisory lock;
-- repository-контракты и `UnitOfWork` для будущих атомарных операций;
+- PostgreSQL repositories и `PostgresUnitOfWork` для атомарных операций;
 - `ReferenceMappingService` со строгим разрешением заранее подтверждённых mappings;
 - типизированные прикладные ошибки, реестры компонентов и стабильное SHA-256-хэширование;
 - unit-тесты на Vitest, не требующие запущенного PostgreSQL.
@@ -39,7 +39,9 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 ## Контракты хранения
 
-Определены небольшие интерфейсы `SourceRepository`, `SourceRunRepository`, `SourceProductRepository`, `InternalProductRepository`, `ReferenceRepository`, `TargetRepository`, `JobRepository` и `UnitOfWork`. Реализаций SQL у repositories пока нет. Следующий этап — реальные PostgreSQL repositories и PostgreSQL-реализация `UnitOfWork`.
+Интерфейсы `SourceRepository`, `SourceRunRepository`, `SourceProductRepository`, `InternalProductRepository`, `ReferenceRepository`, `TargetRepository` и `JobRepository` реализованы для PostgreSQL. Фабрика `createPostgresRepositories` создаёт их для пула или отдельного клиента.
+
+Атомарные изменения нескольких таблиц выполняются через `PostgresUnitOfWork`. Внешние HTTP-вызовы и другую долгую работу необходимо завершать до открытия транзакции. Конкурентные гарантии `JobRepository` заложены в SQL, но ещё должны быть проверены интеграционным тестом с настоящим PostgreSQL; unit-тесты используют только fake executor и не доказывают поведение реальной СУБД при конкуренции.
 
 Все PostgreSQL `BIGINT` представлены в TypeScript строками, чтобы не терять точность.
 

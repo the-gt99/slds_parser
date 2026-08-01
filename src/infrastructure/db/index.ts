@@ -8,3 +8,14 @@ export type {
   SqlPool,
   SqlResult,
 } from "./sql-executor.js";
+export { PostgresUnitOfWork } from "./postgres-unit-of-work.js";
+export {
+  createPostgresRepositories,
+  PostgresInternalProductRepository,
+  PostgresJobRepository,
+  PostgresReferenceRepository,
+  PostgresSourceProductRepository,
+  PostgresSourceRepository,
+  PostgresSourceRunRepository,
+  PostgresTargetRepository,
+} from "./repositories/index.js";
