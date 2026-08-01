@@ -5,6 +5,7 @@ import { hashStableJson } from "../core/utils/index.js";
 import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository, UnitOfWork } from "../repositories/index.js";
 import type { ReferenceMappingService } from "../services/index.js";
 import type { ProcessProductPayload } from "./job-payloads.js";
+import type { ProductOperationPipeline } from "./product-operation-pipeline.js";
 import type { RunnerResult } from "./runner-result.js";
 
 export interface ProcessingRunnerRepositories {
@@ -19,6 +20,7 @@ export class ProcessingRunner {
     private readonly repositories: ProcessingRunnerRepositories,
     private readonly unitOfWork: UnitOfWork,
     private readonly processors: SourceProcessorRegistry,
+    private readonly operations: ProductOperationPipeline,
     private readonly mappings: ReferenceMappingService,
   ) {}
 
@@ -29,7 +31,24 @@ export class ProcessingRunner {
     if (source === null) throw new EntityNotFoundError("Source", product.sourceId);
     const parts = await this.repositories.sourceProducts.listParts(product.id);
     const processor = this.processors.get(source.code);
-    const inputHash = hashStableJson({ processorVersion: processor.version, parts: parts.map((part) => ({ partKey: part.partKey, contentHash: part.contentHash })).sort((a, b) => a.partKey.localeCompare(b.partKey)) });
+    const inputHash = hashStableJson({
+      processorVersion: processor.version,
+      operations: this.operations.fingerprint(source.code),
+      source: { code: source.code, config: source.config },
+      sourceProduct: {
+        sourceKey: product.sourceKey,
+        externalId: product.externalId,
+        slug: product.slug,
+        url: product.url,
+        metadata: product.discoveryMetadata,
+      },
+      parts: parts
+        .map((part) => ({
+          partKey: part.partKey,
+          contentHash: part.contentHash,
+        }))
+        .sort((a, b) => a.partKey.localeCompare(b.partKey)),
+    });
     const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
     if (!payload.force && existing?.inputHash === inputHash) return { status: "skipped" };
 
@@ -39,9 +58,10 @@ export class ProcessingRunner {
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
     const partDtos: SourceProductPartDTO[] = parts.map((part) => ({ partKey: part.partKey, rawPayload: part.rawPayload, parsedPayload: part.parsedPayload,
       ...(part.sourceUpdatedAt === null ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), adapterVersion: part.adapterVersion }));
-    const data = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos,
+    const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos,
       references: { resolveReference: (input) => this.mappings.resolveSourceValue(source.id, input.referenceType, input.scope, input.sourceValue) } });
-    if (data.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
+    if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
+    const data = await this.operations.run(baseProduct, { source: sourceDto, sourceProduct: productDto });
     const contentHash = hashStableJson(data as unknown as JsonValue);
     const targets = await this.repositories.targets.listEnabled();
     await this.unitOfWork.transaction(async (repositories) => {

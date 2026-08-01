@@ -3,5 +3,6 @@ export * from "./export-runner.js";
 export * from "./job-dispatcher.js";
 export * from "./job-payloads.js";
 export * from "./processing-runner.js";
+export * from "./product-operation-pipeline.js";
 export * from "./runner-result.js";
 export * from "./worker.js";

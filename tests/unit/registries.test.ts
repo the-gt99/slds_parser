@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type {
+  ProductOperation,
   SourceAdapter,
   SourceProcessor,
   TargetExporter,
@@ -12,6 +13,7 @@ import {
   ProcessorNotRegisteredError,
 } from "../../src/core/errors/index.js";
 import {
+  ProductOperationRegistry,
   SourceAdapterRegistry,
   SourceProcessorRegistry,
   TargetExporterRegistry,
@@ -37,8 +39,14 @@ const exporter: TargetExporter = {
   export: vi.fn(),
 };
 
+const operation: ProductOperation = {
+  code: "operation",
+  version: "1.0.0",
+  execute: vi.fn(),
+};
+
 describe("component registries", () => {
-  it("registers the GOAT adapter and processor in bootstrap", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, exporters }); expect(adapters.get("goat").code).toBe("goat"); expect(processors.get("goat").sourceCode).toBe("goat"); });
+  it("registers the GOAT adapter and processor in bootstrap", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const operations = new ProductOperationRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, operations, exporters }); expect(adapters.get("goat").code).toBe("goat"); expect(processors.get("goat").sourceCode).toBe("goat"); expect(operations.listForSource("goat")).toEqual([]); });
   it("registers and returns implementations by their own code", () => {
     const adapterRegistry = new SourceAdapterRegistry();
     const processorRegistry = new SourceProcessorRegistry();
@@ -92,6 +100,16 @@ describe("component registries", () => {
     registry.register(exporter);
 
     expect(() => registry.register({ ...exporter })).toThrow(
+      DuplicateRegistrationError,
+    );
+  });
+
+  it("rejects a duplicate product operation code", () => {
+    const registry = new ProductOperationRegistry();
+
+    registry.register(operation);
+
+    expect(() => registry.register({ ...operation })).toThrow(
       DuplicateRegistrationError,
     );
   });

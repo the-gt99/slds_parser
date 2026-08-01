@@ -1,4 +1,5 @@
 export type {
+  ProductOperation,
   SourceAdapter,
   SourceProcessor,
   TargetExporter,
@@ -22,6 +23,7 @@ export type {
   JsonValue,
   MoneyDTO,
   ProcessingContext,
+  ProductOperationContext,
   ProductImageDTO,
   ProductSizeDTO,
   ProductVariantDTO,

@@ -5,7 +5,9 @@ import type {
   DiscoveryResult,
   ExportContext,
   ExportResult,
+  JsonValue,
   ProcessingContext,
+  ProductOperationContext,
   UniversalProductDTO,
 } from "./products.js";
 
@@ -20,6 +22,19 @@ export interface SourceProcessor {
   readonly sourceCode: string;
   readonly version: string;
   process(context: ProcessingContext): Promise<UniversalProductDTO>;
+}
+
+export interface ProductOperation {
+  readonly code: string;
+  readonly version: string;
+  /** Omit to run the operation for every source. */
+  readonly sourceCodes?: readonly string[];
+  /** Non-secret settings that affect the result and must invalidate cached processing. */
+  readonly configurationFingerprint?: JsonValue;
+  execute(
+    product: UniversalProductDTO,
+    context: ProductOperationContext,
+  ): Promise<UniversalProductDTO>;
 }
 
 export interface TargetExporter {

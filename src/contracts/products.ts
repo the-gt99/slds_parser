@@ -108,6 +108,11 @@ export interface ProcessingContext {
   readonly references: SourceReferenceResolver;
 }
 
+export interface ProductOperationContext {
+  readonly source: SourceDTO;
+  readonly sourceProduct: SourceProductDTO;
+}
+
 export interface MoneyDTO {
   /** Decimal value, for example "1499.90". */
   readonly amount: string;
