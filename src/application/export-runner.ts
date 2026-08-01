@@ -39,8 +39,14 @@ export class ExportRunner {
         status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date().toISOString() });
       return { status: "completed" };
     } catch (error) {
-      await this.repositories.targets.saveExportFailure({ targetId: target.id, internalProductId: internal.id, status: "failed",
-        error: error instanceof Error ? error.message : String(error), attemptedAt });
+      try {
+        await this.repositories.targets.saveExportFailure({ targetId: target.id, internalProductId: internal.id, status: "failed",
+          error: error instanceof Error ? error.message : String(error), attemptedAt });
+      } catch (saveError) {
+        if (error instanceof Error && error.cause === undefined) {
+          Object.defineProperty(error, "cause", { value: saveError, configurable: true });
+        }
+      }
       throw error;
     }
   }

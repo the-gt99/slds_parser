@@ -12,6 +12,7 @@ export interface WorkerOptions {
 }
 
 export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
+export type WorkerLogger = (message: string) => void;
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -33,7 +34,8 @@ function errorText(error: unknown): string {
 export class Worker {
   constructor(private readonly jobs: JobRepository, private readonly dispatcher: JobHandler,
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
-    private readonly currentTime: () => number = Date.now) {}
+    private readonly currentTime: () => number = Date.now,
+    private readonly logError: WorkerLogger = console.error) {}
 
   async processNext(): Promise<boolean> {
     const job = await this.jobs.claimNext(this.options.workerId, this.options.lockTimeoutMs);
@@ -50,8 +52,8 @@ export class Worker {
         if (error instanceof PermanentError || !(error instanceof RetryableError) || job.attempts >= this.options.maxJobAttempts) {
           try {
             await this.dispatcher.handleTerminalFailure(job, error);
-          } catch {
-            // The job is already terminal; a cleanup failure must not run it again.
+          } catch (cleanupError) {
+            this.logError(`Terminal cleanup failed for job ${job.id}: ${errorText(cleanupError)}`);
           }
         }
       }

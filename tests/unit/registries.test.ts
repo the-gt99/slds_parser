@@ -16,6 +16,7 @@ import {
   SourceProcessorRegistry,
   TargetExporterRegistry,
 } from "../../src/core/registry/index.js";
+import { registerPipelineComponents } from "../../src/bootstrap.js";
 
 const adapter: SourceAdapter = {
   code: "source",
@@ -37,6 +38,7 @@ const exporter: TargetExporter = {
 };
 
 describe("component registries", () => {
+  it("registers the GOAT adapter and processor in bootstrap", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, exporters }); expect(adapters.get("goat").code).toBe("goat"); expect(processors.get("goat").sourceCode).toBe("goat"); });
   it("registers and returns implementations by their own code", () => {
     const adapterRegistry = new SourceAdapterRegistry();
     const processorRegistry = new SourceProcessorRegistry();

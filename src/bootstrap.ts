@@ -2,16 +2,18 @@ import { CollectionRunner, ExportRunner, JobDispatcher, ProcessingRunner, Worker
 import { loadWorkerConfig, type WorkerEnvironment } from "./config/index.js";
 import { SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { GoatSourceAdapter, GoatSourceProcessor } from "./integrations/index.js";
 import { ReferenceMappingService } from "./services/index.js";
 
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment;
 
-export function registerPipelineComponents(_registries: {
+export function registerPipelineComponents(registries: {
   readonly adapters: SourceAdapterRegistry;
   readonly processors: SourceProcessorRegistry;
   readonly exporters: TargetExporterRegistry;
 }): void {
-  // GOAT and WordPress integrations are intentionally not registered yet.
+  registries.adapters.register(GoatSourceAdapter.create());
+  registries.processors.register(new GoatSourceProcessor());
 }
 
 export function createApplication(environment: ApplicationEnvironment = process.env) {

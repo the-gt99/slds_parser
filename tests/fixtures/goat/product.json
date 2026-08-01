@@ -1,0 +1,17 @@
+{
+  "id": "product-100",
+  "slug": "test-shirt",
+  "name": "Test Shirt",
+  "sku": "TS-100",
+  "description": "Sanitized fixture product",
+  "brandName": "Example Brand",
+  "gender": "unisex",
+  "color": "blue",
+  "productCategory": "apparel",
+  "productType": "tops",
+  "taxonomyLevel1": "Apparel",
+  "taxonomyLevel2": "Tops",
+  "sizeType": "clothing",
+  "sizeUnit": "standard",
+  "images": ["https://image.example/shirt.jpg"]
+}

@@ -143,7 +143,7 @@ export interface ProductVariantDTO {
   readonly sourceVariantKey: string;
   readonly sku: string;
   readonly size: ProductSizeDTO;
-  readonly price: MoneyDTO;
+  readonly price: MoneyDTO | null;
   readonly inventory: InventoryDTO;
   readonly conditionReferenceId: EntityId | null;
   readonly attributes: JsonObject;

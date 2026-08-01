@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
+    "goat:enqueue-smoke": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-smoke.ts",
     "worker": "node --env-file-if-exists=.env --import tsx src/cli/worker.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
@@ -23,6 +24,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "saxes": "^6.0.0"
   }
 }

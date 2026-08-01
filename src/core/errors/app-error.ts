@@ -30,8 +30,8 @@ export class EntityNotFoundError extends PermanentError {
 }
 
 export class IntegrationContractError extends PermanentError {
-  constructor(message: string) {
-    super(message, { code: "INTEGRATION_CONTRACT" });
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, { code: "INTEGRATION_CONTRACT", ...options });
   }
 }
 

@@ -64,6 +64,13 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toMatch(/WHERE enabled = TRUE ORDER BY id/);
   });
 
+  it("upserts a source definition by code", async () => {
+    const executor = new FakeExecutor([[sourceRow]]);
+    await new PostgresSourceRepository(executor).upsertDefinition({ code: "supplier", name: "Supplier", adapterCode: "adapter", config: { pageSize: 10 }, enabled: true });
+    expect(executor.calls[0]?.text).toContain("ON CONFLICT (code) DO UPDATE");
+    expect(executor.calls[0]?.values).toEqual(["supplier", "Supplier", "adapter", { pageSize: 10 }, true]);
+  });
+
   it("increments source run page counters", async () => {
     const executor = new FakeExecutor([[{
       id: "1", source_id: "2", run_type: "full", coverage: "all", status: "running", completeness: "partial", checkpoint: {}, processed_count: "3", discovered_count: "2", error_count: "1", started_at: new Date(), finished_at: null, last_error: null,
@@ -79,6 +86,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const result = await new PostgresSourceProductRepository(executor).upsertPart({ sourceProductId: "10", partKey: "details", rawPayload: {}, parsedPayload: {}, contentHash: "hash", fetchedAt: "2026-02-01T00:00:00.000Z", adapterVersion: "1" });
     expect(result.changed).toBe(changed);
     expect(executor.calls[0]?.text).toContain("pg_advisory_xact_lock");
+    expect(executor.calls[0]?.text).toContain("source_product_id = $1::bigint");
+    expect(executor.calls[0]?.values.slice(2, 4)).toEqual(["{}", "{}"]);
     expect(executor.calls[0]?.text).toContain("previous.content_hash IS DISTINCT FROM $5");
   });
 

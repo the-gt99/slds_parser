@@ -9,7 +9,8 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - PostgreSQL repositories и `PostgresUnitOfWork` для атомарных операций;
 - `ReferenceMappingService` со строгим разрешением заранее подтверждённых mappings;
 - типизированные прикладные ошибки, реестры компонентов и стабильное SHA-256-хэширование;
-- unit-тесты на Vitest, не требующие запущенного PostgreSQL.
+- первый вертикальный срез GOAT: sitemap, карточка, offers и `UniversalProductDTO`;
+- unit-тесты на Vitest, не требующие запущенного PostgreSQL или сети.
 
 ## Конвейер
 
@@ -40,9 +41,48 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 Внешний экспорт нельзя атомарно объединить с PostgreSQL. Поэтому `TargetExporter` обязан быть идемпотентным: внешний запрос мог завершиться успешно до сбоя сохранения результата. Export fingerprint учитывает content hash товара, версию exporter, конфигурацию target и revision mappings.
 
+## GOAT
+
+GOAT discovery читает `https://www.goat.com/sitemap`, отбирает только дочерние sitemap для sneakers и apparel и сохраняет slug, URL, маршрут, `lastmod`, заголовок и изображения. HTML карточек не разбирается. Сбор товара сохраняет две части:
+
+- `product` — полный JSON карточки и проверенное представление полей товара;
+- `offers` — полный JSON buy bar и проверенный массив предложений с рынком.
+
+Процессор сохраняет размеры строками, состояния товара и коробки, наличие, основную, Instant Ship и last sold цены. Отсутствующая сумма остаётся `null`, cents преобразуются в decimal-строку без float.
+
+Транспорт требует curl-impersonate и не подменяет его системным curl. На Linux укажите путь к `curl_chrome116`. На Windows можно указать исполняемый файл или `.ps1` wrapper, который запускает curl-impersonate. Старый `.cmd` поддерживается через соседний `goat-curl.ps1`, чтобы URL с несколькими query-параметрами не разбирался командной оболочкой. Пример настройки:
+
+```dotenv
+GOAT_CLI_CURL_BIN=C:\path\to\goat-curl.cmd
+GOAT_COOKIE_JAR_PATH=/mnt/c/path/to/goat-cookie-jar.txt
+GOAT_PROXY_HTTP=
+GOAT_PROXY_SOCKS5=
+GOAT_CF_CLEARANCE=
+GOAT_HTTP_TIMEOUT_MS=25000
+GOAT_MAX_RESPONSE_BYTES=10485760
+GOAT_SESSION_TTL_MS=600000
+GOAT_SMOKE_PRODUCT_LIMIT=1
+```
+
+HTTP и SOCKS5 proxy взаимоисключающие. Реальные proxy credentials и cookies должны находиться только в gitignored `.env`. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
+
+Путь `GOAT_COOKIE_JAR_PATH` должен быть понятен самому curl-процессу: для Windows wrapper, запускающего бинарник через WSL, используйте путь `/mnt/c/...`; для нативного Windows-бинарника — обычный Windows path.
+
+Для безопасной живой проверки задайте `GOAT_SMOKE_PRODUCT_LIMIT` от 1 до 100, затем выполните:
+
+```text
+npm run db:migrate
+npm run goat:enqueue-smoke
+npm run worker
+```
+
+CLI создаёт или обновляет source `goat`, записывает лимит в его config и ставит одну discovery-задачу. Не запускайте smoke-команду без лимита; обычный адаптер без `maxProductsPerRun` рассчитан на полный каталог.
+
+Пока не реализованы mappings классификации GOAT, ETag/304, подтверждение удаления исчезнувших товаров и отдельное частое расписание обновления offers. WordPress и exporters отсутствуют, поэтому GOAT-проход заканчивается в `internal_products` и не создаёт export jobs.
+
 ## Расширение
 
-Новый источник подключается реализациями `SourceAdapter` и `SourceProcessor`, после чего обе явно регистрируются в `registerPipelineComponents` в `src/bootstrap.ts`. Новый target подключается реализацией `TargetExporter` и регистрацией там же. Реестры пока намеренно пусты: GOAT и WordPress не реализованы.
+Новый источник подключается реализациями `SourceAdapter` и `SourceProcessor`, после чего обе явно регистрируются в `registerPipelineComponents` в `src/bootstrap.ts`. Новый target подключается реализацией `TargetExporter` и регистрацией там же.
 
 ## PostgreSQL-схема
 
@@ -84,6 +124,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 - `npm run dev` — запуск точки входа через `tsx` в watch-режиме;
 - `npm run db:migrate` — применить PostgreSQL-миграции;
+- `npm run goat:enqueue-smoke` — создать ограниченный GOAT source и поставить discovery-задачу;
 - `npm run worker` — запустить единый worker; `SIGINT` и `SIGTERM` корректно останавливают цикл и закрывают Pool;
 - `npm run typecheck` — проверить типы;
 - `npm test` — однократно запустить unit-тесты;

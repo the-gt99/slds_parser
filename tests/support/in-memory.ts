@@ -30,6 +30,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
     sources: {
       getById: async (id) => store.sources.get(id) ?? null,
       listEnabled: async () => [...store.sources.values()].filter((item) => item.enabled),
+      upsertDefinition: async (input) => { const old = [...store.sources.values()].find((item) => item.code === input.code); const record: SourceRecord = { id: old?.id ?? store.id(), code: input.code, name: input.name, adapterCode: input.adapterCode, config: input.config, enabled: input.enabled, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.sources.set(record.id, record); return record; },
     },
     sourceRuns: {
       findActiveBySource: async (sourceId) => [...store.runs.values()].find((run) => run.sourceId === sourceId && run.status === "running") ?? null,
