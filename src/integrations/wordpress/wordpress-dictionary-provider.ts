@@ -98,6 +98,8 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
         source_value: input.sourceValue,
         donor_id: input.sourceCode,
         mapping_id: input.requestReference,
+        ...(input.slug === undefined ? {} : { slug: input.slug }),
+        ...(input.parentExternalId === undefined ? {} : { parent_target_id: input.parentExternalId }),
       }),
     });
     return remoteValue(response.term, input.entityType);

@@ -118,7 +118,10 @@ export class ClassifierAdminService {
     return this.adminRepository.listReferenceValues(typeCode, search, limit);
   }
 
-  saveDecision(command: ClassificationDecisionCommand): Promise<SaveClassificationDecisionResult> {
+  saveDecision(
+    command: ClassificationDecisionCommand,
+    actor = this.actor,
+  ): Promise<SaveClassificationDecisionResult> {
     validateText(command.sourceId, "sourceId", 64);
     validateText(command.scope, "scope", 200);
     validateText(command.normalizedSourceValue, "normalizedSourceValue", 1_000);
@@ -132,7 +135,7 @@ export class ClassifierAdminService {
       ...(command.action === "confirm" && command.referenceValueId === undefined && command.targetLink !== undefined
         ? { generatedReferenceCode: `ref-${randomUUID()}` }
         : {}),
-      actor: this.actor,
+      actor,
     });
   }
 
@@ -218,12 +221,12 @@ export class ClassifierAdminService {
     };
   }
 
-  async createRule(draft: ClassificationRuleDraft) {
+  async createRule(draft: ClassificationRuleDraft, actor = this.actor) {
     const preview = await this.previewRule(draft);
     const result = await this.adminRepository.createRule({
       ...draft,
       name: draft.name.trim(),
-      actor: this.actor,
+      actor,
       affectedSourceProductIds: preview.affectedSourceProductIds,
     });
     return { ...result, preview };

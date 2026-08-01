@@ -16,7 +16,19 @@ describe("HTTP config", () => {
 
   it("requires a sufficiently long admin token", () => {
     expect(() => loadAdminApiConfig({})).toThrow("PARSER_ADMIN_TOKEN");
-    expect(loadAdminApiConfig({ PARSER_ADMIN_TOKEN: "a".repeat(32) })).toEqual({ token: "a".repeat(32) });
+    expect(loadAdminApiConfig({
+      PARSER_ADMIN_TOKEN: "a".repeat(32),
+      PARSER_ADMIN_USERNAME: "admin",
+      PARSER_ADMIN_PASSWORD: "password-long-enough",
+      PARSER_SESSION_SECRET: "s".repeat(32),
+      PARSER_WORDPRESS_CREATE_PASSWORD: "wordpress-password",
+    })).toEqual({
+      token: "a".repeat(32),
+      username: "admin",
+      password: "password-long-enough",
+      sessionSecret: "s".repeat(32),
+      wordpressCreatePassword: "wordpress-password",
+    });
   });
 
   it("keeps WordPress integration disabled unless its complete configuration is present", () => {

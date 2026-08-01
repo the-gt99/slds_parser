@@ -5,6 +5,7 @@ import type {
   TargetDictionaryValueInput,
   TargetDictionaryValueRecord,
   TargetRecord,
+  StartTargetTermCreationInput,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
 import { requireRow } from "./repository-utils.js";
@@ -116,6 +117,57 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
     return withClient(this.pool, async (client) => {
       const result = await this.upsertMany(client, targetId, entityType, [value]);
       return mapDictionaryValue(requireRow(result.rows, "target dictionary value", value.externalId));
+    });
+  }
+
+  async startTermCreation(input: StartTargetTermCreationInput): Promise<string> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `INSERT INTO target_term_creation_history (
+           target_id, source_id, observation_id, entity_type, requested_name,
+           requested_slug, requested_parent_external_id, status, actor
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8)
+         RETURNING id`,
+        [
+          input.targetId,
+          input.sourceId,
+          input.observationId,
+          input.entityType,
+          input.name,
+          input.slug ?? null,
+          input.parentExternalId ?? null,
+          input.actor,
+        ],
+      );
+      return String(requireRow(result.rows, "target term creation", input.name).id);
+    });
+  }
+
+  async completeTermCreation(id: string, externalId: string): Promise<void> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE target_term_creation_history
+         SET status = 'completed', external_id = $2, error = NULL,
+             finished_at = NOW()
+         WHERE id = $1 AND status = 'running'
+         RETURNING id`,
+        [id, externalId],
+      );
+      requireRow(result.rows, "target term creation", id);
+    });
+  }
+
+  async failTermCreation(id: string, error: string, externalId?: string): Promise<void> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE target_term_creation_history
+         SET status = 'failed', external_id = $3, error = $2,
+             finished_at = NOW()
+         WHERE id = $1 AND status = 'running'
+         RETURNING id`,
+        [id, error, externalId ?? null],
+      );
+      requireRow(result.rows, "target term creation", id);
     });
   }
 

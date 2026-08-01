@@ -54,7 +54,7 @@ async function main(): Promise<void> {
       providers,
       classifier,
     );
-    server = createHttpServer({ database: pool, adminToken: admin.token, classifier, targetDictionaries });
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

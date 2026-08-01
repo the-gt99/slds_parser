@@ -25,6 +25,8 @@ export interface CreateTargetTermInput {
   readonly sourceValue: string;
   readonly sourceCode: string;
   readonly requestReference: string;
+  readonly slug?: string;
+  readonly parentExternalId?: string;
 }
 
 export interface TargetDictionaryProvider {
@@ -49,5 +51,9 @@ export class TargetDictionaryProviderRegistry {
     const provider = this.providers.get(code);
     if (provider === undefined) throw new IntegrationContractError(`Target dictionary provider is not configured: ${code}`);
     return provider;
+  }
+
+  find(code: string): TargetDictionaryProvider | null {
+    return this.providers.get(code) ?? null;
   }
 }

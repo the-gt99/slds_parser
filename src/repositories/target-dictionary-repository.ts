@@ -4,6 +4,7 @@ import type {
   TargetDictionaryValueInput,
   TargetDictionaryValueRecord,
   TargetRecord,
+  StartTargetTermCreationInput,
 } from "./types.js";
 
 export interface TargetDictionaryRepository {
@@ -19,4 +20,7 @@ export interface TargetDictionaryRepository {
     entityType: string,
     value: TargetDictionaryValueInput,
   ): Promise<TargetDictionaryValueRecord>;
+  startTermCreation(input: StartTargetTermCreationInput): Promise<EntityId>;
+  completeTermCreation(id: EntityId, externalId: string): Promise<void>;
+  failTermCreation(id: EntityId, error: string, externalId?: string): Promise<void>;
 }

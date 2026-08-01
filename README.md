@@ -173,7 +173,9 @@ CLI создаёт или обновляет source `goat`, записывает
 
 API запускается отдельным процессом после `npm run build` и по умолчанию слушает только `127.0.0.1:3000`. Адрес и порт задаются через `PARSER_HTTP_HOST` и `PARSER_HTTP_PORT`. `GET /api/health` выполняет `SELECT 1`: при доступной PostgreSQL возвращает `200` и `{"status":"ok"}`, при недоступной — `503` и `{"status":"unavailable"}`. Ответ не содержит версий, настроек и деталей ошибки подключения.
 
-Управляющие маршруты требуют `Authorization: Bearer <PARSER_ADMIN_TOKEN>`. Токен короче 32 символов не принимается. Health endpoint остаётся публичным.
+Интерфейс классификатора доступен по `/` и `/classifier`. Для входа используются `PARSER_ADMIN_USERNAME` и `PARSER_ADMIN_PASSWORD`; браузерная сессия подписывается `PARSER_SESSION_SECRET`, хранится в защищённой HttpOnly-cookie и действует 12 часов. Все изменения из браузера защищены CSRF-токеном. Для автоматизации API также принимает `Authorization: Bearer <PARSER_ADMIN_TOKEN>`. Токен и секрет сессии короче 32 символов, а пароль короче 12 символов не принимаются. Health endpoint остаётся публичным.
+
+Создание записей WordPress требует отдельного `PARSER_WORDPRESS_CREATE_PASSWORD`. После повторного подтверждения оператор получает право `wordpress:create` на 10 минут. При работе через bearer-токен этот пароль передаётся в `X-WordPress-Create-Token`. Если переменная не задана, создание отключено, но просмотр, синхронизация и обычное сопоставление продолжают работать.
 
 Маршруты классификатора:
 
@@ -186,6 +188,8 @@ API запускается отдельным процессом после `npm
 - `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
 - `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.
 
-WordPress-адаптер включается только когда одновременно заданы `PARSER_WORDPRESS_BASE_URL` и `PARSER_WORDPRESS_AUTH_TOKEN`. Target выбирает его через `exporter_code = 'wordpress'` либо `config.dictionaryProviderCode = 'wordpress'`. Адаптер читает `brands`, `models`, `tags`, `sizes`, `shoe_heights`, `product_categories`; создание доступно только для брендов, моделей, тегов и категорий. Пароль/токен WordPress в таблицах не хранится.
+WordPress-адаптер включается только когда одновременно заданы `PARSER_WORDPRESS_BASE_URL` и `PARSER_WORDPRESS_AUTH_TOKEN`. Target выбирает его через `exporter_code = 'wordpress'` либо `config.dictionaryProviderCode = 'wordpress'`. В `target.config.dictionaryEntityMap` задаётся универсальное сопоставление типов классификатора с сущностями target, например `{"brand":"brands","model":"models","category":"product_categories","tag":"tags"}`. При необходимости `target.config.targetScopeMap` преобразует универсальные scope в scope конкретного target. Классификатор не содержит названий полей GOAT или WordPress.
+
+Адаптер читает `brands`, `models`, `tags`, `sizes`, `shoe_heights`, `product_categories`; создание доступно только для брендов, моделей, тегов и категорий. При создании можно явно передать slug, а для категории — родительский term ID. Повторная проверка имени и slug выполняется на стороне WordPress непосредственно перед `wp_insert_term`. Каждая попытка записывается в `target_term_creation_history` с оператором, результатом и ID созданного или найденного термина. Пароли и токены WordPress в таблицах не хранятся.
 
 Процесс корректно закрывает HTTP-сервер и PostgreSQL pool по `SIGINT` и `SIGTERM`. Для production API следует запускать как отдельную службу за reverse proxy, не открывая внутренний порт наружу.

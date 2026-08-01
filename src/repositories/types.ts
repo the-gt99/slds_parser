@@ -467,3 +467,14 @@ export interface TargetDictionaryQuery {
   readonly limit: number;
   readonly offset: number;
 }
+
+export interface StartTargetTermCreationInput {
+  readonly targetId: EntityId;
+  readonly sourceId: EntityId;
+  readonly observationId: EntityId;
+  readonly entityType: string;
+  readonly name: string;
+  readonly slug?: string;
+  readonly parentExternalId?: string;
+  readonly actor: string;
+}

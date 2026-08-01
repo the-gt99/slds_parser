@@ -18,6 +18,8 @@ export interface CreateTargetTermCommand extends ClassificationDecisionKey {
   readonly targetScope: string;
   readonly entityType: string;
   readonly name: string;
+  readonly slug?: string;
+  readonly parentExternalId?: string;
   readonly reason?: string;
 }
 
@@ -49,8 +51,21 @@ export class TargetDictionaryService {
     private readonly classifier: ClassifierAdminService,
   ) {}
 
-  listTargets() {
-    return this.repository.listTargets();
+  async listTargets() {
+    const targets = await this.repository.listTargets();
+    return targets.map((target) => {
+      const code = providerCode(target.config, target.exporterCode);
+      const provider = this.providers.find(code);
+      return {
+        ...target,
+        dictionary: {
+          providerCode: code,
+          configured: provider !== null,
+          supportedEntityTypes: provider?.supportedEntityTypes ?? [],
+          creatableEntityTypes: provider?.creatableEntityTypes ?? [],
+        },
+      };
+    });
   }
 
   listValues(query: TargetDictionaryQuery) {
@@ -82,13 +97,23 @@ export class TargetDictionaryService {
     return { targetId, counts };
   }
 
-  async createTermAndDecide(command: CreateTargetTermCommand) {
+  async createTermAndDecide(command: CreateTargetTermCommand, actor = "admin-api") {
     const name = command.name.trim();
     if (name === "" || name.length > 200) {
       throw new IntegrationContractError("name must contain from 1 to 200 characters");
     }
     if (command.targetScope.trim() === "") {
       throw new IntegrationContractError("targetScope is required");
+    }
+    if (command.slug !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(command.slug)) {
+      throw new IntegrationContractError("slug must contain lowercase Latin letters, digits and hyphens");
+    }
+    if (command.parentExternalId !== undefined
+      && (!/^\d+$/u.test(command.parentExternalId) || BigInt(command.parentExternalId) <= 0n)) {
+      throw new IntegrationContractError("parentExternalId must be a positive integer");
+    }
+    if (command.parentExternalId !== undefined && command.entityType !== "product_categories") {
+      throw new IntegrationContractError("parentExternalId is supported only for product_categories");
     }
     const [{ provider }, decisionContext] = await Promise.all([
       this.resolveTarget(command.targetId),
@@ -101,33 +126,58 @@ export class TargetDictionaryService {
       throw new IntegrationContractError(`Creating ${command.entityType} terms is not supported by this target`);
     }
 
-    const remote = await provider.createTerm({
+    const auditId = await this.repository.startTermCreation({
+      targetId: command.targetId,
+      sourceId: command.sourceId,
+      observationId: decisionContext.observationId,
       entityType: command.entityType,
       name,
-      sourceValue: decisionContext.sourceValue,
-      sourceCode: decisionContext.sourceCode,
-      requestReference: decisionContext.observationId,
+      ...(command.slug === undefined ? {} : { slug: command.slug }),
+      ...(command.parentExternalId === undefined ? {} : { parentExternalId: command.parentExternalId }),
+      actor,
     });
-    const dictionaryValue = await this.repository.upsertValue(
-      command.targetId,
-      command.entityType,
-      dictionaryInput(remote),
-    );
-    const decision = await this.classifier.saveDecision({
-      sourceId: command.sourceId,
-      typeCode: command.typeCode,
-      scope: command.scope,
-      normalizedSourceValue: command.normalizedSourceValue,
-      contextKey: command.contextKey,
-      action: "confirm",
-      targetLink: {
-        targetId: command.targetId,
-        targetScope: command.targetScope,
-        dictionaryValueId: dictionaryValue.id,
-      },
-      ...(command.reason === undefined ? {} : { reason: command.reason }),
-    });
-    return { dictionaryValue, decision };
+    let remoteExternalId: string | undefined;
+    try {
+      const remote = await provider.createTerm({
+        entityType: command.entityType,
+        name,
+        sourceValue: decisionContext.sourceValue,
+        sourceCode: decisionContext.sourceCode,
+        requestReference: decisionContext.observationId,
+        ...(command.slug === undefined ? {} : { slug: command.slug }),
+        ...(command.parentExternalId === undefined ? {} : { parentExternalId: command.parentExternalId }),
+      });
+      remoteExternalId = remote.externalId;
+      const dictionaryValue = await this.repository.upsertValue(
+        command.targetId,
+        command.entityType,
+        dictionaryInput(remote),
+      );
+      const decision = await this.classifier.saveDecision({
+        sourceId: command.sourceId,
+        typeCode: command.typeCode,
+        scope: command.scope,
+        normalizedSourceValue: command.normalizedSourceValue,
+        contextKey: command.contextKey,
+        action: "confirm",
+        targetLink: {
+          targetId: command.targetId,
+          targetScope: command.targetScope,
+          dictionaryValueId: dictionaryValue.id,
+        },
+        ...(command.reason === undefined ? {} : { reason: command.reason }),
+      }, actor);
+      await this.repository.completeTermCreation(auditId, dictionaryValue.externalId);
+      return { dictionaryValue, decision };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown target term creation error";
+      try {
+        await this.repository.failTermCreation(auditId, message.slice(0, 2_000), remoteExternalId);
+      } catch {
+        // The target error is the primary failure and must remain visible to the operator.
+      }
+      throw error;
+    }
   }
 
   private async resolveTarget(targetId: EntityId): Promise<{ readonly provider: TargetDictionaryProvider }> {

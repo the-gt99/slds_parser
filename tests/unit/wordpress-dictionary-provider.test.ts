@@ -55,6 +55,8 @@ describe("WordPressDictionaryProvider", () => {
       sourceValue: "Nike ACG Pegasus Trail",
       sourceCode: "goat",
       requestReference: "55",
+      slug: "nike-acg-pegasus-trail",
+      parentExternalId: "12",
     });
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -64,6 +66,8 @@ describe("WordPressDictionaryProvider", () => {
       source_value: "Nike ACG Pegasus Trail",
       donor_id: "goat",
       mapping_id: "55",
+      slug: "nike-acg-pegasus-trail",
+      parent_target_id: "12",
     });
   });
 });

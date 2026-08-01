@@ -1,11 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
-
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
 
+import type { AdminApiConfig } from "../config/index.js";
 import { AppError } from "../core/errors/index.js";
 import type {
   ClassificationRuleConditionRecord,
@@ -18,6 +17,8 @@ import type {
   CreateTargetTermCommand,
   TargetDictionaryService,
 } from "../services/index.js";
+import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
+import { registerStaticUi } from "./static-ui.js";
 
 export interface DatabaseHealthClient {
   query(sql: string): Promise<unknown>;
@@ -25,7 +26,7 @@ export interface DatabaseHealthClient {
 
 export interface HttpServerDependencies {
   readonly database: DatabaseHealthClient;
-  readonly adminToken: string;
+  readonly auth: AdminApiConfig;
   readonly classifier: ClassifierAdminService;
   readonly targetDictionaries: TargetDictionaryService;
 }
@@ -48,20 +49,10 @@ interface ReferenceQuery {
 interface TargetParams { readonly targetId: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface SyncBody { readonly entityTypes?: readonly string[] }
+interface LoginBody { readonly username?: unknown; readonly password?: unknown }
+interface WordPressGrantBody { readonly password?: unknown }
 
 class HttpInputError extends Error {}
-
-function safeTokenEquals(expected: string, provided: string): boolean {
-  const left = Buffer.from(expected);
-  const right = Buffer.from(provided);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
-function bearerToken(request: FastifyRequest): string {
-  const header = request.headers.authorization;
-  const match = typeof header === "string" ? /^Bearer\s+(.+)$/iu.exec(header) : null;
-  return match?.[1]?.trim() ?? "";
-}
 
 function positiveInteger(value: string | undefined, fallback: number, maximum: number): number {
   if (value === undefined || value === "") return fallback;
@@ -161,17 +152,41 @@ function targetTermBody(targetId: string, value: unknown): CreateTargetTermComma
     targetScope: requiredString(body.targetScope, "targetScope"),
     entityType: requiredString(body.entityType, "entityType"),
     name: requiredString(body.name, "name"),
+    ...(optionalString(body.slug) === undefined ? {} : { slug: optionalString(body.slug)! }),
+    ...(optionalString(body.parentExternalId) === undefined
+      ? {}
+      : { parentExternalId: entityId(body.parentExternalId, "parentExternalId") }),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
 }
 
 export function createHttpServer(dependencies: HttpServerDependencies): FastifyInstance {
   const server = Fastify({ logger: true });
+  const auth = new AdminAuth(dependencies.auth);
+  const authContexts = new WeakMap<FastifyRequest, AdminAuthContext>();
   const requireAdmin = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    if (!safeTokenEquals(dependencies.adminToken, bearerToken(request))) {
+    const context = auth.authenticate(request);
+    if (context === null) {
       await reply.code(401).send({ error: "unauthorized" });
+      return;
+    }
+    authContexts.set(request, context);
+  };
+  const requireMutationAccess = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const context = authContexts.get(request);
+    if (context === undefined || !auth.csrfMatches(request, context)) {
+      await reply.code(403).send({ error: "csrf_failed" });
     }
   };
+  const requireWordPressCreate = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const context = authContexts.get(request);
+    if (context === undefined || !auth.hasWordPressCreate(request, context)) {
+      await reply.code(403).send({ error: "wordpress_create_permission_required" });
+    }
+  };
+  const actor = (request: FastifyRequest): string => authContexts.get(request)?.operator ?? "unknown";
+
+  registerStaticUi(server);
 
   server.setErrorHandler((error, request, reply) => {
     if (!(error instanceof Error)) {
@@ -202,6 +217,47 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     }
   });
 
+  server.get("/api/auth/session", async (request) => {
+    const context = auth.authenticate(request);
+    return context === null
+      ? { authenticated: false, wordpressCreateConfigured: auth.wordpressCreateConfigured() }
+      : {
+          authenticated: true,
+          operator: context.operator,
+          csrfToken: context.csrf,
+          wordpressCreateAllowed: auth.hasWordPressCreate(request, context),
+          wordpressCreateConfigured: auth.wordpressCreateConfigured(),
+        };
+  });
+
+  server.post<{ Body: LoginBody }>("/api/auth/login", async (request, reply) => {
+    const username = requiredString(request.body?.username, "username");
+    const password = requiredString(request.body?.password, "password");
+    const result = auth.login(username, password, reply);
+    if (result === null) return reply.code(401).send({ error: "invalid_credentials" });
+    return { authenticated: true, operator: result.operator, csrfToken: result.csrf };
+  });
+
+  server.post(
+    "/api/auth/logout",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (_request, reply) => {
+      auth.logout(reply);
+      return { authenticated: false };
+    },
+  );
+
+  server.post<{ Body: WordPressGrantBody }>(
+    "/api/auth/wordpress-create",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request, reply) => {
+      const password = requiredString(request.body?.password, "password");
+      const result = auth.grantWordPressCreate(request, password, reply);
+      if (result === null) return reply.code(403).send({ error: "invalid_wordpress_create_credentials" });
+      return { allowed: true, expiresIn: result.expiresIn };
+    },
+  );
+
   server.get<{ Querystring: QueueQuery }>("/api/classifier/queue", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);
     if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
@@ -226,16 +282,16 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     return { items: await dependencies.classifier.listReferenceValues(typeCode, request.query.search, limit) };
   });
 
-  server.post("/api/classifier/decisions", { preHandler: requireAdmin }, async (request) => ({
-    decision: await dependencies.classifier.saveDecision(decisionBody(request.body)),
+  server.post("/api/classifier/decisions", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    decision: await dependencies.classifier.saveDecision(decisionBody(request.body), actor(request)),
   }));
 
-  server.post("/api/classifier/rules/preview", { preHandler: requireAdmin }, async (request) => ({
+  server.post("/api/classifier/rules/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
     preview: await dependencies.classifier.previewRule(ruleBody(request.body)),
   }));
 
-  server.post("/api/classifier/rules", { preHandler: requireAdmin }, async (request, reply) => reply.code(201).send({
-    rule: await dependencies.classifier.createRule(ruleBody(request.body)),
+  server.post("/api/classifier/rules", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
+    rule: await dependencies.classifier.createRule(ruleBody(request.body), actor(request)),
   }));
 
   server.get("/api/targets", { preHandler: requireAdmin }, async () => ({
@@ -262,7 +318,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
 
   server.post<{ Params: TargetParams; Body: SyncBody }>(
     "/api/targets/:targetId/dictionary/sync",
-    { preHandler: requireAdmin },
+    { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => ({
       sync: await dependencies.targetDictionaries.sync(entityId(request.params.targetId, "targetId"), request.body?.entityTypes),
     }),
@@ -270,9 +326,12 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
 
   server.post<{ Params: TargetParams }>(
     "/api/targets/:targetId/dictionary/terms",
-    { preHandler: requireAdmin },
+    { preHandler: [requireAdmin, requireMutationAccess, requireWordPressCreate] },
     async (request, reply) => reply.code(201).send({
-      result: await dependencies.targetDictionaries.createTermAndDecide(targetTermBody(entityId(request.params.targetId, "targetId"), request.body)),
+      result: await dependencies.targetDictionaries.createTermAndDecide(
+        targetTermBody(entityId(request.params.targetId, "targetId"), request.body),
+        actor(request),
+      ),
     }),
   );
 
