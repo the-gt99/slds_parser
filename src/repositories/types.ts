@@ -320,3 +320,150 @@ export interface RetryJobInput {
   readonly error: string;
   readonly availableAt: Timestamp;
 }
+
+export type ClassificationReviewStatus = "unresolved" | "ambiguous";
+
+export interface ClassificationDecisionKey {
+  readonly sourceId: EntityId;
+  readonly typeCode: string;
+  readonly scope: string;
+  readonly normalizedSourceValue: string;
+  readonly contextKey: string;
+}
+
+export interface ClassificationReviewExample {
+  readonly observationId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly sourceKey: string;
+  readonly title: string | null;
+  readonly sku: string | null;
+  readonly evidence: JsonObject;
+}
+
+export interface ClassificationReviewItem extends ClassificationDecisionKey {
+  readonly sourceCode: string;
+  readonly sourceName: string;
+  readonly typeName: string;
+  readonly sourceValue: string;
+  readonly context: JsonObject;
+  readonly status: ClassificationReviewStatus;
+  readonly issueReason: ClassificationIssueReason | null;
+  readonly observationCount: number;
+  readonly productCount: number;
+  readonly firstSeenAt: Timestamp;
+  readonly lastSeenAt: Timestamp;
+  readonly examples: readonly ClassificationReviewExample[];
+}
+
+export interface ClassificationReviewQuery {
+  readonly sourceId?: EntityId;
+  readonly typeCode?: string;
+  readonly status?: ClassificationReviewStatus;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ClassificationReferenceValueOption {
+  readonly id: EntityId;
+  readonly typeCode: string;
+  readonly code: string;
+  readonly name: string;
+  readonly parentId: EntityId | null;
+  readonly metadata: JsonObject;
+}
+
+export interface ClassificationDecisionTargetLink {
+  readonly targetId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+}
+
+export interface SaveClassificationDecisionInput extends ClassificationDecisionKey {
+  readonly action: "confirm" | "ignore";
+  readonly referenceValueId?: EntityId;
+  readonly targetLink?: ClassificationDecisionTargetLink;
+  readonly generatedReferenceCode?: string;
+  readonly actor: string;
+  readonly reason?: string;
+}
+
+export interface SaveClassificationDecisionResult {
+  readonly mappingId: EntityId;
+  readonly referenceValueId: EntityId | null;
+  readonly revision: string;
+  readonly affectedProductCount: number;
+  readonly affectedExportCount: number;
+}
+
+export interface ClassificationRuleCandidateRecord {
+  readonly observationId: EntityId;
+  readonly sourceId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly sourceKey: string;
+  readonly title: string | null;
+  readonly sku: string | null;
+  readonly candidate: ReferenceCandidateDTO;
+}
+
+export interface CreateClassificationRuleInput {
+  readonly sourceId: EntityId;
+  readonly typeCode: string;
+  readonly name: string;
+  readonly priority: number;
+  readonly conditions: readonly ClassificationRuleConditionRecord[];
+  readonly referenceValueId: EntityId;
+  readonly actor: string;
+  readonly reason?: string;
+  readonly affectedSourceProductIds: readonly EntityId[];
+}
+
+export interface CreateClassificationRuleResult {
+  readonly ruleId: EntityId;
+  readonly revision: string;
+  readonly affectedProductCount: number;
+}
+
+export interface ClassificationDecisionContext extends ClassificationDecisionKey {
+  readonly observationId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceValue: string;
+}
+
+export interface TargetDictionaryValueRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly entityType: string;
+  readonly externalId: string;
+  readonly name: string;
+  readonly slug: string | null;
+  readonly parentExternalId: string | null;
+  readonly taxonomy: string | null;
+  readonly attributeCode: string | null;
+  readonly remoteUpdatedAt: Timestamp | null;
+  readonly syncCursor: string | null;
+  readonly metadata: JsonObject;
+  readonly active: boolean;
+  readonly firstSeenAt: Timestamp;
+  readonly lastSeenAt: Timestamp;
+}
+
+export interface TargetDictionaryValueInput {
+  readonly externalId: string;
+  readonly name: string;
+  readonly slug?: string | null;
+  readonly parentExternalId?: string | null;
+  readonly taxonomy?: string | null;
+  readonly attributeCode?: string | null;
+  readonly remoteUpdatedAt?: Timestamp | null;
+  readonly syncCursor?: string | null;
+  readonly metadata: JsonObject;
+}
+
+export interface TargetDictionaryQuery {
+  readonly targetId: EntityId;
+  readonly entityType: string;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}

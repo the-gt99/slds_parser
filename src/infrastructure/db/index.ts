@@ -11,6 +11,7 @@ export type {
 export { PostgresUnitOfWork } from "./postgres-unit-of-work.js";
 export {
   createPostgresRepositories,
+  PostgresClassificationAdminRepository,
   PostgresClassificationRepository,
   PostgresInternalProductRepository,
   PostgresJobRepository,
@@ -19,4 +20,5 @@ export {
   PostgresSourceRepository,
   PostgresSourceRunRepository,
   PostgresTargetRepository,
+  PostgresTargetDictionaryRepository,
 } from "./repositories/index.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadHttpConfig } from "../../src/config/index.js";
+import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../../src/config/index.js";
 
 describe("HTTP config", () => {
   it("uses loopback and port 3000 by default", () => {
@@ -12,5 +12,19 @@ describe("HTTP config", () => {
 
   it.each(["0", "65536", "1.5", "invalid"])("rejects invalid port %s", (port) => {
     expect(() => loadHttpConfig({ PARSER_HTTP_PORT: port })).toThrow("PARSER_HTTP_PORT");
+  });
+
+  it("requires a sufficiently long admin token", () => {
+    expect(() => loadAdminApiConfig({})).toThrow("PARSER_ADMIN_TOKEN");
+    expect(loadAdminApiConfig({ PARSER_ADMIN_TOKEN: "a".repeat(32) })).toEqual({ token: "a".repeat(32) });
+  });
+
+  it("keeps WordPress integration disabled unless its complete configuration is present", () => {
+    expect(loadWordPressTargetConfig({})).toBeNull();
+    expect(() => loadWordPressTargetConfig({ PARSER_WORDPRESS_BASE_URL: "https://shop.example" })).toThrow("configured together");
+    expect(loadWordPressTargetConfig({
+      PARSER_WORDPRESS_BASE_URL: "https://shop.example/",
+      PARSER_WORDPRESS_AUTH_TOKEN: "token",
+    })).toEqual({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 30000 });
   });
 });

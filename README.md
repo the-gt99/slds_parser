@@ -173,4 +173,19 @@ CLI создаёт или обновляет source `goat`, записывает
 
 API запускается отдельным процессом после `npm run build` и по умолчанию слушает только `127.0.0.1:3000`. Адрес и порт задаются через `PARSER_HTTP_HOST` и `PARSER_HTTP_PORT`. `GET /api/health` выполняет `SELECT 1`: при доступной PostgreSQL возвращает `200` и `{"status":"ok"}`, при недоступной — `503` и `{"status":"unavailable"}`. Ответ не содержит версий, настроек и деталей ошибки подключения.
 
+Управляющие маршруты требуют `Authorization: Bearer <PARSER_ADMIN_TOKEN>`. Токен короче 32 символов не принимается. Health endpoint остаётся публичным.
+
+Маршруты классификатора:
+
+- `GET /api/classifier/queue` — сгруппированные неизвестные и неоднозначные значения с примерами товаров;
+- `GET /api/classifier/reference-values` — поиск внутренних справочных значений;
+- `POST /api/classifier/decisions` — подтвердить либо игнорировать точное source-сопоставление и поставить затронутые товары на повторную обработку;
+- `POST /api/classifier/rules/preview` — проверить область действия правила и возможные конфликты без записи;
+- `POST /api/classifier/rules` — сохранить проверенное правило и точечно переобработать затронутые товары;
+- `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
+- `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
+- `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.
+
+WordPress-адаптер включается только когда одновременно заданы `PARSER_WORDPRESS_BASE_URL` и `PARSER_WORDPRESS_AUTH_TOKEN`. Target выбирает его через `exporter_code = 'wordpress'` либо `config.dictionaryProviderCode = 'wordpress'`. Адаптер читает `brands`, `models`, `tags`, `sizes`, `shoe_heights`, `product_categories`; создание доступно только для брендов, моделей, тегов и категорий. Пароль/токен WordPress в таблицах не хранится.
+
 Процесс корректно закрывает HTTP-сервер и PostgreSQL pool по `SIGINT` и `SIGTERM`. Для production API следует запускать как отдельную службу за reverse proxy, не открывая внутренний порт наружу.

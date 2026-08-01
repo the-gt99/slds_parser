@@ -18,9 +18,15 @@ import type {
   ClassificationRuleRecord,
   ProductClassificationObservationInput,
 } from "../repositories/index.js";
+import {
+  classificationRuleScore,
+  compareClassificationRuleScore,
+  matchesClassificationRule,
+  normalizeClassificationValue,
+} from "./classification-rule-matcher.js";
 
 export function normalizeSourceValue(sourceValue: string): string {
-  return sourceValue.trim().normalize("NFKC").toLowerCase();
+  return normalizeClassificationValue(sourceValue);
 }
 
 interface PreparedCandidate {
@@ -51,64 +57,6 @@ function optionalSubjectKey(candidate: ReferenceCandidateDTO): { readonly subjec
   return candidate.subjectKey === undefined ? {} : { subjectKey: candidate.subjectKey };
 }
 
-function candidateField(candidate: ReferenceCandidateDTO, field: string): string {
-  if (field === "sourceValue") return candidate.sourceValue;
-  if (field === "scope") return candidate.scope;
-  if (field === "subjectKind") return candidate.subjectKind;
-  const separator = field.indexOf(".");
-  if (separator <= 0 || separator === field.length - 1) return "";
-  const container = field.slice(0, separator);
-  const key = field.slice(separator + 1);
-  const values = container === "context" ? candidate.context : container === "evidence" ? candidate.evidence : null;
-  if (values === null) return "";
-  const value = values[key];
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
-}
-
-function matchesCondition(candidate: ReferenceCandidateDTO, condition: ClassificationRuleConditionRecord): boolean {
-  if (!/^(?:sourceValue|scope|subjectKind|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*)$/u.test(condition.field)) {
-    throw new IntegrationContractError(`Invalid classification rule field: ${condition.field}`);
-  }
-  if (condition.value.trim() === "") {
-    throw new IntegrationContractError(`Classification rule value is required for ${condition.field}`);
-  }
-  const actual = candidateField(candidate, condition.field);
-  const expected = condition.value;
-  switch (condition.operator) {
-    case "equals":
-      return normalizeSourceValue(actual) === normalizeSourceValue(expected);
-    case "contains":
-      return normalizeSourceValue(actual).includes(normalizeSourceValue(expected));
-    case "all_words": {
-      const haystack = normalizeSourceValue(actual);
-      const words = normalizeSourceValue(expected).split(/\s+/u).filter(Boolean);
-      return words.length > 0 && words.every((word) => haystack.includes(word));
-    }
-    case "regex": {
-      if (expected.length === 0 || expected.length > 256) {
-        throw new IntegrationContractError("Classification regex must contain from 1 to 256 characters");
-      }
-      try {
-        return new RegExp(expected, "iu").test(actual);
-      } catch (error) {
-        throw new IntegrationContractError(
-          `Invalid classification regex: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-    default:
-      throw new IntegrationContractError(`Unknown classification rule operator: ${String(condition.operator)}`);
-  }
-}
-
-function compareScore(left: readonly number[], right: readonly number[]): number {
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
-}
-
 function matchingRules(
   sourceId: EntityId,
   candidate: ReferenceCandidateDTO,
@@ -117,13 +65,13 @@ function matchingRules(
   return rules
     .filter((rule) => {
       if (rule.typeCode !== candidate.typeCode || rule.conditions.length === 0) return false;
-      return rule.conditions.every((condition) => matchesCondition(candidate, condition));
+      return matchesClassificationRule(candidate, rule.conditions);
     })
     .map((rule) => ({
       rule,
-      score: [rule.priority, rule.sourceId === sourceId ? 1 : 0, rule.conditions.length] as const,
+      score: classificationRuleScore(sourceId, rule),
     }))
-    .sort((left, right) => compareScore(right.score, left.score) || left.rule.id.localeCompare(right.rule.id));
+    .sort((left, right) => compareClassificationRuleScore(right.score, left.score) || left.rule.id.localeCompare(right.rule.id));
 }
 
 function validateCandidate(candidate: ReferenceCandidateDTO): void {
@@ -241,7 +189,7 @@ function ruleOutcome(
   const { candidate } = prepared;
   const matches = matchingRules(sourceId, candidate, rules);
   const bestScore = matches[0]?.score;
-  const best = bestScore === undefined ? [] : matches.filter((match) => compareScore(match.score, bestScore) === 0);
+  const best = bestScore === undefined ? [] : matches.filter((match) => compareClassificationRuleScore(match.score, bestScore) === 0);
   const references = new Set(best.map(({ rule }) => rule.referenceValueId));
   if (references.size > 1) {
     return {
