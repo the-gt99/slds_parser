@@ -147,24 +147,39 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
             FROM (
               SELECT
-                observation.id AS observation_id,
-                product.id AS source_product_id,
-                product.source_key,
-                internal.data->>'title' AS title,
-                internal.data->>'sku' AS sku,
-                observation.evidence
-              FROM source_reference_observations observation
-              JOIN source_products product ON product.id = observation.source_product_id
-              LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-              JOIN reference_types type ON type.id = observation.reference_type_id
-              WHERE observation.active = TRUE
-                AND observation.source_id = review_groups.source_id
-                AND type.code = review_groups.type_code
-                AND observation.scope = review_groups.scope
-                AND observation.normalized_source_value = review_groups.normalized_source_value
-                AND observation.context_key = review_groups.context_key
-                AND observation.status = review_groups.status
-              ORDER BY observation.last_seen_at DESC, observation.id
+                distinct_product.observation_id,
+                distinct_product.source_product_id,
+                distinct_product.source_key,
+                distinct_product.title,
+                distinct_product.sku,
+                distinct_product.evidence
+              FROM (
+                SELECT
+                  observation.id AS observation_id,
+                  product.id AS source_product_id,
+                  product.source_key,
+                  internal.data->>'title' AS title,
+                  internal.data->>'sku' AS sku,
+                  observation.evidence,
+                  observation.last_seen_at,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY observation.source_product_id
+                    ORDER BY observation.last_seen_at DESC, observation.id
+                  ) AS product_rank
+                FROM source_reference_observations observation
+                JOIN source_products product ON product.id = observation.source_product_id
+                LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+                JOIN reference_types type ON type.id = observation.reference_type_id
+                WHERE observation.active = TRUE
+                  AND observation.source_id = review_groups.source_id
+                  AND type.code = review_groups.type_code
+                  AND observation.scope = review_groups.scope
+                  AND observation.normalized_source_value = review_groups.normalized_source_value
+                  AND observation.context_key = review_groups.context_key
+                  AND observation.status = review_groups.status
+              ) distinct_product
+              WHERE distinct_product.product_rank = 1
+              ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id
               LIMIT 3
             ) example
           ), '[]'::JSONB) AS examples
