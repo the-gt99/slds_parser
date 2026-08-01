@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -102,6 +102,10 @@ describe("product operations", () => {
       expect(result.images[0]).toMatchObject({ sourceUrl: "https://image.example/main.png", localPath: "goat/item_2/01-main.png", webpLocalPath: "goat/item_2/01-main.webp", mimeType: "image/png", storedFormat: "png", width: 2, height: 3, url: "https://parser.example/images/goat/item_2/01-main.webp" });
       expect(existsSync(store.resolvePath(result.images[0]!.localPath!))).toBe(true);
       expect(existsSync(store.resolvePath(result.images[0]!.webpLocalPath!))).toBe(true);
+      if (process.platform !== "win32") {
+        expect((await stat(store.resolvePath(result.images[0]!.webpLocalPath!))).mode & 0o777).toBe(0o640);
+        expect((await stat(join(directory, "goat", "item_2"))).mode & 0o777).toBe(0o750);
+      }
       await expect(pipeline.run(product(), context)).resolves.toMatchObject({ images: [{ url: "https://parser.example/images/goat/item_2/01-main.webp" }] });
     } finally {
       await rm(directory, { recursive: true, force: true });

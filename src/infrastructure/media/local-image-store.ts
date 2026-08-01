@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, extname, resolve, sep } from "node:path";
+import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
 
 import sharp from "sharp";
@@ -101,10 +101,11 @@ export class LocalImageStore implements ImageStore {
     const webpPath = normalized.slice(0, -extname(normalized).length) + ".webp";
     const target = this.resolvePath(webpPath);
     const temporary = `${target}.${randomUUID()}.tmp`;
-    await mkdir(dirname(target), { recursive: true });
+    await this.#prepareDirectory(dirname(target));
     try {
       await sharp(this.resolvePath(normalized), { failOn: "warning" }).webp({ quality: this.options.webpQuality }).toFile(temporary);
       await rename(temporary, target);
+      await chmod(target, 0o640);
     } finally {
       await rm(temporary, { force: true });
     }
@@ -131,12 +132,28 @@ export class LocalImageStore implements ImageStore {
 
   async writeAtomic(target: string, binary: Buffer): Promise<void> {
     const temporary = `${target}.${randomUUID()}.tmp`;
-    await mkdir(dirname(target), { recursive: true });
+    await this.#prepareDirectory(dirname(target));
     try {
       await writeFile(temporary, binary);
       await rename(temporary, target);
+      await chmod(target, 0o640);
     } finally {
       await rm(temporary, { force: true });
+    }
+  }
+
+  async #prepareDirectory(directory: string): Promise<void> {
+    const relativeDirectory = relative(this.#baseDirectory, directory);
+    if (relativeDirectory.startsWith("..") || resolve(directory) === resolve(this.#baseDirectory, "..")) {
+      throw new Error("Image directory leaves the configured storage directory");
+    }
+    let current = this.#baseDirectory;
+    await mkdir(current, { recursive: true });
+    await chmod(current, 0o750);
+    for (const segment of relativeDirectory.split(sep).filter(Boolean)) {
+      current = resolve(current, segment);
+      await mkdir(current, { recursive: true });
+      await chmod(current, 0o750);
     }
   }
 }

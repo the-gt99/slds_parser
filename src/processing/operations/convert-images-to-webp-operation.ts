@@ -14,7 +14,7 @@ export interface ConvertImagesToWebpOperationOptions {
 
 export class ConvertImagesToWebpOperation implements ProductOperation {
   readonly code = "convert-images-to-webp";
-  readonly version = "1.0.0";
+  readonly version = "1.0.1";
   readonly dependsOn = ["download-images"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
