@@ -2,6 +2,8 @@ export type {
   ProductOperation,
   SourceAdapter,
   SourceProcessor,
+  TargetExportPolicy,
+  TargetExportReadiness,
   TargetExporter,
 } from "./components.js";
 export type {

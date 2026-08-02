@@ -45,3 +45,14 @@ export interface TargetExporter {
   readonly version: string;
   export(context: ExportContext): Promise<ExportResult>;
 }
+
+export interface TargetExportReadiness {
+  readonly ready: boolean;
+  readonly missingRequiredCandidateKeys: readonly string[];
+}
+
+export interface TargetExportPolicy {
+  readonly targetCode: string;
+  readonly version: string;
+  evaluate(product: UniversalProductDTO): TargetExportReadiness;
+}

@@ -67,7 +67,6 @@ describe("GOAT adapter and processor", () => {
     expect(product.variants[1]).toMatchObject({ price: null, inventory: { availability: "unavailable" } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
-      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt" }),
       expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "apparel" }),
       expect.objectContaining({ key: "product:color", typeCode: "color", sourceValue: "blue" }),
     ]));
@@ -89,9 +88,12 @@ describe("GOAT adapter and processor", () => {
       details: "Leather details",
       upperMaterial: "Mesh",
       midsole: "Foam",
+      technologies: [{ name: "Foam" }, { label: "Zoom Air" }],
+      activitiesList: [{ name: "Running" }],
+      tags: ["Limited", { value: "Performance" }],
       season: "2026",
     } satisfies JsonObject;
-    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, parts: [
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: { route: "sneakers" } }, parts: [
       { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
       { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { market: "US", countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
@@ -111,9 +113,17 @@ describe("GOAT adapter and processor", () => {
       },
     });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
-      expect.objectContaining({ key: "product:category", typeCode: "category", context: { productType: "tops", audience: "men" } }),
+      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Air Test", context: { brand: "Example Brand" } }),
+      expect.objectContaining({ key: "product:category", typeCode: "category", context: { route: "sneakers", productCategory: "apparel", productType: "tops", audience: "men" } }),
+      expect.objectContaining({ key: "product:tag:technology:0", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Foam" }),
+      expect.objectContaining({ key: "product:tag:technology:1", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Zoom Air" }),
+      expect.objectContaining({ key: "product:activity:0", typeCode: "activity", scope: "product.activity", sourceValue: "Running" }),
+      expect.objectContaining({ key: "product:tag:activity:0", typeCode: "tag", scope: "product.tag.activity", sourceValue: "Running" }),
+      expect.objectContaining({ key: "product:tag:source:0", typeCode: "tag", scope: "product.tag.source", sourceValue: "Limited" }),
+      expect.objectContaining({ key: "product:tag:source:1", typeCode: "tag", scope: "product.tag.source", sourceValue: "Performance" }),
     ]));
+    expect(product.referenceCandidates.filter((candidate) => candidate.scope === "product.tag.technology" && candidate.sourceValue === "Foam")).toHaveLength(1);
+    expect(product.metadata).toMatchObject({ route: "sneakers" });
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
       expect.arrayContaining(["product_family", "gender", "season"]),
     );

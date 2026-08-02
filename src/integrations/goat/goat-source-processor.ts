@@ -38,6 +38,20 @@ function facts(values: Readonly<Record<string, string>>): JsonObject {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
 }
 
+function namedValues(value: JsonValue | undefined): string[] {
+  const entries = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  const unique = new Map<string, string>();
+  for (const entry of entries) {
+    const sourceValue = typeof entry === "object" && entry !== null && !Array.isArray(entry)
+      ? text(entry.name ?? entry.label ?? entry.value ?? entry.title)
+      : text(entry);
+    const trimmed = sourceValue.trim();
+    const normalized = trimmed.toLocaleLowerCase("en-US");
+    if (trimmed !== "" && !unique.has(normalized)) unique.set(normalized, trimmed);
+  }
+  return [...unique.values()];
+}
+
 function candidate(
   key: string,
   typeCode: string,
@@ -66,7 +80,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.1.0";
+  readonly version = "2.2.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -88,18 +102,42 @@ export class GoatSourceProcessor implements SourceProcessor {
     const productType = text(product.productType);
     const sizeType = text(product.sizeType);
     const sizeUnit = text(product.sizeUnit);
-    const productEvidence = facts({ title, brand, family, audience: gender, category: categoryRaw || productCategory, productType });
+    const route = text(context.sourceProduct.metadata.route);
+    const taxonomy: Record<string, JsonValue> = {};
+    for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) {
+      if (product[key] !== undefined) taxonomy[key] = product[key]!;
+    }
+    const productEvidence: JsonObject = {
+      ...facts({ title, brand, family, audience: gender, category: categoryRaw || productCategory, productCategory, productType, route }),
+      ...(Object.keys(taxonomy).length === 0 ? {} : { taxonomy }),
+    };
     const variants: ProductVariantDTO[] = [];
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", title, facts({ brand, family }), productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory, facts({ productType, audience: gender }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", family, facts({ brand }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory,
+      facts({ route, productCategory, productType, audience: gender }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", text(product.color), {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:material", "material", "product.material", text(product.upperMaterial), {}, productEvidence));
-    if (Array.isArray(product.tags)) {
-      product.tags.forEach((tag, index) => appendCandidate(referenceCandidates,
-        candidate(`product:tag:${index}`, "tag", "product.tag", text(tag), {}, productEvidence)));
+    const technologies = namedValues(product.technologies);
+    const midsole = text(product.midsole).trim();
+    if (midsole !== "" && !technologies.some((value) => value.toLocaleLowerCase("en-US") === midsole.toLocaleLowerCase("en-US"))) {
+      technologies.unshift(midsole);
     }
+    technologies.forEach((value, index) => appendCandidate(referenceCandidates,
+      candidate(`product:tag:technology:${index}`, "tag", "product.tag.technology", value, {}, productEvidence)));
+    const activities = namedValues(product.activitiesList ?? product.activities);
+    if (categoryRaw !== "" && !activities.some((value) => value.toLocaleLowerCase("en-US") === categoryRaw.toLocaleLowerCase("en-US"))) {
+      activities.push(categoryRaw);
+    }
+    activities.forEach((value, index) => {
+      appendCandidate(referenceCandidates,
+        candidate(`product:activity:${index}`, "activity", "product.activity", value, facts({ productCategory, productType }), productEvidence));
+      appendCandidate(referenceCandidates,
+        candidate(`product:tag:activity:${index}`, "tag", "product.tag.activity", value, {}, productEvidence));
+    });
+    namedValues(product.tags).forEach((value, index) => appendCandidate(referenceCandidates,
+      candidate(`product:tag:source:${index}`, "tag", "product.tag.source", value, {}, productEvidence)));
     const keys = new Set<string>();
     for (const value of offersPayload.offers) {
       const offer = object(value, "offer");
@@ -123,8 +161,6 @@ export class GoatSourceProcessor implements SourceProcessor {
           ...(instantShipPrice ? { instantShipPrice: { amount: instantShipPrice.amount, currency: instantShipPrice.currency } } : {}),
           ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } });
     }
-    const taxonomy: Record<string, JsonValue> = {};
-    for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) if (product[key] !== undefined) taxonomy[key] = product[key]!;
     return { sourceProductId: context.sourceProduct.id, title, description, sku: text(product.sku),
       images: images(product.images, title), variants, referenceCandidates,
       attributes: { brand: product.brandName ?? product.brand ?? null, family, gender, color: product.color ?? null,
@@ -132,7 +168,7 @@ export class GoatSourceProcessor implements SourceProcessor {
         midsole: product.midsole ?? null, categoryRaw,
         productCategory: product.productCategory ?? null, productType: product.productType ?? null, taxonomy,
         season: product.season ?? null, releaseDate: product.releaseDate ?? null, status: product.status ?? null },
-      metadata: { source: "goat", productId, slug: product.slug ?? context.sourceProduct.slug ?? null, countryCode,
+      metadata: { source: "goat", productId, slug: product.slug ?? context.sourceProduct.slug ?? null, route: route || null, countryCode,
         sizeType: product.sizeType ?? null, sizeUnit: product.sizeUnit ?? null } };
   }
 }

@@ -16,8 +16,8 @@ function modelCandidate(title: string, brand: string, family: string): Reference
     typeCode: "model",
     scope: "product.model",
     subjectKind: "product",
-    sourceValue: title,
-    context: { brand, family },
+    sourceValue: family,
+    context: { brand },
     evidence: { title, brand, family },
   };
 }
@@ -59,7 +59,7 @@ describe("ProductClassifier", () => {
     await expect(classifier.classify("another-source", productWith(candidate))).resolves.toMatchObject({ product: { classification: { status: "partial", unresolved: [{ reason: "mapping_missing" }] } } });
   });
 
-  it("separates Pegasus models by contextual rules instead of mapping the family", async () => {
+  it("separates ambiguous Pegasus families with title evidence", async () => {
     const store = new MemoryStore();
     store.classificationRules.push(
       { id: "1", sourceId: null, typeCode: "model", name: "ACG Pegasus Trail", priority: 100, conditions: [
