@@ -220,7 +220,10 @@ function renderData(item) {
   }
   for (const [key, value] of Object.entries(product.attributes ?? {})) {
     if (value === null || value === undefined || value === "") continue;
-    addDefinition(attributes, attributeNames[key] ?? key, value);
+    const name = key === "season" && item.source.code === "goat"
+      ? "Год коллекции GOAT"
+      : attributeNames[key] ?? key;
+    addDefinition(attributes, name, value);
   }
   addDefinition(attributes, "Версия процессора", product.processorVersion);
   addDefinition(attributes, "Внутренний ID", product.internalProductId);
@@ -283,40 +286,11 @@ function renderClassifications(item) {
   }
 }
 
-function pipelineEvents(item) {
-  const events = [{
-    name: "Товар найден в каталоге",
-    detail: item.sourceProduct.sourceKey,
-    status: "completed",
-    time: item.sourceProduct.firstSeenAt,
-  }];
-  for (const part of item.collection.parts ?? []) events.push({
-    name: `Получены данные: ${part.partKey}`,
-    detail: `Адаптер ${part.adapterVersion}`,
-    status: "completed",
-    time: part.fetchedAt,
-  });
-  for (const job of item.jobs ?? []) events.push({
-    name: jobNames[job.type] ?? job.type,
-    detail: `Попыток: ${job.attempts}`,
-    status: job.status,
-    time: job.createdAt,
-    error: job.lastError,
-  });
-  for (const operation of item.processing.operations ?? []) events.push({
-    name: operation.operationName,
-    detail: `${operation.operationCode} · v${operation.operationVersion}`,
-    status: operation.status,
-    time: operation.startedAt,
-    error: operation.error,
-  });
-  return events.sort((left, right) => new Date(left.time).valueOf() - new Date(right.time).valueOf());
+function eventTime(value) {
+  return new Date(value).valueOf();
 }
 
-function renderPipeline(item) {
-  const list = byId("pipeline-list");
-  list.replaceChildren();
-  const events = pipelineEvents(item);
+function renderPipelineEvents(container, events) {
   for (const event of events) {
     const row = document.createElement("div");
     row.className = `pipeline-row status-${event.status}`;
@@ -338,14 +312,144 @@ function renderPipeline(item) {
       content.append(error);
     }
     row.append(marker, content);
-    list.append(row);
+    container.append(row);
   }
-  if ((item.processing.operations ?? []).length === 0) {
-    const note = document.createElement("div");
-    note.className = "inline-message";
-    note.textContent = "Детальная история операций начнёт заполняться после следующей обработки товара.";
-    list.append(note);
+}
+
+function pipelineSection(title) {
+  const section = document.createElement("div");
+  section.className = "pipeline-block";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  section.append(heading);
+  return section;
+}
+
+function runCard({ title, status, time, detail, error, events = [] }, open) {
+  const card = document.createElement("details");
+  card.className = "pipeline-run";
+  card.open = open;
+  const summary = document.createElement("summary");
+  const heading = document.createElement("span");
+  const name = document.createElement("strong");
+  name.textContent = title;
+  const timestamp = document.createElement("time");
+  timestamp.dateTime = time;
+  timestamp.textContent = formatDate(time);
+  heading.append(name, timestamp);
+  summary.append(heading, badge(humanStatus(status), status));
+
+  const body = document.createElement("div");
+  body.className = "pipeline-run-body";
+  if (detail) {
+    const meta = document.createElement("span");
+    meta.className = "pipeline-run-detail";
+    meta.textContent = detail;
+    body.append(meta);
   }
+  if (error) {
+    const message = document.createElement("span");
+    message.className = "pipeline-error";
+    message.textContent = error;
+    body.append(message);
+  }
+  renderPipelineEvents(body, events);
+  card.append(summary, body);
+  return card;
+}
+
+function appendRunHistory(section, runs, emptyText) {
+  if (runs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inline-message";
+    empty.textContent = emptyText;
+    section.append(empty);
+    return;
+  }
+  section.append(runCard(runs[0], true));
+  if (runs.length === 1) return;
+
+  const history = document.createElement("details");
+  history.className = "pipeline-history";
+  const summary = document.createElement("summary");
+  summary.textContent = `Предыдущие запуски: ${runs.length - 1}`;
+  history.append(summary);
+  const content = document.createElement("div");
+  content.className = "pipeline-history-list";
+  for (const run of runs.slice(1)) content.append(runCard(run, false));
+  history.append(content);
+  section.append(history);
+}
+
+function processingRuns(operations) {
+  const attempts = new Map();
+  for (const operation of operations) {
+    const attempt = attempts.get(operation.attemptId) ?? [];
+    attempt.push(operation);
+    attempts.set(operation.attemptId, attempt);
+  }
+  return [...attempts.values()].map((attempt) => {
+    const ordered = attempt.sort((left, right) => left.sequence - right.sequence);
+    const failed = ordered.find((operation) => operation.status === "failed");
+    const running = ordered.find((operation) => operation.status === "running");
+    return {
+      title: "Обработка товара",
+      status: failed ? "failed" : running ? "running" : "completed",
+      time: ordered[0].startedAt,
+      detail: `${ordered.length} операций`,
+      error: failed?.error,
+      events: ordered.map((operation) => ({
+        name: operation.operationName,
+        detail: `${operation.operationCode} · v${operation.operationVersion}`,
+        status: operation.status,
+        time: operation.startedAt,
+        error: operation.error,
+      })),
+    };
+  }).sort((left, right) => eventTime(right.time) - eventTime(left.time));
+}
+
+function renderPipeline(item) {
+  const list = byId("pipeline-list");
+  list.replaceChildren();
+
+  const parts = pipelineSection("Текущие сохранённые данные");
+  const partEvents = (item.collection.parts ?? []).map((part) => ({
+    name: part.partKey,
+    detail: `Адаптер ${part.adapterVersion}`,
+    status: "completed",
+    time: part.fetchedAt,
+  })).sort((left, right) => eventTime(left.time) - eventTime(right.time));
+  if (partEvents.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inline-message";
+    empty.textContent = "Части товара ещё не сохранены.";
+    parts.append(empty);
+  } else {
+    const current = document.createElement("div");
+    current.className = "pipeline-current";
+    renderPipelineEvents(current, partEvents);
+    parts.append(current);
+  }
+
+  const jobs = pipelineSection("Запуски задач");
+  const jobRuns = (item.jobs ?? []).map((job) => ({
+    title: jobNames[job.type] ?? job.type,
+    status: job.status,
+    time: job.createdAt,
+    detail: `Попыток выполнения: ${job.attempts}`,
+    error: job.lastError,
+  })).sort((left, right) => eventTime(right.time) - eventTime(left.time));
+  appendRunHistory(jobs, jobRuns, "Задачи для товара ещё не запускались.");
+
+  const processing = pipelineSection("Попытки обработки");
+  appendRunHistory(
+    processing,
+    processingRuns(item.processing.operations ?? []),
+    "Детальная история операций начнёт заполняться после следующей обработки товара.",
+  );
+
+  list.append(parts, jobs, processing);
 }
 
 function renderTargets(item) {
