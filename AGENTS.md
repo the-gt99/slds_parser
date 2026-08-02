@@ -180,18 +180,18 @@ Target-specific readiness реализовать вместе с exporter, а н
 Parser:
 
 - GitHub: `git@github.com:the-gt99/slds_parser.git`;
-- commit приложения: `430616e`;
+- проверенный milestone исправления классификации: `3aef4b6`; актуальный commit всегда сверять с `origin/main` и сервером;
 - сервер: MCP `ssh_slamdunk_parser`;
 - каталог: `/srv/slds-parser/app`;
 - состояние и изображения: `/srv/slds-parser/state`;
 - домен: `https://9a9f7857687f.vps.myjino.ru`;
 - службы: `slds-parser-api.service`, `slds-parser-worker.service`;
 - PostgreSQL: Docker-контейнер `slds-parser-postgres`, наружу не открыт;
-- миграции `001`–`009` применены;
-- typecheck, build и 136 тестов проходили;
+- миграции `001`–`011` применены; `011` вернула универсальной категории кратность `multiple`;
+- typecheck, build и 138 тестов проходили;
 - 5 smoke-товаров GOAT переобработаны новым процессором;
 - 30/30 записанных операций завершились успешно;
-- в активной очереди остались только `brand`, `model`, `category`, `color`, `material`;
+- после исправляющего smoke активная очередь содержит 12 значений: по два `brand`, `category`, `color`, `material` и четыре `model`; ложных `activity`/`tag` из `Lifestyle` и `Sandal` нет;
 - target `slamdunk` выключен для экспорта, но WordPress provider настроен;
 - локальный снимок девяти WordPress-справочников заполнен.
 
