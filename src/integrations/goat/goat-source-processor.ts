@@ -80,7 +80,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.2.0";
+  readonly version = "2.3.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -114,7 +114,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     const variants: ProductVariantDTO[] = [];
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", family, facts({ brand }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", title, facts({ brand, family }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory,
       facts({ route, productCategory, productType, audience: gender }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", text(product.color), {}, productEvidence));

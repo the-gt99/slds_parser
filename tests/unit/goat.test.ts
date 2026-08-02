@@ -113,7 +113,7 @@ describe("GOAT adapter and processor", () => {
       },
     });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Air Test", context: { brand: "Example Brand" } }),
+      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
       expect.objectContaining({ key: "product:category", typeCode: "category", context: { route: "sneakers", productCategory: "apparel", productType: "tops", audience: "men" } }),
       expect.objectContaining({ key: "product:tag:technology:0", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Foam" }),
       expect.objectContaining({ key: "product:tag:technology:1", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Zoom Air" }),

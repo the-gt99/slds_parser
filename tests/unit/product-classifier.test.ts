@@ -16,8 +16,8 @@ function modelCandidate(title: string, brand: string, family: string): Reference
     typeCode: "model",
     scope: "product.model",
     subjectKind: "product",
-    sourceValue: family,
-    context: { brand },
+    sourceValue: title,
+    context: { brand, family },
     evidence: { title, brand, family },
   };
 }
@@ -59,7 +59,7 @@ describe("ProductClassifier", () => {
     await expect(classifier.classify("another-source", productWith(candidate))).resolves.toMatchObject({ product: { classification: { status: "partial", unresolved: [{ reason: "mapping_missing" }] } } });
   });
 
-  it("separates ambiguous Pegasus families with title evidence", async () => {
+  it("separates Pegasus models by contextual rules instead of mapping the family", async () => {
     const store = new MemoryStore();
     store.classificationRules.push(
       { id: "1", sourceId: null, typeCode: "model", name: "ACG Pegasus Trail", priority: 100, conditions: [
@@ -103,6 +103,21 @@ describe("ProductClassifier", () => {
 
     expect(golf.product.classification.resolved[0]?.referenceValueId).toBe("model-golf");
     expect(fourth.product.classification.resolved[0]?.referenceValueId).toBe("model-4");
+  });
+
+  it("does not reuse an exact mapping between different titles with the same family", async () => {
+    const store = new MemoryStore();
+    store.classificationDecisions.set(
+      `goat/model/product.model/under armour wmns surge golf 'white clay'/${stableJsonStringify({ brand: "Under Armour", family: "Surge" })}`,
+      { mappingId: "10", referenceValueId: "model-golf", status: "confirmed", revision: "1" },
+    );
+    const classifier = new ProductClassifier(createMemoryRepositories(store).classifications);
+
+    const golf = await classifier.classify("goat", productWith(modelCandidate("Under Armour Wmns Surge Golf 'White Clay'", "Under Armour", "Surge")));
+    const fourth = await classifier.classify("goat", productWith(modelCandidate("Under Armour Surge 4 GS 'Serpentine'", "Under Armour", "Surge")));
+
+    expect(golf.product.classification.resolved[0]?.referenceValueId).toBe("model-golf");
+    expect(fourth.product.classification).toMatchObject({ status: "partial", unresolved: [{ sourceValue: "Under Armour Surge 4 GS 'Serpentine'" }] });
   });
 
   it("does not guess when equally specific rules point to different values", async () => {
