@@ -30,6 +30,14 @@ function providerCode(config: JsonObject, exporterCode: string): string {
     : exporterCode;
 }
 
+function stringMap(value: unknown): Readonly<Record<string, string>> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, entry]) =>
+      typeof entry === "string" && entry.trim() !== "" ? [[key, entry.trim()]] : []),
+  );
+}
+
 function dictionaryInput(value: TargetDictionaryRemoteValue): TargetDictionaryValueInput {
   return {
     externalId: value.externalId,
@@ -56,6 +64,8 @@ export class TargetDictionaryService {
     return targets.map((target) => {
       const code = providerCode(target.config, target.exporterCode);
       const provider = this.providers.find(code);
+      const entityOverrides = stringMap(target.config.dictionaryEntityMap);
+      const scopeOverrides = stringMap(target.config.targetScopeMap);
       return {
         ...target,
         dictionary: {
@@ -63,6 +73,14 @@ export class TargetDictionaryService {
           configured: provider !== null,
           supportedEntityTypes: provider?.supportedEntityTypes ?? [],
           creatableEntityTypes: provider?.creatableEntityTypes ?? [],
+          classificationCapabilities: (provider?.classificationCapabilities ?? []).map((capability) => ({
+            ...capability,
+            entityType: entityOverrides[capability.typeCode] ?? capability.entityType,
+            targetScope: scopeOverrides[capability.targetScope] ?? capability.targetScope,
+            creatable: provider?.creatableEntityTypes.includes(
+              entityOverrides[capability.typeCode] ?? capability.entityType,
+            ) ?? false,
+          })),
         },
       };
     });

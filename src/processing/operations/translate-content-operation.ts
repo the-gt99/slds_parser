@@ -63,6 +63,7 @@ function suspiciousTranslation(source: string, translated: string): boolean {
 
 export class TranslateContentOperation implements ProductOperation {
   readonly code = "translate-content";
+  readonly name = "Перевод контента";
   readonly version = "1.0.0";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];

@@ -1,22 +1,5 @@
 const byId = (id) => document.getElementById(id);
 
-const typeLabels = {
-  brand: "Бренд",
-  model: "Модель",
-  product_family: "Семейство",
-  category: "Категория",
-  gender: "Пол",
-  size: "Размер",
-  size_system: "Система размеров",
-  condition: "Состояние",
-  box_condition: "Состояние коробки",
-  color: "Цвет",
-  tag: "Метка",
-  material: "Материал",
-  season: "Сезон",
-  shoe_height: "Высота обуви",
-};
-
 const state = {
   session: null,
   csrfToken: null,
@@ -29,7 +12,15 @@ const state = {
   currentReferenceId: null,
   resolved: false,
   rulePreview: null,
+  typeNames: new Map(),
 };
+
+function typeName(itemOrCode) {
+  if (typeof itemOrCode === "object" && itemOrCode !== null) {
+    return itemOrCode.typeName || state.typeNames.get(itemOrCode.typeCode) || itemOrCode.typeCode;
+  }
+  return state.typeNames.get(itemOrCode) || itemOrCode;
+}
 
 let toastTimer;
 let queueSearchTimer;
@@ -178,6 +169,7 @@ async function loadQueue({ preserveSelection = false } = {}) {
   try {
     const response = await api(queueUrl());
     state.queue = response.items ?? [];
+    for (const item of state.queue) state.typeNames.set(item.typeCode, item.typeName || item.typeCode);
     populateTypeFilter();
     if (preserveSelection && state.selected) {
       state.selected = state.queue.find((item) => decisionKey(item) === decisionKey(state.selected)) ?? null;
@@ -197,7 +189,7 @@ function populateTypeFilter() {
     if (known.has(typeCode)) continue;
     const option = document.createElement("option");
     option.value = typeCode;
-    option.textContent = typeLabels[typeCode] ?? typeCode;
+    option.textContent = typeName(typeCode);
     select.append(option);
   }
   select.value = current;
@@ -227,7 +219,7 @@ function renderQueue() {
     const meta = document.createElement("span");
     meta.className = "queue-item-meta";
     const kind = document.createElement("span");
-    kind.textContent = `${typeLabels[item.typeCode] ?? item.typeCode} · ${item.sourceCode}`;
+    kind.textContent = `${typeName(item)} · ${item.sourceCode}`;
     const count = document.createElement("span");
     count.textContent = `${item.productCount} тов.`;
     meta.append(kind, count);
@@ -263,7 +255,7 @@ function renderDetail() {
   byId("product-count").textContent = `${item.productCount} товаров`;
   const badges = byId("detail-badges");
   badges.replaceChildren(
-    badge(typeLabels[item.typeCode] ?? item.typeCode),
+    badge(typeName(item)),
     badge(item.sourceCode),
     badge(item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
   );
@@ -286,8 +278,10 @@ function renderExamples(examples) {
   const list = byId("examples-list");
   list.replaceChildren();
   for (const example of examples) {
-    const card = document.createElement("div");
+    const card = document.createElement("a");
     card.className = "example-card";
+    card.href = `/products/${encodeURIComponent(example.sourceProductId)}`;
+    card.setAttribute("aria-label", `Открыть карточку товара ${example.title || example.sourceKey}`);
     const title = document.createElement("strong");
     title.textContent = example.title || example.sourceKey;
     const meta = document.createElement("span");
@@ -308,19 +302,17 @@ function activeTarget() {
   return state.targets.find((target) => target.dictionary?.configured) ?? state.targets[0] ?? null;
 }
 
+function activeCapability(item = state.selected) {
+  return activeTarget()?.dictionary?.classificationCapabilities
+    ?.find((capability) => capability.typeCode === item?.typeCode) ?? null;
+}
+
 function dictionaryEntity(item = state.selected) {
-  const target = activeTarget();
-  if (!target || !item) return null;
-  const map = target.config?.dictionaryEntityMap;
-  const entity = map && typeof map === "object" ? map[item.typeCode] : null;
-  return typeof entity === "string" && entity ? entity : null;
+  return activeCapability(item)?.entityType ?? null;
 }
 
 function targetScope(item = state.selected) {
-  const target = activeTarget();
-  const map = target?.config?.targetScopeMap;
-  const mapped = map && typeof map === "object" ? map[item?.scope] : null;
-  return typeof mapped === "string" && mapped ? mapped : item?.scope;
+  return activeCapability(item)?.targetScope ?? item?.scope;
 }
 
 function updateMappingModeAvailability() {
@@ -331,8 +323,7 @@ function updateMappingModeAvailability() {
   for (const tab of byId("mapping-tabs").querySelectorAll(".tab")) {
     tab.classList.toggle("active", tab.dataset.mode === state.mappingMode);
   }
-  const createAllowed = state.mappingMode === "wordpress"
-    && activeTarget()?.dictionary?.creatableEntityTypes?.includes(dictionaryEntity());
+  const createAllowed = state.mappingMode === "wordpress" && activeCapability()?.creatable === true;
   byId("create-term-row").hidden = !createAllowed;
 }
 
@@ -474,7 +465,7 @@ async function openCreateTerm() {
   if (!item || !target || !entityType) return;
   byId("term-name").value = item.sourceValue;
   byId("term-slug").value = slugify(item.sourceValue);
-  byId("term-type").textContent = `${typeLabels[item.typeCode] ?? item.typeCode} · ${entityType}`;
+  byId("term-type").textContent = `${typeName(item)} · ${entityType}`;
   byId("term-confirm").checked = false;
   byId("wp-password").value = "";
   byId("wp-password-field").hidden = Boolean(state.session?.wordpressCreateAllowed);
@@ -558,7 +549,7 @@ function openRuleDialog() {
     return;
   }
   state.rulePreview = null;
-  byId("rule-name").value = `${typeLabels[item.typeCode] ?? item.typeCode}: ${item.sourceValue}`;
+  byId("rule-name").value = `${typeName(item)}: ${item.sourceValue}`;
   byId("rule-preview").hidden = true;
   byId("create-rule").disabled = true;
   clearError(byId("rule-error"));

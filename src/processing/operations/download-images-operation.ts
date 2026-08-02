@@ -15,6 +15,7 @@ export interface DownloadImagesOperationOptions {
 
 export class DownloadImagesOperation implements ProductOperation {
   readonly code = "download-images";
+  readonly name = "Скачивание изображений";
   readonly version = "1.0.1";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];

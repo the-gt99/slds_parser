@@ -67,9 +67,13 @@ describe("GOAT adapter and processor", () => {
     expect(product.variants[1]).toMatchObject({ price: null, inventory: { availability: "unavailable" } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
-      expect.objectContaining({ key: "variant:product-100|US|103|new_no_defects|good_condition:size", typeCode: "size", sourceValue: "S", subjectKind: "variant" }),
-      expect.objectContaining({ key: "variant:product-100|US|103|new_no_defects|good_condition:condition", typeCode: "condition", sourceValue: "new_no_defects" }),
+      expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt" }),
+      expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "apparel" }),
+      expect.objectContaining({ key: "product:color", typeCode: "color", sourceValue: "blue" }),
     ]));
+    expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
+      expect.arrayContaining(["size", "size_system", "condition", "box_condition"]),
+    );
     const offerRows = jsonFixture("offers.json") as readonly JsonValue[];
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
@@ -85,6 +89,7 @@ describe("GOAT adapter and processor", () => {
       details: "Leather details",
       upperMaterial: "Mesh",
       midsole: "Foam",
+      season: "2026",
     } satisfies JsonObject;
     const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, parts: [
       { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
@@ -106,9 +111,12 @@ describe("GOAT adapter and processor", () => {
       },
     });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: "product:family", typeCode: "product_family", sourceValue: "Air Test" }),
       expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
+      expect.objectContaining({ key: "product:category", typeCode: "category", context: { productType: "tops", audience: "men" } }),
     ]));
+    expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
+      expect.arrayContaining(["product_family", "gender", "season"]),
+    );
   });
 });
 

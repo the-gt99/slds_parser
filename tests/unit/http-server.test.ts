@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ProductAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -17,6 +17,7 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
     auth,
     classifier: {} as ClassifierAdminService,
     targetDictionaries: {} as TargetDictionaryService,
+    productAdmin: {} as ProductAdminService,
   };
 }
 
@@ -99,6 +100,30 @@ describe("HTTP server", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("SLDS · Классификатор");
+    await server.close();
+  });
+
+  it("serves a product page and protects its data endpoint", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const productAdmin = {
+      getProduct: vi.fn().mockResolvedValue({ sourceProduct: { id: "3" }, product: { title: "YZY Pod" } }),
+    } as unknown as ProductAdminService;
+    const server = createHttpServer({ ...dependencies(database), productAdmin });
+
+    const page = await server.inject({ method: "GET", url: "/products/3" });
+    const unauthorized = await server.inject({ method: "GET", url: "/api/products/3" });
+    const authorized = await server.inject({
+      method: "GET",
+      url: "/api/products/3",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("Карточка товара");
+    expect(unauthorized.statusCode).toBe(401);
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({ item: { sourceProduct: { id: "3" }, product: { title: "YZY Pod" } } });
+    expect(productAdmin.getProduct).toHaveBeenCalledWith("3");
     await server.close();
   });
 

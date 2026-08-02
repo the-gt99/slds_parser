@@ -138,6 +138,7 @@ function normalizeCandidate(candidate: ReferenceCandidateDTO): ReferenceCandidat
 
 export class NormalizeProductOperation implements ProductOperation {
   readonly code = "normalize-product";
+  readonly name = "Нормализация товара";
   readonly version = "2.0.0";
 
   async execute(

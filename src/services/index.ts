@@ -18,3 +18,4 @@ export {
   TargetDictionaryService,
   type CreateTargetTermCommand,
 } from "./target-dictionary-service.js";
+export { ProductAdminService } from "./product-admin-service.js";

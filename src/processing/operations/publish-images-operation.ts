@@ -3,6 +3,7 @@ import type { ImageStore } from "../media/index.js";
 
 export class PublishImagesOperation implements ProductOperation {
   readonly code = "publish-images";
+  readonly name = "Публикация изображений";
   readonly version = "1.0.0";
   readonly dependsOn = ["convert-images-to-webp"];
   readonly sourceCodes?: readonly string[];

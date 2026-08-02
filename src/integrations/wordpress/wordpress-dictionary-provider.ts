@@ -65,10 +65,32 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     "sizes",
     "shoe_heights",
     "product_categories",
+    "colors",
+    "materials",
+    "seasons",
+    "activities",
   ] as const;
   readonly creatableEntityTypes = ["brands", "models", "tags", "product_categories"] as const;
+  readonly classificationCapabilities = [
+    { typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "single" },
+    { typeCode: "model", entityType: "models", targetScope: "product.model", cardinality: "single" },
+    { typeCode: "category", entityType: "product_categories", targetScope: "product.category", cardinality: "multiple" },
+    { typeCode: "tag", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
+    { typeCode: "color", entityType: "colors", targetScope: "product.color", cardinality: "single" },
+    { typeCode: "material", entityType: "materials", targetScope: "product.material", cardinality: "multiple" },
+    { typeCode: "activity", entityType: "activities", targetScope: "product.activity", cardinality: "multiple" },
+    { typeCode: "shoe_height", entityType: "shoe_heights", targetScope: "product.shoe_height", cardinality: "single" },
+    { typeCode: "season", entityType: "seasons", targetScope: "product.season", cardinality: "single" },
+  ] as const;
 
   constructor(private readonly config: WordPressTargetConfig) {}
+
+  productEditUrl(externalId: string): string {
+    const url = new URL(`${this.config.baseUrl}/wp-admin/post.php`);
+    url.searchParams.set("post", externalId);
+    url.searchParams.set("action", "edit");
+    return url.toString();
+  }
 
   async fetchPage(entityType: string, page: number, perPage: number): Promise<TargetDictionaryPage> {
     this.ensureSupported(entityType, this.supportedEntityTypes);

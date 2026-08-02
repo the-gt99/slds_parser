@@ -5,6 +5,21 @@ import { WordPressDictionaryProvider } from "../../src/integrations/index.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("WordPressDictionaryProvider", () => {
+  it("declares the target taxonomies used by classification", () => {
+    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000 });
+
+    expect(provider.supportedEntityTypes).toEqual(expect.arrayContaining([
+      "brands", "models", "tags", "product_categories", "colors", "materials", "seasons", "activities",
+    ]));
+    expect(provider.classificationCapabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ typeCode: "color", entityType: "colors", cardinality: "single" }),
+      expect.objectContaining({ typeCode: "category", entityType: "product_categories", cardinality: "multiple" }),
+      expect.objectContaining({ typeCode: "material", entityType: "materials", cardinality: "multiple" }),
+      expect.objectContaining({ typeCode: "activity", entityType: "activities", cardinality: "multiple" }),
+    ]));
+    expect(provider.productEditUrl("123")).toBe("https://shop.example/wp-admin/post.php?post=123&action=edit");
+  });
+
   it("reads and normalizes the confirmed WordPress dictionary contract", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       ok: true,

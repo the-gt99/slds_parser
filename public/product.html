@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>SLDS · Карточка товара</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/product.js"></script>
+</head>
+<body>
+  <div id="login-view" class="login-shell" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand-mark" aria-hidden="true">S</div>
+      <div>
+        <p class="eyebrow">SLDS Parser</p>
+        <h1>Карточка товара</h1>
+        <p class="muted">Войдите, чтобы увидеть данные и историю обработки.</p>
+      </div>
+      <label class="field">
+        <span>Пользователь</span>
+        <input id="login-username" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span>Пароль</span>
+        <input id="login-password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="form-error" hidden></p>
+      <button class="button primary wide" type="submit">Войти</button>
+    </form>
+  </div>
+
+  <div id="app-view" class="product-app" hidden>
+    <header class="topbar">
+      <div class="brand-line">
+        <a class="brand-mark small brand-link" href="/classifier" aria-label="К классификатору">S</a>
+        <div>
+          <p class="eyebrow">SLDS Parser</p>
+          <h1>Карточка товара</h1>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <a class="button quiet" href="/classifier">← К классификатору</a>
+        <span id="operator-name" class="operator"></span>
+        <button id="refresh-product" class="icon-button" type="button" aria-label="Обновить карточку" title="Обновить карточку">↻</button>
+        <button id="logout-button" class="button quiet" type="button">Выйти</button>
+      </div>
+    </header>
+
+    <main class="product-page">
+      <div id="product-loading" class="product-message">Загружаем товар…</div>
+      <div id="product-error" class="product-message error" hidden></div>
+
+      <div id="product-content" hidden>
+        <section class="product-hero">
+          <div id="product-image-wrap" class="product-main-image" hidden>
+            <img id="product-image" alt="">
+          </div>
+          <div class="product-heading">
+            <div id="product-badges" class="badges"></div>
+            <h2 id="product-title"></h2>
+            <p id="product-subtitle" class="muted"></p>
+            <div id="product-links" class="product-links"></div>
+            <dl id="product-summary" class="summary-grid"></dl>
+          </div>
+        </section>
+
+        <div class="product-layout">
+          <div class="product-main-column">
+            <section class="section product-section">
+              <div class="section-title"><h3>Данные товара</h3></div>
+              <p id="product-description" class="product-description"></p>
+              <dl id="product-attributes" class="data-grid"></dl>
+            </section>
+
+            <section class="section product-section">
+              <div class="section-title">
+                <h3>Варианты</h3>
+                <span id="variants-count" class="count-pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="variants-table">
+                  <thead><tr><th>Размер</th><th>SKU</th><th>Цена</th><th>Наличие</th></tr></thead>
+                  <tbody id="variants-body"></tbody>
+                </table>
+              </div>
+              <div id="variants-empty" class="inline-message" hidden>Варианты ещё не сформированы.</div>
+            </section>
+
+            <section class="section product-section">
+              <div class="section-title">
+                <h3>Классификация</h3>
+                <span id="classification-count" class="count-pill"></span>
+              </div>
+              <div id="classification-list" class="classification-list"></div>
+            </section>
+          </div>
+
+          <aside class="product-side-column">
+            <section class="section product-section sticky-section">
+              <div class="section-title"><h3>Путь товара</h3></div>
+              <div id="pipeline-list" class="pipeline-list"></div>
+            </section>
+
+            <section class="section product-section">
+              <div class="section-title"><h3>Таргеты</h3></div>
+              <div id="targets-list" class="targets-list"></div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

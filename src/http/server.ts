@@ -15,6 +15,7 @@ import type {
   ClassificationRuleDraft,
   ClassifierAdminService,
   CreateTargetTermCommand,
+  ProductAdminService,
   TargetDictionaryService,
 } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
@@ -29,6 +30,7 @@ export interface HttpServerDependencies {
   readonly auth: AdminApiConfig;
   readonly classifier: ClassifierAdminService;
   readonly targetDictionaries: TargetDictionaryService;
+  readonly productAdmin: ProductAdminService;
 }
 
 interface QueueQuery {
@@ -47,6 +49,7 @@ interface ReferenceQuery {
 }
 
 interface TargetParams { readonly targetId: string }
+interface ProductParams { readonly productId: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
@@ -297,6 +300,14 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get("/api/targets", { preHandler: requireAdmin }, async () => ({
     items: await dependencies.targetDictionaries.listTargets(),
   }));
+
+  server.get<{ Params: ProductParams }>(
+    "/api/products/:productId",
+    { preHandler: requireAdmin },
+    async (request) => ({
+      item: await dependencies.productAdmin.getProduct(entityId(request.params.productId, "productId")),
+    }),
+  );
 
   server.get<{ Params: TargetParams; Querystring: DictionaryQuery }>(
     "/api/targets/:targetId/dictionary",

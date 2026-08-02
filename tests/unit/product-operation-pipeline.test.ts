@@ -10,6 +10,7 @@ import {
   ProductOperationDependencyError,
 } from "../../src/core/errors/index.js";
 import { ProductOperationRegistry } from "../../src/core/registry/index.js";
+import type { ProductOperationHistoryRepository } from "../../src/repositories/index.js";
 import { validProduct } from "../support/in-memory.js";
 
 const context = {
@@ -39,6 +40,44 @@ function operation(
 }
 
 describe("product operation pipeline", () => {
+  it("records every completed operation in the product history", async () => {
+    const registry = new ProductOperationRegistry();
+    registry.register({ ...operation("normalize", "normalized"), name: "Нормализация" });
+    registry.register({ ...operation("translate", "translated"), name: "Перевод" });
+    const history = {
+      start: vi.fn().mockResolvedValueOnce("11").mockResolvedValueOnce("12"),
+      complete: vi.fn().mockResolvedValue(undefined),
+      fail: vi.fn(),
+    } satisfies ProductOperationHistoryRepository;
+
+    await new ProductOperationPipeline(registry, history).run(validProduct(), context);
+
+    expect(history.start).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      sourceProductId: "2", operationCode: "normalize", operationName: "Нормализация", sequence: 0,
+    }));
+    expect(history.start).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sourceProductId: "2", operationCode: "translate", operationName: "Перевод", sequence: 1,
+    }));
+    expect(history.complete).toHaveBeenCalledTimes(2);
+    expect(history.fail).not.toHaveBeenCalled();
+  });
+
+  it("records the operation that failed and keeps its original error", async () => {
+    const registry = new ProductOperationRegistry();
+    const failure = new Error("translation failed");
+    registry.register({ code: "translate", name: "Перевод", version: "1.0.0", execute: vi.fn().mockRejectedValue(failure) });
+    const history = {
+      start: vi.fn().mockResolvedValue("13"),
+      complete: vi.fn(),
+      fail: vi.fn().mockResolvedValue(undefined),
+    } satisfies ProductOperationHistoryRepository;
+
+    await expect(new ProductOperationPipeline(registry, history).run(validProduct(), context)).rejects.toBe(failure);
+
+    expect(history.fail).toHaveBeenCalledWith("13", "translation failed", expect.any(String));
+    expect(history.complete).not.toHaveBeenCalled();
+  });
+
   it("runs universal and matching source operations in registration order", async () => {
     const universal = operation("universal", "universal");
     const goat = operation("goat-only", "goat", ["goat"]);

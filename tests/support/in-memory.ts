@@ -12,7 +12,7 @@ export class MemoryStore {
   readonly targets = new Map<string, TargetRecord>();
   readonly targetProducts = new Map<string, TargetProductRecord>();
   readonly jobs = new Map<string, JobRecord>();
-  readonly classificationTypes = new Set(["brand", "category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height"]);
+  readonly classificationTypes = new Set(["brand", "category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height", "activity"]);
   readonly classificationDecisions = new Map<string, Omit<ClassificationMappingMatchRecord, "candidateKey">>();
   readonly classificationRules: ClassificationRuleRecord[] = [];
   readonly classificationObservations = new Map<string, ProductClassificationObservationInput>();

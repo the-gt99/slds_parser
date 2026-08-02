@@ -309,6 +309,77 @@ export interface JobRecord {
   readonly finishedAt: Timestamp | null;
 }
 
+export type ProductOperationExecutionStatus = "running" | "completed" | "failed";
+
+export interface ProductOperationExecutionRecord {
+  readonly id: EntityId;
+  readonly attemptId: string;
+  readonly sourceProductId: EntityId;
+  readonly operationCode: string;
+  readonly operationName: string;
+  readonly operationVersion: string;
+  readonly sequence: number;
+  readonly status: ProductOperationExecutionStatus;
+  readonly startedAt: Timestamp;
+  readonly finishedAt: Timestamp | null;
+  readonly error: string | null;
+}
+
+export interface StartProductOperationExecutionInput {
+  readonly attemptId: string;
+  readonly sourceProductId: EntityId;
+  readonly operationCode: string;
+  readonly operationName: string;
+  readonly operationVersion: string;
+  readonly sequence: number;
+  readonly startedAt: Timestamp;
+}
+
+export interface ProductPartSummaryRecord {
+  readonly id: EntityId;
+  readonly partKey: string;
+  readonly contentHash: string;
+  readonly sourceUpdatedAt: Timestamp | null;
+  readonly fetchedAt: Timestamp;
+  readonly adapterVersion: string;
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+}
+
+export interface ProductClassificationObservationRecord {
+  readonly id: EntityId;
+  readonly candidateKey: string;
+  readonly typeCode: string;
+  readonly typeName: string;
+  readonly scope: string;
+  readonly sourceValue: string;
+  readonly context: JsonObject;
+  readonly evidence: JsonObject;
+  readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
+  readonly issueReason: ClassificationIssueReason | null;
+  readonly resolvedReferenceValueId: EntityId | null;
+  readonly resolvedReferenceName: string | null;
+  readonly firstSeenAt: Timestamp;
+  readonly lastSeenAt: Timestamp;
+}
+
+export interface ProductTargetSnapshotRecord {
+  readonly target: TargetRecord;
+  readonly product: TargetProductRecord | null;
+}
+
+export interface ProductAdminReadModel {
+  readonly source: SourceRecord;
+  readonly sourceProduct: SourceProductRecord;
+  readonly lastCollectionRun: SourceRunRecord | null;
+  readonly internalProduct: InternalProductRecord | null;
+  readonly parts: readonly ProductPartSummaryRecord[];
+  readonly operations: readonly ProductOperationExecutionRecord[];
+  readonly classifications: readonly ProductClassificationObservationRecord[];
+  readonly jobs: readonly JobRecord[];
+  readonly targets: readonly ProductTargetSnapshotRecord[];
+}
+
 export interface EnqueueJobInput {
   readonly jobType: JobType;
   readonly payload: JsonValue;

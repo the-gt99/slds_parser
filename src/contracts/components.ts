@@ -26,6 +26,7 @@ export interface SourceProcessor {
 
 export interface ProductOperation {
   readonly code: string;
+  readonly name?: string;
   readonly version: string;
   /** Dependencies must be registered earlier and apply to the same source. */
   readonly dependsOn?: readonly string[];

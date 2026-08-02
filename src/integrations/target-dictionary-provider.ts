@@ -29,10 +29,19 @@ export interface CreateTargetTermInput {
   readonly parentExternalId?: string;
 }
 
+export interface TargetClassificationCapability {
+  readonly typeCode: string;
+  readonly entityType: string;
+  readonly targetScope: string;
+  readonly cardinality: "single" | "multiple";
+}
+
 export interface TargetDictionaryProvider {
   readonly code: string;
   readonly supportedEntityTypes: readonly string[];
   readonly creatableEntityTypes: readonly string[];
+  readonly classificationCapabilities: readonly TargetClassificationCapability[];
+  productEditUrl?(externalId: string): string;
   fetchPage(entityType: string, page: number, perPage: number): Promise<TargetDictionaryPage>;
   createTerm(input: CreateTargetTermInput): Promise<TargetDictionaryRemoteValue>;
 }

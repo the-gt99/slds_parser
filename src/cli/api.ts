@@ -7,10 +7,11 @@ import {
   createPostgresPool,
   createPostgresRepositories,
   PostgresClassificationAdminRepository,
+  PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
 } from "../infrastructure/db/index.js";
 import { TargetDictionaryProviderRegistry, WordPressDictionaryProvider } from "../integrations/index.js";
-import { ClassifierAdminService, TargetDictionaryService } from "../services/index.js";
+import { ClassifierAdminService, ProductAdminService, TargetDictionaryService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -54,7 +55,11 @@ async function main(): Promise<void> {
       providers,
       classifier,
     );
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries });
+    const productAdmin = new ProductAdminService(
+      new PostgresProductAdminRepository(pool),
+      providers,
+    );
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

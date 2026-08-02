@@ -66,7 +66,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.0.0";
+  readonly version = "2.1.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -92,14 +92,10 @@ export class GoatSourceProcessor implements SourceProcessor {
     const variants: ProductVariantDTO[] = [];
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:family", "product_family", "product.family", family, facts({ brand }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", title, facts({ brand, family }), productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:gender", "gender", "product.gender", gender, {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory, facts({ productType }), productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:size-system", "size_system", "product.size_system", [sizeType, sizeUnit].filter(Boolean).join("/"), facts({ category: categoryRaw || productCategory }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory, facts({ productType, audience: gender }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", text(product.color), {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:material", "material", "product.material", text(product.upperMaterial), {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:season", "season", "product.season", text(product.season), {}, productEvidence));
     if (Array.isArray(product.tags)) {
       product.tags.forEach((tag, index) => appendCandidate(referenceCandidates,
         candidate(`product:tag:${index}`, "tag", "product.tag", text(tag), {}, productEvidence)));
@@ -126,12 +122,6 @@ export class GoatSourceProcessor implements SourceProcessor {
         attributes: { shoeCondition, boxCondition, stockStatus, countryCode,
           ...(instantShipPrice ? { instantShipPrice: { amount: instantShipPrice.amount, currency: instantShipPrice.currency } } : {}),
           ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } });
-      const variantEvidence = facts({ ...Object.fromEntries(Object.entries(productEvidence).map(([name, value]) => [name, text(value)])),
-        size: displayValue || sourceValue, sizeType, sizeUnit, condition: shoeCondition, boxCondition });
-      appendCandidate(referenceCandidates, candidate(`variant:${key}:size`, "size", "variant.size", displayValue || sourceValue,
-        facts({ sizeType, sizeUnit, audience: gender, category: categoryRaw || productCategory }), variantEvidence, key));
-      appendCandidate(referenceCandidates, candidate(`variant:${key}:condition`, "condition", "variant.condition", shoeCondition, {}, variantEvidence, key));
-      appendCandidate(referenceCandidates, candidate(`variant:${key}:box-condition`, "box_condition", "variant.box_condition", boxCondition, {}, variantEvidence, key));
     }
     const taxonomy: Record<string, JsonValue> = {};
     for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) if (product[key] !== undefined) taxonomy[key] = product[key]!;

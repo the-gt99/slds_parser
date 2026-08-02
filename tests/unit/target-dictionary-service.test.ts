@@ -11,6 +11,9 @@ function setup() {
     code: "wordpress",
     supportedEntityTypes: ["brands", "models", "product_categories"],
     creatableEntityTypes: ["brands", "models", "product_categories"],
+    classificationCapabilities: [
+      { typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "single" },
+    ],
     fetchPage: vi.fn()
       .mockResolvedValueOnce({ values: [{ externalId: "1", name: "Nike", metadata: {} }], hasMore: true, nextPage: 2 })
       .mockResolvedValueOnce({ values: [{ externalId: "2", name: "Adidas", metadata: {} }], hasMore: false, nextPage: null }),
