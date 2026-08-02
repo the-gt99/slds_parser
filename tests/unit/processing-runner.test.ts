@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProcessingRunner, ProductOperationPipeline } from "../../src/application/index.js";
 import type { ProductOperation, SourceProcessor } from "../../src/contracts/index.js";
-import { ProductOperationRegistry, SourceProcessorRegistry, TargetExportPolicyRegistry } from "../../src/core/registry/index.js";
-import { WordPressExportPolicy } from "../../src/integrations/index.js";
+import { ProductOperationRegistry, SourceProcessorRegistry } from "../../src/core/registry/index.js";
 import { ProductClassifier } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
@@ -12,8 +11,7 @@ async function setup(version = "1", operation?: ProductOperation) {
   const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
-  const exportPolicies = new TargetExportPolicyRegistry(); exportPolicies.register({ targetCode: "fake-exporter", version: "1", evaluate: (product) => ({ ready: product.classification?.status === "complete", missingRequiredCandidateKeys: [] }) });
-  return { store, repositories, process, exportPolicies, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, new ProductOperationPipeline(operationRegistry), new ProductClassifier(repositories.classifications), exportPolicies) };
+  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, new ProductOperationPipeline(operationRegistry), new ProductClassifier(repositories.classifications)) };
 }
 
 describe("ProcessingRunner", () => {
@@ -27,7 +25,7 @@ describe("ProcessingRunner", () => {
     const first = await setup("1"); await first.runner.processProduct({ sourceProductId: "2", force: false }); const hash1 = [...first.store.internals.values()][0]!.inputHash;
     first.store.jobs.clear(); await first.runner.processProduct({ sourceProductId: "2", force: false }); expect(first.process).toHaveBeenCalledTimes(1);
     const secondProcess = vi.fn().mockResolvedValue(validProduct()); const registry = new SourceProcessorRegistry(); registry.register({ sourceCode: "fake", version: "2", process: secondProcess });
-    const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), registry, new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications), first.exportPolicies);
+    const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), registry, new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications));
     await runner.processProduct({ sourceProductId: "2", force: false }); expect([...first.store.internals.values()][0]!.inputHash).not.toBe(hash1); expect(secondProcess).toHaveBeenCalledOnce();
   });
   it("does not enqueue exports when content is unchanged", async () => {
@@ -61,25 +59,5 @@ describe("ProcessingRunner", () => {
     expect([...store.internals.values()][0]?.status).toBe("classified");
     expect([...store.internals.values()][0]?.data.classification?.resolved[0]).toMatchObject({ referenceValueId: "30", resolutionKind: "mapping" });
     expect([...store.jobs.values()][0]?.jobType).toBe("export_product");
-  });
-  it("enqueues WordPress export when only optional candidates remain unresolved", async () => {
-    const value = await setup();
-    value.store.targets.set("10", targetRecord({ exporterCode: "wordpress" }));
-    value.exportPolicies.register(new WordPressExportPolicy());
-    value.process.mockResolvedValue({
-      ...validProduct(),
-      referenceCandidates: [
-        { key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product", sourceValue: "Nike", context: {}, evidence: {} },
-        { key: "product:category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "Running", context: {}, evidence: {} },
-        { key: "product:color", typeCode: "color", scope: "product.color", subjectKind: "product", sourceValue: "Pink", context: {}, evidence: {} },
-      ],
-    });
-    value.store.classificationDecisions.set("1/brand/product.brand/nike/{}", { mappingId: "20", referenceValueId: "30", status: "confirmed", revision: "1" });
-    value.store.classificationDecisions.set("1/category/product.category/running/{}", { mappingId: "21", referenceValueId: "31", status: "confirmed", revision: "1" });
-
-    await value.runner.processProduct({ sourceProductId: "2", force: false });
-
-    expect([...value.store.internals.values()][0]?.data.classification?.status).toBe("partial");
-    expect([...value.store.jobs.values()][0]?.jobType).toBe("export_product");
   });
 });

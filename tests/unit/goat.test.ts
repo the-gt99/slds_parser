@@ -71,8 +71,9 @@ describe("GOAT adapter and processor", () => {
       expect.objectContaining({ key: "product:color", typeCode: "color", sourceValue: "blue" }),
     ]));
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
-      expect.arrayContaining(["size", "size_system", "condition", "box_condition"]),
+      expect.arrayContaining(["size", "size_system", "condition", "box_condition", "activity"]),
     );
+    expect(product.referenceCandidates.some((candidate) => candidate.scope === "product.tag.activity")).toBe(false);
     const offerRows = jsonFixture("offers.json") as readonly JsonValue[];
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
@@ -118,15 +119,45 @@ describe("GOAT adapter and processor", () => {
       expect.objectContaining({ key: "product:tag:technology:0", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Foam" }),
       expect.objectContaining({ key: "product:tag:technology:1", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Zoom Air" }),
       expect.objectContaining({ key: "product:activity:0", typeCode: "activity", scope: "product.activity", sourceValue: "Running" }),
-      expect.objectContaining({ key: "product:tag:activity:0", typeCode: "tag", scope: "product.tag.activity", sourceValue: "Running" }),
       expect.objectContaining({ key: "product:tag:source:0", typeCode: "tag", scope: "product.tag.source", sourceValue: "Limited" }),
       expect.objectContaining({ key: "product:tag:source:1", typeCode: "tag", scope: "product.tag.source", sourceValue: "Performance" }),
     ]));
+    expect(product.referenceCandidates.some((candidate) => candidate.scope === "product.tag.activity")).toBe(false);
     expect(product.referenceCandidates.filter((candidate) => candidate.scope === "product.tag.technology" && candidate.sourceValue === "Foam")).toHaveLength(1);
     expect(product.metadata).toMatchObject({ route: "sneakers" });
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
       expect.arrayContaining(["product_family", "gender", "season"]),
     );
+  });
+  it("groups GOAT colorways by a stable model value without merging different models from one family", async () => {
+    const processor = new GoatSourceProcessor();
+    const process = async (id: string, name: string, color: string, silhouette: string) => {
+      const productPayload = {
+        ...(jsonFixture("product.json") as JsonObject),
+        id,
+        name,
+        color,
+        silhouette,
+      } satisfies JsonObject;
+      const context = { source: source(), sourceProduct: { id, sourceId: "1", sourceKey: id, metadata: {} }, parts: [
+        { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+        { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+      ] } satisfies ProcessingContext;
+      const product = await processor.process(context);
+      return product.referenceCandidates.find((candidate) => candidate.key === "product:model");
+    };
+
+    const black = await process("1", "YZY SL-01 'Black'", "Black", "YZY SL-01");
+    const white = await process("2", "YZY SL-01 'White'", "White", "YZY SL-01");
+    const golf = await process("3", "Under Armour Wmns Surge Golf 'White Clay'", "White Clay", "Surge");
+    const fourth = await process("4", "Under Armour Surge 4 GS 'Serpentine'", "Serpentine", "Surge");
+    const malformed = await process("5", "Hellstar Logo Slide 'Black", "Black", "Hellstar Logo Slide");
+
+    expect(black).toMatchObject({ sourceValue: "YZY SL-01", context: { family: "YZY SL-01" } });
+    expect(white).toMatchObject({ sourceValue: "YZY SL-01", context: { family: "YZY SL-01" } });
+    expect(golf?.sourceValue).toBe("Under Armour Wmns Surge Golf");
+    expect(fourth?.sourceValue).toBe("Under Armour Surge 4 GS");
+    expect(malformed?.sourceValue).toBe("Hellstar Logo Slide");
   });
 });
 

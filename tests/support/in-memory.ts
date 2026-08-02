@@ -34,7 +34,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
     classifications: {
       listReferenceTypes: async (typeCodes) => typeCodes.filter((typeCode) => store.classificationTypes.has(typeCode)).map((code) => ({
         code,
-        cardinality: ["tag", "material", "activity"].includes(code) ? "multiple" as const : "single" as const,
+        cardinality: ["category", "tag", "material", "activity"].includes(code) ? "multiple" as const : "single" as const,
         allowedSubjectKinds: ["size", "condition", "box_condition"].includes(code) ? ["variant"] as const : ["product"] as const,
         metadata: {},
       })),

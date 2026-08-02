@@ -1,6 +1,6 @@
 import type { JsonValue, SourceDTO, SourceProductDTO, SourceProductPartDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
-import type { SourceProcessorRegistry, TargetExportPolicyRegistry } from "../core/registry/index.js";
+import type { SourceProcessorRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository, UnitOfWork } from "../repositories/index.js";
 import type { ProductClassifier, ProductClassifierRun } from "../services/index.js";
@@ -22,7 +22,6 @@ export class ProcessingRunner {
     private readonly processors: SourceProcessorRegistry,
     private readonly operations: ProductOperationPipeline,
     private readonly classifier: ProductClassifier,
-    private readonly exportPolicies: TargetExportPolicyRegistry,
   ) {}
 
   async processProduct(payload: ProcessProductPayload): Promise<RunnerResult> {
@@ -35,7 +34,6 @@ export class ProcessingRunner {
     const inputHash = hashStableJson({
       processorVersion: processor.version,
       operations: this.operations.fingerprint(source.code),
-      exportPolicies: this.exportPolicies.fingerprint(),
       source: { code: source.code, config: source.config },
       sourceProduct: {
         sourceKey: product.sourceKey,
@@ -72,7 +70,6 @@ export class ProcessingRunner {
     const data = classificationRun.product;
     const contentHash = hashStableJson(data as unknown as JsonValue);
     const targets = await this.repositories.targets.listEnabled();
-    const exportableTargets = targets.filter((target) => this.exportPolicies.get(target.exporterCode).evaluate(data).ready);
     await this.unitOfWork.transaction(async (repositories) => {
       const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
         processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
@@ -84,8 +81,8 @@ export class ProcessingRunner {
         fingerprint: data.classification.fingerprint,
         observations: classificationRun.observations,
       });
-      if (existing?.inputHash !== inputHash || existing?.contentHash !== contentHash) {
-        for (const target of exportableTargets) await repositories.jobs.enqueue({ jobType: "export_product",
+      if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
+        for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
           payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
       }
     });

@@ -52,6 +52,31 @@ function namedValues(value: JsonValue | undefined): string[] {
   return [...unique.values()];
 }
 
+function modelSourceValue(title: string, color: string): string {
+  const trimmedTitle = title.trim();
+  const trimmedColor = color.trim();
+  if (trimmedTitle === "" || trimmedColor === "") return trimmedTitle;
+  const normalizedTitle = trimmedTitle.toLocaleLowerCase("en-US");
+  const normalizedColor = trimmedColor.toLocaleLowerCase("en-US");
+  const quotedSuffixes = [
+    `'${trimmedColor}'`,
+    `"${trimmedColor}"`,
+    `‘${trimmedColor}’`,
+    `’${trimmedColor}’`,
+    `'${trimmedColor}`,
+    `"${trimmedColor}`,
+    `‘${trimmedColor}`,
+    `’${trimmedColor}`,
+  ];
+  for (const quotedSuffix of quotedSuffixes) {
+    const suffix = ` ${quotedSuffix}`;
+    if (!normalizedTitle.endsWith(suffix.toLocaleLowerCase("en-US"))) continue;
+    const base = trimmedTitle.slice(0, -suffix.length).trim();
+    if (base !== "") return base;
+  }
+  return trimmedTitle;
+}
+
 function candidate(
   key: string,
   typeCode: string,
@@ -80,7 +105,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.3.0";
+  readonly version = "2.4.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -96,6 +121,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     const description = text(product.story) || text(product.description);
     const brand = text(product.brandName) || text(product.brand);
     const family = text(product.silhouette);
+    const color = text(product.color);
     const gender = text(product.singleGender) || text(product.gender);
     const categoryRaw = Array.isArray(product.category) ? text(product.category[0]) : text(product.productCategory);
     const productCategory = text(product.productCategory);
@@ -114,10 +140,11 @@ export class GoatSourceProcessor implements SourceProcessor {
     const variants: ProductVariantDTO[] = [];
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", title, facts({ brand, family }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", modelSourceValue(title, color),
+      facts({ brand, family }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory,
       facts({ route, productCategory, productType, audience: gender }), productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", text(product.color), {}, productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", color, {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:material", "material", "product.material", text(product.upperMaterial), {}, productEvidence));
     const technologies = namedValues(product.technologies);
     const midsole = text(product.midsole).trim();
@@ -127,15 +154,9 @@ export class GoatSourceProcessor implements SourceProcessor {
     technologies.forEach((value, index) => appendCandidate(referenceCandidates,
       candidate(`product:tag:technology:${index}`, "tag", "product.tag.technology", value, {}, productEvidence)));
     const activities = namedValues(product.activitiesList ?? product.activities);
-    if (categoryRaw !== "" && !activities.some((value) => value.toLocaleLowerCase("en-US") === categoryRaw.toLocaleLowerCase("en-US"))) {
-      activities.push(categoryRaw);
-    }
-    activities.forEach((value, index) => {
-      appendCandidate(referenceCandidates,
-        candidate(`product:activity:${index}`, "activity", "product.activity", value, facts({ productCategory, productType }), productEvidence));
-      appendCandidate(referenceCandidates,
-        candidate(`product:tag:activity:${index}`, "tag", "product.tag.activity", value, {}, productEvidence));
-    });
+    activities.forEach((value, index) => appendCandidate(referenceCandidates,
+      candidate(`product:activity:${index}`, "activity", "product.activity", value,
+        facts({ productCategory, productType }), productEvidence)));
     namedValues(product.tags).forEach((value, index) => appendCandidate(referenceCandidates,
       candidate(`product:tag:source:${index}`, "tag", "product.tag.source", value, {}, productEvidence)));
     const keys = new Set<string>();
