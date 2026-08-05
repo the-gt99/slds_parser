@@ -2,7 +2,7 @@ import { createApplication } from "../bootstrap.js";
 import { loadWordPressTargetConfig } from "../config/index.js";
 import type { JsonObject } from "../contracts/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import { buildWordPressUpsertPayload, WordPressProductSnapshotReader } from "../integrations/index.js";
+import { buildWordPressUpsertPayload, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 
 function idsFromEnvironment(value: string | undefined, name: string): readonly string[] {
   const ids = [...new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
@@ -70,6 +70,7 @@ try {
   if (sourceCodes.size !== 1) throw new Error("One bootstrap run must contain products from one source");
 
   const reader = new WordPressProductSnapshotReader(wordpress);
+  const exporter = new WordPressExporter(wordpress);
   const remote = await reader.read(products[0]!.source.code, products.map(({ sourceProduct }) => sourceProduct.externalId!));
   const remoteByExternalId = new Map(remote.map((item) => [item.sourceExternalId, item]));
   const reports: Record<string, unknown>[] = [];
@@ -118,6 +119,7 @@ try {
       });
       const expectedItems = record(payload.variations).items;
       const actualItems = record(item.snapshot.product).variations;
+      const preflight = await exporter.preflightPayload(payload);
       reports.push({
         sourceProductId: sourceProduct.id,
         sourceExternalId: sourceProduct.externalId,
@@ -125,6 +127,7 @@ try {
         snapshot: "saved",
         dryRun: {
           status: "built",
+          preflight,
           taxonomyDifferences: taxonomyDifferences(payload, item.snapshot),
           variations: { expected: Array.isArray(expectedItems) ? expectedItems.length : 0, actual: Array.isArray(actualItems) ? actualItems.length : 0 },
         },

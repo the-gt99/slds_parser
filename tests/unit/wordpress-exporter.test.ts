@@ -180,6 +180,28 @@ describe("WordPressExporter", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=job&id=9");
   });
 
+  it("preflights an upsert payload without creating a job", async () => {
+    const input = context();
+    const payload = await buildWordPressUpsertPayload(input);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      operation: "product_upsert_lookup",
+      product_id: 321,
+      target_id: 321,
+      matched_by: "legacy_goat_id",
+      payload_hash: payload.payload_hash,
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.preflightPayload(payload)).resolves.toEqual({
+      externalId: "321",
+      matchedBy: "legacy_goat_id",
+      payloadHash: payload.payload_hash,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
+  });
+
   it("stops before the request when a target size mapping is missing", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);

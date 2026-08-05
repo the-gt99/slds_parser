@@ -51,6 +51,16 @@ interface WordPressResponse {
   readonly error?: unknown;
   readonly code?: unknown;
   readonly job?: unknown;
+  readonly target_id?: unknown;
+  readonly product_id?: unknown;
+  readonly matched_by?: unknown;
+  readonly payload_hash?: unknown;
+}
+
+export interface WordPressUpsertPreflightResult {
+  readonly externalId: string;
+  readonly matchedBy: string;
+  readonly payloadHash: string;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -358,6 +368,16 @@ export class WordPressExporter {
     private readonly requestImplementation: typeof fetch = fetch,
     private readonly wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   ) {}
+
+  async preflightPayload(payload: JsonObject): Promise<WordPressUpsertPreflightResult> {
+    const expectedPayloadHash = text(payload.payload_hash);
+    if (!/^[a-f0-9]{64}$/u.test(expectedPayloadHash)) throw new IntegrationContractError("WordPress preflight payload_hash is invalid");
+    const response = await this.request("upsert-lookup", { method: "POST", body: JSON.stringify({ payload }) });
+    const externalId = String(positiveInteger(response.target_id ?? response.product_id, "WordPress preflight target_id"));
+    const payloadHash = text(response.payload_hash);
+    if (payloadHash !== expectedPayloadHash) throw new IntegrationContractError("WordPress preflight payload hash does not match the request");
+    return { externalId, matchedBy: text(response.matched_by), payloadHash };
+  }
 
   async export(context: ExportContext): Promise<ExportResult> {
     const payload = await buildWordPressUpsertPayload(context);
