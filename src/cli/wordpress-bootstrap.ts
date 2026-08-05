@@ -47,23 +47,26 @@ function taxonomyDifferences(payload: JsonObject, snapshot: JsonObject) {
   });
 }
 
-function variationSizeTerms(value: unknown, source: "payload" | "snapshot"): readonly string[] {
-  const items = source === "payload" ? record(value).items : value;
+function variationSizeTerms(value: unknown): readonly string[] {
+  const items = record(value).items;
   if (!Array.isArray(items)) return [];
   return items.flatMap((item) => {
-    if (source === "payload") {
-      const size = record(record(item).size);
-      const taxonomy = String(size.taxonomy ?? "");
-      const id = Number(size.term_id);
-      return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
-    }
-    const attributes = record(item).attributes;
-    if (!Array.isArray(attributes)) return [];
-    return attributes.flatMap((attribute) => {
-      const item = record(attribute);
-      const taxonomy = String(item.taxonomy ?? "");
-      const id = Number(item.term_id);
-      return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
+    const size = record(record(item).size);
+    const taxonomy = String(size.taxonomy ?? "");
+    const id = Number(size.term_id);
+    return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
+  }).sort((left, right) => left.localeCompare(right));
+}
+
+function snapshotActiveSizeTerms(snapshot: JsonObject, expected: readonly string[]): readonly string[] {
+  const expectedTaxonomies = new Set(expected.map((value) => value.split(":", 1)[0]!).filter(Boolean));
+  const taxonomies = record(record(snapshot.product).taxonomies);
+  return [...expectedTaxonomies].flatMap((taxonomy) => {
+    const terms = taxonomies[taxonomy];
+    if (!Array.isArray(terms)) return [];
+    return terms.flatMap((term) => {
+      const id = Number(record(term).term_id);
+      return Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
     });
   }).sort((left, right) => left.localeCompare(right));
 }
@@ -123,8 +126,15 @@ function variationDifferences(plan: readonly JsonObject[], snapshot: unknown) {
   return [...new Set([...expected.keys(), ...actual.keys()])].sort().flatMap((key) => {
     const expectedState = expected.get(key) ?? null;
     const actualState = actual.get(key) ?? null;
+    if (expectedState === null && actualState?.stockStatus === "outofstock" && actualState.manageStock && actualState.stockQuantity === 0) return [];
     return JSON.stringify(expectedState) === JSON.stringify(actualState) ? [] : [{ sizeTerm: key, expected: expectedState, actual: actualState }];
   });
+}
+
+function deactivatedVariationTerms(plan: readonly JsonObject[], snapshot: unknown): readonly string[] {
+  const expected = plannedVariationStates(plan);
+  return [...snapshotVariationStates(snapshot)].flatMap(([key, state]) => !expected.has(key)
+    && state.stockStatus === "outofstock" && state.manageStock && state.stockQuantity === 0 ? [key] : []);
 }
 
 const sourceProductIds = idsFromEnvironment(process.env.WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS, "WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS");
@@ -199,8 +209,8 @@ try {
       });
       const expectedItems = record(payload.variations).items;
       const actualItems = record(item.snapshot.product).variations;
-      const expectedSizeTerms = variationSizeTerms(payload.variations, "payload");
-      const actualSizeTerms = variationSizeTerms(actualItems, "snapshot");
+      const expectedSizeTerms = variationSizeTerms(payload.variations);
+      const actualSizeTerms = snapshotActiveSizeTerms(item.snapshot, expectedSizeTerms);
       const preflight = await exporter.preflightPayload(payload);
       reports.push({
         sourceProductId: sourceProduct.id,
@@ -219,6 +229,7 @@ try {
             expectedSizeTerms,
             actualSizeTerms,
             differences: variationDifferences(preflight.variationPlan, actualItems),
+            deactivatedSizeTerms: deactivatedVariationTerms(preflight.variationPlan, actualItems),
           },
           images: {
             expected: Array.isArray(record(payload.product).images) ? (record(payload.product).images as readonly unknown[]).length : 0,
