@@ -60,5 +60,59 @@ describe("ProductAdminService", () => {
     expect(result.targets[0]?.editUrl).toBe("https://shop.example/wp-admin/post.php?post=99&action=edit");
     expect(result.product?.images[0]).not.toHaveProperty("localPath");
     expect(result.product?.images[0]).not.toHaveProperty("webpLocalPath");
+    expect(result.processing.currentOutput?.title).toBe("Test shoe");
+    expect(result.processing.currentOutput?.images[0]).not.toHaveProperty("localPath");
+  });
+
+  it("prioritizes an active export job over the stored target status", async () => {
+    const value = snapshot();
+    const target = value.targets[0]!;
+    const observed = { ...target.product!, status: "observed" };
+    const repository: ProductAdminRepository = {
+      getById: vi.fn().mockResolvedValue({
+        ...value,
+        targets: [{ ...target, product: observed }],
+        jobs: [{
+          id: "50", jobType: "export_product", payload: { internalProductId: "7", targetId: "10", force: false },
+          status: "retry", attempts: 1, availableAt: value.sourceProduct.updatedAt, lockedAt: null, lockedBy: null,
+          uniqueKey: "export-7-10", lastError: "temporary", createdAt: value.sourceProduct.createdAt,
+          updatedAt: value.sourceProduct.updatedAt, finishedAt: null,
+        }],
+      }),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).getProduct("3");
+
+    expect(result.targets[0]).toMatchObject({ status: "pending", activeExportStatus: "retry", externalId: "99" });
+  });
+
+  it("keeps the observed status when no export job is active", async () => {
+    const value = snapshot();
+    const target = value.targets[0]!;
+    const repository: ProductAdminRepository = { getById: vi.fn().mockResolvedValue({ ...value, targets: [{ ...target, product: { ...target.product!, status: "observed" } }] }) };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).getProduct("3");
+
+    expect(result.targets[0]).toMatchObject({ status: "observed", activeExportStatus: null });
+  });
+
+  it("exposes the canonical DTO separately from a historical classified attempt", async () => {
+    const value = snapshot();
+    const historical = { ...value.internalProduct!.data, title: "Old classified title" };
+    const repository: ProductAdminRepository = {
+      getById: vi.fn().mockResolvedValue({
+        ...value,
+        processingAttempts: [{
+          attemptId: "attempt-1", sourceProductId: "3", processorVersion: "2.1.0", status: "completed",
+          processorOutput: historical, operationsOutput: historical, classifiedOutput: historical,
+          startedAt: value.sourceProduct.createdAt, finishedAt: value.sourceProduct.updatedAt, error: null,
+        }],
+      }),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).getProduct("3");
+
+    expect(result.processing.currentOutput?.title).toBe("Test shoe");
+    expect(result.processing.attempts[0]?.classifiedOutput?.title).toBe("Old classified title");
   });
 });

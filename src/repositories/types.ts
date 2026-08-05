@@ -435,6 +435,7 @@ export interface ProductListItem {
   readonly collectedAt: Timestamp | null;
   readonly processedAt: Timestamp | null;
   readonly targetStatus: string;
+  readonly targetJobStatus: JobStatus | null;
   readonly targetExternalId: string | null;
   readonly hasTargetSnapshot: boolean;
 }

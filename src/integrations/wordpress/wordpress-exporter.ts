@@ -59,7 +59,8 @@ interface WordPressResponse {
 }
 
 export interface WordPressUpsertPreflightResult {
-  readonly externalId: string;
+  readonly externalId: string | null;
+  readonly willCreate: boolean;
   readonly matchedBy: string;
   readonly payloadHash: string;
   readonly variationPlan: readonly JsonObject[];
@@ -390,12 +391,25 @@ export class WordPressExporter {
     const expectedPayloadHash = text(payload.payload_hash);
     if (!/^[a-f0-9]{64}$/u.test(expectedPayloadHash)) throw new IntegrationContractError("WordPress preflight payload_hash is invalid");
     const response = await this.request("upsert-lookup", { method: "POST", body: JSON.stringify({ payload }) });
-    const externalId = String(positiveInteger(response.target_id ?? response.product_id, "WordPress preflight target_id"));
+    const matchedBy = text(response.matched_by);
+    if (matchedBy === "") throw new IntegrationContractError("WordPress preflight matched_by is required");
+    const rawTargetId = response.target_id ?? response.product_id;
+    const targetId = typeof rawTargetId === "number"
+      ? rawTargetId
+      : typeof rawTargetId === "string" && /^\d+$/u.test(rawTargetId) ? Number(rawTargetId) : Number.NaN;
+    if (!Number.isSafeInteger(targetId) || targetId < 0) {
+      throw new IntegrationContractError("WordPress preflight target_id must be a non-negative integer");
+    }
+    const willCreate = targetId === 0;
+    if (willCreate !== (matchedBy === "created")) {
+      throw new IntegrationContractError("WordPress preflight target_id does not match matched_by");
+    }
+    const externalId = willCreate ? null : String(targetId);
     const payloadHash = text(response.payload_hash);
     if (payloadHash !== expectedPayloadHash) throw new IntegrationContractError("WordPress preflight payload hash does not match the request");
     if (!Array.isArray(response.variation_plan)) throw new IntegrationContractError("WordPress preflight variation_plan must be a list");
     const variationPlan = response.variation_plan.map((value, index) => record(value, `WordPress preflight variation_plan[${index}]`) as JsonObject);
-    return { externalId, matchedBy: text(response.matched_by), payloadHash, variationPlan };
+    return { externalId, willCreate, matchedBy, payloadHash, variationPlan };
   }
 
   async export(context: ExportContext): Promise<ExportResult> {

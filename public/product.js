@@ -19,6 +19,7 @@ const statusNames = {
   unresolved: "Не сопоставлено",
   ambiguous: "Конфликт правил",
   synced: "Загружен",
+  observed: "Найден в WordPress",
   not_exported: "Не выгружен",
   available: "В наличии",
   unavailable: "Нет в наличии",
@@ -180,21 +181,37 @@ function jsonDetails(title, value, open = false) {
   details.append(summary, pre); return details;
 }
 
+function stageRow(title, detail) {
+  const row = document.createElement("div");
+  row.className = "stage-row";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const description = document.createElement("span");
+  description.textContent = detail;
+  row.append(heading, description);
+  return row;
+}
+
 function renderStages(item) {
   const list = byId("stages-list"); list.replaceChildren();
-  const identity = document.createElement("div"); identity.className = "stage-row";
-  identity.innerHTML = `<strong>1. Discovery / identity</strong><span>${item.source.code} · ${item.sourceProduct.sourceKey} · external ID ${item.sourceProduct.externalId || "—"}</span>`;
+  const identity = stageRow("1. Discovery / identity", `${item.source.code} · ${item.sourceProduct.sourceKey} · external ID ${item.sourceProduct.externalId || "—"}`);
   identity.append(jsonDetails("Discovery metadata", item.sourceProduct.discoveryMetadata)); list.append(identity);
-  const parts = document.createElement("div"); parts.className = "stage-row"; parts.innerHTML = `<strong>2. Текущие parts</strong><span>${item.collection.parts.length} частей; это вход процессора, не DTO.</span>`;
+  const parts = stageRow("2. Текущие parts", `${item.collection.parts.length} частей; это вход процессора, не DTO.`);
   for (const part of item.collection.parts) { const group = document.createElement("div"); group.className = "part-payloads"; group.append(jsonDetails(`${part.partKey}: raw`, part.rawPayload), jsonDetails(`${part.partKey}: parsed`, part.parsedPayload)); parts.append(group); } list.append(parts);
   const attempts = item.processing.attempts || [];
   const attempt = attempts[0];
-  const processor = document.createElement("div"); processor.className = "stage-row"; processor.innerHTML = `<strong>3. DTO после SourceProcessor</strong><span>${attempt ? `Попытка ${attempt.attemptId} · v${attempt.processorVersion}` : "Для прошлых обработок это состояние не сохранялось."}</span>`; if (attempt) processor.append(jsonDetails("DTO процессора", attempt.processorOutput)); list.append(processor);
-  const operations = document.createElement("div"); operations.className = "stage-row"; operations.innerHTML = `<strong>4. ProductOperation по порядку</strong><span>${attempt ? "Выход каждой выполненной операции" : "Исторические выходы отсутствуют."}</span>`;
+  const processor = stageRow("3. DTO после SourceProcessor", attempt ? `Историческая попытка ${attempt.attemptId} · v${attempt.processorVersion}` : "Для прошлых обработок это состояние не сохранялось."); if (attempt) processor.append(jsonDetails("Исторический DTO процессора", attempt.processorOutput)); list.append(processor);
+  const operations = stageRow("4. ProductOperation по порядку", attempt ? "Исторические выходы операций выбранной попытки" : "Исторические выходы отсутствуют.");
   const currentOperations = attempt ? (item.processing.operations || []).filter((operation) => operation.attemptId === attempt.attemptId).sort((a, b) => a.sequence - b.sequence) : [];
   for (const operation of currentOperations) operations.append(jsonDetails(`${operation.sequence + 1}. ${operation.operationName} · v${operation.operationVersion}`, operation.outputData ?? { status: operation.status, error: operation.error, note: "Выход не сохранялся" })); list.append(operations);
-  const final = document.createElement("div"); final.className = "stage-row"; final.innerHTML = `<strong>5. Итоговый DTO после операций и классификации</strong><span>${attempt?.classifiedOutput ? "Сохранён для последней попытки" : item.product ? "Доступен только текущий итоговый товар; стадийный снимок отсутствует" : "Ещё не сформирован"}</span>`; if (attempt?.classifiedOutput) final.append(jsonDetails("Итоговый DTO", attempt.classifiedOutput)); list.append(final);
-  const snapshot = document.createElement("div"); snapshot.className = "stage-row"; snapshot.innerHTML = `<strong>6. Текущий WordPress snapshot</strong><span>${item.wordpressSnapshots?.[0] ? `WP ${item.wordpressSnapshots[0].externalId} · ${formatDate(item.wordpressSnapshots[0].fetchedAt)}` : "Снимка нет"}</span>`; if (item.wordpressSnapshots?.[0]) snapshot.append(jsonDetails("Снимок WordPress", item.wordpressSnapshots[0].payload)); list.append(snapshot);
+  const currentOutput = item.processing.currentOutput;
+  const final = stageRow("5. Текущий итоговый DTO", currentOutput ? "Актуальные данные из internal_products" : "Ещё не сформирован");
+  if (currentOutput) final.append(jsonDetails("Текущий итоговый DTO", currentOutput, true));
+  if (attempt?.classifiedOutput) final.append(jsonDetails(`Исторический classified DTO попытки ${attempt.attemptId}`, attempt.classifiedOutput));
+  list.append(final);
+  const latestSnapshot = item.wordpressSnapshots?.[0];
+  const snapshot = stageRow("6. Текущий WordPress snapshot", latestSnapshot ? `WP ${latestSnapshot.externalId} · ${formatDate(latestSnapshot.fetchedAt)}` : "Снимка нет");
+  if (latestSnapshot) snapshot.append(jsonDetails("Снимок WordPress", latestSnapshot.payload)); list.append(snapshot);
 }
 
 function renderHero(item) {
@@ -494,7 +511,10 @@ function renderTargets(item) {
     const heading = document.createElement("div");
     const name = document.createElement("strong");
     name.textContent = target.name;
-    heading.append(name, badge(humanStatus(target.status), target.status));
+    const statusText = target.status === "pending" && target.activeExportStatus
+      ? `В очереди · ${humanStatus(target.activeExportStatus)}`
+      : humanStatus(target.status);
+    heading.append(name, badge(statusText, target.status));
     const meta = document.createElement("span");
     meta.textContent = target.externalId ? `ID ${target.externalId} · ${formatDate(target.syncedAt)}` : "На target ещё не создан";
     card.append(heading, meta);
@@ -525,10 +545,12 @@ async function loadPreview() {
   const box = byId("preview-state"); const content = byId("preview-content"); const button = byId("load-preview");
   const target = state.product?.targets?.find((item) => item.exporterCode === "wordpress");
   if (!target) { box.textContent = "WordPress target не настроен для preview."; return; }
-  button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; content.hidden = true;
+  button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; box.classList.remove("error"); content.hidden = true;
   try {
     const { item } = await api(`/api/products/${productId}/wordpress-preview?targetId=${encodeURIComponent(target.id)}`);
-    box.textContent = `Preflight выполнен без записи · WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`;
+    box.textContent = item.willCreate
+      ? `Preflight выполнен без записи · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
+      : `Preflight выполнен без записи · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`;
     content.replaceChildren(
       jsonDetails("Основные поля", item.payload.fields, true),
       jsonDetails("Таксономии", item.payload.taxonomies),

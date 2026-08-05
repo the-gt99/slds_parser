@@ -36,5 +36,6 @@ export function createPostgresRepositories(executor: SqlExecutor): TransactionRe
     references: new PostgresReferenceRepository(executor),
     targets: new PostgresTargetRepository(executor),
     jobs: new PostgresJobRepository(executor),
+    productOperationHistory: new PostgresProductOperationHistoryRepository(executor),
   };
 }

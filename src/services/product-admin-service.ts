@@ -72,6 +72,8 @@ function statusCounts(values: readonly { readonly status: string }[]): Record<st
   return counts;
 }
 
+const activeExportStatuses = ["running", "retry", "pending"] as const;
+
 export class ProductAdminService {
   constructor(
     private readonly repository: ProductAdminRepository,
@@ -152,6 +154,7 @@ export class ProductAdminService {
         parts: snapshot.parts,
       },
       processing: {
+        currentOutput: internal === null ? null : publicDto(internal.data),
         operations: snapshot.operations.map((operation) => ({
           ...operation,
           outputData: publicDto(operation.outputData),
@@ -183,21 +186,24 @@ export class ProductAdminService {
         const editUrl = product?.externalId === null || product?.externalId === undefined
           ? null
           : provider?.productEditUrl?.(product.externalId) ?? null;
+        const attempts = snapshot.jobs.filter((job) => {
+          if (job.jobType !== "export_product" || job.payload === null || typeof job.payload !== "object" || Array.isArray(job.payload)) return false;
+          return String((job.payload as { readonly targetId?: unknown }).targetId ?? "") === target.id;
+        });
+        const activeExportStatus = activeExportStatuses.find((status) => attempts.some((job) => job.status === status)) ?? null;
         return {
           id: target.id,
           code: target.code,
           name: target.name,
           exporterCode: target.exporterCode,
-          status: product?.status ?? "not_exported",
+          status: activeExportStatus === null ? product?.status ?? "not_exported" : "pending",
+          activeExportStatus,
           externalId: product?.externalId ?? null,
           editUrl,
           lastAttemptAt: product?.lastAttemptAt ?? null,
           syncedAt: product?.syncedAt ?? null,
           lastError: product?.lastError ?? null,
-          attempts: snapshot.jobs.filter((job) => {
-            if (job.jobType !== "export_product" || job.payload === null || typeof job.payload !== "object" || Array.isArray(job.payload)) return false;
-            return String((job.payload as { readonly targetId?: unknown }).targetId ?? "") === target.id;
-          }).map((job) => ({ id: job.id, status: job.status, attempts: job.attempts, createdAt: job.createdAt, finishedAt: job.finishedAt, lastError: job.lastError })),
+          attempts: attempts.map((job) => ({ id: job.id, status: job.status, attempts: job.attempts, createdAt: job.createdAt, finishedAt: job.finishedAt, lastError: job.lastError })),
         };
       }),
       wordpressSnapshots: (snapshot.snapshots ?? []).map((item) => {

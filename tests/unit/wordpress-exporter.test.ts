@@ -214,6 +214,7 @@ describe("WordPressExporter", () => {
 
     await expect(exporter.preflightPayload(payload)).resolves.toEqual({
       externalId: "321",
+      willCreate: false,
       matchedBy: "legacy_goat_id",
       payloadHash: payload.payload_hash,
       variationPlan: [{
@@ -228,6 +229,28 @@ describe("WordPressExporter", () => {
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
+  });
+
+  it("represents a new product preflight without an external ID", async () => {
+    const payload = await buildWordPressUpsertPayload(context());
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      operation: "product_upsert_lookup",
+      product_id: 0,
+      target_id: 0,
+      matched_by: "created",
+      payload_hash: payload.payload_hash,
+      variation_plan: [],
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.preflightPayload(payload)).resolves.toEqual({
+      externalId: null,
+      willCreate: true,
+      matchedBy: "created",
+      payloadHash: payload.payload_hash,
+      variationPlan: [],
+    });
   });
 
   it("stops before the request when a target size mapping is missing", async () => {

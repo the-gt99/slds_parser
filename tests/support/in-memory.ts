@@ -95,6 +95,14 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       saveExportFailure: async (input: SaveExportFailureInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: old?.externalId ?? null, status: input.status, lastExportedHash: old?.lastExportedHash ?? null, lastExportFingerprint: old?.lastExportFingerprint ?? null, lastAttemptAt: input.attemptedAt, syncedAt: old?.syncedAt ?? null, lastError: input.error, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
     },
     jobs: new MemoryJobRepository(store),
+    productOperationHistory: {
+      startAttempt: async () => {},
+      completeAttempt: async () => {},
+      failAttempt: async () => {},
+      start: async () => store.id(),
+      complete: async () => {},
+      fail: async () => {},
+    },
   };
 }
 

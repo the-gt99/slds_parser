@@ -121,7 +121,8 @@ export class WordPressPreviewService {
     const actualImageCount = Array.isArray(current.images) ? current.images.length : 0;
     return {
       target: { id: target.id, code: target.code, name: target.name, enabled: target.enabled },
-      externalId: preflight.externalId, matchedBy: preflight.matchedBy, payloadHash: preflight.payloadHash,
+      externalId: preflight.externalId, willCreate: preflight.willCreate,
+      matchedBy: preflight.matchedBy, payloadHash: preflight.payloadHash,
       payload: { fields: Object.fromEntries(["title", "slug", "sku", "description_html", "short_description_html"].map((field) => [field, product[field] ?? null])), taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations },
       diff: {
         snapshotFetchedAt: snapshot?.fetchedAt ?? null,

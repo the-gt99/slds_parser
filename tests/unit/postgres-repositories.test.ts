@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   PostgresClassificationRepository,
   PostgresJobRepository,
+  PostgresProductAdminRepository,
   PostgresReferenceRepository,
   PostgresSourceProductRepository,
   PostgresSourceRepository,
   PostgresSourceRunRepository,
   PostgresTargetRepository,
 } from "../../src/infrastructure/db/index.js";
-import type { SqlExecutor, SqlResult } from "../../src/infrastructure/db/index.js";
+import type { SqlExecutor, SqlPool, SqlResult } from "../../src/infrastructure/db/index.js";
 
 interface Call { readonly text: string; readonly values: readonly unknown[] }
 
@@ -22,6 +23,10 @@ class FakeExecutor implements SqlExecutor {
     const rows = this.results.shift() ?? [];
     return { rows: rows as Row[], rowCount: rows.length };
   }
+}
+
+function pool(executor: FakeExecutor): SqlPool {
+  return { connect: async () => ({ query: executor.query.bind(executor), release: () => {} }), end: async () => {} };
 }
 
 const sourceRow = {
@@ -162,6 +167,46 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(call?.text).toContain("attempts = attempts + 1");
     expect(call?.text).toContain("ORDER BY available_at, id");
     expect(call?.values).toEqual(["worker", 30000]);
+  });
+
+  it("uses the computed target status for both filtering and product rows", async () => {
+    const executor = new FakeExecutor([
+      [{ total: "1" }],
+      [{
+        source_product_id: "2", source_id: "1", source_code: "goat", source_name: "GOAT",
+        source_key: "shoe", external_id: "100", title: "Shoe", source_status: "active",
+        stage: "classified", classification_status: "complete", collected_at: new Date("2026-08-01T00:00:00Z"),
+        processed_at: new Date("2026-08-01T01:00:00Z"), target_status: "observed", target_job_status: null,
+        target_external_id: "321", has_target_snapshot: true,
+      }],
+      [{ code: "goat", name: "GOAT" }],
+    ]);
+
+    const result = await new PostgresProductAdminRepository(pool(executor)).listProducts({ targetStatus: "observed", limit: 50, offset: 0 });
+
+    expect(result.items[0]).toMatchObject({ targetStatus: "observed", targetJobStatus: null });
+    expect(executor.calls[0]?.values).toContain("observed");
+    expect(executor.calls[0]?.text).toContain("CASE WHEN active_export.status IS NOT NULL THEN 'pending'");
+    expect(executor.calls[1]?.text).toContain("CASE WHEN active_export.status IS NOT NULL THEN 'pending'");
+  });
+
+  it("reports an active export job ahead of a stored target status", async () => {
+    const executor = new FakeExecutor([
+      [{ total: "1" }],
+      [{
+        source_product_id: "2", source_id: "1", source_code: "goat", source_name: "GOAT",
+        source_key: "shoe", external_id: "100", title: "Shoe", source_status: "active",
+        stage: "classified", classification_status: "complete", collected_at: null, processed_at: null,
+        target_status: "pending", target_job_status: "running", target_external_id: "321", has_target_snapshot: false,
+      }],
+      [],
+    ]);
+
+    const result = await new PostgresProductAdminRepository(pool(executor)).listProducts({ targetStatus: "pending", limit: 50, offset: 0 });
+
+    expect(result.items[0]).toMatchObject({ targetStatus: "pending", targetJobStatus: "running" });
+    expect(executor.calls[0]?.text).toContain("job.status IN ('pending', 'running', 'retry')");
+    expect(executor.calls[0]?.text).toContain("job.payload->>'targetId' = target_state.target_id::TEXT");
   });
 
   it.each(["complete", "retry", "fail"] as const)("%s clears the job lock", async (operation) => {

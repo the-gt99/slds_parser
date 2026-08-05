@@ -1,4 +1,4 @@
-import type { JsonValue, SourceDTO, SourceProductDTO, SourceProductPartDTO } from "../contracts/index.js";
+import type { JsonValue, SourceDTO, SourceProductDTO, SourceProductPartDTO, UniversalProductDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { SourceProcessorRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
@@ -55,6 +55,8 @@ export class ProcessingRunner {
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
     const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
     let classificationRun: ProductClassifierRun;
+    let attemptId: string | null = null;
+    let operationsOutput: UniversalProductDTO | null = null;
     if (!payload.force && existing?.inputHash === inputHash) {
       classificationRun = await this.classifier.classify(source.id, existing.data);
       const reclassifiedHash = hashStableJson(classificationRun.product as unknown as JsonValue);
@@ -65,33 +67,42 @@ export class ProcessingRunner {
       const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos });
       if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
       const operationRun = await this.operations.runTracked(baseProduct, { source: sourceDto, sourceProduct: productDto }, processor.version);
+      attemptId = operationRun.attemptId;
+      operationsOutput = operationRun.product;
       try {
         classificationRun = await this.classifier.classify(source.id, operationRun.product);
-        await this.operations.completeAttempt(operationRun.attemptId, operationRun.product, classificationRun.product);
       } catch (error) {
         await this.operations.failAttempt(operationRun.attemptId, error);
         throw error;
       }
     }
     const data = classificationRun.product;
-    const contentHash = hashStableJson(data as unknown as JsonValue);
-    const targets = await this.repositories.targets.listEnabled();
-    await this.unitOfWork.transaction(async (repositories) => {
-      const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
-        processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
-        processedAt: new Date().toISOString(), lastError: null });
-      await repositories.classifications.saveProductResult({
-        sourceId: source.id,
-        sourceProductId: product.id,
-        classifierVersion: this.classifier.version,
-        fingerprint: data.classification.fingerprint,
-        observations: classificationRun.observations,
+    try {
+      const contentHash = hashStableJson(data as unknown as JsonValue);
+      const targets = await this.repositories.targets.listEnabled();
+      await this.unitOfWork.transaction(async (repositories) => {
+        const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
+          processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
+          processedAt: new Date().toISOString(), lastError: null });
+        await repositories.classifications.saveProductResult({
+          sourceId: source.id,
+          sourceProductId: product.id,
+          classifierVersion: this.classifier.version,
+          fingerprint: data.classification.fingerprint,
+          observations: classificationRun.observations,
+        });
+        if (attemptId !== null && operationsOutput !== null) {
+          await repositories.productOperationHistory.completeAttempt(attemptId, operationsOutput, classificationRun.product, new Date().toISOString());
+        }
+        if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
+          for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
+            payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
+        }
       });
-      if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
-        for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
-          payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
-      }
-    });
+    } catch (error) {
+      if (attemptId !== null) await this.operations.failAttempt(attemptId, error);
+      throw error;
+    }
     return { status: "completed" };
   }
 }

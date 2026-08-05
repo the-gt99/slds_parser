@@ -6,6 +6,7 @@ import type {
   ProductOperationExecutionRecord,
   ProductPartSummaryRecord,
   ProductProcessingAttemptRecord,
+  ProductListItem,
   ProductListQuery,
   ProductListResult,
   ProductSnapshotListItem,
@@ -268,17 +269,33 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
     const classificationSql = `CASE WHEN internal.id IS NULL THEN 'not_processed' WHEN internal.status = 'classification_pending' THEN 'pending' WHEN internal.data->'classification'->>'status' = 'complete' THEN 'complete' ELSE 'pending' END`;
     if (query.stage) where.push(`${stageSql} = ${add(query.stage)}`);
     if (query.classificationStatus) where.push(`${classificationSql} = ${add(query.classificationStatus)}`);
-    if (query.targetStatus) where.push(`COALESCE(target_state.status, 'not_exported') = ${add(query.targetStatus)}`);
+    const targetStatusSql = `CASE WHEN active_export.status IS NOT NULL THEN 'pending' ELSE COALESCE(target_state.status, 'not_exported') END`;
+    if (query.targetStatus) where.push(`${targetStatusSql} = ${add(query.targetStatus)}`);
     const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
     const from = `FROM source_products product
       JOIN sources source ON source.id = product.source_id
       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
       LEFT JOIN LATERAL (SELECT MAX(fetched_at) AS collected_at FROM source_product_parts WHERE source_product_id = product.id) parts ON TRUE
       LEFT JOIN LATERAL (
-        SELECT tp.status, tp.external_id FROM target_products tp
-        JOIN targets t ON t.id = tp.target_id
-        WHERE tp.internal_product_id = internal.id ORDER BY (t.code = 'slamdunk') DESC, tp.updated_at DESC LIMIT 1
-      ) target_state ON TRUE`;
+        SELECT target.id AS target_id, product.status, product.external_id
+        FROM targets target
+        LEFT JOIN target_products product
+          ON product.target_id = target.id AND product.internal_product_id = internal.id
+        WHERE target.code = 'slamdunk' OR product.id IS NOT NULL
+        ORDER BY (target.code = 'slamdunk') DESC, product.updated_at DESC NULLS LAST, target.id
+        LIMIT 1
+      ) target_state ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT job.status
+        FROM jobs job
+        WHERE job.job_type = 'export_product'
+          AND job.status IN ('pending', 'running', 'retry')
+          AND job.payload->>'internalProductId' = internal.id::TEXT
+          AND job.payload->>'targetId' = target_state.target_id::TEXT
+        ORDER BY CASE job.status WHEN 'running' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
+                 job.updated_at DESC, job.id DESC
+        LIMIT 1
+      ) active_export ON TRUE`;
     const countResult = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
     const limit = add(query.limit); const offset = add(query.offset);
     const result = await client.query<DatabaseRow>(
@@ -286,7 +303,8 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
               source.name AS source_name, product.source_key, product.external_id,
               NULLIF(COALESCE(internal.data->>'title', product.discovery_metadata->>'title'), '') AS title,
               product.status AS source_status, ${stageSql} AS stage, ${classificationSql} AS classification_status,
-              parts.collected_at, internal.processed_at, COALESCE(target_state.status, 'not_exported') AS target_status,
+              parts.collected_at, internal.processed_at, ${targetStatusSql} AS target_status,
+              active_export.status AS target_job_status,
               target_state.external_id AS target_external_id,
               EXISTS (SELECT 1 FROM target_product_snapshots snapshot WHERE snapshot.source_product_id = product.id) AS has_target_snapshot
        ${from} ${filter} ORDER BY product.updated_at DESC, product.id DESC LIMIT ${limit} OFFSET ${offset}`,
@@ -300,7 +318,8 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         sourceProductId: text(row, "source_product_id"), sourceId: text(row, "source_id"), sourceCode: text(row, "source_code"), sourceName: text(row, "source_name"),
         sourceKey: text(row, "source_key"), externalId: nullableText(row, "external_id"), title: nullableText(row, "title"), sourceStatus: text(row, "source_status"),
         stage: text(row, "stage"), classificationStatus: text(row, "classification_status"), collectedAt: nullableTimestamp(row, "collected_at"), processedAt: nullableTimestamp(row, "processed_at"),
-        targetStatus: text(row, "target_status"), targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
+        targetStatus: text(row, "target_status"), targetJobStatus: nullableText(row, "target_job_status") as ProductListItem["targetJobStatus"],
+        targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
       })),
     };
     } finally { client.release(); }

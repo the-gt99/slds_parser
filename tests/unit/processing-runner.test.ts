@@ -2,16 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { ProcessingRunner, ProductOperationPipeline } from "../../src/application/index.js";
 import type { ProductOperation, SourceProcessor } from "../../src/contracts/index.js";
 import { ProductOperationRegistry, SourceProcessorRegistry } from "../../src/core/registry/index.js";
+import type { ProductOperationHistoryRepository } from "../../src/repositories/index.js";
 import { ProductClassifier } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
-async function setup(version = "1", operation?: ProductOperation) {
+async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord()); store.targets.set("10", targetRecord()); seedProduct(store);
   const repositories = createMemoryRepositories(store); await repositories.sourceProducts.upsertPart({ sourceProductId: "2", partKey: "details", rawPayload: {}, parsedPayload: { a: 1 }, contentHash: "part-hash", fetchedAt: "2026-01-01T00:00:00.000Z", adapterVersion: "1" });
   const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
-  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, new ProductOperationPipeline(operationRegistry), new ProductClassifier(repositories.classifications)) };
+  const transactionRepositories = history === undefined ? repositories : { ...repositories, productOperationHistory: history };
+  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, transactionRepositories), registry, new ProductOperationPipeline(operationRegistry, history), new ProductClassifier(repositories.classifications)) };
 }
 
 describe("ProcessingRunner", () => {
@@ -59,5 +61,24 @@ describe("ProcessingRunner", () => {
     expect([...store.internals.values()][0]?.status).toBe("classified");
     expect([...store.internals.values()][0]?.data.classification?.resolved[0]).toMatchObject({ referenceValueId: "30", resolutionKind: "mapping" });
     expect([...store.jobs.values()][0]?.jobType).toBe("export_product");
+  });
+
+  it("fails the processing attempt when saving the canonical result fails", async () => {
+    const history = {
+      startAttempt: vi.fn().mockResolvedValue(undefined),
+      completeAttempt: vi.fn().mockResolvedValue(undefined),
+      failAttempt: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue("execution-1"),
+      complete: vi.fn().mockResolvedValue(undefined),
+      fail: vi.fn().mockResolvedValue(undefined),
+    } satisfies ProductOperationHistoryRepository;
+    const { runner, repositories } = await setup("1", undefined, history);
+    vi.spyOn(repositories.classifications, "saveProductResult").mockRejectedValueOnce(new Error("canonical save failed"));
+
+    await expect(runner.processProduct({ sourceProductId: "2", force: false })).rejects.toThrow("canonical save failed");
+
+    expect(history.startAttempt).toHaveBeenCalledOnce();
+    expect(history.completeAttempt).not.toHaveBeenCalled();
+    expect(history.failAttempt).toHaveBeenCalledWith(expect.any(String), "canonical save failed", expect.any(String));
   });
 });
