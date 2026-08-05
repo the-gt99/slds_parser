@@ -49,7 +49,10 @@ export class ExportRunner {
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
       const result = await exporter.export({ source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
-        references: { resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope) },
+        references: {
+          resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
+          resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
+        },
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });
       await this.repositories.targets.saveExportSuccess({ targetId: target.id, internalProductId: internal.id, externalId: result.externalId,
         status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date().toISOString() });

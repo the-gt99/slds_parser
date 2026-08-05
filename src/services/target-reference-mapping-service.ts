@@ -1,4 +1,8 @@
-import type { EntityId } from "../contracts/index.js";
+import type {
+  EntityId,
+  TargetProjectionResolutionInput,
+  TargetReferenceProjectionDTO,
+} from "../contracts/index.js";
 import { MappingMissingError } from "../core/errors/index.js";
 import type { ReferenceRepository } from "../repositories/index.js";
 
@@ -23,6 +27,24 @@ export class TargetReferenceMappingService {
     }
 
     return mapping.externalValue;
+  }
+
+  async resolveTargetProjections(
+    targetId: EntityId,
+    resolutions: readonly TargetProjectionResolutionInput[],
+  ): Promise<readonly TargetReferenceProjectionDTO[]> {
+    const unique = [...new Map(resolutions.map((item) => [`${item.resolutionKind}:${item.resolutionId}`, item])).values()];
+    const projections = await this.references.resolveTargetProjections(targetId, unique);
+    return projections.map((projection) => ({
+      resolutionKind: projection.resolutionKind,
+      resolutionId: projection.resolutionId,
+      targetScope: projection.targetScope,
+      externalValue: projection.externalValue,
+    }));
+  }
+
+  saveTargetProjection(input: Parameters<ReferenceRepository["saveTargetProjection"]>[0]) {
+    return this.references.saveTargetProjection(input);
   }
 
   getTargetMappingRevision(targetId: EntityId): Promise<string> {

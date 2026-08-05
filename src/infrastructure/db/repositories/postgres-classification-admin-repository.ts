@@ -42,6 +42,16 @@ function reviewExamples(value: unknown): readonly ClassificationReviewExample[] 
       title: nullableText(item.title),
       sku: nullableText(item.sku),
       evidence: jsonObject(item.evidence),
+      targetSnapshots: Array.isArray(item.target_snapshots)
+        ? item.target_snapshots.map((snapshot) => {
+            const target = jsonObject(snapshot);
+            return {
+              targetId: String(target.target_id),
+              externalId: String(target.external_id),
+              snapshot: jsonObject(target.snapshot),
+            };
+          })
+        : [],
     };
   });
 }
@@ -161,6 +171,15 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                   internal.data->>'title' AS title,
                   internal.data->>'sku' AS sku,
                   observation.evidence,
+                  COALESCE((
+                    SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                      'target_id', snapshot.target_id::TEXT,
+                      'external_id', snapshot.external_id,
+                      'snapshot', snapshot.payload
+                    ) ORDER BY snapshot.target_id)
+                    FROM target_product_snapshots snapshot
+                    WHERE snapshot.source_product_id = observation.source_product_id
+                  ), '[]'::JSONB) AS target_snapshots,
                   observation.last_seen_at,
                   ROW_NUMBER() OVER (
                     PARTITION BY observation.source_product_id
@@ -366,20 +385,41 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           }
 
           if (referenceValueId === null) {
-            if (input.generatedReferenceCode === undefined) {
-              throw new IntegrationContractError("A generated reference code is required for a new internal value");
-            }
-            const createdReference = await client.query<DatabaseRow>(
-              `INSERT INTO reference_values (type_id, code, name, metadata)
-               VALUES ($1, $2, $3, $4::JSONB)
-               RETURNING id`,
-              [observation.type_id, input.generatedReferenceCode, dictionary.name, JSON.stringify({
-                origin: "target_dictionary",
-                targetId: input.targetLink.targetId,
-                dictionaryValueId: input.targetLink.dictionaryValueId,
-              })],
+            const linkedReferences = await client.query<DatabaseRow>(
+              `SELECT mapping.reference_value_id
+               FROM target_value_mappings mapping
+               JOIN reference_values value
+                 ON value.id = mapping.reference_value_id
+                AND value.type_id = $4
+                AND value.enabled = TRUE
+               WHERE mapping.target_id = $1
+                 AND mapping.target_scope = $2
+                 AND mapping.dictionary_value_id = $3
+                 AND mapping.active = TRUE
+               FOR SHARE OF mapping`,
+              [input.targetLink.targetId, input.targetLink.targetScope, input.targetLink.dictionaryValueId, observation.type_id],
             );
-            referenceValueId = String(createdReference.rows[0]!.id);
+            if (linkedReferences.rows.length > 1) {
+              throw new IntegrationContractError("The target dictionary term is linked to more than one internal value");
+            }
+            if (linkedReferences.rows[0] !== undefined) {
+              referenceValueId = String(linkedReferences.rows[0].reference_value_id);
+            } else {
+              if (input.generatedReferenceCode === undefined) {
+                throw new IntegrationContractError("A generated reference code is required for a new internal value");
+              }
+              const createdReference = await client.query<DatabaseRow>(
+                `INSERT INTO reference_values (type_id, code, name, metadata)
+                 VALUES ($1, $2, $3, $4::JSONB)
+                 RETURNING id`,
+                [observation.type_id, input.generatedReferenceCode, dictionary.name, JSON.stringify({
+                  origin: "target_dictionary",
+                  targetId: input.targetLink.targetId,
+                  dictionaryValueId: input.targetLink.dictionaryValueId,
+                })],
+              );
+              referenceValueId = String(createdReference.rows[0]!.id);
+            }
           }
         }
 

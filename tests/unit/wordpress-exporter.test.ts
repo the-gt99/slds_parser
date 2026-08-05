@@ -49,7 +49,10 @@ function context(config: JsonObject = {}): ExportContext {
       },
     },
     product,
-    references: { resolveReference: vi.fn(async ({ referenceType }) => referenceType === "brand" ? "31" : "41") },
+    references: {
+      resolveReference: vi.fn(async ({ referenceType }) => referenceType === "brand" ? "31" : "41"),
+      resolveProjections: vi.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -88,6 +91,26 @@ describe("WordPressExporter", () => {
 
     expect(input.references.resolveReference).toHaveBeenCalledWith(expect.objectContaining({ referenceType: "brand", targetScope: "catalog.brand" }));
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
+  });
+
+  it("adds taxonomy terms projected from concrete classification decisions", async () => {
+    const input = context();
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([
+      { resolutionKind: "mapping", resolutionId: "22", targetScope: "product.tag", externalValue: "892" },
+    ]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+    const targetProduct = payload.product as JsonObject;
+
+    expect(targetProduct.taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31] },
+      product_cat: { mode: "replace", term_ids: [41] },
+      product_tag: { mode: "replace", term_ids: [892] },
+    });
+    expect(input.references.resolveProjections).toHaveBeenCalledWith([
+      { resolutionKind: "mapping", resolutionId: "21" },
+      { resolutionKind: "mapping", resolutionId: "22" },
+    ]);
   });
 
   it("queues once and waits for the completed WordPress job", async () => {

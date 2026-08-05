@@ -248,6 +248,28 @@ export interface TargetValueMappingRecord {
   readonly metadata: JsonObject;
 }
 
+export interface TargetClassificationProjectionRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly externalValue: string;
+  readonly externalLabel: string;
+  readonly metadata: JsonObject;
+  readonly revision: string;
+}
+
+export interface SaveTargetClassificationProjectionInput {
+  readonly targetId: EntityId;
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly actor: string;
+}
+
 export interface TargetRecord {
   readonly id: EntityId;
   readonly code: string;
@@ -272,6 +294,29 @@ export interface TargetProductRecord {
   readonly lastError: string | null;
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;
+}
+
+export interface TargetProductSnapshotRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly externalId: string;
+  readonly sourceExternalId: string;
+  readonly payload: JsonObject;
+  readonly contentHash: string;
+  readonly fetchedAt: Timestamp;
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+}
+
+export interface SaveTargetProductSnapshotInput {
+  readonly targetId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly externalId: string;
+  readonly sourceExternalId: string;
+  readonly payload: JsonObject;
+  readonly contentHash: string;
+  readonly fetchedAt: Timestamp;
 }
 
 export interface SaveExportSuccessInput {
@@ -409,6 +454,11 @@ export interface ClassificationReviewExample {
   readonly title: string | null;
   readonly sku: string | null;
   readonly evidence: JsonObject;
+  readonly targetSnapshots: readonly {
+    readonly targetId: EntityId;
+    readonly externalId: string;
+    readonly snapshot: JsonObject;
+  }[];
 }
 
 export interface ClassificationReviewItem extends ClassificationDecisionKey {

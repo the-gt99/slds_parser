@@ -40,6 +40,8 @@ export type {
   SourceProductPartDTO,
   TargetDTO,
   TargetReferenceResolutionInput,
+  TargetProjectionResolutionInput,
+  TargetReferenceProjectionDTO,
   TargetReferenceResolver,
   UnresolvedReferenceDTO,
   UniversalProductDTO,

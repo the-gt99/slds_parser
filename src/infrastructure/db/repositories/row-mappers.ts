@@ -10,7 +10,9 @@ import type {
   SourceRecord,
   SourceRunRecord,
   TargetProductRecord,
+  TargetProductSnapshotRecord,
   TargetRecord,
+  TargetClassificationProjectionRecord,
   TargetValueMappingRecord,
 } from "../../../repositories/index.js";
 
@@ -65,12 +67,43 @@ export function mapTargetValueMapping(row: DatabaseRow): TargetValueMappingRecor
   return { id: text(row, "id"), targetId: text(row, "target_id"), referenceValueId: text(row, "reference_value_id"), targetScope: text(row, "target_scope"), externalValue: text(row, "external_value"), externalLabel: text(row, "external_label"), metadata: row.metadata as JsonObject };
 }
 
+export function mapTargetClassificationProjection(row: DatabaseRow): TargetClassificationProjectionRecord {
+  const resolutionKind = row.mapping_id === null || row.mapping_id === undefined ? "rule" : "mapping";
+  return {
+    id: text(row, "id"),
+    targetId: text(row, "target_id"),
+    resolutionKind,
+    resolutionId: text(row, resolutionKind === "mapping" ? "mapping_id" : "rule_id"),
+    targetScope: text(row, "target_scope"),
+    dictionaryValueId: text(row, "dictionary_value_id"),
+    externalValue: text(row, "external_value"),
+    externalLabel: text(row, "external_label"),
+    metadata: row.metadata as JsonObject,
+    revision: text(row, "revision"),
+  };
+}
+
 export function mapTarget(row: DatabaseRow): TargetRecord {
   return { id: text(row, "id"), code: text(row, "code"), name: text(row, "name"), exporterCode: text(row, "exporter_code"), config: row.config as JsonObject, enabled: Boolean(row.enabled), createdAt: timestamp(row, "created_at"), updatedAt: timestamp(row, "updated_at") };
 }
 
 export function mapTargetProduct(row: DatabaseRow): TargetProductRecord {
   return { id: text(row, "id"), targetId: text(row, "target_id"), internalProductId: text(row, "internal_product_id"), externalId: nullableText(row, "external_id"), status: text(row, "status"), lastExportedHash: nullableText(row, "last_exported_hash"), lastExportFingerprint: nullableText(row, "last_export_fingerprint"), lastAttemptAt: nullableTimestamp(row, "last_attempt_at"), syncedAt: nullableTimestamp(row, "synced_at"), lastError: nullableText(row, "last_error"), createdAt: timestamp(row, "created_at"), updatedAt: timestamp(row, "updated_at") };
+}
+
+export function mapTargetProductSnapshot(row: DatabaseRow): TargetProductSnapshotRecord {
+  return {
+    id: text(row, "id"),
+    targetId: text(row, "target_id"),
+    sourceProductId: text(row, "source_product_id"),
+    externalId: text(row, "external_id"),
+    sourceExternalId: text(row, "source_external_id"),
+    payload: row.payload as JsonObject,
+    contentHash: text(row, "content_hash"),
+    fetchedAt: timestamp(row, "fetched_at"),
+    createdAt: timestamp(row, "created_at"),
+    updatedAt: timestamp(row, "updated_at"),
+  };
 }
 
 export function mapJob(row: DatabaseRow): JobRecord {

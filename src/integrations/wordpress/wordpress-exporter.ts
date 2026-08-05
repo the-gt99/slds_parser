@@ -132,6 +132,12 @@ function mappedTargetScope(config: JsonObject, defaultScope: string): string {
   return text((configured as JsonObject)[defaultScope]) || defaultScope;
 }
 
+function targetForScope(config: JsonObject, scope: string): (typeof REFERENCE_TARGETS)[ReferenceType] | null {
+  const matches = Object.values(REFERENCE_TARGETS).filter((target) => mappedTargetScope(config, target.scope) === scope);
+  if (matches.length > 1) throw new IntegrationContractError(`WordPress target scope is ambiguous: ${scope}`);
+  return matches[0] ?? null;
+}
+
 function moneyToMinorUnits(amount: string): string {
   const match = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/u.exec(amount.trim());
   if (match === null) throw new IntegrationContractError(`Unsupported money amount: ${amount}`);
@@ -268,6 +274,20 @@ async function taxonomyPayload(context: ExportContext, required: readonly Refere
     termsByType.set(type, typeTerms);
     presentTypes.add(type);
   }
+  const projections = await context.references.resolveProjections(
+    context.product.classification.resolved.map((reference) => ({
+      resolutionKind: reference.resolutionKind,
+      resolutionId: reference.resolutionId,
+    })),
+  );
+  for (const projection of projections) {
+    const target = targetForScope(context.target.config, projection.targetScope);
+    if (target === null) throw new IntegrationContractError(`WordPress projection has an unsupported target scope: ${projection.targetScope}`);
+    const termId = positiveInteger(projection.externalValue, `WordPress projection ${projection.resolutionKind}/${projection.resolutionId}`);
+    const values = grouped.get(target.taxonomy) ?? new Set<number>();
+    values.add(termId);
+    grouped.set(target.taxonomy, values);
+  }
   const invalidSingleTypes = [...termsByType.entries()]
     .filter(([type, termIds]) => REFERENCE_TARGETS[type].cardinality === "single" && termIds.size > 1)
     .map(([type]) => type);
@@ -332,7 +352,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.0.2";
+  readonly version = "1.1.0";
 
   constructor(
     private readonly config: WordPressTargetConfig,

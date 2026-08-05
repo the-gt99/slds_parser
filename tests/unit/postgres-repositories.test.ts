@@ -48,6 +48,12 @@ const targetProductRow = {
   created_at: new Date("2026-01-01T00:00:00.000Z"), updated_at: new Date("2026-04-01T00:00:00.000Z"),
 };
 
+const targetSnapshotRow = {
+  id: "41", target_id: "1", source_product_id: "2", external_id: "321", source_external_id: "100",
+  payload: { product: { target_id: 321 } }, content_hash: "snapshot-hash",
+  fetched_at: new Date("2026-04-02T00:00:00.000Z"), created_at: new Date("2026-04-02T00:00:00.000Z"), updated_at: new Date("2026-04-02T00:00:00.000Z"),
+};
+
 describe("PostgreSQL repository mapping and SQL", () => {
   it("maps BIGINT as strings and timestamps as ISO strings", async () => {
     const repository = new PostgresSourceRepository(new FakeExecutor([[sourceRow]]));
@@ -106,7 +112,25 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const executor = new FakeExecutor([[{ revision: "abc" }]]);
     await expect(new PostgresReferenceRepository(executor).getTargetMappingRevision("7")).resolves.toBe("abc");
     const sql = executor.calls[0]?.text ?? "";
-    for (const field of ["external_value", "external_label", "metadata::text", "updated_at::text", "ORDER BY id"]) expect(sql).toContain(field);
+    for (const field of ["external_value", "external_label", "mapping.metadata", "mapping.updated_at", "projection.dictionary_value_id", "ORDER BY mapping.id", "ORDER BY projection.id"]) expect(sql).toContain(field);
+  });
+
+  it("resolves classification projections in one batch", async () => {
+    const executor = new FakeExecutor([[
+      { id: "51", target_id: "7", mapping_id: "21", rule_id: null, target_scope: "product.tag", dictionary_value_id: "61", external_value: "892", external_label: "Lifestyle", metadata: {}, revision: "1" },
+    ]]);
+    const projections = await new PostgresReferenceRepository(executor).resolveTargetProjections("7", [{ resolutionKind: "mapping", resolutionId: "21" }]);
+    expect(projections[0]).toMatchObject({ resolutionKind: "mapping", resolutionId: "21", externalValue: "892" });
+    expect(executor.calls[0]?.text).toContain("JSONB_TO_RECORDSET");
+    expect(executor.calls[0]?.values[1]).toContain('"resolution_kind":"mapping"');
+  });
+
+  it("saves a target snapshot and links the observed target product atomically", async () => {
+    const executor = new FakeExecutor([[targetSnapshotRow]]);
+    const snapshot = await new PostgresTargetRepository(executor).saveProductSnapshot({ targetId: "1", sourceProductId: "2", externalId: "321", sourceExternalId: "100", payload: { product: { target_id: 321 } }, contentHash: "snapshot-hash", fetchedAt: "2026-04-02T00:00:00.000Z" });
+    expect(snapshot).toMatchObject({ externalId: "321", sourceExternalId: "100", contentHash: "snapshot-hash" });
+    expect(executor.calls[0]?.text).toContain("WITH snapshot AS");
+    expect(executor.calls[0]?.text).toContain("INSERT INTO target_products");
   });
 
   it("does not overwrite successful export fields on failure", async () => {

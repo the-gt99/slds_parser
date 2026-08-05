@@ -250,10 +250,25 @@ export interface TargetReferenceResolutionInput {
   readonly targetScope: string;
 }
 
+export interface TargetProjectionResolutionInput {
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+}
+
+export interface TargetReferenceProjectionDTO {
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+  readonly targetScope: string;
+  readonly externalValue: string;
+}
+
 export interface TargetReferenceResolver {
   resolveReference(
     input: TargetReferenceResolutionInput,
   ): Promise<string>;
+  resolveProjections(
+    inputs: readonly TargetProjectionResolutionInput[],
+  ): Promise<readonly TargetReferenceProjectionDTO[]>;
 }
 
 export interface ExportContext {

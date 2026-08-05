@@ -259,7 +259,7 @@ function renderDetail() {
     badge(item.sourceCode),
     badge(item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
   );
-  renderExamples(item.examples ?? []);
+  renderExamples(item, item.examples ?? []);
   byId("decision-actions").hidden = state.resolved;
   byId("decision-success").hidden = !state.resolved;
   byId("ignore-button").disabled = state.resolved;
@@ -274,7 +274,33 @@ function contextSummary(context) {
   return values.length ? values.join(" · ") : "Без дополнительного контекста";
 }
 
-function renderExamples(examples) {
+function snapshotTermNames(item, example) {
+  const primaryTaxonomy = {
+    brand: "pa_brand",
+    model: "pa_model",
+    category: "product_cat",
+    tag: "product_tag",
+    color: "pa_tsvet",
+    material: "pa_material",
+    activity: "pa_vid",
+    shoe_height: "pa_shoe_height",
+    season: "pa_season",
+  }[item.typeCode];
+  const taxonomies = primaryTaxonomy ? [primaryTaxonomy] : [];
+  if (["brand", "model", "category"].includes(item.typeCode)) taxonomies.push("product_tag");
+  const names = [];
+  for (const target of example.targetSnapshots ?? []) {
+    const assigned = target.snapshot?.product?.taxonomies ?? {};
+    for (const taxonomy of taxonomies) {
+      for (const term of assigned[taxonomy] ?? []) {
+        if (typeof term?.name === "string" && term.name.trim()) names.push(term.name.trim());
+      }
+    }
+  }
+  return [...new Set(names)].slice(0, 6);
+}
+
+function renderExamples(item, examples) {
   const list = byId("examples-list");
   list.replaceChildren();
   for (const example of examples) {
@@ -287,6 +313,13 @@ function renderExamples(examples) {
     const meta = document.createElement("span");
     meta.textContent = [example.sku, `ID ${example.sourceProductId}`].filter(Boolean).join(" · ");
     card.append(title, meta);
+    const targetTerms = snapshotTermNames(item, example);
+    if (targetTerms.length > 0) {
+      const current = document.createElement("span");
+      current.className = "example-target-terms";
+      current.textContent = `На сайте: ${targetTerms.join(" · ")}`;
+      card.append(current);
+    }
     list.append(card);
   }
 }

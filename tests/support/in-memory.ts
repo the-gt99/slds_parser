@@ -1,5 +1,5 @@
 import type { EntityId } from "../../src/contracts/index.js";
-import type { ClassificationMappingMatchRecord, ClassificationRuleRecord, CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, ProductClassificationObservationInput, RecordSourceRunPageInput, ReferenceRepository, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
+import type { ClassificationMappingMatchRecord, ClassificationRuleRecord, CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, ProductClassificationObservationInput, RecordSourceRunPageInput, ReferenceRepository, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetProductSnapshotRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
@@ -11,6 +11,7 @@ export class MemoryStore {
   readonly internals = new Map<string, InternalProductRecord>();
   readonly targets = new Map<string, TargetRecord>();
   readonly targetProducts = new Map<string, TargetProductRecord>();
+  readonly targetSnapshots = new Map<string, TargetProductSnapshotRecord>();
   readonly jobs = new Map<string, JobRecord>();
   readonly classificationTypes = new Set(["brand", "category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height", "activity"]);
   readonly classificationDecisions = new Map<string, Omit<ClassificationMappingMatchRecord, "candidateKey">>();
@@ -74,12 +75,22 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
     },
     references: {
       resolveTargetValue: async (_targetId: string, _referenceValueId: string, _scope: string): Promise<TargetValueMappingRecord | null> => null,
+      resolveTargetProjections: async () => [],
+      saveTargetProjection: async () => { throw new Error("Not implemented by in-memory tests"); },
       getTargetMappingRevision: async () => store.mappingRevision,
     } satisfies ReferenceRepository,
     targets: {
       getById: async (id) => store.targets.get(id) ?? null,
       listEnabled: async () => [...store.targets.values()].filter((item) => item.enabled),
       findTargetProduct: async (targetId, internalId) => store.targetProducts.get(`${targetId}/${internalId}`) ?? null,
+      findProductSnapshot: async (targetId, sourceProductId) => store.targetSnapshots.get(`${targetId}/${sourceProductId}`) ?? null,
+      saveProductSnapshot: async (input) => {
+        const key = `${input.targetId}/${input.sourceProductId}`;
+        const old = store.targetSnapshots.get(key);
+        const record: TargetProductSnapshotRecord = { id: old?.id ?? store.id(), ...input, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp };
+        store.targetSnapshots.set(key, record);
+        return record;
+      },
       saveExportSuccess: async (input: SaveExportSuccessInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: input.externalId, status: input.status, lastExportedHash: input.exportedHash, lastExportFingerprint: input.exportFingerprint, lastAttemptAt: input.attemptedAt, syncedAt: input.syncedAt, lastError: null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
       saveExportFailure: async (input: SaveExportFailureInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: old?.externalId ?? null, status: input.status, lastExportedHash: old?.lastExportedHash ?? null, lastExportFingerprint: old?.lastExportFingerprint ?? null, lastAttemptAt: input.attemptedAt, syncedAt: old?.syncedAt ?? null, lastError: input.error, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
     },
