@@ -26,6 +26,13 @@ function availability(value: string): ProductVariantDTO["inventory"]["availabili
   return "unknown";
 }
 
+function stockQuantity(value: string): number | undefined {
+  if (value === "multiple_in_stock") return 2;
+  if (value === "single_in_stock") return 1;
+  if (value === "not_in_stock") return 0;
+  return undefined;
+}
+
 interface VariantCandidate {
   readonly variant: ProductVariantDTO;
   readonly stockPriority: number;
@@ -158,7 +165,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.6.0";
+  readonly version = "2.7.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -231,11 +238,12 @@ export class GoatSourceProcessor implements SourceProcessor {
       const primaryPrice = money(offer.lowestPriceCents);
       const instantShipPrice = money(offer.instantShipLowestPriceCents);
       const lastSoldPrice = money(offer.lastSoldPriceCents);
+      const quantity = stockQuantity(stockStatus);
       const variant: ProductVariantDTO = { sourceVariantKey: key, sku: [text(product.sku) || productId, sourceValue, shoeCondition, boxCondition].filter(Boolean).join("-"),
         size: { sourceValue, displayValue: displayValue || sourceValue,
           ...(normalizedSizeSystem === undefined ? {} : { system: normalizedSizeSystem }),
           ...(normalizedAudience === undefined ? {} : { audience: normalizedAudience }) }, price: primaryPrice,
-        inventory: { availability: availability(stockStatus) },
+        inventory: { availability: availability(stockStatus), ...(quantity === undefined ? {} : { quantity }) },
         attributes: { shoeCondition, boxCondition, stockStatus, countryCode,
           ...(instantShipPrice ? { instantShipPrice: { amount: instantShipPrice.amount, currency: instantShipPrice.currency } } : {}),
           ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } };

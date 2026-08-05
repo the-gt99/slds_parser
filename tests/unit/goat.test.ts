@@ -64,7 +64,7 @@ describe("GOAT adapter and processor", () => {
     ] } satisfies ProcessingContext;
     const product = await processor.process(context);
     expect(product.variants).toHaveLength(1);
-    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
+    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available", quantity: 1 }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
       expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "apparel" }),
@@ -87,8 +87,13 @@ describe("GOAT adapter and processor", () => {
     expect(selected.variants[0]).toMatchObject({
       sourceVariantKey: "product-100|US|103|new_no_defects|no_original_box",
       price: { amount: "120.00", currency: "USD" },
-      inventory: { availability: "available" },
+      inventory: { availability: "available", quantity: 2 },
     });
+    const unavailableContext = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [
+      { ...baseOffer, stockStatus: "not_in_stock", lowestPriceCents: null },
+    ] } }] } satisfies ProcessingContext;
+    const unavailable = await processor.process(unavailableContext);
+    expect(unavailable.variants[0]?.inventory).toEqual({ availability: "unavailable", quantity: 0 });
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
   });
