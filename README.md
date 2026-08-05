@@ -28,7 +28,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 Между этапами нет прямых вызовов: переходы выполняются через PostgreSQL jobs. Поддерживаются четыре типа задач:
 
-- `discover_source` — discovery включённого источника с checkpoint;
+- `discover_source` — discovery включённого источника с checkpoint; флаг `enqueueCollection: false` сохраняет только реестр товаров;
 - `collect_product` — сбор всех или явно запрошенных частей товара;
 - `process_product` — построение внутреннего товара;
 - `export_product` — экспорт внутреннего товара в одну цель.
@@ -50,6 +50,8 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 ## GOAT
 
 GOAT discovery читает `https://www.goat.com/sitemap`, отбирает только дочерние sitemap для sneakers и apparel и сохраняет slug, URL, маршрут, `lastmod`, заголовок и изображения. HTML карточек не разбирается. Сбор товара сохраняет две части:
+
+Полный реестр без постановки товаров на сбор запускается командой `npm run goat:enqueue-discovery`. Размер одной сохраняемой страницы задаётся `GOAT_DISCOVERY_BATCH_SIZE`, по умолчанию `500`.
 
 - `product` — полный JSON карточки и проверенное представление полей товара;
 - `offers` — полный JSON buy bar и проверенный массив предложений с рынком.

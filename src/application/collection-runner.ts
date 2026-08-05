@@ -51,7 +51,9 @@ export class CollectionRunner {
             ...(item.url === undefined ? {} : { url: item.url }),
             discoveryMetadata: item.metadata, status: "discovered", seenAt: now(), runId: run.id,
           });
-          await repositories.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: product.id }, uniqueKey: `source-product:${product.id}:collect` });
+          if (payload.enqueueCollection !== false) {
+            await repositories.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: product.id }, uniqueKey: `source-product:${product.id}:collect` });
+          }
         }
         await repositories.sourceRuns.recordPage(run.id, {
           checkpoint: page.checkpoint, processedCount: String(page.stats.processed), discoveredCount: String(page.stats.discovered), errorCount: "0", completeness: page.completeness,

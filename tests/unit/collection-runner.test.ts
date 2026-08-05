@@ -27,6 +27,14 @@ describe("CollectionRunner", () => {
     expect(adapter.discover).toHaveBeenCalledWith(expect.objectContaining({ runType: "delta", checkpoint: { page: 4 } }));
   });
 
+  it("saves discovery without enqueueing collection when explicitly disabled", async () => {
+    const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn().mockResolvedValue({ items: [{ sourceKey: "a", metadata: {} }], checkpoint: { page: 1 }, hasMore: false, completeness: "complete", stats: { processed: 1, discovered: 1 } }), collectProduct: vi.fn() };
+    const { runner, store } = setup(adapter);
+    await runner.discoverSource({ sourceId: "1", runType: "full", coverage: "catalog", enqueueCollection: false });
+    expect(store.products).toHaveLength(1);
+    expect([...store.jobs.values()].filter((job) => job.jobType === "collect_product")).toHaveLength(0);
+  });
+
   it("enqueues hash-checked processing after every successful collection", async () => {
     const collectProduct = vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [{ partKey: "custom", rawPayload: {}, parsedPayload: { value: 1 }, adapterVersion: "1" }] });
     const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn(), collectProduct };

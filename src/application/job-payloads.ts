@@ -5,6 +5,7 @@ export interface DiscoverSourcePayload {
   readonly sourceId: string;
   readonly runType: string;
   readonly coverage: string;
+  readonly enqueueCollection?: boolean;
 }
 
 export interface CollectProductPayload {
@@ -32,8 +33,10 @@ function isStringArray(value: JsonValue | undefined): value is readonly string[]
 }
 
 export function parseDiscoverSourcePayload(value: JsonValue): DiscoverSourcePayload {
-  if (isObject(value) && typeof value.sourceId === "string" && typeof value.runType === "string" && typeof value.coverage === "string") {
-    return { sourceId: value.sourceId, runType: value.runType, coverage: value.coverage };
+  if (isObject(value) && typeof value.sourceId === "string" && typeof value.runType === "string" && typeof value.coverage === "string"
+    && (value.enqueueCollection === undefined || typeof value.enqueueCollection === "boolean")) {
+    return { sourceId: value.sourceId, runType: value.runType, coverage: value.coverage,
+      ...(value.enqueueCollection === undefined ? {} : { enqueueCollection: value.enqueueCollection }) };
   }
   throw new InvalidJobPayloadError("discover_source");
 }
