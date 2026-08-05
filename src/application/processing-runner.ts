@@ -64,8 +64,14 @@ export class ProcessingRunner {
       ...(part.sourceUpdatedAt === null ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), adapterVersion: part.adapterVersion }));
       const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos });
       if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
-      const operatedProduct = await this.operations.run(baseProduct, { source: sourceDto, sourceProduct: productDto });
-      classificationRun = await this.classifier.classify(source.id, operatedProduct);
+      const operationRun = await this.operations.runTracked(baseProduct, { source: sourceDto, sourceProduct: productDto }, processor.version);
+      try {
+        classificationRun = await this.classifier.classify(source.id, operationRun.product);
+        await this.operations.completeAttempt(operationRun.attemptId, operationRun.product, classificationRun.product);
+      } catch (error) {
+        await this.operations.failAttempt(operationRun.attemptId, error);
+        throw error;
+      }
     }
     const data = classificationRun.product;
     const contentHash = hashStableJson(data as unknown as JsonValue);

@@ -32,10 +32,41 @@ export class ProductOperationPipeline {
     initialProduct: UniversalProductDTO,
     context: ProductOperationContext,
   ): Promise<UniversalProductDTO> {
-    let product = initialProduct;
-    const attemptId = randomUUID();
-    let sequence = 0;
+    return this.executeOperations(initialProduct, context, randomUUID());
+  }
 
+  async runTracked(
+    initialProduct: UniversalProductDTO,
+    context: ProductOperationContext,
+    processorVersion: string,
+  ): Promise<{ readonly product: UniversalProductDTO; readonly attemptId: string }> {
+    const attemptId = randomUUID();
+    await this.history?.startAttempt({
+      attemptId,
+      sourceProductId: context.sourceProduct.id,
+      processorVersion,
+      processorOutput: initialProduct,
+      startedAt: new Date().toISOString(),
+    });
+
+    try {
+      const product = await this.executeOperations(initialProduct, context, attemptId);
+      return { product, attemptId };
+    } catch (error) {
+      if (this.history !== undefined) {
+        try {
+          await this.history.failAttempt(attemptId, errorMessage(error), new Date().toISOString());
+        } catch (historyError) {
+          throw new AggregateError([error, historyError], "Failed processing attempt and its history record");
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async executeOperations(initialProduct: UniversalProductDTO, context: ProductOperationContext, attemptId: string): Promise<UniversalProductDTO> {
+    let product = initialProduct;
+    let sequence = 0;
     for (const operation of this.operations.listForSource(context.source.code)) {
       const startedAt = new Date().toISOString();
       const executionId = await this.history?.start({
@@ -59,7 +90,7 @@ export class ProductOperationPipeline {
         }
 
         product = result;
-        if (executionId !== undefined) await this.history?.complete(executionId, new Date().toISOString());
+        if (executionId !== undefined) await this.history?.complete(executionId, product, new Date().toISOString());
       } catch (error) {
         if (executionId !== undefined) {
           try {
@@ -71,7 +102,14 @@ export class ProductOperationPipeline {
         throw error;
       }
     }
-
     return product;
+  }
+
+  async completeAttempt(attemptId: string, operationsOutput: UniversalProductDTO, classifiedOutput: UniversalProductDTO): Promise<void> {
+    await this.history?.completeAttempt(attemptId, operationsOutput, classifiedOutput, new Date().toISOString());
+  }
+
+  async failAttempt(attemptId: string, error: unknown): Promise<void> {
+    await this.history?.failAttempt(attemptId, errorMessage(error), new Date().toISOString());
   }
 }

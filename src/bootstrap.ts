@@ -11,24 +11,27 @@ import { ProductClassifier, TargetReferenceMappingService } from "./services/ind
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
 
+export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env): void {
+  const processing = loadProcessingConfig(environment);
+  const imageStore = new LocalImageStore(processing.image);
+  const translationProvider = new LegacyGoogleTranslationProvider(processing.translation);
+  registry.register(new NormalizeProductOperation());
+  registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
+  registry.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registry.register(new PublishImagesOperation(imageStore, ["goat"]));
+  registry.register(new ValidateProcessedProductOperation(["goat"]));
+}
+
 export function registerPipelineComponents(registries: {
   readonly adapters: SourceAdapterRegistry;
   readonly processors: SourceProcessorRegistry;
   readonly operations: ProductOperationRegistry;
   readonly exporters: TargetExporterRegistry;
 }, environment: PipelineEnvironment = process.env): void {
-  const processing = loadProcessingConfig(environment);
-  const imageStore = new LocalImageStore(processing.image);
-  const translationProvider = new LegacyGoogleTranslationProvider(processing.translation);
   registries.adapters.register(GoatSourceAdapter.create(environment));
   registries.processors.register(new GoatSourceProcessor());
-  registries.operations.register(new NormalizeProductOperation());
-  registries.operations.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
-  registries.operations.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
-  registries.operations.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
-  // WordPress imports the converted files from these stable public URLs.
-  registries.operations.register(new PublishImagesOperation(imageStore, ["goat"]));
-  registries.operations.register(new ValidateProcessedProductOperation(["goat"]));
+  registerProductOperations(registries.operations, environment);
   const wordpress = loadWordPressTargetConfig(environment);
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }

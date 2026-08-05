@@ -368,6 +368,7 @@ export interface ProductOperationExecutionRecord {
   readonly startedAt: Timestamp;
   readonly finishedAt: Timestamp | null;
   readonly error: string | null;
+  readonly outputData: UniversalProductDTO | null;
 }
 
 export interface StartProductOperationExecutionInput {
@@ -389,6 +390,80 @@ export interface ProductPartSummaryRecord {
   readonly adapterVersion: string;
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;
+  readonly rawPayload: JsonValue;
+  readonly parsedPayload: JsonValue;
+}
+
+export interface ProductProcessingAttemptRecord {
+  readonly attemptId: string;
+  readonly sourceProductId: EntityId;
+  readonly processorVersion: string;
+  readonly status: ProductOperationExecutionStatus;
+  readonly processorOutput: UniversalProductDTO;
+  readonly operationsOutput: UniversalProductDTO | null;
+  readonly classifiedOutput: UniversalProductDTO | null;
+  readonly startedAt: Timestamp;
+  readonly finishedAt: Timestamp | null;
+  readonly error: string | null;
+}
+
+export interface ProductSnapshotListItem {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly targetCode: string;
+  readonly targetName: string;
+  readonly sourceProductId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceExternalId: string;
+  readonly externalId: string;
+  readonly title: string | null;
+  readonly fetchedAt: Timestamp;
+  readonly payload: JsonObject;
+}
+
+export interface ProductListItem {
+  readonly sourceProductId: EntityId;
+  readonly sourceId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceName: string;
+  readonly sourceKey: string;
+  readonly externalId: string | null;
+  readonly title: string | null;
+  readonly sourceStatus: string;
+  readonly stage: string;
+  readonly classificationStatus: string;
+  readonly collectedAt: Timestamp | null;
+  readonly processedAt: Timestamp | null;
+  readonly targetStatus: string;
+  readonly targetExternalId: string | null;
+  readonly hasTargetSnapshot: boolean;
+}
+
+export interface ProductListQuery {
+  readonly search?: string;
+  readonly sourceCode?: string;
+  readonly stage?: string;
+  readonly classificationStatus?: string;
+  readonly targetStatus?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ProductListResult {
+  readonly items: readonly ProductListItem[];
+  readonly total: number;
+  readonly sources: readonly { readonly code: string; readonly name: string }[];
+}
+
+export interface ProductSnapshotListQuery {
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ProductSnapshotListResult {
+  readonly items: readonly ProductSnapshotListItem[];
+  readonly total: number;
 }
 
 export interface ProductClassificationObservationRecord {
@@ -420,9 +495,11 @@ export interface ProductAdminReadModel {
   readonly internalProduct: InternalProductRecord | null;
   readonly parts: readonly ProductPartSummaryRecord[];
   readonly operations: readonly ProductOperationExecutionRecord[];
+  readonly processingAttempts?: readonly ProductProcessingAttemptRecord[];
   readonly classifications: readonly ProductClassificationObservationRecord[];
   readonly jobs: readonly JobRecord[];
   readonly targets: readonly ProductTargetSnapshotRecord[];
+  readonly snapshots?: readonly ProductSnapshotListItem[];
 }
 
 export interface EnqueueJobInput {

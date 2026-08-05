@@ -45,6 +45,7 @@ describe("product operation pipeline", () => {
     registry.register({ ...operation("normalize", "normalized"), name: "Нормализация" });
     registry.register({ ...operation("translate", "translated"), name: "Перевод" });
     const history = {
+      startAttempt: vi.fn(), completeAttempt: vi.fn(), failAttempt: vi.fn(),
       start: vi.fn().mockResolvedValueOnce("11").mockResolvedValueOnce("12"),
       complete: vi.fn().mockResolvedValue(undefined),
       fail: vi.fn(),
@@ -59,7 +60,26 @@ describe("product operation pipeline", () => {
       sourceProductId: "2", operationCode: "translate", operationName: "Перевод", sequence: 1,
     }));
     expect(history.complete).toHaveBeenCalledTimes(2);
+    expect(history.complete).toHaveBeenNthCalledWith(1, "11", expect.objectContaining({ title: "Product|normalized" }), expect.any(String));
     expect(history.fail).not.toHaveBeenCalled();
+  });
+
+  it("stores processor, operation and classified DTOs for a tracked attempt", async () => {
+    const registry = new ProductOperationRegistry();
+    registry.register(operation("normalize", "normalized"));
+    const history = {
+      startAttempt: vi.fn().mockResolvedValue(undefined), completeAttempt: vi.fn().mockResolvedValue(undefined), failAttempt: vi.fn(),
+      start: vi.fn().mockResolvedValue("20"), complete: vi.fn().mockResolvedValue(undefined), fail: vi.fn(),
+    } satisfies ProductOperationHistoryRepository;
+    const pipeline = new ProductOperationPipeline(registry, history);
+
+    const attempt = await pipeline.runTracked(validProduct(), context, "3.0.0");
+    const classified = { ...attempt.product, classification: { status: "complete", classifierVersion: "1", fingerprint: "hash", resolved: [], ignored: [], unresolved: [] } } as const;
+    await pipeline.completeAttempt(attempt.attemptId, attempt.product, classified);
+
+    expect(history.startAttempt).toHaveBeenCalledWith(expect.objectContaining({ processorVersion: "3.0.0", processorOutput: expect.objectContaining({ title: "Product" }) }));
+    expect(history.complete).toHaveBeenCalledWith("20", expect.objectContaining({ title: "Product|normalized" }), expect.any(String));
+    expect(history.completeAttempt).toHaveBeenCalledWith(attempt.attemptId, attempt.product, classified, expect.any(String));
   });
 
   it("records the operation that failed and keeps its original error", async () => {
@@ -67,6 +87,7 @@ describe("product operation pipeline", () => {
     const failure = new Error("translation failed");
     registry.register({ code: "translate", name: "Перевод", version: "1.0.0", execute: vi.fn().mockRejectedValue(failure) });
     const history = {
+      startAttempt: vi.fn(), completeAttempt: vi.fn(), failAttempt: vi.fn(),
       start: vi.fn().mockResolvedValue("13"),
       complete: vi.fn(),
       fail: vi.fn().mockResolvedValue(undefined),

@@ -40,7 +40,7 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <a class="button quiet" href="/classifier">← К классификатору</a>
+        <a class="button quiet" href="/products">← К товарам</a>
         <span id="operator-name" class="operator"></span>
         <button id="refresh-product" class="icon-button" type="button" aria-label="Обновить карточку" title="Обновить карточку">↻</button>
         <button id="logout-button" class="button quiet" type="button">Выйти</button>
@@ -67,11 +67,13 @@
 
         <div class="product-layout">
           <div class="product-main-column">
+            <section class="section product-section"><div class="section-title"><h3>Стадии обработки</h3></div><div id="stages-list" class="stage-list"></div></section>
             <section class="section product-section">
               <div class="section-title"><h3>Данные товара</h3></div>
               <p id="product-description" class="product-description"></p>
               <dl id="product-attributes" class="data-grid"></dl>
             </section>
+            <section class="section product-section"><div class="section-title"><h3>Preview WordPress</h3><button id="load-preview" class="button secondary" type="button">Проверить без записи</button></div><div id="preview-state" class="inline-message">Preview ещё не запускался.</div><div id="preview-content" class="stage-list" hidden></div></section>
 
             <section class="section product-section">
               <div class="section-title">

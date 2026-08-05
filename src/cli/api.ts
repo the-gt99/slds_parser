@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 
 import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../config/index.js";
+import { registerProductOperations } from "../bootstrap.js";
+import { ProductOperationRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
 import {
   createPostgresPool,
@@ -10,8 +12,8 @@ import {
   PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
 } from "../infrastructure/db/index.js";
-import { TargetDictionaryProviderRegistry, WordPressDictionaryProvider } from "../integrations/index.js";
-import { ClassifierAdminService, ProductAdminService, TargetDictionaryService } from "../services/index.js";
+import { TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
+import { ClassifierAdminService, ProductAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -50,6 +52,10 @@ async function main(): Promise<void> {
     );
     const providers = new TargetDictionaryProviderRegistry();
     if (wordpress !== null) providers.register(new WordPressDictionaryProvider(wordpress));
+    const operations = new ProductOperationRegistry();
+    registerProductOperations(operations);
+    const exporters = new TargetExporterRegistry();
+    if (wordpress !== null) exporters.register(new WordPressExporter(wordpress));
     const targetDictionaries = new TargetDictionaryService(
       new PostgresTargetDictionaryRepository(pool),
       providers,
@@ -58,8 +64,11 @@ async function main(): Promise<void> {
     const productAdmin = new ProductAdminService(
       new PostgresProductAdminRepository(pool),
       providers,
+      operations,
     );
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin });
+    const targetMappings = new TargetReferenceMappingService(repositories.references);
+    const wordpressPreview = wordpress === null ? undefined : new WordPressPreviewService(repositories, exporters, targetMappings);
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

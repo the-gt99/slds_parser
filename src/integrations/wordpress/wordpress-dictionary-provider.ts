@@ -92,6 +92,12 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     return url.toString();
   }
 
+  productPublicUrl(externalId: string): string {
+    const url = new URL(`${this.config.baseUrl}/`);
+    url.searchParams.set("p", externalId);
+    return url.toString();
+  }
+
   async fetchPage(entityType: string, page: number, perPage: number): Promise<TargetDictionaryPage> {
     this.ensureSupported(entityType, this.supportedEntityTypes);
     const url = this.endpoint("dictionaries");

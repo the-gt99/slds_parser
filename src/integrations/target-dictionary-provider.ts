@@ -42,6 +42,7 @@ export interface TargetDictionaryProvider {
   readonly creatableEntityTypes: readonly string[];
   readonly classificationCapabilities: readonly TargetClassificationCapability[];
   productEditUrl?(externalId: string): string;
+  productPublicUrl?(externalId: string): string;
   fetchPage(entityType: string, page: number, perPage: number): Promise<TargetDictionaryPage>;
   createTerm(input: CreateTargetTermInput): Promise<TargetDictionaryRemoteValue>;
 }

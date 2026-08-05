@@ -5,6 +5,12 @@ import type {
   ProductClassificationObservationRecord,
   ProductOperationExecutionRecord,
   ProductPartSummaryRecord,
+  ProductProcessingAttemptRecord,
+  ProductListQuery,
+  ProductListResult,
+  ProductSnapshotListItem,
+  ProductSnapshotListQuery,
+  ProductSnapshotListResult,
   ProductTargetSnapshotRecord,
 } from "../../../repositories/index.js";
 import type { SqlPool } from "../sql-executor.js";
@@ -50,6 +56,8 @@ function mapPart(row: DatabaseRow): ProductPartSummaryRecord {
     adapterVersion: text(row, "adapter_version"),
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
+    rawPayload: row.raw_payload as ProductPartSummaryRecord["rawPayload"],
+    parsedPayload: row.parsed_payload as ProductPartSummaryRecord["parsedPayload"],
   };
 }
 
@@ -66,6 +74,28 @@ function mapOperation(row: DatabaseRow): ProductOperationExecutionRecord {
     startedAt: timestamp(row, "started_at"),
     finishedAt: nullableTimestamp(row, "finished_at"),
     error: nullableText(row, "error"),
+    outputData: (row.output_data ?? null) as ProductOperationExecutionRecord["outputData"],
+  };
+}
+
+function mapAttempt(row: DatabaseRow): ProductProcessingAttemptRecord {
+  return {
+    attemptId: text(row, "attempt_id"), sourceProductId: text(row, "source_product_id"),
+    processorVersion: text(row, "processor_version"), status: row.status as ProductProcessingAttemptRecord["status"],
+    processorOutput: row.processor_output as ProductProcessingAttemptRecord["processorOutput"],
+    operationsOutput: (row.operations_output ?? null) as ProductProcessingAttemptRecord["operationsOutput"],
+    classifiedOutput: (row.classified_output ?? null) as ProductProcessingAttemptRecord["classifiedOutput"],
+    startedAt: timestamp(row, "started_at"), finishedAt: nullableTimestamp(row, "finished_at"), error: nullableText(row, "error"),
+  };
+}
+
+function mapSnapshot(row: DatabaseRow): ProductSnapshotListItem {
+  return {
+    id: text(row, "id"), targetId: text(row, "target_id"), targetCode: text(row, "target_code"),
+    targetName: text(row, "target_name"), sourceProductId: text(row, "source_product_id"),
+    sourceCode: text(row, "source_code"), sourceExternalId: text(row, "source_external_id"),
+    externalId: text(row, "external_id"), title: nullableText(row, "title"),
+    fetchedAt: timestamp(row, "fetched_at"), payload: row.payload as JsonObject,
   };
 }
 
@@ -134,7 +164,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
       );
       const partsResult = await client.query<DatabaseRow>(
         `SELECT id, part_key, content_hash, source_updated_at, fetched_at,
-                adapter_version, created_at, updated_at
+                adapter_version, created_at, updated_at, raw_payload, parsed_payload
          FROM source_product_parts
          WHERE source_product_id = $1
          ORDER BY part_key`,
@@ -146,6 +176,11 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
          WHERE source_product_id = $1
          ORDER BY started_at DESC, attempt_id, sequence
          LIMIT 200`,
+        [sourceProductId],
+      );
+      const attemptsResult = await client.query<DatabaseRow>(
+        `SELECT * FROM product_processing_attempts
+         WHERE source_product_id = $1 ORDER BY started_at DESC LIMIT 30`,
         [sourceProductId],
       );
       const classificationsResult = await client.query<DatabaseRow>(
@@ -178,9 +213,20 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
          LEFT JOIN target_products product
            ON product.target_id = target.id
           AND product.internal_product_id = $1::BIGINT
-         WHERE target.enabled = TRUE OR product.id IS NOT NULL
+         WHERE target.enabled = TRUE OR target.exporter_code = 'wordpress' OR product.id IS NOT NULL
          ORDER BY target.name, target.id`,
         [internalProduct?.id ?? null],
+      );
+      const snapshotsResult = await client.query<DatabaseRow>(
+        `SELECT snapshot.*, target.code AS target_code, target.name AS target_name,
+                source.code AS source_code,
+                NULLIF(snapshot.payload->'product'->>'title', '') AS title
+         FROM target_product_snapshots snapshot
+         JOIN targets target ON target.id = snapshot.target_id
+         JOIN source_products product ON product.id = snapshot.source_product_id
+         JOIN sources source ON source.id = product.source_id
+         WHERE snapshot.source_product_id = $1 ORDER BY snapshot.fetched_at DESC`,
+        [sourceProductId],
       );
 
       const result: ProductAdminReadModel = {
@@ -190,9 +236,11 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         internalProduct,
         parts: partsResult.rows.map(mapPart),
         operations: operationsResult.rows.map(mapOperation),
+        processingAttempts: attemptsResult.rows.map(mapAttempt),
         classifications: classificationsResult.rows.map(mapClassification),
         jobs: jobsResult.rows.map(mapJob),
         targets: targetsResult.rows.map(mapTargetSnapshot),
+        snapshots: snapshotsResult.rows.map(mapSnapshot),
       };
       await client.query("COMMIT");
       transactionOpen = false;
@@ -203,5 +251,77 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
     } finally {
       client.release();
     }
+  }
+
+  async listProducts(query: ProductListQuery): Promise<ProductListResult> {
+    const client = await this.pool.connect();
+    try {
+    const parameters: unknown[] = [];
+    const where: string[] = [];
+    const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+    if (query.search) {
+      const p = add(`%${query.search}%`);
+      where.push(`(product.id::TEXT ILIKE ${p} OR product.source_key ILIKE ${p} OR COALESCE(product.external_id, '') ILIKE ${p} OR COALESCE(internal.data->>'title', product.discovery_metadata->>'title', '') ILIKE ${p})`);
+    }
+    if (query.sourceCode) where.push(`source.code = ${add(query.sourceCode)}`);
+    const stageSql = `CASE WHEN parts.collected_at IS NULL THEN 'discovered' WHEN internal.id IS NULL THEN 'collected' WHEN internal.status = 'classification_pending' THEN 'classification_pending' WHEN internal.status = 'classified' THEN 'classified' ELSE internal.status END`;
+    const classificationSql = `CASE WHEN internal.id IS NULL THEN 'not_processed' WHEN internal.status = 'classification_pending' THEN 'pending' WHEN internal.data->'classification'->>'status' = 'complete' THEN 'complete' ELSE 'pending' END`;
+    if (query.stage) where.push(`${stageSql} = ${add(query.stage)}`);
+    if (query.classificationStatus) where.push(`${classificationSql} = ${add(query.classificationStatus)}`);
+    if (query.targetStatus) where.push(`COALESCE(target_state.status, 'not_exported') = ${add(query.targetStatus)}`);
+    const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
+    const from = `FROM source_products product
+      JOIN sources source ON source.id = product.source_id
+      LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+      LEFT JOIN LATERAL (SELECT MAX(fetched_at) AS collected_at FROM source_product_parts WHERE source_product_id = product.id) parts ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT tp.status, tp.external_id FROM target_products tp
+        JOIN targets t ON t.id = tp.target_id
+        WHERE tp.internal_product_id = internal.id ORDER BY (t.code = 'slamdunk') DESC, tp.updated_at DESC LIMIT 1
+      ) target_state ON TRUE`;
+    const countResult = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
+    const limit = add(query.limit); const offset = add(query.offset);
+    const result = await client.query<DatabaseRow>(
+      `SELECT product.id AS source_product_id, source.id AS source_id, source.code AS source_code,
+              source.name AS source_name, product.source_key, product.external_id,
+              NULLIF(COALESCE(internal.data->>'title', product.discovery_metadata->>'title'), '') AS title,
+              product.status AS source_status, ${stageSql} AS stage, ${classificationSql} AS classification_status,
+              parts.collected_at, internal.processed_at, COALESCE(target_state.status, 'not_exported') AS target_status,
+              target_state.external_id AS target_external_id,
+              EXISTS (SELECT 1 FROM target_product_snapshots snapshot WHERE snapshot.source_product_id = product.id) AS has_target_snapshot
+       ${from} ${filter} ORDER BY product.updated_at DESC, product.id DESC LIMIT ${limit} OFFSET ${offset}`,
+      parameters,
+    );
+    const sources = await client.query<DatabaseRow>("SELECT code, name FROM sources ORDER BY name, id");
+    return {
+      total: Number(countResult.rows[0]?.total ?? 0),
+      sources: sources.rows.map((row) => ({ code: text(row, "code"), name: text(row, "name") })),
+      items: result.rows.map((row) => ({
+        sourceProductId: text(row, "source_product_id"), sourceId: text(row, "source_id"), sourceCode: text(row, "source_code"), sourceName: text(row, "source_name"),
+        sourceKey: text(row, "source_key"), externalId: nullableText(row, "external_id"), title: nullableText(row, "title"), sourceStatus: text(row, "source_status"),
+        stage: text(row, "stage"), classificationStatus: text(row, "classification_status"), collectedAt: nullableTimestamp(row, "collected_at"), processedAt: nullableTimestamp(row, "processed_at"),
+        targetStatus: text(row, "target_status"), targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
+      })),
+    };
+    } finally { client.release(); }
+  }
+
+  async listSnapshots(query: ProductSnapshotListQuery): Promise<ProductSnapshotListResult> {
+    const client = await this.pool.connect();
+    try {
+    const parameters: unknown[] = [];
+    const filter = query.search ? `WHERE snapshot.external_id ILIKE $1 OR snapshot.source_external_id ILIKE $1 OR snapshot.source_product_id::TEXT ILIKE $1 OR COALESCE(snapshot.payload->'product'->>'title', '') ILIKE $1` : "";
+    if (query.search) parameters.push(`%${query.search}%`);
+    const from = `FROM target_product_snapshots snapshot JOIN targets target ON target.id = snapshot.target_id JOIN source_products product ON product.id = snapshot.source_product_id JOIN sources source ON source.id = product.source_id ${filter}`;
+    const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from}`, parameters);
+    parameters.push(query.limit, query.offset);
+    const result = await client.query<DatabaseRow>(
+      `SELECT snapshot.*, target.code AS target_code, target.name AS target_name, source.code AS source_code,
+              NULLIF(snapshot.payload->'product'->>'title', '') AS title ${from}
+       ORDER BY snapshot.fetched_at DESC, snapshot.id DESC LIMIT $${parameters.length - 1} OFFSET $${parameters.length}`,
+      parameters,
+    );
+    return { total: Number(count.rows[0]?.total ?? 0), items: result.rows.map(mapSnapshot) };
+    } finally { client.release(); }
   }
 }

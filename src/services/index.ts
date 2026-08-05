@@ -19,3 +19,4 @@ export {
   type CreateTargetTermCommand,
 } from "./target-dictionary-service.js";
 export { ProductAdminService } from "./product-admin-service.js";
+export { WordPressPreviewService } from "./wordpress-preview-service.js";

@@ -9,6 +9,10 @@ const assets = new Map([
   ["/assets/app.css", { file: "app.css", type: "text/css; charset=utf-8" }],
   ["/assets/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/product.js", { file: "product.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/admin-list.js", { file: "admin-list.js", type: "text/javascript; charset=utf-8" }],
+  ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
+  ["/operations", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
+  ["/wordpress-snapshots", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
 ] as const);
 
 function securityHeaders(reply: FastifyReply): FastifyReply {

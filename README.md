@@ -15,6 +15,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - unit-тесты на Vitest, не требующие запущенного PostgreSQL или сети;
 - отдельный Fastify API с классификатором и защищённой карточкой товара;
 - история выполнения каждой операции обработки товара.
+- read-only наблюдаемость: реестр товаров и операций, снимки WordPress, сохранённые стадии processing attempts и WordPress preflight без создания export job;
 - WordPress exporter с source-neutral identity, строгим `product-upsert.v1`, target readiness и ожиданием результата внешнего job.
 
 ## Конвейер
@@ -131,6 +132,7 @@ WordPress importer скачивает готовые WebP по публичны�
 - `target_products` — состояние синхронизации внутреннего товара с целью;
 - `jobs` — очередь discovery, collection, processing и export задач.
 - `product_operation_executions` — попытки и результаты отдельных операций обработки товара.
+- `product_processing_attempts` — честные снимки DTO после процессора, после операций и после классификации для новых попыток обработки.
 
 Служебная таблица `schema_migrations` хранит имена уже применённых SQL-файлов. Отдельная seed-миграция идемпотентно добавляет начальные типы справочников.
 
@@ -188,6 +190,10 @@ API запускается отдельным процессом после `npm
 - `POST /api/classifier/rules/preview` — проверить область действия правила и возможные конфликты без записи;
 - `POST /api/classifier/rules` — сохранить проверенное правило и точечно переобработать затронутые товары;
 - `GET /api/products/:productId` — безопасное представление товара, его частей, классификации, операций, jobs и состояния выгрузки;
+- `GET /api/products` — поиск, фильтры и пагинация общего реестра товаров;
+- `GET /api/operations` — фактический runtime registry операций;
+- `GET /api/wordpress-snapshots` — поиск и пагинация сохранённых снимков WordPress;
+- `GET /api/products/:productId/wordpress-preview?targetId=...` — сборка общего payload экспортера и реальный read-only WordPress preflight;
 - `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
 - `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
 - `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.

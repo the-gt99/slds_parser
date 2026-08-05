@@ -15,6 +15,10 @@ export class ProductOperationRegistry {
     this.#operations.set(operation.code, operation);
   }
 
+  list(): readonly ProductOperation[] {
+    return [...this.#operations.values()];
+  }
+
   listForSource(sourceCode: string): readonly ProductOperation[] {
     const applicable = [...this.#operations.values()].filter(
       (operation) =>

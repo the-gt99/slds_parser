@@ -127,6 +127,39 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("serves read-only product, operation and snapshot registries", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const productAdmin = {
+      listProducts: vi.fn().mockResolvedValue({ items: [], total: 0, sources: [] }),
+      listOperations: vi.fn().mockReturnValue([{ code: "normalize", name: "Нормализация", version: "1", dependsOn: [], sourceCodes: null }]),
+      listSnapshots: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+    } as unknown as ProductAdminService;
+    const server = createHttpServer({ ...dependencies(database), productAdmin });
+    const headers = { authorization: `Bearer ${adminToken}` };
+
+    const products = await server.inject({ method: "GET", url: "/api/products?limit=25&offset=0", headers });
+    const operations = await server.inject({ method: "GET", url: "/api/operations", headers });
+    const snapshots = await server.inject({ method: "GET", url: "/api/wordpress-snapshots?search=2916861", headers });
+
+    expect(products.statusCode).toBe(200);
+    expect(operations.json().items[0].code).toBe("normalize");
+    expect(snapshots.statusCode).toBe(200);
+    expect(productAdmin.listProducts).toHaveBeenCalledWith(expect.objectContaining({ limit: 25, offset: 0 }));
+    expect(productAdmin.listSnapshots).toHaveBeenCalledWith(expect.objectContaining({ search: "2916861" }));
+    await server.close();
+  });
+
+  it("delegates WordPress preview to the read-only preview service", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const wordpressPreview = { preview: vi.fn().mockResolvedValue({ externalId: "2916861", diff: {} }) };
+    const server = createHttpServer({ ...dependencies(database), wordpressPreview: wordpressPreview as never });
+    const response = await server.inject({ method: "GET", url: "/api/products/3/wordpress-preview?targetId=10", headers: { authorization: `Bearer ${adminToken}` } });
+
+    expect(response.statusCode).toBe(200);
+    expect(wordpressPreview.preview).toHaveBeenCalledWith("3", "10");
+    await server.close();
+  });
+
   it("uses an HttpOnly session and CSRF token for browser mutations", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = {

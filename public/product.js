@@ -171,6 +171,32 @@ function addDefinition(list, name, value) {
   list.append(term, description);
 }
 
+function jsonDetails(title, value, open = false) {
+  const details = document.createElement("details");
+  details.className = "data-details";
+  details.open = open;
+  const summary = document.createElement("summary"); summary.textContent = title;
+  const pre = document.createElement("pre"); pre.textContent = JSON.stringify(value, null, 2);
+  details.append(summary, pre); return details;
+}
+
+function renderStages(item) {
+  const list = byId("stages-list"); list.replaceChildren();
+  const identity = document.createElement("div"); identity.className = "stage-row";
+  identity.innerHTML = `<strong>1. Discovery / identity</strong><span>${item.source.code} · ${item.sourceProduct.sourceKey} · external ID ${item.sourceProduct.externalId || "—"}</span>`;
+  identity.append(jsonDetails("Discovery metadata", item.sourceProduct.discoveryMetadata)); list.append(identity);
+  const parts = document.createElement("div"); parts.className = "stage-row"; parts.innerHTML = `<strong>2. Текущие parts</strong><span>${item.collection.parts.length} частей; это вход процессора, не DTO.</span>`;
+  for (const part of item.collection.parts) { const group = document.createElement("div"); group.className = "part-payloads"; group.append(jsonDetails(`${part.partKey}: raw`, part.rawPayload), jsonDetails(`${part.partKey}: parsed`, part.parsedPayload)); parts.append(group); } list.append(parts);
+  const attempts = item.processing.attempts || [];
+  const attempt = attempts[0];
+  const processor = document.createElement("div"); processor.className = "stage-row"; processor.innerHTML = `<strong>3. DTO после SourceProcessor</strong><span>${attempt ? `Попытка ${attempt.attemptId} · v${attempt.processorVersion}` : "Для прошлых обработок это состояние не сохранялось."}</span>`; if (attempt) processor.append(jsonDetails("DTO процессора", attempt.processorOutput)); list.append(processor);
+  const operations = document.createElement("div"); operations.className = "stage-row"; operations.innerHTML = `<strong>4. ProductOperation по порядку</strong><span>${attempt ? "Выход каждой выполненной операции" : "Исторические выходы отсутствуют."}</span>`;
+  const currentOperations = attempt ? (item.processing.operations || []).filter((operation) => operation.attemptId === attempt.attemptId).sort((a, b) => a.sequence - b.sequence) : [];
+  for (const operation of currentOperations) operations.append(jsonDetails(`${operation.sequence + 1}. ${operation.operationName} · v${operation.operationVersion}`, operation.outputData ?? { status: operation.status, error: operation.error, note: "Выход не сохранялся" })); list.append(operations);
+  const final = document.createElement("div"); final.className = "stage-row"; final.innerHTML = `<strong>5. Итоговый DTO после операций и классификации</strong><span>${attempt?.classifiedOutput ? "Сохранён для последней попытки" : item.product ? "Доступен только текущий итоговый товар; стадийный снимок отсутствует" : "Ещё не сформирован"}</span>`; if (attempt?.classifiedOutput) final.append(jsonDetails("Итоговый DTO", attempt.classifiedOutput)); list.append(final);
+  const snapshot = document.createElement("div"); snapshot.className = "stage-row"; snapshot.innerHTML = `<strong>6. Текущий WordPress snapshot</strong><span>${item.wordpressSnapshots?.[0] ? `WP ${item.wordpressSnapshots[0].externalId} · ${formatDate(item.wordpressSnapshots[0].fetchedAt)}` : "Снимка нет"}</span>`; if (item.wordpressSnapshots?.[0]) snapshot.append(jsonDetails("Снимок WordPress", item.wordpressSnapshots[0].payload)); list.append(snapshot);
+}
+
 function renderHero(item) {
   const product = item.product;
   const sourceProduct = item.sourceProduct;
@@ -479,6 +505,7 @@ function renderTargets(item) {
       card.append(error);
     }
     if (target.editUrl) card.append(externalLink("Редактировать на target ↗", target.editUrl));
+    if (target.attempts?.length) card.append(jsonDetails(`История попыток (${target.attempts.length})`, target.attempts));
     list.append(card);
   }
 }
@@ -490,7 +517,27 @@ function renderProduct(item) {
   renderClassifications(item);
   renderPipeline(item);
   renderTargets(item);
+  renderStages(item);
   byId("product-content").hidden = false;
+}
+
+async function loadPreview() {
+  const box = byId("preview-state"); const content = byId("preview-content"); const button = byId("load-preview");
+  const target = state.product?.targets?.find((item) => item.exporterCode === "wordpress");
+  if (!target) { box.textContent = "WordPress target не настроен для preview."; return; }
+  button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; content.hidden = true;
+  try {
+    const { item } = await api(`/api/products/${productId}/wordpress-preview?targetId=${encodeURIComponent(target.id)}`);
+    box.textContent = `Preflight выполнен без записи · WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`;
+    content.replaceChildren(
+      jsonDetails("Основные поля", item.payload.fields, true),
+      jsonDetails("Таксономии", item.payload.taxonomies),
+      jsonDetails(`Изображения (${item.payload.images.length})`, item.payload.images),
+      jsonDetails(`Активные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
+      jsonDetails("Diff относительно сохранённого snapshot", item.diff, true),
+    ); content.hidden = false;
+  } catch (error) { box.textContent = `Preview заблокирован: ${error.message}`; box.classList.add("error"); }
+  finally { button.disabled = false; }
 }
 
 async function loadProduct() {
@@ -518,6 +565,7 @@ async function loadProduct() {
 byId("login-form").addEventListener("submit", login);
 byId("logout-button").addEventListener("click", logout);
 byId("refresh-product").addEventListener("click", loadProduct);
+byId("load-preview").addEventListener("click", loadPreview);
 
 restoreSession().catch((error) => {
   byId("product-loading").hidden = true;

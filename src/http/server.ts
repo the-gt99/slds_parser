@@ -17,6 +17,7 @@ import type {
   CreateTargetTermCommand,
   ProductAdminService,
   TargetDictionaryService,
+  WordPressPreviewService,
 } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
 import { registerStaticUi } from "./static-ui.js";
@@ -31,6 +32,7 @@ export interface HttpServerDependencies {
   readonly classifier: ClassifierAdminService;
   readonly targetDictionaries: TargetDictionaryService;
   readonly productAdmin: ProductAdminService;
+  readonly wordpressPreview?: WordPressPreviewService;
 }
 
 interface QueueQuery {
@@ -50,6 +52,9 @@ interface ReferenceQuery {
 
 interface TargetParams { readonly targetId: string }
 interface ProductParams { readonly productId: string }
+interface ProductListQuery { readonly search?: string; readonly source?: string; readonly stage?: string; readonly classification?: string; readonly targetStatus?: string; readonly limit?: string; readonly offset?: string }
+interface SnapshotListQuery { readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
@@ -301,12 +306,48 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     items: await dependencies.targetDictionaries.listTargets(),
   }));
 
+  server.get<{ Querystring: ProductListQuery }>("/api/products", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 200);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+    return dependencies.productAdmin.listProducts({
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      ...(optionalString(request.query.source) === undefined ? {} : { sourceCode: optionalString(request.query.source)! }),
+      ...(optionalString(request.query.stage) === undefined ? {} : { stage: optionalString(request.query.stage)! }),
+      ...(optionalString(request.query.classification) === undefined ? {} : { classificationStatus: optionalString(request.query.classification)! }),
+      ...(optionalString(request.query.targetStatus) === undefined ? {} : { targetStatus: optionalString(request.query.targetStatus)! }),
+      limit, offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
+  });
+
+  server.get("/api/operations", { preHandler: requireAdmin }, async () => ({ items: dependencies.productAdmin.listOperations() }));
+
+  server.get<{ Querystring: SnapshotListQuery }>("/api/wordpress-snapshots", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 200);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+    return dependencies.productAdmin.listSnapshots({
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      limit, offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
+  });
+
   server.get<{ Params: ProductParams }>(
     "/api/products/:productId",
     { preHandler: requireAdmin },
     async (request) => ({
       item: await dependencies.productAdmin.getProduct(entityId(request.params.productId, "productId")),
     }),
+  );
+
+  server.get<{ Params: ProductParams; Querystring: PreviewQuery }>(
+    "/api/products/:productId/wordpress-preview",
+    { preHandler: requireAdmin },
+    async (request) => {
+      if (dependencies.wordpressPreview === undefined) throw new HttpInputError("WordPress preview is not configured");
+      return { item: await dependencies.wordpressPreview.preview(
+        entityId(request.params.productId, "productId"),
+        entityId(request.query.targetId, "targetId"),
+      ) };
+    },
   );
 
   server.get<{ Params: TargetParams; Querystring: DictionaryQuery }>(
