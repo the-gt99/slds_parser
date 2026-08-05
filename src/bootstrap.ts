@@ -1,14 +1,14 @@
 import { CollectionRunner, ExportRunner, JobDispatcher, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
-import { loadProcessingConfig, loadWorkerConfig, type ProcessingEnvironment, type WorkerEnvironment } from "./config/index.js";
+import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresProductOperationHistoryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
-import { GoatImageDownloader, GoatSourceAdapter, GoatSourceProcessor, type GoatHttpEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatSourceAdapter, GoatSourceProcessor, WordPressExporter, type GoatHttpEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ProductClassifier, TargetReferenceMappingService } from "./services/index.js";
 
-export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment;
+export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
 
 export function registerPipelineComponents(registries: {
@@ -26,10 +26,11 @@ export function registerPipelineComponents(registries: {
   registries.operations.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
   registries.operations.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
   registries.operations.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
-  // TODO(target): Keep this only if WordPress imports media by public URL. If the exporter uploads files directly,
-  // remove this operation and PARSER_PUBLIC_BASE_URL, then pass webpLocalPath to the exporter.
+  // WordPress imports the converted files from these stable public URLs.
   registries.operations.register(new PublishImagesOperation(imageStore, ["goat"]));
   registries.operations.register(new ValidateProcessedProductOperation(["goat"]));
+  const wordpress = loadWordPressTargetConfig(environment);
+  if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }
 
 export function createApplication(environment: ApplicationEnvironment = process.env) {

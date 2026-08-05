@@ -13,7 +13,7 @@
 
 Первая рабочая вертикаль: `GOAT → SLDS Parser → WordPress/WooCommerce slamdunk.shop`.
 
-Проект ещё не закончен. Сбор, обработка, классификатор и административный интерфейс уже работают. Главный отсутствующий блок — WordPress exporter и подтверждённый сквозной импорт товара в WooCommerce.
+Проект ещё не закончен. Сбор, обработка, классификатор и административный интерфейс уже работают. Локально реализованы WordPress exporter и `slds.wordpress.product-upsert.v1`; главный незакрытый блок — deployment обеих сторон, production-конфигурация размеров и подтверждённый сквозной импорт товара в WooCommerce.
 
 ## Принципиальные архитектурные границы
 
@@ -165,15 +165,19 @@ WordPress dictionary endpoint умеет читать `brands`, `models`, `tags`
 
 Создание из интерфейса разрешено только для брендов, моделей, тегов и категорий. Цвета и некоторые другие термины имеют дополнительные метаданные; не создавать неполные записи общей кнопкой.
 
-Target `slamdunk` на parser production создан выключенным. Это намеренно: словари и mappings работают, но `export_product` нельзя запускать до появления зарегистрированного WordPress exporter.
+Target `slamdunk` на parser production создан выключенным. Это намеренно: локальный exporter зарегистрирован при полной WordPress-конфигурации, но production нельзя включать до deployment нового WordPress-контракта, заполнения `requiredReferenceTypes`/`sizeMappings` и smoke.
 
-Перед exporter необходимо исправить подтверждённые ограничения текущего WordPress importer:
+Новый `product-upsert.v1` обходит подтверждённые ограничения legacy importer отдельным строгим путём:
 
-- в `processor.php` есть fallback и сохранение через `goat_id`, а `import_source` жёстко записывается как `goat`; идентичность нужно сделать source-neutral, сохранив совместимость со старыми товарами;
-- одиночный вызов `wp_set_object_terms(..., false)` для общей attribute-строки перезаписывает предыдущий термин; множественные категории/теги/материалы/назначения нужно применять собранным набором один раз;
-- не менять эти места вслепую до фиксации target payload и тестов create/update.
+- primary identity хранится в `_slds_source_code`, `_slds_source_external_id`, `_slds_external_key`; `goat_id` только читается для совместимости со старыми товарами;
+- новый товар создаётся variable draft, получает identity и публикуется после синхронизации;
+- terms приходят только числовыми ID и не создаются в upsert;
+- множественные значения каждой taxonomy применяются одним набором;
+- availability без точного quantity меняет stock status без выдуманного остатка;
+- публичные WebP импортируются по URL;
+- общий queue обеспечивает hash/idempotency и повтор собственного error job без дубля строки.
 
-Target-specific readiness реализовать вместе с exporter, а не заранее. Она должна опираться на универсальные `typeCode`/`scope`, учитывать конкретный target и проверять наличие его `target_value_mappings`. Нельзя определять обязательность модели по GOAT-полю `attributes.family` или считать внутреннее resolved-решение достаточным для любого target.
+Target-specific readiness реализована в WordPress exporter. Она опирается на универсальные `typeCode`, явно настроенный target-список `requiredReferenceTypes`, проверяет `target_value_mappings` и точные `sizeMappings`. Нельзя возвращать обязательность модели по GOAT-полю `attributes.family` или считать внутреннее resolved-решение достаточным для любого target.
 
 ## Текущее production-состояние на 2026-08-02
 
@@ -194,6 +198,14 @@ Parser:
 - после исправляющего smoke активная очередь содержит 12 значений: по два `brand`, `category`, `color`, `material` и четыре `model`; ложных `activity`/`tag` из `Lifestyle` и `Sandal` нет;
 - target `slamdunk` выключен для экспорта, но WordPress provider настроен;
 - локальный снимок девяти WordPress-справочников заполнен.
+
+Локально на 2026-08-05:
+
+- parser содержит зарегистрированный `WordPressExporter`, сборщик `product-upsert.v1` и 145 проходящих тестов;
+- WordPress source содержит upsert contract/handler/routes и отдельные PHP-тесты;
+- TypeScript payload hash принят PHP-валидатором в прямой межрепозиторной проверке;
+- эти изменения ещё не развёрнуты и production smoke не выполнялся;
+- read-only сверка production target config и размеров 5 августа не завершилась из-за повторного SSH handshake timeout.
 
 WordPress:
 
@@ -228,22 +240,16 @@ WordPress:
 
 Движок классификатора уже готов. Не переписывать его под GOAT и не добавлять новый слой без доказанной необходимости.
 
-### 3. Реализовать WordPress exporter
+### 3. Развернуть и настроить WordPress exporter
 
-Это главный следующий блок:
+Локальная реализация готова, перед включением target осталось:
 
-- зафиксировать версионируемый target payload;
-- определить source-neutral external identity и idempotency key;
-- создать или обновить variable product;
-- создать/обновить варианты;
-- передать цены и остатки без float и выдуманных значений;
-- преобразовать размеры по подтверждённым таблицам;
-- применить одиночные и множественные таксономии без перезаписи;
-- сформировать WordPress-описание;
-- окончательно выбрать передачу изображений: URL import или прямой upload;
-- сохранить `target_products.external_id`, hashes, timestamps и ошибку;
-- обеспечить повторный вызов без дублей;
-- после успеха включить target.
+- проверить входящие WordPress изменения относительно production dirty worktree и безопасно развернуть контракт;
+- определить с владельцем `requiredReferenceTypes`;
+- собрать актуальные `sizeMappings` по target-справочнику для `us-numeric` и `standard-clothing`, не копируя неподтверждённые ID;
+- развернуть parser и повторно обработать ограниченные smoke-товары после изменения версии GOAT processor;
+- выполнить create, повтор того же export и update существующего товара;
+- после успешного smoke включить target.
 
 ### 4. Сквозной smoke
 

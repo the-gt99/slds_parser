@@ -109,6 +109,7 @@ function normalizeVariant(variant: ProductVariantDTO): ProductVariantDTO {
       ...variant.size,
       sourceValue: cleanSourceText(variant.size.sourceValue),
       displayValue: cleanSourceText(variant.size.displayValue),
+      ...(variant.size.system === undefined ? {} : { system: cleanSourceText(variant.size.system).toLocaleLowerCase("en-US") }),
     },
     price: variant.price === null
       ? null
@@ -139,7 +140,7 @@ function normalizeCandidate(candidate: ReferenceCandidateDTO): ReferenceCandidat
 export class NormalizeProductOperation implements ProductOperation {
   readonly code = "normalize-product";
   readonly name = "Нормализация товара";
-  readonly version = "2.0.0";
+  readonly version = "2.1.0";
 
   async execute(
     product: UniversalProductDTO,

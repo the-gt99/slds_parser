@@ -25,6 +25,30 @@ function availability(value: string): ProductVariantDTO["inventory"]["availabili
   if (value === "single_in_stock" || value === "multiple_in_stock") return "available";
   return "unknown";
 }
+
+function audience(value: string): ProductVariantDTO["size"]["audience"] | undefined {
+  switch (value.trim().toLocaleLowerCase("en-US")) {
+    case "men":
+    case "male": return "men";
+    case "women":
+    case "female": return "women";
+    case "youth":
+    case "kids":
+    case "gs": return "youth";
+    case "infant":
+    case "td":
+    case "ps": return "infant";
+    case "unisex": return "unisex";
+    default: return undefined;
+  }
+}
+
+function sizeSystem(sizeType: string, sizeUnit: string): string | undefined {
+  const type = sizeType.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+  const unit = sizeUnit.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+  if (type === "" || unit === "") return undefined;
+  return `${unit}-${type.replace(/-sizes$/u, "")}`;
+}
 function images(value: JsonValue | undefined, title: string): ProductImageDTO[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry, position) => {
@@ -105,7 +129,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.4.0";
+  readonly version = "2.5.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -128,6 +152,8 @@ export class GoatSourceProcessor implements SourceProcessor {
     const productType = text(product.productType);
     const sizeType = text(product.sizeType);
     const sizeUnit = text(product.sizeUnit);
+    const normalizedAudience = audience(gender);
+    const normalizedSizeSystem = sizeSystem(sizeType, sizeUnit);
     const route = text(context.sourceProduct.metadata.route);
     const taxonomy: Record<string, JsonValue> = {};
     for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) {
@@ -176,7 +202,9 @@ export class GoatSourceProcessor implements SourceProcessor {
       const instantShipPrice = money(offer.instantShipLowestPriceCents);
       const lastSoldPrice = money(offer.lastSoldPriceCents);
       variants.push({ sourceVariantKey: key, sku: [text(product.sku) || productId, sourceValue, shoeCondition, boxCondition].filter(Boolean).join("-"),
-        size: { sourceValue, displayValue: displayValue || sourceValue }, price: primaryPrice,
+        size: { sourceValue, displayValue: displayValue || sourceValue,
+          ...(normalizedSizeSystem === undefined ? {} : { system: normalizedSizeSystem }),
+          ...(normalizedAudience === undefined ? {} : { audience: normalizedAudience }) }, price: primaryPrice,
         inventory: { availability: availability(stockStatus) },
         attributes: { shoeCondition, boxCondition, stockStatus, countryCode,
           ...(instantShipPrice ? { instantShipPrice: { amount: instantShipPrice.amount, currency: instantShipPrice.currency } } : {}),

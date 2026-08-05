@@ -3,10 +3,10 @@ import { ExportRunner } from "../../src/application/index.js";
 import type { TargetExporter } from "../../src/contracts/index.js";
 import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { TargetReferenceMappingService } from "../../src/services/index.js";
-import { createMemoryRepositories, MemoryStore, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
+import { createMemoryRepositories, MemoryStore, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
 async function setup(version = "1", implementation = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "created", metadata: {} })) {
-  const store = new MemoryStore(); store.sources.set("1", sourceRecord()); store.targets.set("10", targetRecord());
+  const store = new MemoryStore(); store.sources.set("1", sourceRecord()); seedProduct(store); store.targets.set("10", targetRecord());
   const repositories = createMemoryRepositories(store); const internal = await repositories.internalProducts.upsert({ sourceProductId: "2", data: validProduct(), inputHash: "input", contentHash: "content", processorVersion: "1", status: "processed" });
   const exporter: TargetExporter = { targetCode: "fake-exporter", version, export: implementation }; const registry = new TargetExporterRegistry(); registry.register(exporter);
   return { store, repositories, internal, implementation, runner: new ExportRunner(repositories, registry, new TargetReferenceMappingService(repositories.references)) };

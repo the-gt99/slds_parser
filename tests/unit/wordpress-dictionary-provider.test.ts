@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("WordPressDictionaryProvider", () => {
   it("declares the target taxonomies used by classification", () => {
-    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000 });
+    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 });
 
     expect(provider.supportedEntityTypes).toEqual(expect.arrayContaining([
       "brands", "models", "tags", "product_categories", "colors", "materials", "seasons", "activities",
@@ -36,6 +36,8 @@ describe("WordPressDictionaryProvider", () => {
       baseUrl: "https://shop.example",
       authToken: "secret-token",
       timeoutMs: 5_000,
+      jobTimeoutMs: 10_000,
+      pollIntervalMs: 100,
     });
 
     const page = await provider.fetchPage("brands", 1, 200);
@@ -62,7 +64,7 @@ describe("WordPressDictionaryProvider", () => {
       term: { target_id: 91, name: "Pegasus Trail", slug: "pegasus-trail", taxonomy: "pa_model" },
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000 });
+    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 });
 
     await provider.createTerm({
       entityType: "models",

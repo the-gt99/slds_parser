@@ -215,6 +215,10 @@ export interface ProductClassificationDTO {
 export interface ProductSizeDTO {
   readonly sourceValue: string;
   readonly displayValue: string;
+  /** Source-neutral size system key, for example `us-numeric` or `standard-clothing`. */
+  readonly system?: string;
+  /** Source-neutral audience key used when a target has separate size terms. */
+  readonly audience?: "men" | "women" | "youth" | "infant" | "unisex";
 }
 
 export interface ProductVariantDTO {
@@ -253,6 +257,8 @@ export interface TargetReferenceResolver {
 }
 
 export interface ExportContext {
+  readonly source: SourceDTO;
+  readonly sourceProduct: SourceProductDTO;
   readonly target: TargetDTO;
   readonly product: UniversalProductDTO;
   readonly references: TargetReferenceResolver;

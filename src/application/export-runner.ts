@@ -1,13 +1,15 @@
-import type { TargetDTO } from "../contracts/index.js";
+import type { SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import type { InternalProductRepository, TargetRepository } from "../repositories/index.js";
+import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "../services/index.js";
 import type { ExportProductPayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
 
 export interface ExportRunnerRepositories {
+  readonly sources: SourceRepository;
+  readonly sourceProducts: SourceProductRepository;
   readonly internalProducts: InternalProductRepository;
   readonly targets: TargetRepository;
 }
@@ -22,6 +24,10 @@ export class ExportRunner {
   async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {
     const internal = await this.repositories.internalProducts.getById(payload.internalProductId);
     if (internal === null) throw new EntityNotFoundError("Internal product", payload.internalProductId);
+    const sourceProduct = await this.repositories.sourceProducts.getById(internal.sourceProductId);
+    if (sourceProduct === null) throw new EntityNotFoundError("Source product", internal.sourceProductId);
+    const source = await this.repositories.sources.getById(sourceProduct.sourceId);
+    if (source === null) throw new EntityNotFoundError("Source", sourceProduct.sourceId);
     const target = await this.repositories.targets.getById(payload.targetId);
     if (target === null) throw new EntityNotFoundError("Target", payload.targetId);
     const exporter = this.exporters.get(target.exporterCode);
@@ -30,9 +36,19 @@ export class ExportRunner {
     const fingerprint = hashStableJson({ contentHash: internal.contentHash, exporterVersion: exporter.version, targetConfig: target.config, mappingRevision });
     if (!payload.force && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
     const attemptedAt = new Date().toISOString();
+    const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
+    const sourceProductDto: SourceProductDTO = {
+      id: sourceProduct.id,
+      sourceId: sourceProduct.sourceId,
+      sourceKey: sourceProduct.sourceKey,
+      ...(sourceProduct.externalId === null ? {} : { externalId: sourceProduct.externalId }),
+      ...(sourceProduct.slug === null ? {} : { slug: sourceProduct.slug }),
+      ...(sourceProduct.url === null ? {} : { url: sourceProduct.url }),
+      metadata: sourceProduct.discoveryMetadata,
+    };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
-      const result = await exporter.export({ target: targetDto, product: internal.data,
+      const result = await exporter.export({ source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
         references: { resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope) },
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });
       await this.repositories.targets.saveExportSuccess({ targetId: target.id, internalProductId: internal.id, externalId: result.externalId,

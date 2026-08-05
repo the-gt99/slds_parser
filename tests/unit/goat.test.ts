@@ -63,7 +63,7 @@ describe("GOAT adapter and processor", () => {
       { partKey: "offers", rawPayload: jsonFixture("offers.json"), parsedPayload: { market: "US", countryCode: "US", offers: jsonFixture("offers.json") }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
     const product = await processor.process(context);
-    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
+    expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
     expect(product.variants[1]).toMatchObject({ price: null, inventory: { availability: "unavailable" } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),

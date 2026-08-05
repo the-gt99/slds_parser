@@ -37,6 +37,6 @@ describe("HTTP config", () => {
     expect(loadWordPressTargetConfig({
       PARSER_WORDPRESS_BASE_URL: "https://shop.example/",
       PARSER_WORDPRESS_AUTH_TOKEN: "token",
-    })).toEqual({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 30000 });
+    })).toEqual({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 30000, jobTimeoutMs: 900000, pollIntervalMs: 2000 });
   });
 });
