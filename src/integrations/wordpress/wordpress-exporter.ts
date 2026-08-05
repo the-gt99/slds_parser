@@ -244,12 +244,11 @@ function variationPayload(variant: ProductVariantDTO, identityKey: string, mappi
 }
 
 async function taxonomyPayload(context: ExportContext, required: readonly ReferenceType[]): Promise<JsonObject> {
-  if (context.product.classification?.status !== "complete") {
-    throw new IntegrationContractError("Product classification must be complete before WordPress export");
-  }
+  if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
+  const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
   const grouped = new Map<string, Set<number>>();
   for (const candidate of context.product.referenceCandidates) {
-    if (candidate.subjectKind !== "product" || !(candidate.typeCode in REFERENCE_TARGETS)) continue;
+    if (candidate.subjectKind !== "product" || !(candidate.typeCode in REFERENCE_TARGETS) || unresolvedKeys.has(candidate.key)) continue;
     const target = REFERENCE_TARGETS[candidate.typeCode as ReferenceType];
     if (!grouped.has(target.taxonomy)) grouped.set(target.taxonomy, new Set<number>());
   }

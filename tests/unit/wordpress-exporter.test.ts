@@ -113,6 +113,58 @@ describe("WordPressExporter", () => {
     ]);
   });
 
+  it("does not block or clear an unresolved optional taxonomy", async () => {
+    const base = context();
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:material:synthetic",
+          typeCode: "material",
+          scope: "product.material",
+          subjectKind: "product",
+          sourceValue: "Synthetic",
+          context: {},
+          evidence: {},
+        }],
+        classification: {
+          ...base.product.classification!,
+          status: "partial",
+          unresolved: [{
+            candidateKey: "product:material:synthetic",
+            typeCode: "material",
+            scope: "product.material",
+            subjectKind: "product",
+            sourceValue: "Synthetic",
+            reason: "mapping_missing",
+          }],
+        },
+      },
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+    const targetProduct = payload.product as JsonObject;
+
+    expect(targetProduct.taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31] },
+      product_cat: { mode: "replace", term_ids: [41] },
+    });
+  });
+
+  it("still blocks an unresolved required taxonomy", async () => {
+    const base = context({ requiredReferenceTypes: ["brand", "category", "material"] });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        classification: { ...base.product.classification!, status: "partial" },
+      },
+    };
+
+    await expect(buildWordPressUpsertPayload(input)).rejects.toThrow("Required WordPress references are missing: material");
+  });
+
   it("queues once and waits for the completed WordPress job", async () => {
     const input = context();
     const expectedPayload = await buildWordPressUpsertPayload(input);
