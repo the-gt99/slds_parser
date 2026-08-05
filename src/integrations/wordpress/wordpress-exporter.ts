@@ -227,10 +227,12 @@ async function taxonomyPayload(context: ExportContext, required: readonly Refere
   if (context.product.classification?.status !== "complete") {
     throw new IntegrationContractError("Product classification must be complete before WordPress export");
   }
-  const grouped = new Map<string, Set<number>>(
-    [...new Set(Object.values(REFERENCE_TARGETS).map((target) => target.taxonomy))]
-      .map((taxonomy) => [taxonomy, new Set<number>()]),
-  );
+  const grouped = new Map<string, Set<number>>();
+  for (const candidate of context.product.referenceCandidates) {
+    if (candidate.subjectKind !== "product" || !(candidate.typeCode in REFERENCE_TARGETS)) continue;
+    const target = REFERENCE_TARGETS[candidate.typeCode as ReferenceType];
+    if (!grouped.has(target.taxonomy)) grouped.set(target.taxonomy, new Set<number>());
+  }
   const presentTypes = new Set<ReferenceType>();
   const termsByType = new Map<ReferenceType, Set<number>>();
   for (const reference of context.product.classification.resolved) {
@@ -316,7 +318,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.0.0";
+  readonly version = "1.0.1";
 
   constructor(
     private readonly config: WordPressTargetConfig,
