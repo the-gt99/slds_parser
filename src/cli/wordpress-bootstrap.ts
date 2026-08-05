@@ -47,6 +47,35 @@ function taxonomyDifferences(payload: JsonObject, snapshot: JsonObject) {
   });
 }
 
+function variationSizeTerms(value: unknown, source: "payload" | "snapshot"): readonly string[] {
+  const items = source === "payload" ? record(value).items : value;
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item) => {
+    if (source === "payload") {
+      const size = record(record(item).size);
+      const taxonomy = String(size.taxonomy ?? "");
+      const id = Number(size.term_id);
+      return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
+    }
+    const attributes = record(item).attributes;
+    if (!Array.isArray(attributes)) return [];
+    return attributes.flatMap((attribute) => {
+      const item = record(attribute);
+      const taxonomy = String(item.taxonomy ?? "");
+      const id = Number(item.term_id);
+      return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? [`${taxonomy}:${id}`] : [];
+    });
+  }).sort((left, right) => left.localeCompare(right));
+}
+
+function fieldDifferences(payload: JsonObject, snapshot: JsonObject) {
+  const expected = record(payload.product);
+  const actual = record(snapshot.product);
+  return ["title", "slug", "sku"].flatMap((field) => String(expected[field] ?? "") === String(actual[field] ?? "")
+    ? []
+    : [{ field, expected: String(expected[field] ?? ""), actual: String(actual[field] ?? "") }]);
+}
+
 const sourceProductIds = idsFromEnvironment(process.env.WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS, "WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS");
 const [targetId] = idsFromEnvironment(process.env.WORDPRESS_BOOTSTRAP_TARGET_ID, "WORDPRESS_BOOTSTRAP_TARGET_ID");
 const wordpress = loadWordPressTargetConfig();
@@ -119,6 +148,8 @@ try {
       });
       const expectedItems = record(payload.variations).items;
       const actualItems = record(item.snapshot.product).variations;
+      const expectedSizeTerms = variationSizeTerms(payload.variations, "payload");
+      const actualSizeTerms = variationSizeTerms(actualItems, "snapshot");
       const preflight = await exporter.preflightPayload(payload);
       reports.push({
         sourceProductId: sourceProduct.id,
@@ -128,8 +159,19 @@ try {
         dryRun: {
           status: "built",
           preflight,
+          fieldDifferences: fieldDifferences(payload, item.snapshot),
           taxonomyDifferences: taxonomyDifferences(payload, item.snapshot),
-          variations: { expected: Array.isArray(expectedItems) ? expectedItems.length : 0, actual: Array.isArray(actualItems) ? actualItems.length : 0 },
+          variations: {
+            expected: Array.isArray(expectedItems) ? expectedItems.length : 0,
+            actual: Array.isArray(actualItems) ? actualItems.length : 0,
+            sizeTermsMatch: JSON.stringify(expectedSizeTerms) === JSON.stringify(actualSizeTerms),
+            expectedSizeTerms,
+            actualSizeTerms,
+          },
+          images: {
+            expected: Array.isArray(record(payload.product).images) ? (record(payload.product).images as readonly unknown[]).length : 0,
+            actual: Array.isArray(record(item.snapshot.product).images) ? (record(item.snapshot.product).images as readonly unknown[]).length : 0,
+          },
         },
       });
     } catch (error) {

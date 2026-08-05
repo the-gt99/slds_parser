@@ -148,6 +148,20 @@ function targetForScope(config: JsonObject, scope: string): (typeof REFERENCE_TA
   return matches[0] ?? null;
 }
 
+function productTitle(title: string, taxonomies: JsonObject, config: JsonObject): string {
+  const rawPolicy = config.titlePrefixByCategoryTermId;
+  if (rawPolicy === null || typeof rawPolicy !== "object" || Array.isArray(rawPolicy)) return title;
+  const category = taxonomies.product_cat;
+  if (category === null || typeof category !== "object" || Array.isArray(category)) return title;
+  const termIds = (category as JsonObject).term_ids;
+  if (!Array.isArray(termIds)) return title;
+  const prefixes = [...new Set(termIds.map((termId) => text((rawPolicy as JsonObject)[String(termId)])).filter(Boolean))];
+  if (prefixes.length === 0) return title;
+  if (prefixes.length > 1) throw new IntegrationContractError("WordPress product categories resolve to different title prefixes");
+  const prefix = prefixes[0]!;
+  return title.toLocaleLowerCase("ru-RU").startsWith(prefix.toLocaleLowerCase("ru-RU")) ? title : `${prefix} ${title}`;
+}
+
 function moneyToMinorUnits(amount: string): string {
   const match = /^(0|[1-9]\d*)(?:\.(\d{1,2}))?$/u.exec(amount.trim());
   if (match === null) throw new IntegrationContractError(`Unsupported money amount: ${amount}`);
@@ -324,6 +338,7 @@ export async function buildWordPressUpsertPayload(context: ExportContext): Promi
   }));
   if (targetSizes.size !== variations.length) throw new IntegrationContractError("More than one product variant resolves to the same WordPress size");
   const targetId = context.existingExternalId === undefined ? 0 : positiveInteger(context.existingExternalId, "existingExternalId");
+  const title = productTitle(context.product.title, taxonomies, context.target.config);
   const base: JsonObject = {
     contract_version: CONTRACT_VERSION,
     mode: "upsert",
@@ -335,10 +350,10 @@ export async function buildWordPressUpsertPayload(context: ExportContext): Promi
     },
     managed_fields: ["title", "slug", "sku", "description", "short_description", "images", "taxonomies", "variations"],
     product: {
-      title: context.product.title,
+      title,
       slug: context.sourceProduct.slug ?? "",
       sku: context.product.sku,
-      description_html: descriptionHtml(context.product),
+      description_html: descriptionHtml({ ...context.product, title }),
       short_description_html: "",
       status: "publish",
       images: context.product.images.map((image) => imagePayload(image, sourceExternalId)),

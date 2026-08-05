@@ -93,6 +93,16 @@ describe("WordPressExporter", () => {
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
   });
 
+  it("applies an explicit target title prefix for the resolved product category", async () => {
+    const input = context({ titlePrefixByCategoryTermId: { "41": "Кроссовки" } });
+
+    const payload = await buildWordPressUpsertPayload(input);
+    const targetProduct = payload.product as JsonObject;
+
+    expect(targetProduct.title).toBe("Кроссовки Nike Test Shoe");
+    expect(targetProduct.description_html).toContain("<h2>Кроссовки Nike Test Shoe</h2>");
+  });
+
   it("adds taxonomy terms projected from concrete classification decisions", async () => {
     const input = context();
     vi.mocked(input.references.resolveProjections).mockResolvedValue([
