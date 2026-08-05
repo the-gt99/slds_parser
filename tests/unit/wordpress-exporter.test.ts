@@ -31,7 +31,7 @@ const product: UniversalProductDTO = {
     unresolved: [],
   },
   translatedContent: { sourceLocale: "en", targetLocale: "ru", description: "Описание", story: "История", color: "Черный", details: "Black", upperMaterial: "Кожа" },
-  attributes: { releaseDate: "2026-01-02" },
+  attributes: { color: "Black", details: "Black/White", upperMaterial: "Leather", midsole: "Air", categoryRaw: "sneakers", releaseDate: "2026-01-02T23:59:59.999Z" },
   metadata: {},
 };
 
@@ -64,6 +64,9 @@ describe("WordPressExporter", () => {
     expect(identity).toEqual({ source_code: "goat", source_external_id: "100", external_key: "goat:100", target_id: 0 });
     expect(targetProduct.taxonomies).toEqual({ pa_brand: { mode: "replace", term_ids: [31] }, product_cat: { mode: "replace", term_ids: [41] } });
     expect(targetProduct.images).toEqual([{ url: "https://parser.example/images/test-1.webp", filename: "test-1.webp", source_url: "https://source.example/test.png" }]);
+    expect(targetProduct.description_html).toContain("<li>Технология: Air</li>");
+    expect(targetProduct.description_html).toContain("<li>Категория: sneakers</li>");
+    expect(targetProduct.description_html).toContain("<li>Дата релиза: 02 января 2026г.</li>");
     expect(item).toMatchObject({ variation_key: "goat:100|offer-7", sku: "ROOT-SKU-7", size: { taxonomy: "pa_razmer", term_id: 107 }, price: { source_currency: "USD", source_minor_amount: "12345" }, inventory: { availability: "available" } });
     expect((item.inventory as JsonObject).quantity).toBeUndefined();
     expect(String(payload.idempotency_key)).toMatch(/^product-upsert:[a-f0-9]{64}$/u);

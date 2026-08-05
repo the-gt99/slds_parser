@@ -56,15 +56,15 @@ describe("GOAT adapter and processor", () => {
     ]);
   });
   it("rejects an unknown requested part", async () => { const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0)); await expect(adapter.collectProduct({ source: source(), product: { sourceKey: "x", metadata: {} }, requestedPartKeys: ["unknown"] })).rejects.toBeInstanceOf(PermanentError); });
-  it("keeps nullable prices, clothing size strings, conditions and additional prices", async () => {
+  it("keeps one new no-defects offer per size with clothing size context and additional prices", async () => {
     const processor = new GoatSourceProcessor();
     const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: {} }, parts: [
       { partKey: "product", rawPayload: jsonFixture("product.json"), parsedPayload: jsonFixture("product.json"), adapterVersion: "1.0.0" },
       { partKey: "offers", rawPayload: jsonFixture("offers.json"), parsedPayload: { market: "US", countryCode: "US", offers: jsonFixture("offers.json") }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
     const product = await processor.process(context);
+    expect(product.variants).toHaveLength(1);
     expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available" }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
-    expect(product.variants[1]).toMatchObject({ price: null, inventory: { availability: "unavailable" } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
       expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "apparel" }),
@@ -75,6 +75,20 @@ describe("GOAT adapter and processor", () => {
     );
     expect(product.referenceCandidates.some((candidate) => candidate.scope === "product.tag.activity")).toBe(false);
     const offerRows = jsonFixture("offers.json") as readonly JsonValue[];
+    const baseOffer = offerRows[0] as JsonObject;
+    const selection = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [
+      baseOffer,
+      { ...baseOffer, boxCondition: "damaged_box", stockStatus: "multiple_in_stock", lowestPriceCents: { currency: "USD", amount: 13000 } },
+      { ...baseOffer, boxCondition: "no_original_box", stockStatus: "multiple_in_stock", lowestPriceCents: { currency: "USD", amount: 12000 } },
+      offerRows[1]!,
+    ] } }] } satisfies ProcessingContext;
+    const selected = await processor.process(selection);
+    expect(selected.variants).toHaveLength(1);
+    expect(selected.variants[0]).toMatchObject({
+      sourceVariantKey: "product-100|US|103|new_no_defects|no_original_box",
+      price: { amount: "120.00", currency: "USD" },
+      inventory: { availability: "available" },
+    });
     const duplicate = { ...context, parts: [context.parts[0]!, { ...context.parts[1]!, parsedPayload: { market: "US", countryCode: "US", offers: [offerRows[0]!, offerRows[0]!] } }] } satisfies ProcessingContext;
     await expect(processor.process(duplicate)).rejects.toBeInstanceOf(IntegrationContractError);
   });

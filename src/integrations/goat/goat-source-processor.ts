@@ -26,6 +26,35 @@ function availability(value: string): ProductVariantDTO["inventory"]["availabili
   return "unknown";
 }
 
+interface VariantCandidate {
+  readonly variant: ProductVariantDTO;
+  readonly stockPriority: number;
+  readonly priceMinor: bigint | null;
+  readonly fingerprint: string;
+}
+
+function stockPriority(value: string): number {
+  if (value === "multiple_in_stock") return 2;
+  if (value === "single_in_stock") return 1;
+  return 0;
+}
+
+function minorAmount(value: JsonValue | undefined): bigint | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const amount = (value as JsonObject).amount;
+  if ((typeof amount !== "number" && typeof amount !== "string") || !/^-?\d+$/u.test(String(amount))) return null;
+  return BigInt(String(amount));
+}
+
+function shouldReplaceVariant(candidate: VariantCandidate, existing: VariantCandidate): boolean {
+  if (candidate.stockPriority !== existing.stockPriority) return candidate.stockPriority > existing.stockPriority;
+  if ((candidate.priceMinor === null) !== (existing.priceMinor === null)) return candidate.priceMinor !== null;
+  if (candidate.priceMinor !== null && existing.priceMinor !== null && candidate.priceMinor !== existing.priceMinor) {
+    return candidate.priceMinor < existing.priceMinor;
+  }
+  return candidate.fingerprint.localeCompare(existing.fingerprint, "en-US") < 0;
+}
+
 function audience(value: string): ProductVariantDTO["size"]["audience"] | undefined {
   switch (value.trim().toLocaleLowerCase("en-US")) {
     case "men":
@@ -129,7 +158,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.5.0";
+  readonly version = "2.6.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -163,7 +192,7 @@ export class GoatSourceProcessor implements SourceProcessor {
       ...facts({ title, brand, family, audience: gender, category: categoryRaw || productCategory, productCategory, productType, route }),
       ...(Object.keys(taxonomy).length === 0 ? {} : { taxonomy }),
     };
-    const variants: ProductVariantDTO[] = [];
+    const variantsBySize = new Map<string, VariantCandidate>();
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", modelSourceValue(title, color),
@@ -198,18 +227,30 @@ export class GoatSourceProcessor implements SourceProcessor {
       const key = [productId, countryCode, sourceValue, shoeCondition, boxCondition].join("|");
       if (keys.has(key)) throw new IntegrationContractError(`Duplicate GOAT variant key: ${key}`);
       keys.add(key);
+      if (shoeCondition !== "new_no_defects") continue;
       const primaryPrice = money(offer.lowestPriceCents);
       const instantShipPrice = money(offer.instantShipLowestPriceCents);
       const lastSoldPrice = money(offer.lastSoldPriceCents);
-      variants.push({ sourceVariantKey: key, sku: [text(product.sku) || productId, sourceValue, shoeCondition, boxCondition].filter(Boolean).join("-"),
+      const variant: ProductVariantDTO = { sourceVariantKey: key, sku: [text(product.sku) || productId, sourceValue, shoeCondition, boxCondition].filter(Boolean).join("-"),
         size: { sourceValue, displayValue: displayValue || sourceValue,
           ...(normalizedSizeSystem === undefined ? {} : { system: normalizedSizeSystem }),
           ...(normalizedAudience === undefined ? {} : { audience: normalizedAudience }) }, price: primaryPrice,
         inventory: { availability: availability(stockStatus) },
         attributes: { shoeCondition, boxCondition, stockStatus, countryCode,
           ...(instantShipPrice ? { instantShipPrice: { amount: instantShipPrice.amount, currency: instantShipPrice.currency } } : {}),
-          ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } });
+          ...(lastSoldPrice ? { lastSoldPrice: { amount: lastSoldPrice.amount, currency: lastSoldPrice.currency } } : {}) } };
+      const candidate: VariantCandidate = {
+        variant,
+        stockPriority: stockPriority(stockStatus),
+        priceMinor: minorAmount(offer.lowestPriceCents),
+        fingerprint: key,
+      };
+      const existing = variantsBySize.get(sourceValue);
+      if (existing === undefined || shouldReplaceVariant(candidate, existing)) variantsBySize.set(sourceValue, candidate);
     }
+    const variants = [...variantsBySize.values()]
+      .sort((left, right) => left.variant.size.sourceValue.localeCompare(right.variant.size.sourceValue, "en-US", { numeric: true }))
+      .map((candidate) => candidate.variant);
     return { sourceProductId: context.sourceProduct.id, title, description, sku: text(product.sku),
       images: images(product.images, title), variants, referenceCandidates,
       attributes: { brand: product.brandName ?? product.brand ?? null, family, gender, color: product.color ?? null,

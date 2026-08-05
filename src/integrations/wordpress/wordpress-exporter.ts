@@ -177,15 +177,29 @@ function paragraphHtml(value: string): string {
   return value.trim() === "" ? "" : value.trim().split(/\r?\n\s*\r?\n/gu).map((item) => `<p>${escapeHtml(item.replace(/\s+/gu, " ").trim())}</p>`).join("\n");
 }
 
+function releaseDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/u.exec(value.trim());
+  if (match === null) return value.trim();
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return value.trim();
+  const months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  return `${String(day).padStart(2, "0")} ${months[month - 1]!} ${year}г.`;
+}
+
 function descriptionHtml(product: UniversalProductDTO): string {
   const translated = product.translatedContent;
   const story = translated?.story || translated?.description || product.description;
   const properties = [
     ["Артикул", product.sku],
-    ["Цвет", translated?.color ?? ""],
-    ["Расцветка", translated?.details ?? ""],
-    ["Материал верха", translated?.upperMaterial ?? ""],
-    ["Дата релиза", text(product.attributes.releaseDate)],
+    ["Цвет", translated?.color || text(product.attributes.color)],
+    ["Расцветка", translated?.details || text(product.attributes.details)],
+    ["Материал верха", translated?.upperMaterial || text(product.attributes.upperMaterial)],
+    ["Технология", text(product.attributes.midsole)],
+    ["Категория", text(product.attributes.categoryRaw)],
+    ["Дата релиза", releaseDate(text(product.attributes.releaseDate))],
   ].filter((entry) => entry[1] !== "");
   const parts = [`<h2>${escapeHtml(product.title)}</h2>`];
   const storyHtml = paragraphHtml(story);
@@ -318,7 +332,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.0.1";
+  readonly version = "1.0.2";
 
   constructor(
     private readonly config: WordPressTargetConfig,
