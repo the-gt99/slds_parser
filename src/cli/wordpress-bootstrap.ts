@@ -76,6 +76,57 @@ function fieldDifferences(payload: JsonObject, snapshot: JsonObject) {
     : [{ field, expected: String(expected[field] ?? ""), actual: String(actual[field] ?? "") }]);
 }
 
+interface VariationState {
+  readonly regularPrice: string;
+  readonly stockStatus: string;
+  readonly manageStock: boolean;
+  readonly stockQuantity: number | null;
+}
+
+function sizeTerm(value: unknown): string {
+  const size = record(value);
+  const taxonomy = String(size.taxonomy ?? "");
+  const id = Number(size.term_id);
+  return taxonomy !== "" && Number.isSafeInteger(id) && id > 0 ? `${taxonomy}:${id}` : "";
+}
+
+function plannedVariationStates(value: readonly JsonObject[]): ReadonlyMap<string, VariationState> {
+  return new Map(value.flatMap((item) => {
+    const key = sizeTerm(item.size);
+    return key === "" ? [] : [[key, {
+      regularPrice: String(item.regular_price ?? ""),
+      stockStatus: String(item.stock_status ?? ""),
+      manageStock: item.manage_stock === true,
+      stockQuantity: item.stock_quantity === null ? null : Number(item.stock_quantity),
+    }] as const];
+  }));
+}
+
+function snapshotVariationStates(value: unknown): ReadonlyMap<string, VariationState> {
+  if (!Array.isArray(value)) return new Map();
+  return new Map(value.flatMap((rawItem) => {
+    const item = record(rawItem);
+    const attributes = Array.isArray(item.attributes) ? item.attributes.map(sizeTerm).filter(Boolean) : [];
+    if (attributes.length !== 1) return [];
+    return [[attributes[0]!, {
+      regularPrice: String(item.regular_price ?? ""),
+      stockStatus: String(item.stock_status ?? ""),
+      manageStock: item.manage_stock === true,
+      stockQuantity: item.stock_quantity === null ? null : Number(item.stock_quantity),
+    }] as const];
+  }));
+}
+
+function variationDifferences(plan: readonly JsonObject[], snapshot: unknown) {
+  const expected = plannedVariationStates(plan);
+  const actual = snapshotVariationStates(snapshot);
+  return [...new Set([...expected.keys(), ...actual.keys()])].sort().flatMap((key) => {
+    const expectedState = expected.get(key) ?? null;
+    const actualState = actual.get(key) ?? null;
+    return JSON.stringify(expectedState) === JSON.stringify(actualState) ? [] : [{ sizeTerm: key, expected: expectedState, actual: actualState }];
+  });
+}
+
 const sourceProductIds = idsFromEnvironment(process.env.WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS, "WORDPRESS_BOOTSTRAP_SOURCE_PRODUCT_IDS");
 const [targetId] = idsFromEnvironment(process.env.WORDPRESS_BOOTSTRAP_TARGET_ID, "WORDPRESS_BOOTSTRAP_TARGET_ID");
 const wordpress = loadWordPressTargetConfig();
@@ -167,6 +218,7 @@ try {
             sizeTermsMatch: JSON.stringify(expectedSizeTerms) === JSON.stringify(actualSizeTerms),
             expectedSizeTerms,
             actualSizeTerms,
+            differences: variationDifferences(preflight.variationPlan, actualItems),
           },
           images: {
             expected: Array.isArray(record(payload.product).images) ? (record(payload.product).images as readonly unknown[]).length : 0,

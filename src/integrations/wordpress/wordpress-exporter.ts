@@ -55,12 +55,14 @@ interface WordPressResponse {
   readonly product_id?: unknown;
   readonly matched_by?: unknown;
   readonly payload_hash?: unknown;
+  readonly variation_plan?: unknown;
 }
 
 export interface WordPressUpsertPreflightResult {
   readonly externalId: string;
   readonly matchedBy: string;
   readonly payloadHash: string;
+  readonly variationPlan: readonly JsonObject[];
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -391,7 +393,9 @@ export class WordPressExporter {
     const externalId = String(positiveInteger(response.target_id ?? response.product_id, "WordPress preflight target_id"));
     const payloadHash = text(response.payload_hash);
     if (payloadHash !== expectedPayloadHash) throw new IntegrationContractError("WordPress preflight payload hash does not match the request");
-    return { externalId, matchedBy: text(response.matched_by), payloadHash };
+    if (!Array.isArray(response.variation_plan)) throw new IntegrationContractError("WordPress preflight variation_plan must be a list");
+    const variationPlan = response.variation_plan.map((value, index) => record(value, `WordPress preflight variation_plan[${index}]`) as JsonObject);
+    return { externalId, matchedBy: text(response.matched_by), payloadHash, variationPlan };
   }
 
   async export(context: ExportContext): Promise<ExportResult> {

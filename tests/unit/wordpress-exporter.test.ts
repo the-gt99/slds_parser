@@ -200,6 +200,15 @@ describe("WordPressExporter", () => {
       target_id: 321,
       matched_by: "legacy_goat_id",
       payload_hash: payload.payload_hash,
+      variation_plan: [{
+        variation_id: 123,
+        source_variant_key: "offer-7",
+        size: { taxonomy: "pa_razmer", term_id: 107 },
+        regular_price: "12345",
+        stock_status: "instock",
+        manage_stock: false,
+        stock_quantity: null,
+      }],
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
 
@@ -207,6 +216,15 @@ describe("WordPressExporter", () => {
       externalId: "321",
       matchedBy: "legacy_goat_id",
       payloadHash: payload.payload_hash,
+      variationPlan: [{
+        variation_id: 123,
+        source_variant_key: "offer-7",
+        size: { taxonomy: "pa_razmer", term_id: 107 },
+        regular_price: "12345",
+        stock_status: "instock",
+        manage_stock: false,
+        stock_quantity: null,
+      }],
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
