@@ -350,11 +350,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          SELECT * FROM page`,
         parameters,
       );
-      const [sources, targets, types] = await Promise.all([
-        client.query<DatabaseRow>("SELECT id, code, name FROM sources ORDER BY name, id"),
-        client.query<DatabaseRow>("SELECT id, code, name FROM targets ORDER BY name, id"),
-        client.query<DatabaseRow>("SELECT code, name FROM reference_types WHERE enabled = TRUE ORDER BY name, code"),
-      ]);
+      const sources = await client.query<DatabaseRow>("SELECT id, code, name FROM sources ORDER BY name, id");
+      const targets = await client.query<DatabaseRow>("SELECT id, code, name FROM targets ORDER BY name, id");
+      const types = await client.query<DatabaseRow>("SELECT code, name FROM reference_types WHERE enabled = TRUE ORDER BY name, code");
       return {
         total: Number(count.rows[0]?.total ?? 0),
         sources: sources.rows.map((row) => ({ id: String(row.id), code: String(row.code), name: String(row.name) })),
