@@ -1,9 +1,10 @@
 const state = { session: null, items: [], editing: null };
 const byId = (id) => document.getElementById(id);
 async function api(url, options = {}) {
-  const headers = { Accept: "application/json", "Content-Type": "application/json" };
+  const headers = { Accept: "application/json" };
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (options.method && options.method !== "GET" && state.session?.csrfToken) headers["X-CSRF-Token"] = state.session.csrfToken;
-  const response = await fetch(url, { credentials: "same-origin", headers, ...options, ...(options.body ? { body: JSON.stringify(options.body) } : {}) });
+  const response = await fetch(url, { credentials: "same-origin", headers, ...options, ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) { const error = new Error(data.message || data.error || `HTTP ${response.status}`); error.status = response.status; throw error; }
   return data;
