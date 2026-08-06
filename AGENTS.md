@@ -437,7 +437,23 @@ Job ranges: collect `5692`-`5791`, process `5792`-`5891`. Результат: co
 
 Классификация после processing: `classified=2`, `classification_pending=98`; observations: brand `resolved=89/unresolved=11`, category `32/68`, color `75/25`, material `20/56`, model `6/94`, tag `8/36`, ambiguous нет. Финально active jobs `0`, target `slamdunk=false`, export jobs `0`, API/worker active, internal/external health `200`, production parser worktree чистый, WordPress production worktree чистый на `661cc03`. Mappings/rules/projections не создавались и не редактировались; следующий этап — только анализ соответствий по сохранённым данным.
 
-### 6. Следующие WordPress smoke
+### 6. Анализ WordPress/GOAT cohort 100 от 6 августа 2026
+
+Второй этап выполнен как read-only анализ сохранённого cohort 100. Отчёты сохранены на parser production в `/srv/slds-parser/state/audits/2026-08-06-cohort-100-analysis/`: `product-layer-report.jsonl` SHA-256 `f2de0d0dc0e1009a5cb18ff1b6ab6740fc7286d76fc933ae263f058589aea3a2`, `association-matrices.json` SHA-256 `9a1a558be1e25e65fa94c5865306ef249b2c0b6823a6651e98a3635d0850c2b6`, `summary.json` SHA-256 `8bf0ec291040bd92e5fb99d7a0c15ae2ecb8eee9ba8c45b0c9ac73441fed808a`, `summary.md` SHA-256 `859676bb72ea54f7f38c53e83f57a928fccbaa72133903975391328bde50169d`, audit script `audit-analysis.mjs` SHA-256 `bc7fca37eb7464e3235cfa2bcf3e9580b5efb3dac27c30b1aa4c97f4d7dcf8d5`.
+
+Проверено 100 товаров, 1570 назначенных WordPress terms учтены ровно один раз. Coverage по статусам: `direct_mapping=170`, `projection=65`, `unresolved_candidate=320`, `source_field_unhandled=53`, `target_only=804`, `conflict=158`. По taxonomy: `pa_brand direct=89/conflict=10/unresolved=11`, `pa_model direct=5/unresolved=94/conflict=1`, `pa_tsvet direct=47/unresolved=22`, `product_cat direct=29/unresolved=68/conflict=3`, `product_tag projection=65/conflict=144/unresolved=125`, `pa_vid source_field_unhandled=53`, `pa_razmer target_only=702`, `pa_shoe_height target_only=102`.
+
+Главные подтверждённые co-occurrences для ручного следующего этапа: `brandName -> pa_brand` для крупных брендов без counterexamples в cohort; `category=Running -> pa_vid:Бег` `18/18`, `category=Basketball -> pa_vid:Баскетбол` `5/5`, `category=Lifestyle -> product_tag:На каждый день (лайфстайл)` `47/47`, `category=Running -> product_tag:Кроссовки для бега` `18/18`, `midsole=EVA -> product_tag:Технология EVA` `10/10`. Это статистика, а не применённые правила.
+
+Главные конфликты: multi-brand WordPress `pa_brand` содержит дополнительные бренды, которых нет в структурированном GOAT `brandName`; существующие WordPress `product_tag` часто объясняются связанными тегами бренда/модели/категории, но текущие projections покрывают только 65 тегов из cohort; `pa_vid` сейчас систематически назначен в WordPress по GOAT `category`, но processor не создаёт `activity` candidate из `category`, поэтому эти связи помечены как `source_field_unhandled`, а не direct/projection.
+
+Необрабатываемые GOAT поля по коду `GoatSourceProcessor`: `composition` не сохраняется в DTO и не создаёт candidate/evidence; `ageGroups` не создаёт candidate и не попадает в evidence; `taxonomyLevel1-4` попадают только в `evidence.taxonomy`, но не создают candidates; `season` сохраняется как attribute, но не candidate/evidence; `shoe_height` не извлекается. `activity` candidate создаётся только из `activitiesList/activities`, а не из `category`.
+
+Контрольный товар `goat_id=855174`, `sourceProductId=316480`, WordPress `2585427`: `productType=sneakers`, audience `men`, category `Running`, midsole `HOVR`, brand `Under Armour`, family `HOVR Phantom 2`. Уже объяснены direct mappings `pa_brand=Under Armour` и `pa_tsvet=Серый`; `pa_model`, `product_cat` и `product_tag` требуют mappings/projections; `pa_vid=Бег` требует решения по модели activity/category; `pa_shoe_height=Средние` пока target-only.
+
+Следующий этап: исправление модели candidates и интерфейса projections/review-flow, затем ручное применение подтверждённых mappings/rules/projections через preview. Во втором этапе mappings, rules, projections, reference values, jobs, target/proxy config, runtime code и WordPress не изменялись.
+
+### 7. Следующие WordPress smoke
 
 Target оставить выключенным. Выполнить контролируемо:
 
@@ -450,7 +466,7 @@ Target оставить выключенным. Выполнить контро�
 
 Только после серии из 5–50 проверенных товаров обсуждать включение target. Сам факт одного успешного update не разрешает массовый export.
 
-### 6. Эксплуатация полного каталога
+### 8. Эксплуатация полного каталога
 
 После успешной классификационной выборки и exporter smoke:
 
