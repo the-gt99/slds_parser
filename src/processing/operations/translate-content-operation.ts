@@ -36,6 +36,10 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
   "summit white": "Саммит Вайт",
   "photon dust": "Фотон Даст",
   "university red": "Юниверсити Ред",
+  flymesh: "Флаймеш",
+  flyweave: "Флайвив",
+  ndure: "Эн-Дьюр",
+  intelliknit: "ИнтеллиКнит",
 };
 
 export interface TranslateContentOperationOptions {

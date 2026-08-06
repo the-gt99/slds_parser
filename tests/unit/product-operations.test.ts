@@ -71,6 +71,24 @@ describe("product operations", () => {
     await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description" }))).rejects.toBeInstanceOf(IntegrationContractError);
   });
 
+  it("translates confirmed proprietary upper material names", async () => {
+    const translate = vi.fn(async (text: string) => ({ Description: "Описание", "Source story": "История", Leather: "Кожа" })[text] ?? text);
+    const provider: TextTranslationProvider = { code: "fake", version: "1", translate };
+
+    await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "Nike", story: "Source story", color: "blue", details: "Leather", upperMaterial: "Flymesh" } })))
+      .resolves.toMatchObject({ translatedContent: { upperMaterial: "Флаймеш" } });
+    await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "Nike", story: "Source story", color: "blue", details: "Leather", upperMaterial: "Flyweave" } })))
+      .resolves.toMatchObject({ translatedContent: { upperMaterial: "Флайвив" } });
+    await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "New Balance", story: "Source story", color: "blue", details: "Leather", upperMaterial: "NDure" } })))
+      .resolves.toMatchObject({ translatedContent: { upperMaterial: "Эн-Дьюр" } });
+    await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "Under Armour", story: "Source story", color: "blue", details: "Leather", upperMaterial: "IntelliKnit" } })))
+      .resolves.toMatchObject({ translatedContent: { upperMaterial: "ИнтеллиКнит" } });
+    expect(translate).not.toHaveBeenCalledWith("Flymesh", "en", "ru");
+    expect(translate).not.toHaveBeenCalledWith("Flyweave", "en", "ru");
+    expect(translate).not.toHaveBeenCalledWith("NDure", "en", "ru");
+    expect(translate).not.toHaveBeenCalledWith("IntelliKnit", "en", "ru");
+  });
+
   it("downloads, validates, converts, publishes and validates real image bytes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "slds-images-"));
     try {
