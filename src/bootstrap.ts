@@ -17,7 +17,11 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
   const translationProvider = new LegacyGoogleTranslationProvider(processing.translation);
   registry.register(new NormalizeProductOperation());
   registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
-  registry.register(new DownloadImagesOperation(new GoatImageDownloader(environment), imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registry.register(new DownloadImagesOperation(
+    new GoatImageDownloader(environment, { concurrency: processing.image.concurrency }),
+    imageStore,
+    { concurrency: processing.image.concurrency, sourceCodes: ["goat"] },
+  ));
   registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
   registry.register(new PublishImagesOperation(imageStore, ["goat"]));
   registry.register(new ValidateProcessedProductOperation(["goat"]));

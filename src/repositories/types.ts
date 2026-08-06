@@ -89,6 +89,20 @@ export interface SourceProductRecord {
   readonly updatedAt: Timestamp;
 }
 
+export interface SourceProductCollectionCandidate {
+  readonly id: EntityId;
+  readonly sourceKey: string;
+  readonly route: string;
+}
+
+export interface SourceProductCollectionCandidateQuery {
+  readonly sourceId: EntityId;
+  readonly limit: number;
+  readonly seed: number;
+  readonly routes?: readonly string[];
+  readonly sourceProductIds?: readonly EntityId[];
+}
+
 export interface UpsertDiscoveredSourceProductInput {
   readonly sourceId: EntityId;
   readonly sourceKey: string;

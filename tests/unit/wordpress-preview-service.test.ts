@@ -11,7 +11,14 @@ function setup(targetId: number, matchedBy: string) {
     description: "Description",
     sku: "SKU-2",
     images: [{ url: "https://parser.example/images/100.webp", position: 0, alt: "Test shoe", attributes: {} }],
-    variants: [],
+    variants: [{
+      sourceVariantKey: "offer-7",
+      sku: "SKU-2-7",
+      size: { sourceValue: "7", displayValue: "7" },
+      price: { amount: "100.00", currency: "USD" },
+      inventory: { availability: "available" as const },
+      attributes: {},
+    }],
     referenceCandidates: [],
     classification: {
       status: "complete" as const,

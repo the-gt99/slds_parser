@@ -4,7 +4,7 @@ import { IntegrationContractError } from "../../core/errors/index.js";
 export class ValidateProcessedProductOperation implements ProductOperation {
   readonly code = "validate-processed-product";
   readonly name = "Финальная проверка товара";
-  readonly version = "1.1.0";
+  readonly version = "1.2.0";
   readonly dependsOn = ["normalize-product", "publish-images"];
   readonly sourceCodes?: readonly string[];
 
@@ -17,7 +17,6 @@ export class ValidateProcessedProductOperation implements ProductOperation {
     if (product.title === "" || product.sku === "" || typeof brand !== "string" || brand === "") {
       throw new IntegrationContractError("Normalized product title, SKU and source brand are required");
     }
-    if (product.images.length === 0) throw new IntegrationContractError("Processed product images are required");
     return product;
   }
 }

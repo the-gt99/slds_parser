@@ -103,6 +103,25 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("previous.content_hash IS DISTINCT FROM $5");
   });
 
+  it("selects a deterministic balanced cohort without collected or active products", async () => {
+    const executor = new FakeExecutor([[
+      { id: "10", source_key: "shoe", route: "sneakers" },
+      { id: "11", source_key: "shirt", route: "apparel" },
+    ]]);
+    const products = await new PostgresSourceProductRepository(executor).listCollectionCandidates({
+      sourceId: "1", routes: ["sneakers", "apparel"], limit: 2, seed: 7,
+    });
+
+    expect(products).toEqual([
+      { id: "10", sourceKey: "shoe", route: "sneakers" },
+      { id: "11", sourceKey: "shirt", route: "apparel" },
+    ]);
+    expect(executor.calls[0]?.text).toContain("ROW_NUMBER() OVER");
+    expect(executor.calls[0]?.text).toContain("source_product_parts");
+    expect(executor.calls[0]?.text).toContain("job.status IN ('pending', 'running', 'retry')");
+    expect(executor.calls[0]?.values).toEqual(["1", ["sneakers", "apparel"], 2, 7]);
+  });
+
   it("resolves contextual source decisions in one batch", async () => {
     const executor = new FakeExecutor([[{ candidate_key: "product:brand", mapping_id: "12", reference_value_id: "13", status: "confirmed", revision: "2" }]]);
     const decisions = await new PostgresClassificationRepository(executor).findSourceDecisions("4", [{ candidateKey: "product:brand", typeCode: "brand", scope: "product.brand", normalizedSourceValue: "nike", contextKey: "{}" }]);
@@ -160,13 +179,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
   it("atomically claims available or expired jobs and increments attempts", async () => {
     const executor = new FakeExecutor([[jobRow]]);
-    await new PostgresJobRepository(executor).claimNext("worker", 30000);
+    await new PostgresJobRepository(executor).claimNext("worker", 30000, ["process_product"]);
     const call = executor.calls[0];
     expect(call?.text).toContain("FOR UPDATE SKIP LOCKED");
     expect(call?.text).toContain("status = 'running' AND locked_at <");
     expect(call?.text).toContain("attempts = attempts + 1");
     expect(call?.text).toContain("ORDER BY available_at, id");
-    expect(call?.values).toEqual(["worker", 30000]);
+    expect(call?.text).toContain("job_type = ANY($3::TEXT[])");
+    expect(call?.values).toEqual(["worker", 30000, ["process_product"]]);
   });
 
   it("uses the computed target status for both filtering and product rows", async () => {

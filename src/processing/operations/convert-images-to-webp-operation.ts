@@ -15,7 +15,7 @@ export interface ConvertImagesToWebpOperationOptions {
 export class ConvertImagesToWebpOperation implements ProductOperation {
   readonly code = "convert-images-to-webp";
   readonly name = "Конвертация изображений в WEBP";
-  readonly version = "1.0.1";
+  readonly version = "1.1.0";
   readonly dependsOn = ["download-images"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -30,6 +30,7 @@ export class ConvertImagesToWebpOperation implements ProductOperation {
   }
 
   async execute(product: UniversalProductDTO): Promise<UniversalProductDTO> {
+    if (product.images.length === 0) return product;
     const results = await settleWithConcurrency(product.images, this.options.concurrency, async (image): Promise<ProductImageDTO> => {
       if (image.localPath === undefined) throw new Error("Downloaded image local path is missing");
       return { ...image, webpLocalPath: await this.store.convertToWebp(image.localPath) };

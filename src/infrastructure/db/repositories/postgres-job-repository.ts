@@ -1,5 +1,5 @@
 import type { EntityId } from "../../../contracts/index.js";
-import type { EnqueueJobInput, JobRecord, JobRepository, RetryJobInput } from "../../../repositories/index.js";
+import type { EnqueueJobInput, JobRecord, JobRepository, JobType, RetryJobInput } from "../../../repositories/index.js";
 import type { SqlExecutor } from "../sql-executor.js";
 import { requireRow } from "./repository-utils.js";
 import { mapJob, type DatabaseRow } from "./row-mappers.js";
@@ -12,8 +12,8 @@ export class PostgresJobRepository implements JobRepository {
     return mapJob(requireRow(result.rows, "job", `${input.jobType}/${input.uniqueKey}`));
   }
 
-  async claimNext(workerId: string, lockTimeoutMs: number): Promise<JobRecord | null> {
-    const result = await this.executor.query<DatabaseRow>(`WITH candidate AS (SELECT id FROM jobs WHERE ((status IN ('pending', 'retry') AND available_at <= NOW()) OR (status = 'running' AND locked_at < NOW() - ($2::double precision * INTERVAL '1 millisecond'))) ORDER BY available_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE jobs SET status = 'running', locked_at = NOW(), locked_by = $1, attempts = attempts + 1, finished_at = NULL, updated_at = NOW() FROM candidate WHERE jobs.id = candidate.id RETURNING jobs.*`, [workerId, lockTimeoutMs]);
+  async claimNext(workerId: string, lockTimeoutMs: number, jobTypes?: readonly JobType[]): Promise<JobRecord | null> {
+    const result = await this.executor.query<DatabaseRow>(`WITH candidate AS (SELECT id FROM jobs WHERE ($3::TEXT[] IS NULL OR job_type = ANY($3::TEXT[])) AND ((status IN ('pending', 'retry') AND available_at <= NOW()) OR (status = 'running' AND locked_at < NOW() - ($2::double precision * INTERVAL '1 millisecond'))) ORDER BY available_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE jobs SET status = 'running', locked_at = NOW(), locked_by = $1, attempts = attempts + 1, finished_at = NULL, updated_at = NOW() FROM candidate WHERE jobs.id = candidate.id RETURNING jobs.*`, [workerId, lockTimeoutMs, jobTypes ?? null]);
     return result.rows[0] ? mapJob(result.rows[0]) : null;
   }
 

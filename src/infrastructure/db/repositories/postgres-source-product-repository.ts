@@ -1,6 +1,6 @@
 import { SourceIdentityConflictError } from "../../../core/errors/index.js";
 import type { EntityId } from "../../../contracts/index.js";
-import type { SourceProductPartRecord, SourceProductRecord, SourceProductRepository, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../../repositories/index.js";
+import type { SourceProductCollectionCandidate, SourceProductCollectionCandidateQuery, SourceProductPartRecord, SourceProductRecord, SourceProductRepository, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../../repositories/index.js";
 import type { SqlExecutor } from "../sql-executor.js";
 import { isExternalIdentityConflict, requireRow } from "./repository-utils.js";
 import { mapSourceProduct, mapSourceProductPart, type DatabaseRow } from "./row-mappers.js";
@@ -11,6 +11,59 @@ export class PostgresSourceProductRepository implements SourceProductRepository 
   async getById(id: EntityId): Promise<SourceProductRecord | null> {
     const result = await this.executor.query<DatabaseRow>("SELECT * FROM source_products WHERE id = $1", [id]);
     return result.rows[0] ? mapSourceProduct(result.rows[0]) : null;
+  }
+
+  async listCollectionCandidates(input: SourceProductCollectionCandidateQuery): Promise<readonly SourceProductCollectionCandidate[]> {
+    const uncollected = `NOT EXISTS (
+      SELECT 1 FROM source_product_parts part WHERE part.source_product_id = product.id
+    ) AND NOT EXISTS (
+      SELECT 1 FROM jobs job
+      WHERE job.job_type = 'collect_product'
+        AND job.status IN ('pending', 'running', 'retry')
+        AND job.unique_key = 'source-product:' || product.id::TEXT || ':collect'
+    )`;
+    const explicitIds = input.sourceProductIds;
+    const result = explicitIds !== undefined
+      ? await this.executor.query<DatabaseRow>(
+          `WITH selected AS (
+             SELECT id, ordinal FROM UNNEST($2::BIGINT[]) WITH ORDINALITY AS item(id, ordinal)
+           )
+           SELECT product.id, product.source_key,
+                  COALESCE(product.discovery_metadata->>'route', '') AS route
+           FROM selected
+           JOIN source_products product ON product.id = selected.id
+           WHERE product.source_id = $1 AND ${uncollected}
+           ORDER BY selected.ordinal`,
+          [input.sourceId, explicitIds],
+        )
+      : await this.executor.query<DatabaseRow>(
+          `WITH requested_routes AS (
+             SELECT route, ordinal,
+                    ($3::INTEGER / CARDINALITY($2::TEXT[]))
+                      + CASE WHEN ordinal <= ($3::INTEGER % CARDINALITY($2::TEXT[])) THEN 1 ELSE 0 END AS quota
+             FROM UNNEST($2::TEXT[]) WITH ORDINALITY AS item(route, ordinal)
+           ), ranked AS (
+             SELECT product.id, product.source_key,
+                    COALESCE(product.discovery_metadata->>'route', '') AS route,
+                    requested_routes.ordinal AS route_ordinal,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY requested_routes.route
+                      ORDER BY HASHTEXTEXTENDED(product.source_key, $4::BIGINT), product.id
+                    ) AS route_rank,
+                    requested_routes.quota
+             FROM source_products product
+             JOIN requested_routes
+               ON requested_routes.route = COALESCE(product.discovery_metadata->>'route', '')
+             WHERE product.source_id = $1 AND ${uncollected}
+           )
+           SELECT id, source_key, route
+           FROM ranked
+           WHERE route_rank <= quota
+           ORDER BY route_rank, route_ordinal, id
+           LIMIT $3`,
+          [input.sourceId, input.routes ?? [], input.limit, input.seed],
+        );
+    return result.rows.map((row) => ({ id: String(row.id), sourceKey: String(row.source_key), route: String(row.route) }));
   }
 
   async listParts(sourceProductId: EntityId): Promise<readonly SourceProductPartRecord[]> {

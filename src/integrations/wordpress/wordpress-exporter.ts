@@ -328,6 +328,12 @@ async function taxonomyPayload(context: ExportContext, required: readonly Refere
 export async function buildWordPressUpsertPayload(context: ExportContext): Promise<JsonObject> {
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress export");
+  if (context.product.images.length === 0) {
+    throw new IntegrationContractError("WordPress export requires at least one processed product image");
+  }
+  if (context.product.variants.length === 0) {
+    throw new IntegrationContractError("WordPress export requires product variants until the sold-out contract is configured");
+  }
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(sourceCode)) throw new IntegrationContractError(`Source code cannot be used in WordPress identity: ${context.source.code}`);
   const externalKey = `${sourceCode}:${sourceExternalId}`;

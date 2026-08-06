@@ -63,6 +63,29 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
     },
     sourceProducts: {
       getById: async (id) => store.products.get(id) ?? null,
+      listCollectionCandidates: async (input) => {
+        const active = new Set([...store.jobs.values()].flatMap((job) => job.jobType === "collect_product"
+          && ["pending", "running", "retry"].includes(job.status)
+          && typeof job.payload === "object" && job.payload !== null && !Array.isArray(job.payload)
+          ? [String((job.payload as { readonly sourceProductId?: unknown }).sourceProductId ?? "")] : []));
+        const available = [...store.products.values()].filter((product) => product.sourceId === input.sourceId
+          && ![...store.parts.values()].some((part) => part.sourceProductId === product.id)
+          && !active.has(product.id));
+        const selected = input.sourceProductIds === undefined
+          ? (input.routes ?? []).flatMap((route, index, routes) => available
+              .filter((product) => product.discoveryMetadata.route === route)
+              .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey))
+              .slice(0, Math.floor(input.limit / routes.length) + (index < input.limit % routes.length ? 1 : 0)))
+          : input.sourceProductIds.flatMap((id) => {
+              const product = available.find((item) => item.id === id);
+              return product === undefined ? [] : [product];
+            });
+        return selected.slice(0, input.limit).map((product) => ({
+          id: product.id,
+          sourceKey: product.sourceKey,
+          route: typeof product.discoveryMetadata.route === "string" ? product.discoveryMetadata.route : "",
+        }));
+      },
       listParts: async (id) => [...store.parts.values()].filter((part) => part.sourceProductId === id).sort((a, b) => a.partKey.localeCompare(b.partKey)),
       upsertDiscovered: async (input: UpsertDiscoveredSourceProductInput) => { const previous = [...store.products.values()].find((item) => item.sourceId === input.sourceId && item.sourceKey === input.sourceKey); const id = previous?.id ?? store.id(); const record: SourceProductRecord = { id, sourceId: input.sourceId, sourceKey: input.sourceKey, externalId: input.externalId ?? previous?.externalId ?? null, slug: input.slug ?? previous?.slug ?? null, url: input.url ?? previous?.url ?? null, discoveryMetadata: input.discoveryMetadata, status: input.status, firstSeenAt: previous?.firstSeenAt ?? input.seenAt, lastSeenAt: input.seenAt, lastSeenRunId: input.runId, createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp }; store.products.set(id, record); return record; },
       updateIdentity: async (id: EntityId, input: UpdateSourceProductIdentityInput) => { const old = store.products.get(id)!; const record = { ...old, ...(input.externalId === undefined ? {} : { externalId: input.externalId }), ...(input.slug === undefined ? {} : { slug: input.slug }), ...(input.url === undefined ? {} : { url: input.url }) }; store.products.set(id, record); return record; },
@@ -109,7 +132,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
 export class MemoryJobRepository implements JobRepository {
   constructor(private readonly store: MemoryStore) {}
   async enqueue(input: EnqueueJobInput): Promise<JobRecord> { const active = [...this.store.jobs.values()].find((j) => j.jobType === input.jobType && j.uniqueKey === input.uniqueKey && ["pending", "running", "retry"].includes(j.status)); if (active) return active; const id = this.store.id(); const job: JobRecord = { id, jobType: input.jobType, payload: input.payload, status: "pending", attempts: 0, availableAt: input.availableAt ?? timestamp, lockedAt: null, lockedBy: null, uniqueKey: input.uniqueKey, lastError: null, createdAt: timestamp, updatedAt: timestamp, finishedAt: null }; this.store.jobs.set(id, job); return job; }
-  async claimNext(workerId: string, _lockTimeoutMs: number): Promise<JobRecord | null> { const job = [...this.store.jobs.values()].find((j) => ["pending", "retry"].includes(j.status)); if (!job) return null; const claimed: JobRecord = { ...job, status: "running", attempts: job.attempts + 1, lockedAt: timestamp, lockedBy: workerId }; this.store.jobs.set(job.id, claimed); return claimed; }
+  async claimNext(workerId: string, _lockTimeoutMs: number, jobTypes?: readonly JobRecord["jobType"][]): Promise<JobRecord | null> { const job = [...this.store.jobs.values()].find((j) => ["pending", "retry"].includes(j.status) && (jobTypes === undefined || jobTypes.includes(j.jobType))); if (!job) return null; const claimed: JobRecord = { ...job, status: "running", attempts: job.attempts + 1, lockedAt: timestamp, lockedBy: workerId }; this.store.jobs.set(job.id, claimed); return claimed; }
   async complete(id: EntityId): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "completed", lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
   async retry(id: EntityId, input: RetryJobInput): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "retry", availableAt: input.availableAt, lastError: input.error, lockedAt: null, lockedBy: null }); }
   async fail(id: EntityId, error: string): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "failed", lastError: error, lockedAt: null, lockedBy: null, finishedAt: timestamp }); }

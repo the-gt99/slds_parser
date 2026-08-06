@@ -261,6 +261,18 @@ describe("WordPressExporter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("blocks products without images or variants before any WordPress request", async () => {
+    const fetchMock = vi.fn();
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+    const base = context();
+
+    await expect(exporter.export({ ...base, product: { ...base.product, images: [] } }))
+      .rejects.toThrow("WordPress export requires at least one processed product image");
+    await expect(exporter.export({ ...base, product: { ...base.product, variants: [] } }))
+      .rejects.toThrow("WordPress export requires product variants until the sold-out contract is configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("sends an explicit null price for an unavailable variation", async () => {
     const base = context();
     const input: ExportContext = {

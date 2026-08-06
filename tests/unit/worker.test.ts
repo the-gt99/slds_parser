@@ -15,5 +15,14 @@ describe("Worker", () => {
   it("retries only RetryableError with exponential capped backoff", async () => { const value = await setup(new RetryableError("later", { code: "LATER" }), 2); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" }); const retry = await setup(new RetryableError("later", { code: "LATER" }), 1); await retry.worker.processNext(); expect(retry.store.jobs.get(retry.job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:00:02.000Z" }); });
   it.each([new PermanentError("bad", { code: "BAD" }), new Error("bug")])("fails terminal error %#", async (error) => { const value = await setup(error); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("failed"); expect(value.handler.handleTerminalFailure).toHaveBeenCalledOnce(); });
   it("logs terminal cleanup failure while preserving the failed outcome", async () => { const failure = new PermanentError("business failed", { code: "BAD" }); const value = await setup(failure); value.handler.handleTerminalFailure = vi.fn().mockRejectedValue(new Error("cleanup failed")); const log = vi.fn(); const worker = new Worker(value.jobs, value.handler, options, async () => {}, Date.now, log); await worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed", lastError: "business failed" }); expect(log).toHaveBeenCalledWith(expect.stringContaining("cleanup failed")); expect(value.handler.dispatch).toHaveBeenCalledOnce(); });
-  it("stops its loop through AbortSignal", async () => { const value = await setup(); value.store.jobs.clear(); const controller = new AbortController(); const sleep = vi.fn(async (_ms: number, signal: AbortSignal) => { controller.abort(); expect(signal).toBe(controller.signal); }); const worker = new Worker(value.jobs, value.handler, options, sleep); await worker.run(controller.signal); expect(sleep).toHaveBeenCalledOnce(); });
+  it("stops all lanes through AbortSignal", async () => { const value = await setup(); value.store.jobs.clear(); const controller = new AbortController(); const sleep = vi.fn(async (_ms: number, signal: AbortSignal) => { controller.abort(); expect(signal.aborted).toBe(true); }); const worker = new Worker(value.jobs, value.handler, options, sleep); await worker.run(controller.signal); expect(sleep).toHaveBeenCalledOnce(); });
+  it("claims only the job types assigned to a lane", async () => {
+    const value = await setup();
+    await value.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: "2" }, uniqueKey: "two" });
+
+    await value.worker.processNext(["collect_product"], "worker:general");
+
+    expect([...value.store.jobs.values()].find((job) => job.jobType === "collect_product")).toMatchObject({ status: "completed", lockedBy: null });
+    expect(value.store.jobs.get(value.job.id)?.status).toBe("pending");
+  });
 });

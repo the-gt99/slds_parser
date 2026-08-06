@@ -16,7 +16,7 @@ export interface DownloadImagesOperationOptions {
 export class DownloadImagesOperation implements ProductOperation {
   readonly code = "download-images";
   readonly name = "Скачивание изображений";
-  readonly version = "1.0.1";
+  readonly version = "1.1.0";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -40,6 +40,7 @@ export class DownloadImagesOperation implements ProductOperation {
     product: UniversalProductDTO,
     context: ProductOperationContext,
   ): Promise<UniversalProductDTO> {
+    if (product.images.length === 0) return product;
     const results = await settleWithConcurrency(product.images, this.options.concurrency, async (image): Promise<ProductImageDTO> => {
       const sourceUrl = image.sourceUrl ?? image.url;
       const binary = await this.downloader.download(sourceUrl, context);

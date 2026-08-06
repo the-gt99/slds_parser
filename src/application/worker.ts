@@ -1,5 +1,5 @@
 import { PermanentError, RetryableError } from "../core/errors/index.js";
-import type { JobRepository, JobRecord } from "../repositories/index.js";
+import type { JobRepository, JobRecord, JobType } from "../repositories/index.js";
 import type { JobHandler } from "./job-dispatcher.js";
 
 export interface WorkerOptions {
@@ -9,6 +9,7 @@ export interface WorkerOptions {
   readonly maxJobAttempts: number;
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
+  readonly processConcurrency?: number;
 }
 
 export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -37,8 +38,8 @@ export class Worker {
     private readonly currentTime: () => number = Date.now,
     private readonly logError: WorkerLogger = console.error) {}
 
-  async processNext(): Promise<boolean> {
-    const job = await this.jobs.claimNext(this.options.workerId, this.options.lockTimeoutMs);
+  async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
+    const job = await this.jobs.claimNext(workerId, this.options.lockTimeoutMs, jobTypes);
     if (job === null) return false;
     try {
       await this.dispatcher.dispatch(job);
@@ -62,8 +63,27 @@ export class Worker {
   }
 
   async run(signal: AbortSignal): Promise<void> {
+    const generalJobTypes = ["discover_source", "collect_product", "export_product"] satisfies readonly JobType[];
+    const processConcurrency = this.options.processConcurrency ?? 1;
+    const controller = new AbortController();
+    const stop = (): void => controller.abort();
+    if (signal.aborted) stop();
+    else signal.addEventListener("abort", stop, { once: true });
+    try {
+      await Promise.all([
+        this.runLane(controller.signal, generalJobTypes, `${this.options.workerId}:general`),
+        ...Array.from({ length: processConcurrency }, (_, index) =>
+          this.runLane(controller.signal, ["process_product"], `${this.options.workerId}:process-${index + 1}`)),
+      ]);
+    } finally {
+      signal.removeEventListener("abort", stop);
+      stop();
+    }
+  }
+
+  private async runLane(signal: AbortSignal, jobTypes: readonly JobType[], workerId: string): Promise<void> {
     while (!signal.aborted) {
-      const processed = await this.processNext();
+      const processed = await this.processNext(jobTypes, workerId);
       if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
   }

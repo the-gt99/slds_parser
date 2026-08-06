@@ -112,11 +112,27 @@ describe("product operations", () => {
     }
   });
 
-  it("uses the old finalization requirements without inventing extra required fields", async () => {
+  it("allows source products without media or offers while preserving identity requirements", async () => {
     const operation = new ValidateProcessedProductOperation();
     await expect(operation.execute(product({ attributes: { brand: "" } }))).rejects.toBeInstanceOf(IntegrationContractError);
-    await expect(operation.execute(product({ images: [] }))).rejects.toBeInstanceOf(IntegrationContractError);
+    await expect(operation.execute(product({ images: [] }))).resolves.toBeDefined();
     await expect(operation.execute(product({ variants: [] }))).resolves.toBeDefined();
     await expect(operation.execute(product({ description: "" }))).resolves.toBeDefined();
+  });
+
+  it("passes an empty media set through media operations without external calls", async () => {
+    const downloader: ImageBinaryDownloader = { code: "fixture", version: "1", download: vi.fn() };
+    const store = {
+      fingerprint: () => ({}),
+      storeOriginal: vi.fn(),
+      convertToWebp: vi.fn(),
+      publicUrl: vi.fn(),
+    };
+    const input = product({ images: [] });
+
+    await expect(new DownloadImagesOperation(downloader, store as never, { concurrency: 2 }).execute(input, context)).resolves.toBe(input);
+    await expect(new ConvertImagesToWebpOperation(store as never, { concurrency: 2 }).execute(input)).resolves.toBe(input);
+    expect(downloader.download).not.toHaveBeenCalled();
+    expect(store.convertToWebp).not.toHaveBeenCalled();
   });
 });
