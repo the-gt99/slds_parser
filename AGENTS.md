@@ -50,7 +50,7 @@
 - retry только для явно повторяемых ошибок, exponential backoff и восстановление просроченных locks;
 - реестры компонентов и явная регистрация в `src/bootstrap.ts`;
 - стабильные input/content hashes и версии компонентов;
-- миграции `001`–`013`;
+- миграции `001`–`014`;
 - история выполнения каждой операции в `product_operation_executions`.
 
 ### GOAT
@@ -82,7 +82,9 @@
 
 Пустые media и offers допустимы во внутреннем DTO: товар только с GOAT placeholder сохраняется с `images: []`, товар без offers — с `variants: []`. Нельзя выдумывать изображение, размер, остаток или цену. WordPress exporter отдельно блокирует оба случая до внешнего HTTP-вызова, пока соответствующие target-контракты не согласованы.
 
-Worker использует одну последовательную lane для `discover_source`, `collect_product` и `export_product`, а для `process_product` — от 1 до 8 отдельных lanes через `WORKER_PROCESS_CONCURRENCY`. Production сейчас настроен на четыре processing lane. Не запускать несколько полных worker-процессов ради ускорения: collection должен оставаться последовательным. GOAT image downloader использует общий лимит и отдельный cookie jar `.images-N` на каждый транспортный slot, поэтому processing не пишет одновременно в source cookie jar.
+Worker использует отдельные lane-группы для discovery, collection, processing и export. Production сейчас настроен на три collection lane и четыре processing lane. Collection lane сначала резервирует healthy enabled proxy session и только затем забирает job; без свободного прокси job остаётся pending. Product и offers одного collect attempt закреплены за одним proxy/client/cookie jar. GOAT image downloader использует тот же пул, общий лимит и раздельные cookie jars. Несколько полных worker-процессов не запускать.
+
+Управляемый GOAT proxy pool хранится в PostgreSQL с AES-256-GCM шифрованием credentials. Runtime использует только repository/pool при `GOAT_PROXY_POOL_ENABLED=true`; старые env proxy оставлены только для явного rollback. Админка `/proxies` позволяет создавать, проверять, включать и выключать прокси. Public API не возвращает credentials или ciphertext.
 
 HTML-описание магазина намеренно не является универсальной операцией: его нужно формировать при сборке WordPress payload.
 
@@ -247,18 +249,20 @@ WordPress legacy-вариации выявили отдельную пробле
 Parser:
 
 - GitHub: `git@github.com:the-gt99/slds_parser.git`;
-- production runtime commit на момент снимка: `1ed174b` (`Подготовить безопасную обработку выборок`); локальный и `origin/main` могут быть новее из-за обновления этого файла;
+- production runtime commit на момент снимка: `0c8301a` (`Исправить проверку прокси из интерфейса`); основной proxy pool реализован в `339d915`;
 - сервер: MCP `ssh_slamdunk_parser`;
 - каталог: `/srv/slds-parser/app`;
 - состояние и изображения: `/srv/slds-parser/state`;
 - домен: `https://9a9f7857687f.vps.myjino.ru`;
 - службы: `slds-parser-api.service`, `slds-parser-worker.service`;
 - PostgreSQL: Docker-контейнер `slds-parser-postgres`, наружу не открыт;
-- миграции `001`–`013` применены;
-- production deployment прошёл `typecheck`, `176` тестов, build и migrations (`No pending migrations`);
+- миграции `001`–`014` применены;
+- production deployment прошёл `typecheck`, `190` тестов, build и migrations;
 - API и worker активны, внутренний и внешний health возвращают 200;
 - production worktree чистый;
 - `WORKER_PROCESS_CONCURRENCY=4`; четыре lane подтверждены полным forced processing smoke;
+- `WORKER_COLLECTION_CONCURRENCY=3`, `GOAT_PROXY_POOL_ENABLED=true`;
+- три прокси healthy/enabled; credentials у всех трёх зашифрованы, API secret fields не отдаёт;
 - target `slamdunk` ID `1` выключен;
 - `requiredReferenceTypes`: `brand`, `model`, `category`;
 - title prefixes настроены для category term IDs `74`, `75`, `865`;
@@ -280,8 +284,8 @@ Commit `fd21170` добавил флаг job payload `enqueueCollection: false` 
 - распределение `discovery_metadata.route`: `sneakers=342177`, `apparel=249651`;
 - дубликатов `source_key` нет, пустых `slug` и `url` нет;
 - downstream jobs после `196`: `0`; карточки, offers, переводы и изображения не скачиваются;
-- после smoke и rep500 у `568` товаров есть `external_id` и по две сохранённые части; sitemap discovery сам по себе сохраняет только slug/URL/metadata, GOAT ID появляется после collection;
-- PostgreSQL `626 MB`, media `183 MB`, свободно около `72 GB`;
+- после smoke и rep500 у `590` товаров есть `external_id` и по две сохранённые части; sitemap discovery сам по себе сохраняет только slug/URL/metadata, GOAT ID появляется после collection;
+- PostgreSQL `629 MB`, media около `183 MB`, свободно около `72 GB`;
 - target `slamdunk` ID `1` выключен.
 
 Не перезапускать полный discovery без отдельной причины: каталог уже сохранён discovery-only без downstream задач.
@@ -329,7 +333,7 @@ Rep500 завершён. Не обрабатывать весь каталог �
 
 Проверки deployment:
 
-- parser production обновлён fast-forward до `1ed174b`, выполнены `npm ci`, `npm run typecheck`, `npm test` (`176` tests), `npm run build`, `npm run db:migrate` (`No pending migrations`);
+- parser production обновлён fast-forward до `0c8301a`, proxy pool deployment прошёл `npm ci`, `npm run typecheck`, `npm test` (`190` tests), `npm run build`, `npm run db:migrate`;
 - перезапущены `slds-parser-api.service` и `slds-parser-worker.service`, оба active, internal health `200`;
 - WordPress production обновлён fast-forward до `661cc03`, `php -l product-snapshots.php` и все пять target-import PHP-тестов прошли;
 - target `slamdunk` ID `1` проверен как `enabled=false`, `export_product` jobs после discovery `0`.
@@ -363,6 +367,8 @@ Rep500:
 
 Четыре processing lane проверены на 100 уже собранных товарах с `force=true`, по 50 sneakers/apparel. Все шесть операций выполнялись заново: `100/100 completed`, retry/failures и export jobs отсутствуют. Полный wall time `190.327 с`, скорость `31.52 товара/мин`, среднее время attempt `7.485 с`, p95 `21.923 с`, максимум `23.243 с`. Выборка содержала 230 реальных изображений, четыре товара с `images: []` и 32 с `variants: []`. Во время нагрузки worker использовал около 280 MB RAM и 44% одного CPU.
 
+Proxy pool проверен на production с тремя реальными healthy/enabled прокси и тремя collection lane. В отдельном cohort из 12 товаров collection завершился `12/12`, processing `12/12`, attempts по одному, retry/failures и export jobs отсутствуют. Товары распределились между proxy IDs ровно `4/4/4`; у каждого товара parts `product` и `offers` содержат один и тот же `_transport.proxy.id`. После smoke активных jobs нет, target `slamdunk=false`, API/worker active, internal/external health `200`.
+
 Текущие active observations после переобработки: brand `resolved=469/unresolved=99`, category `86/482`, color `403/165`, material `77/117`, model `24/544`, tag `46/97`; ambiguous отсутствуют. Это количества наблюдений/товаров, а не уникальных значений очереди. Следующий безопасный шаг — cohort 2000 на четырёх processing lanes и анализ частот unresolved. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
 
 ### 4. Следующие WordPress smoke
@@ -386,8 +392,8 @@ Target оставить выключенным. Выполнить контро�
 - отдельно настроить частое обновление offers;
 - добавить ETag/304 там, где источник поддерживает;
 - подтвердить политику исчезнувших товаров;
-- масштабировать только processing lanes через `WORKER_PROCESS_CONCURRENCY`; не запускать несколько полных workers с параллельным GOAT collection;
-- текущая конфигурация использует один GOAT proxy endpoint; дополнительные прокси не начнут использоваться автоматически. Для этого нужен явный proxy pool с раздельными сессиями и распределением source/image transport;
+- масштабировать collection и processing только соответствующими lane settings; не запускать несколько полных workers;
+- перед повышением collection concurrency добавлять и проверять реальные proxy records через `/proxies`; отключённые или unhealthy прокси не получают новые leases;
 - настроить мониторинг jobs, ошибок, зависших locks, диска, PostgreSQL и media;
 - настроить резервное копирование PostgreSQL и `/srv/slds-parser/state`.
 
