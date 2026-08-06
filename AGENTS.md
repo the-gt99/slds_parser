@@ -453,7 +453,39 @@ Job ranges: collect `5692`-`5791`, process `5792`-`5891`. Результат: co
 
 Следующий этап: исправление модели candidates и интерфейса projections/review-flow, затем ручное применение подтверждённых mappings/rules/projections через preview. Во втором этапе mappings, rules, projections, reference values, jobs, target/proxy config, runtime code и WordPress не изменялись.
 
-### 7. Следующие WordPress smoke
+### 7. Исправление candidates и projections для cohort 100 от 6 августа 2026
+
+Третий этап выполнен 6 августа 2026. Parser production обновлён до `989380b`; перед deployment локально и на production прошли `typecheck`, `npm test` (`199` тестов), `build`, миграции без pending, API/worker active, health `200`. Target `slamdunk` остался выключенным, active `export_product` jobs `0`, WordPress write не выполнялся.
+
+Кодовые изменения:
+
+- `GoatSourceProcessor` version `2.9.0`: `category` теперь структурная (`productType || productCategory || route`), GOAT marketing category вынесена в отдельный candidate `merchandising_category` scope `product.merchandising_category`; `activity` читается только из явных `activity`/`activities`/`activitiesList`; `composition`, `ageGroups` и taxonomy сохраняются в attributes/evidence; `evidence.merchandisingCategory` добавлен к структурной категории для узких правил.
+- Добавлен reference type `merchandising_category` миграцией `015`.
+- Добавлен backend/UI для `target_classification_projections`: list/preview/create/deactivate, audit history, validation target scope и dictionary entity type, CSRF для mutations.
+- Исправлен SQL preview projections для `mapping` и `rule`; regression tests покрывают `observation.rule_id = $2` и типизацию `$1::BIGINT`.
+
+Cohort 100 дважды принудительно переобработан через штатный `JobRepository.enqueue` с `process_product force=true`: первый раз после новой модели candidates, второй раз после добавления `evidence.merchandisingCategory`. После применения решений все affected jobs завершились, active `process_product` jobs `0`.
+
+Финальная active classification cohort 100:
+
+- `activity`: resolved `4`, unresolved `4`; resolved только явные GOAT `Running` (`3`) и `Basketball` (`1`), `Lifestyle` оставлен unresolved и не превращён в `pa_vid`;
+- `category`: resolved `23`, unresolved `77`; resolved только `sneakers` по узким правилам `sourceValue + productCategory + productType + audience + evidence.merchandisingCategory`;
+- `merchandising_category`: resolved `70`, unresolved `30`; полностью resolved `Running=18`, `Lifestyle=47`, `Basketball=5`; `Boot/Cleat/Other/Sandal/Skateboarding` оставлены unresolved;
+- `tag`: resolved `19`, unresolved `25`; добавлены `EVA` и `HOVR` как technology tags;
+- `brand/model/color/material` остались в ожидаемом частичном состоянии: brand `89/11`, model `7/93`, color `75/25`, material `20/56`; ambiguous нет.
+
+Применено через `ClassifierAdminService`, не прямым SQL:
+
+- mappings: `merchandising_category` Running/Lifestyle/Basketball seed mappings `122`/`123`/`124`; explicit activity Running/Basketball `125`/`126`; technology tag EVA/HOVR `127`/`128`; exact model mapping Under Armour HOVR Phantom 2 `129`;
+- category rules `13`-`18`: Running men->`75`, women->`74`, youth/infant->`865`; Basketball men->`75`, youth->`865`;
+- merchandising rules `19`-`21`: Running, Lifestyle, Basketball для product tag projections;
+- target projections `39`-`46`: Under Armour brand tag `1086`, Running tag `904`, Lifestyle tag `892`, Basketball tag `895`, Under Armour HOVR Phantom 2 model tag `8138`.
+
+Важно: broad `sneakers + audience` category rule не создан. Production preview показал counterexamples: `sneakers men/women/youth` включает boots/sandals/slippers/keds. Нельзя откатываться к такому правилу. `Lifestyle -> pa_vid` также не создан.
+
+Read-only WordPress preview контрольного `sourceProductId=316480`, GOAT `855174`, WordPress `2585427` успешен: matched by `target_id+legacy_goat_id`; payload taxonomies `pa_brand=[3128]`, `pa_model=[19402]`, `product_cat=[75]`, `pa_tsvet=[1613]`, `product_tag=[4780,1086,904,8138]`; taxonomy diff пустой. Field/image/variation diffs остаются предметом полного ручного preview перед write. Другие sample previews ожидаемо блокируются readiness: отсутствующий required model/category/brand или `variants: []`; это подтверждает, что WordPress write всё ещё не произойдёт случайно.
+
+### 8. Следующие WordPress smoke
 
 Target оставить выключенным. Выполнить контролируемо:
 
@@ -466,7 +498,7 @@ Target оставить выключенным. Выполнить контро�
 
 Только после серии из 5–50 проверенных товаров обсуждать включение target. Сам факт одного успешного update не разрешает массовый export.
 
-### 8. Эксплуатация полного каталога
+### 9. Эксплуатация полного каталога
 
 После успешной классификационной выборки и exporter smoke:
 
