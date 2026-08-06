@@ -265,7 +265,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
       if (/^\d+$/u.test(search)) {
         const id = add(search);
         const text = add(search);
-        where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${text} OR product.source_key = ${text})`);
+        where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${text})`);
       } else {
         const p = add(`%${search}%`);
         where.push(`(product.source_key ILIKE ${p} OR COALESCE(product.external_id, '') ILIKE ${p} OR COALESCE(internal.data->>'title', product.discovery_metadata->>'title', '') ILIKE ${p})`);
