@@ -13,7 +13,7 @@
 
 Первая рабочая вертикаль: `GOAT → SLDS Parser → WordPress/WooCommerce slamdunk.shop`.
 
-Проект ещё не закончен. Сбор, обработка, классификатор, административная наблюдаемость, WordPress exporter и `slds.wordpress.product-upsert.v1` уже развёрнуты. Реальный update существующего WooCommerce-товара прошёл успешно и подтвердил идемпотентность повторного экспорта. Главный незакрытый блок теперь не deployment, а доведение бизнес-правил и безопасное масштабирование: товары без offers, коллаборации с несколькими брендами, качество перевода, полнота preview и формирование правил классификатора на репрезентативной выборке.
+Проект ещё не закончен. Сбор, обработка, классификатор, административная наблюдаемость, WordPress exporter и `slds.wordpress.product-upsert.v1` уже развёрнуты. Реальный update существующего WooCommerce-товара прошёл успешно и подтвердил идемпотентность повторного экспорта. Главный незакрытый блок теперь не deployment, а бизнес-правила и безопасное масштабирование: sold-out write без offers, коллаборации с несколькими брендами, политика обогащения материалами и формирование правил классификатора на растущих выборках.
 
 ## Принципиальные архитектурные границы
 
@@ -79,6 +79,10 @@
 6. финальная проверка обработанного DTO.
 
 Операция — отдельный файл с `code`, `name`, `version`, опциональными `dependsOn`, `sourceCodes` и `configurationFingerprint`, плюс одна явная регистрация. Наличие файла само по себе ничего не включает.
+
+Пустые media и offers допустимы во внутреннем DTO: товар только с GOAT placeholder сохраняется с `images: []`, товар без offers — с `variants: []`. Нельзя выдумывать изображение, размер, остаток или цену. WordPress exporter отдельно блокирует оба случая до внешнего HTTP-вызова, пока соответствующие target-контракты не согласованы.
+
+Worker использует одну последовательную lane для `discover_source`, `collect_product` и `export_product`, а для `process_product` — от 1 до 8 отдельных lanes через `WORKER_PROCESS_CONCURRENCY`. Не запускать несколько полных worker-процессов ради ускорения: collection должен оставаться последовательным. GOAT image downloader использует общий лимит и отдельный cookie jar `.images-N` на каждый транспортный slot, поэтому processing не пишет одновременно в source cookie jar.
 
 HTML-описание магазина намеренно не является универсальной операцией: его нужно формировать при сборке WordPress payload.
 
@@ -148,7 +152,7 @@ GOAT сейчас выдаёт в классификатор только реа
 
 Наблюдаемость реализована в parser commit `2116833` и исправлена commit `343fe13`. Проверены `/classifier`, `/products`, `/operations`, `/wordpress-snapshots` и `/products/:id`.
 
-Оставшийся недостаток preview: автоматический diff сравнивает только `title`, `slug`, `sku`, наборы taxonomies, количество изображений и состояния вариаций. Он не сравнивает HTML описания и реальные URL/содержимое изображений. Перед массовым export это нужно исправить: ожидаемый payload и snapshot уже доступны, но оператор не должен искать такие расхождения вручную.
+Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Это покрывает известный недостаток старого preview, но перед write всё равно нужно просматривать полный diff.
 
 ## WordPress/WooCommerce target
 
@@ -221,12 +225,12 @@ WordPress legacy-вариации выявили отдельную пробле
 
 ## Подтверждённые незакрытые случаи
 
-1. **Товары без offers.** Сейчас `UniversalProductDTO` и WordPress contract требуют непустой список вариаций. Нельзя выдумывать вариант или цену. Нужно явно решить контракт sold-out товара: сохранить товар без активных offers и безопасно деактивировать прежние вариации либо выбрать другую подтверждённую политику.
+1. **Товары без offers.** Внутренний DTO уже сохраняет `variants: []` без выдуманного варианта или цены. WordPress exporter намеренно блокирует такой payload. Нужно явно решить sold-out write: можно ли для существующего товара передать пустой active variation set и деактивировать все прежние вариации, и что создавать для нового товара без offers.
 2. **Несколько брендов.** У коллабораций `Vans x Valentino` (`sourceProductId=27`, `28`) WordPress хранит два `pa_brand`, а GOAT даёт основной бренд Vans. Текущий payload заменил бы два бренда одним. Эти товары не экспортировать, пока не определено воспроизводимое извлечение и cardinality бренда.
-3. **Переводы.** На `sourceProductId=32` машинный перевод colorway перевёл `Sail` как `Плыть`. Этот товар не экспортировался. Нужна проверяемая терминология/словарь, а не ручной fallback для одного текста.
+3. **Переводы.** Ошибка `Sail -> Плыть` устранена словарём sneaker color terms (`Sail -> Парусный`). При расширении словаря добавлять подтверждённые термины, а не разовые fallback по товару.
 4. **Материалы как обогащение.** Для ряда существующих товаров GOAT даёт `Mesh`/`Textile`, а WordPress пока не имеет `pa_material`. Preview предлагает добавить корректно сопоставленный термин, но массово применять такое обогащение можно только после бизнес-подтверждения.
 5. **Дополнительные бренды/модельные теги.** Projections исправляют удаление существующих tags и могут добавлять отсутствующий подтверждённый model tag, например New Balance P400. Это ожидаемое target-обогащение, но его нужно видеть в полном diff.
-6. **Preview descriptions/images.** Перед следующим write smoke добавить сравнение описания и image identity/URL, а не только количества изображений.
+6. **Товары без реальных изображений.** Внутренняя обработка сохраняет `images: []`, WordPress exporter возвращает `422` до внешнего запроса. Политику создания товара без изображения пока не менять.
 
 ## Доступ и серверы
 
@@ -238,12 +242,12 @@ WordPress legacy-вариации выявили отдельную пробле
 
 На рабочей Windows-машине настроены постоянные host routes к SSH-адресам parser/WordPress через обычный Ethernet в обход VPN. Если MCP SSH снова получает handshake timeout, сначала проверить выбранный маршрут и VPN, не менять proxy parser и не считать недоступность сайта следствием тестов без проверки. Default route, DNS и остальной VPN-трафик трогать не нужно.
 
-## Текущее production-состояние на 2026-08-05
+## Текущее production-состояние на 2026-08-06
 
 Parser:
 
 - GitHub: `git@github.com:the-gt99/slds_parser.git`;
-- production runtime commit на момент снимка: `fd21170` (`Добавить discovery без сбора товаров`); локальный и `origin/main` могут быть новее из-за обновления этого файла;
+- production runtime commit на момент снимка: `1ed174b` (`Подготовить безопасную обработку выборок`); локальный и `origin/main` могут быть новее из-за обновления этого файла;
 - сервер: MCP `ssh_slamdunk_parser`;
 - каталог: `/srv/slds-parser/app`;
 - состояние и изображения: `/srv/slds-parser/state`;
@@ -251,7 +255,7 @@ Parser:
 - службы: `slds-parser-api.service`, `slds-parser-worker.service`;
 - PostgreSQL: Docker-контейнер `slds-parser-postgres`, наружу не открыт;
 - миграции `001`–`013` применены;
-- production deployment прошёл `typecheck`, `169` тестов и build;
+- production deployment прошёл `typecheck`, `176` тестов, build и migrations (`No pending migrations`);
 - API и worker активны, внутренний и внешний health возвращают 200;
 - production worktree чистый;
 - target `slamdunk` ID `1` выключен;
@@ -275,8 +279,8 @@ Commit `fd21170` добавил флаг job payload `enqueueCollection: false` 
 - распределение `discovery_metadata.route`: `sneakers=342177`, `apparel=249651`;
 - дубликатов `source_key` нет, пустых `slug` и `url` нет;
 - downstream jobs после `196`: `0`; карточки, offers, переводы и изображения не скачиваются;
-- только 20 ранее собранных товаров имеют `external_id`; sitemap discovery сохраняет slug/URL/metadata, GOAT ID появляется после collection;
-- PostgreSQL `601 MB`;
+- после smoke и rep500 у `568` товаров есть `external_id` и по две сохранённые части; sitemap discovery сам по себе сохраняет только slug/URL/metadata, GOAT ID появляется после collection;
+- PostgreSQL `626 MB`, media `183 MB`, свободно около `72 GB`;
 - target `slamdunk` ID `1` выключен.
 
 Не перезапускать полный discovery без отдельной причины: каталог уже сохранён discovery-only без downstream задач.
@@ -284,7 +288,7 @@ Commit `fd21170` добавил флаг job payload `enqueueCollection: false` 
 WordPress:
 
 - GitHub: `git@github.com:Stasvelin/slamdunk.git`;
-- локальный и production commit на момент снимка: `6978677` (`Исправить снимки старых вариаций`);
+- production commit на момент снимка: `661cc03` (`Расширить снимок товара`);
 - production MCP: `ssh_slamdunk_prod`;
 - production path: `/var/www/u0347517/data/www/slamdunk.shop`;
 - `product-upsert.v1`, preflight, snapshots и idempotent queue развёрнуты;
@@ -299,35 +303,32 @@ WordPress:
 
 Порядок работ важен.
 
-### 1. Исправить блокеры до большой обработки
+### 1. Нерешённые бизнес-блокеры WordPress write
 
-- parser больше не считает пустой список вариантов ошибкой финальной операции: GOAT `offers: []` должен сохраняться как DTO с `variants: []`, `metadata.offersCount=0`, `metadata.activeVariantCount=0`, без выдуманных размеров и цен;
-- sold-out export/write пока не считать решённым: WordPress product-upsert через базовый update-only validator всё ещё требует непустой `variations.items`; нужно согласовать бизнес-правило и при необходимости менять WordPress contract до write smoke;
+- sold-out export/write пока не считать решённым: внутренний DTO поддерживает `variants: []`, но WordPress exporter и product-upsert намеренно требуют непустой `variations.items`; нужно согласовать бизнес-правило до write smoke;
 - несколько брендов у коллабораций не исправлены эвристикой: реальные GOAT payload для Valentino Garavani x Vans содержат `brandName: Vans`, а второй бренд подтверждён только WordPress snapshot. Нужно определить воспроизводимое source-правило и cardinality `brand` end-to-end;
-- WordPress preview расширен сравнением `description_html`, `short_description_html` и image identity/URL; WordPress snapshot теперь отдаёт `description_html`, `short_description_html`, attachment `import_name` и `source_url`;
-- терминология перевода расширена проверяемым словарём sneaker color terms, включая `Sail -> Парусный`, чтобы не получать глагольный перевод `Плыть` в colorway;
 - решить, считать ли заполнение отсутствующего `pa_material` допустимым автоматическим обогащением;
-- добавить безопасный cohort enqueue: выбирать discovery-товары явным списком/лимитом и не создавать массовую очередь случайно.
+- target `slamdunk` не включать до решений выше и новой серии ограниченных create/update smoke.
 
 ### 2. Репрезентативная классификационная выборка
 
-После исправления блокеров не обрабатывать весь каталог сразу.
+Rep500 завершён. Не обрабатывать весь каталог сразу.
 
-1. Выбрать 500–1000 разнообразных товаров по `route`, брендам/названиям, аудитории и датам sitemap.
-2. Собрать `product` и `offers`, выполнить операции, но оставить target выключенным.
-3. Оценить долю no-offers, failed operations, объём media и скорость worker.
-4. Разобрать очередь классификатора, формируя точные mappings и контекстные rules; не сопоставлять только ради уменьшения очереди.
-5. После первой проверки расширить cohort до 2000–5000, а затем партиями по 10000–20000.
+1. Следующая партия — `2000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
+2. Target оставить выключенным; collection остаётся последовательным, processing сначала оставить на подтверждённых двух lanes.
+3. После партии сравнить collection/processing rate, no-offers, no-images, retry/failures, media, диск и PostgreSQL.
+4. Только по результатам этой партии проверить processing concurrency `4`; не повышать source collection concurrency.
+5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 2000 перейти к 5000, затем партиям 10000–20000.
 
 Массовые правила модели строить по evidence `brand + family` и проверять preview конфликтов. Отдельно вернуться к Pegasus/Surge и другим семействам, где голое название неоднозначно. Движок классификатора не переписывать под GOAT.
 
 ### 3. Smoke и выборка 6 августа 2026
 
-После parser commit `0b89abb` и WordPress commit `661cc03` изменения развёрнуты на production. Target `slamdunk` оставался выключенным, export jobs не создавались.
+После parser commits `0b89abb`, `1ed174b` и WordPress commit `661cc03` изменения развёрнуты на production. Target `slamdunk` оставался выключенным, export jobs не создавались.
 
 Проверки deployment:
 
-- parser production обновлён fast-forward до `0b89abb`, выполнены `npm ci`, `npm run typecheck`, `npm test` (`169` tests), `npm run build`, `npm run db:migrate` (`No pending migrations`), `node --check public/app.js`, `node --check public/product.js`;
+- parser production обновлён fast-forward до `1ed174b`, выполнены `npm ci`, `npm run typecheck`, `npm test` (`176` tests), `npm run build`, `npm run db:migrate` (`No pending migrations`);
 - перезапущены `slds-parser-api.service` и `slds-parser-worker.service`, оба active, internal health `200`;
 - WordPress production обновлён fast-forward до `661cc03`, `php -l product-snapshots.php` и все пять target-import PHP-тестов прошли;
 - target `slamdunk` ID `1` проверен как `enabled=false`, `export_product` jobs после discovery `0`.
@@ -336,7 +337,7 @@ Smoke 50:
 
 - поставлено 48 новых `collect_product` jobs и 2 forced `process_product` jobs для старых no-offers товаров `25` и `30`;
 - результат: 48 collection completed, 49 processing completed, 1 failed;
-- failed товар `sourceProductId=5329` (`air-afterburner-flight-bg-146033-101`) имел только GOAT placeholder `missing.png`; ошибка `Product images are empty` корректна;
+- failed товар `sourceProductId=5329` (`air-afterburner-flight-bg-146033-101`) имел только GOAT placeholder `missing.png`; это исторический результат до commit `1ed174b`;
 - 19 из 49 обработанных товаров получили `variants: []`, то есть `offers: []` теперь проходит processing без выдуманных размеров и цен;
 - media около `59 MB`, PostgreSQL около `601 MB`, свободно около `73 GB`.
 
@@ -345,7 +346,7 @@ Rep500:
 - поставлено ровно 500 новых `collect_product` jobs: 250 sneakers и 250 apparel; фактический диапазон jobs `295`–`1294`;
 - collection: 500 completed;
 - processing: 487 completed, 13 failed;
-- все 13 failed — `Product images are empty`; каждый failed product имел только GOAT `placeholders/product_templates/.../missing.png`;
+- все 13 historical failed — `Product images are empty`; каждый товар имел только GOAT `placeholders/product_templates/.../missing.png`;
 - обработанные товары по route: apparel `248`, sneakers `239`;
 - no-offers среди обработанных: `182/487` (`37.4%`), из них apparel `125`, sneakers `57`;
 - media после выборки около `183 MB`, PostgreSQL около `620 MB`, свободно около `72 GB`;
@@ -353,7 +354,13 @@ Rep500:
 - частые unresolved не сопоставлялись автоматически: `clothing`, `Running`, `Lifestyle`, `Blue`, `Leather`, `Basketball`, `Puma`, `Kith`, `Off-White`, `EVA`, `Zoom Air` и другие требуют проверки;
 - Pegasus/Surge проверены в выборке и остались unresolved с контекстом: `Nike Air Zoom Pegasus 36 'Tokyo Running Pack'` (`brand=Nike`, `family=Air Zoom Pegasus 36`) и `Under Armour Wmns Surge 4 'Sky Blue White'` (`brand=Under Armour`, `family=Surge`). Не создавать глобальные model mappings по голым `Pegasus` или `Surge`.
 
-Следующий безопасный шаг — разобрать classifier queue по rep500, создавая только доказанные mappings/rules с preview конфликтов. До согласования sold-out write contract и multi-brand cardinality не запускать WordPress export.
+После commit `1ed174b` повторно обработаны 16 исторически упавших товаров: 14 placeholder-only и два no-offers. Все 16 jobs завершены; в latest classified DTO у 14 товаров `images: []`, у 10 `variants: []`. Preview placeholder-only и no-offers товаров вернул `422` с явной причиной до WordPress HTTP-вызова. Export jobs не создавались.
+
+Новая команда `npm run goat:enqueue-cohort` по умолчанию работает как dry-run, требует явный лимит до `20000`, делит выборку по routes и ставит jobs только с `GOAT_COHORT_APPLY=true`. Production dry-run на 20 товарах вернул ровно `10 sneakers / 10 apparel` без записи jobs.
+
+Команда `npm run classifier:exact-matches` применена только для `brand,model,color,tag`: сохранено 69 однозначных решений — 63 brand, 5 model и 1 tag. Материалы и категории автоматически не применялись. Решения поставили 232 уникальных товара на повторную обработку; все 232 jobs завершены двумя processing lanes без ошибок. Повторный dry-run exact matches вернул `0`.
+
+Текущие active observations после переобработки: brand `resolved=469/unresolved=99`, category `86/482`, color `403/165`, material `77/117`, model `24/544`, tag `46/97`; ambiguous отсутствуют. Это количества наблюдений/товаров, а не уникальных значений очереди. Следующий безопасный шаг — cohort 2000 и анализ частот unresolved. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
 
 ### 4. Следующие WordPress smoke
 
@@ -376,7 +383,7 @@ Target оставить выключенным. Выполнить контро�
 - отдельно настроить частое обновление offers;
 - добавить ETag/304 там, где источник поддерживает;
 - подтвердить политику исчезнувших товаров;
-- измерить безопасную concurrency до запуска нескольких workers;
+- масштабировать только processing lanes через `WORKER_PROCESS_CONCURRENCY`; не запускать несколько полных workers с параллельным GOAT collection;
 - настроить мониторинг jobs, ошибок, зависших locks, диска, PostgreSQL и media;
 - настроить резервное копирование PostgreSQL и `/srv/slds-parser/state`.
 
@@ -406,7 +413,7 @@ Target оставить выключенным. Выполнить контро�
 - Не путать full discovery-only с full collection: `enqueueCollection: false` сохраняет только sitemap-реестр; отсутствие флага по-прежнему запускает каскад collection.
 - Не ставить collection/process на весь discovery-каталог до измеренной выборки и подтверждённого лимита партии.
 - Не экспортировать товары с пустыми offers или несколькими ожидаемыми брендами, пока их контракты не согласованы.
-- Перед write export проверять не только автоматический diff, но и descriptions и реальные изображения, пока preview не расширен.
+- Перед write export проверять полный preview diff, включая descriptions, taxonomies, вариации и identity/URL изображений.
 - Не выводить `.env`, proxy, cookies, bearer-токены и WordPress import token в команды, логи и ответы.
 - Production WordPress сначала исследовать read-only. Любые изменения — только в явно разрешённом объёме после проверки branch, worktree и diff.
 - На production с грязным worktree не использовать destructive Git-команды. Перед pull проверять, что входящий diff не пересекается с локальными изменениями.
