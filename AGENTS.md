@@ -585,6 +585,20 @@ Target оставить выключенным. Выполнить контро�
 - настроить мониторинг jobs, ошибок, зависших locks, диска, PostgreSQL и media;
 - настроить резервное копирование PostgreSQL и `/srv/slds-parser/state`.
 
+## Доработка админки классификатора 6 августа 2026
+
+Production parser обновлён до `55a8b83`, применена миграция `018_classifier_admin_consistency.sql`. Локально и на production прошли `typecheck`, `npm test` (`212` тестов) и `build`. API/worker active, internal/external health `200`. Target `slamdunk` остался выключенным, `export_product` jobs не создавались, WordPress writes не выполнялись.
+
+- `/classifier-config` разделён на четыре самостоятельных представления: исходные значения, контекстные правила, основные поля WordPress и дополнительные назначения. Строки больше не перемешивают разные уровни конфигурации.
+- Детали и редактирование открываются в центральных широких dialog, нижние действия sticky. Сырые `reference value ID`, DSL условий и технический термин `projection` убраны из основного пользовательского сценария.
+- Для точных mappings, rules, target mappings и дополнительных назначений доступны просмотр, история, preview, редактирование и включение/отключение через audited service/repository path. Редактирование rules не позволяет менять source/type и учитывает как прежние, так и новые affected products.
+- Основной `/classifier` сначала сохраняет внутренний смысл, затем позволяет добавить несколько дополнительных WordPress-категорий, меток или атрибутов. Сохранение требует preview; для single-cardinality target scopes проверяются конфликты по всем активным outputs товара.
+- Очередь, rule candidates и статистика конфигурации показывают observations только для текущей версии source processor. Поэтому старое `category=Running` от GOAT processor 2.7/2.8 больше не попадает в UI; актуальный processor `2.9.0` хранит это как `merchandising_category`, а структурную категорию отдельно.
+- Добавлена dry-run-first команда `npm run classifier:enqueue-stale`; применение разрешается только при `STALE_PROCESSING_APPLY=true`.
+- `/api/products` сначала выбирает IDs страницы и только затем читает parts/jobs/snapshots. Production timings после индексов: конфигурация примерно `63–187 ms`, classification stage примерно `59–135 ms` после прогрева, target `not_exported` примерно `193–277 ms`; прежние запросы занимали примерно `1.7–3.1 s`.
+
+После dry-run на production поставлено `1498` штатных `process_product` jobs для internal products со старой версией processor: job IDs выше baseline `7579` (`7580–9077`). Очередь намеренно оставлена worker в фоне по просьбе владельца. При следующей проверке дождаться terminal status всех этих jobs, сгруппировать failures по `last_error`, проверить остаток `internal_products.processor_version <> '2.9.0'`, active observations `category=Running`, target `slamdunk=false` и отсутствие export jobs. Не ставить этот batch повторно, пока существуют active jobs с этими IDs.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
