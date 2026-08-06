@@ -69,6 +69,39 @@ function snapshotTaxonomies(value: unknown): Record<string, number[]> {
   return Object.fromEntries(Object.entries(record(value)).map(([taxonomy, terms]) => [taxonomy, Array.isArray(terms) ? terms.map((term) => Number(record(term).term_id)).filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b) : []]));
 }
 
+function imageIdentity(value: unknown): string {
+  const image = record(value);
+  const url = typeof image.url === "string" ? image.url.trim() : "";
+  const sourceUrl = typeof image.source_url === "string" ? image.source_url.trim() : "";
+  const filename = typeof image.filename === "string" ? image.filename.trim() : "";
+  const importName = typeof image.import_name === "string" ? image.import_name.trim() : "";
+  return JSON.stringify({
+    url,
+    sourceUrl,
+    filename: filename || importName,
+  });
+}
+
+function imageDiff(expected: unknown, actual: unknown) {
+  const expectedImages = Array.isArray(expected) ? expected : [];
+  const actualImages = Array.isArray(actual) ? actual : [];
+  const max = Math.max(expectedImages.length, actualImages.length);
+  const differences: Record<string, unknown>[] = [];
+  for (let index = 0; index < max; index++) {
+    const expectedImage = expectedImages[index] ?? null;
+    const actualImage = actualImages[index] ?? null;
+    if (imageIdentity(expectedImage) !== imageIdentity(actualImage)) {
+      differences.push({ position: index, expected: expectedImage, actual: actualImage });
+    }
+  }
+  return {
+    expectedCount: expectedImages.length,
+    actualCount: actualImages.length,
+    changed: differences.length > 0,
+    differences,
+  };
+}
+
 export class WordPressPreviewService {
   constructor(
     private readonly repositories: { readonly sources: SourceRepository; readonly sourceProducts: SourceProductRepository; readonly internalProducts: InternalProductRepository; readonly targets: TargetRepository },
@@ -111,14 +144,12 @@ export class WordPressPreviewService {
     const variations = record(payload.variations);
     const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
     const variationComparison = variationDiff(preflight.variationPlan, current.variations);
-    const fields = ["title", "slug", "sku"].flatMap((field) =>
+    const fields = ["title", "slug", "sku", "description_html", "short_description_html"].flatMap((field) =>
       different(product[field], current[field]) ? [{ field, expected: product[field] ?? null, actual: current[field] ?? null }] : []);
     const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
     const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
     const taxonomyDifferences = Object.keys(expectedTaxonomies).sort().flatMap((taxonomy) => different(expectedTaxonomies[taxonomy], actualTaxonomies[taxonomy] ?? [])
       ? [{ taxonomy, expected: expectedTaxonomies[taxonomy], actual: actualTaxonomies[taxonomy] ?? [] }] : []);
-    const expectedImageCount = Array.isArray(product.images) ? product.images.length : 0;
-    const actualImageCount = Array.isArray(current.images) ? current.images.length : 0;
     return {
       target: { id: target.id, code: target.code, name: target.name, enabled: target.enabled },
       externalId: preflight.externalId, willCreate: preflight.willCreate,
@@ -128,7 +159,7 @@ export class WordPressPreviewService {
         snapshotFetchedAt: snapshot?.fetchedAt ?? null,
         fields,
         taxonomyDifferences,
-        images: { expectedCount: expectedImageCount, actualCount: actualImageCount, changed: expectedImageCount !== actualImageCount },
+        images: imageDiff(product.images, current.images),
         variationDifferences: variationComparison.differences,
         deactivatedVariations: variationComparison.deactivated,
       },

@@ -165,7 +165,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.7.0";
+  readonly version = "2.8.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -267,6 +267,7 @@ export class GoatSourceProcessor implements SourceProcessor {
         productCategory: product.productCategory ?? null, productType: product.productType ?? null, taxonomy,
         season: product.season ?? null, releaseDate: product.releaseDate ?? null, status: product.status ?? null },
       metadata: { source: "goat", productId, slug: product.slug ?? context.sourceProduct.slug ?? null, route: route || null, countryCode,
+        offersCount: offersPayload.offers.length, activeVariantCount: variants.length,
         sizeType: product.sizeType ?? null, sizeUnit: product.sizeUnit ?? null } };
   }
 }

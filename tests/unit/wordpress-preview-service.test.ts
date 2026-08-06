@@ -10,7 +10,7 @@ function setup(targetId: number, matchedBy: string) {
     title: "Test shoe",
     description: "Description",
     sku: "SKU-2",
-    images: [],
+    images: [{ url: "https://parser.example/images/100.webp", position: 0, alt: "Test shoe", attributes: {} }],
     variants: [],
     referenceCandidates: [],
     classification: {
@@ -38,7 +38,15 @@ function setup(targetId: number, matchedBy: string) {
         config: { requiredReferenceTypes: ["brand"], sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }] },
       }),
       findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 ? null : { externalId: String(targetId) }),
-      findProductSnapshot: vi.fn().mockResolvedValue(null),
+      findProductSnapshot: vi.fn().mockResolvedValue(targetId === 0 ? null : {
+        fetchedAt: "2026-08-06T00:00:00.000Z",
+        payload: { product: {
+          title: "Old title", slug: "test-shoe", sku: "SKU-2",
+          description_html: "<p>Old</p>", short_description_html: "",
+          images: [{ attachment_id: 55, url: "https://shop.example/wp-content/uploads/old.webp", position: 0, featured: true }],
+          taxonomies: {}, variations: [],
+        } },
+      }),
     },
   };
   const request = vi.fn(async (_url, init) => {
@@ -72,6 +80,13 @@ describe("WordPressPreviewService", () => {
       matchedBy: "source_identity",
       target: { id: "10", enabled: false },
       payload: { fields: { title: "Test shoe", sku: "SKU-2" } },
+      diff: {
+        fields: expect.arrayContaining([
+          expect.objectContaining({ field: "title" }),
+          expect.objectContaining({ field: "description_html" }),
+        ]),
+        images: { changed: true, differences: [expect.objectContaining({ position: 0 })] },
+      },
     });
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");

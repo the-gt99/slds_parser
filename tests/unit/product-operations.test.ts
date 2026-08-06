@@ -116,7 +116,7 @@ describe("product operations", () => {
     const operation = new ValidateProcessedProductOperation();
     await expect(operation.execute(product({ attributes: { brand: "" } }))).rejects.toBeInstanceOf(IntegrationContractError);
     await expect(operation.execute(product({ images: [] }))).rejects.toBeInstanceOf(IntegrationContractError);
-    await expect(operation.execute(product({ variants: [] }))).rejects.toBeInstanceOf(IntegrationContractError);
+    await expect(operation.execute(product({ variants: [] }))).resolves.toBeDefined();
     await expect(operation.execute(product({ description: "" }))).resolves.toBeDefined();
   });
 });

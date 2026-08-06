@@ -1,6 +1,6 @@
 # SLDS Parser: рабочий контекст проекта
 
-Этот файл — основная память проекта для следующих сессий. Перед изменениями сверяй его с кодом, `README.md`, актуальным `git status`, production jobs и последними миграциями. Снимки состояния и номера коммитов ниже относятся к 5 августа 2026 года и со временем могут устареть.
+Этот файл — основная память проекта для следующих сессий. Перед изменениями сверяй его с кодом, `README.md`, актуальным `git status`, production jobs и последними миграциями. Снимки состояния и номера коммитов ниже относятся к 6 августа 2026 года и со временем могут устареть.
 
 ## Цель
 
@@ -261,23 +261,25 @@ Parser:
 - 38 target classification projections активны;
 - один target product (`internalProductId=68`) имеет статус `synced` после подтверждённого update smoke.
 
-### Активный полный discovery-only
+### Завершённый полный discovery-only
 
 Commit `fd21170` добавил флаг job payload `enqueueCollection: false` и команду `npm run goat:enqueue-discovery`. Старое поведение остаётся default: без флага discovery продолжает ставить `collect_product`.
 
 5 августа запущены job `196` и `source_collection_run` `7` с `runType=full`, `coverage=catalog`, `enqueueCollection=false`. Источник настроен без `maxProductsPerRun`, `discoveryBatchSize=500`, `requestDelayMs=1000`.
 
-На момент обновления этого файла:
+6 августа проверено production БД:
 
-- job/run активны, attempts `1`, ошибок нет;
-- checkpoint: `484000` записей, `childIndex=425` из `948` дочерних sneakers/apparel sitemap;
-- в `source_products` около `484000` строк;
+- job `196`: `discover_source`, `completed`, attempts `1`, `finished_at=2026-08-05 12:18:52.559335+00`, ошибок нет;
+- run `7`: `completed`, `completeness=complete`, `processed_count=591828`, `discovered_count=591828`, checkpoint `{"emitted":591828,"itemIndex":0,"childIndex":948}`;
+- в `source_products` `591828` строк и `591828` уникальных `source_key`;
+- распределение `discovery_metadata.route`: `sneakers=342177`, `apparel=249651`;
+- дубликатов `source_key` нет, пустых `slug` и `url` нет;
 - downstream jobs после `196`: `0`; карточки, offers, переводы и изображения не скачиваются;
 - только 20 ранее собранных товаров имеют `external_id`; sitemap discovery сохраняет slug/URL/metadata, GOAT ID появляется после collection;
-- PostgreSQL около `490 MB`, на сервере свободно около `73 GB`;
-- итоговый размер каталога заранее не считать равным 300 тысячам: актуальные sitemap уже дали больше 400 тысяч.
+- PostgreSQL `601 MB`;
+- target `slamdunk` ID `1` выключен.
 
-Discovery работает в фоне и сохраняет checkpoint каждые 500 товаров. Перед любыми действиями с очередью сначала проверить job `196`, run `7`, фактический checkpoint и отсутствие downstream jobs. Не перезапускать полный discovery вторым job, пока этот run активен.
+Не перезапускать полный discovery без отдельной причины: каталог уже сохранён discovery-only без downstream задач.
 
 WordPress:
 
@@ -297,24 +299,17 @@ WordPress:
 
 Порядок работ важен.
 
-### 1. Дождаться и проверить discovery-only
+### 1. Исправить блокеры до большой обработки
 
-- проверить завершение job `196` и run `7` со status `completed` и completeness `complete`;
-- записать фактическое число уникальных товаров, child sitemap, длительность и итоговый размер PostgreSQL;
-- убедиться, что после job `196` не появились `collect_product`, `process_product` или `export_product`;
-- проверить дубликаты `sourceKey`, пустые slug/URL и распределение `metadata.route` по sneakers/apparel;
-- не запускать второй full discovery поверх активного run.
-
-### 2. Исправить блокеры до большой обработки
-
-- спроектировать явное состояние товара без offers и согласовать, как оно деактивирует старые вариации WordPress без выдуманной цены/размера;
-- определить контракт нескольких брендов для коллабораций и проверить cardinality `brand` end-to-end;
-- расширить WordPress preview сравнением description HTML и image URLs/identity;
-- проверить и исправить системную терминологию перевода colorway, начиная с `Sail`, без точечного fallback;
+- parser больше не считает пустой список вариантов ошибкой финальной операции: GOAT `offers: []` должен сохраняться как DTO с `variants: []`, `metadata.offersCount=0`, `metadata.activeVariantCount=0`, без выдуманных размеров и цен;
+- sold-out export/write пока не считать решённым: WordPress product-upsert через базовый update-only validator всё ещё требует непустой `variations.items`; нужно согласовать бизнес-правило и при необходимости менять WordPress contract до write smoke;
+- несколько брендов у коллабораций не исправлены эвристикой: реальные GOAT payload для Valentino Garavani x Vans содержат `brandName: Vans`, а второй бренд подтверждён только WordPress snapshot. Нужно определить воспроизводимое source-правило и cardinality `brand` end-to-end;
+- WordPress preview расширен сравнением `description_html`, `short_description_html` и image identity/URL; WordPress snapshot теперь отдаёт `description_html`, `short_description_html`, attachment `import_name` и `source_url`;
+- терминология перевода расширена проверяемым словарём sneaker color terms, включая `Sail -> Парусный`, чтобы не получать глагольный перевод `Плыть` в colorway;
 - решить, считать ли заполнение отсутствующего `pa_material` допустимым автоматическим обогащением;
 - добавить безопасный cohort enqueue: выбирать discovery-товары явным списком/лимитом и не создавать массовую очередь случайно.
 
-### 3. Репрезентативная классификационная выборка
+### 2. Репрезентативная классификационная выборка
 
 После исправления блокеров не обрабатывать весь каталог сразу.
 

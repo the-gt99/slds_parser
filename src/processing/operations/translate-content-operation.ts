@@ -28,6 +28,14 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
   silver: "Серебристый",
   lime: "Лайм",
   navy: "Флот",
+  sail: "Парусный",
+  cream: "Кремовый",
+  ivory: "Айвори",
+  "off white": "Молочный",
+  "off-white": "Молочный",
+  "summit white": "Саммит Вайт",
+  "photon dust": "Фотон Даст",
+  "university red": "Юниверсити Ред",
 };
 
 export interface TranslateContentOperationOptions {
