@@ -67,6 +67,29 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("lists classifier configuration with admin auth and server pagination", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      listConfiguration: vi.fn().mockResolvedValue({ items: [], total: 0, sources: [], targets: [], types: [] }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/classifier/configuration?kind=rule&status=active&limit=25&offset=50",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(classifier.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "rule",
+      status: "active",
+      limit: 25,
+      offset: 50,
+    }));
+    await server.close();
+  });
+
   it("rejects malformed identifiers before reaching classifier commands", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = { saveDecision: vi.fn() } as unknown as ClassifierAdminService;
@@ -227,6 +250,24 @@ describe("HTTP server", () => {
     expect(classifier.previewTargetProjection).toHaveBeenCalledWith(payload);
     expect(classifier.createTargetProjection).toHaveBeenCalledWith(payload, "admin");
     expect(targetDictionaries.createTermAndDecide).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("protects classifier rule activation with CSRF", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      setRuleEnabled: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 3 }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+
+    const forbidden = await server.inject({ method: "POST", url: "/api/classifier/rules/10/deactivate", headers: { cookie }, payload: {} });
+    const allowed = await server.inject({ method: "POST", url: "/api/classifier/rules/10/deactivate", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: {} });
+
+    expect(forbidden.statusCode).toBe(403);
+    expect(allowed.statusCode).toBe(200);
+    expect(classifier.setRuleEnabled).toHaveBeenCalledWith("10", false, "admin", undefined);
     await server.close();
   });
 

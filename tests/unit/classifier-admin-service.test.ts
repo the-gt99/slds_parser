@@ -40,12 +40,15 @@ function repositories(
   rules: readonly ClassificationRuleRecord[] = [],
 ) {
   const admin = {
+    listConfiguration: vi.fn(),
     listReviewQueue: vi.fn(),
     listReferenceValues: vi.fn(),
     listRuleCandidates: vi.fn().mockResolvedValue(candidates),
     getDecisionContext: vi.fn(),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "1", referenceValueId: "2", revision: "1", affectedProductCount: 1, affectedExportCount: 0 }),
     createRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "1", affectedProductCount: 1 }),
+    updateRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "2", affectedProductCount: 1 }),
+    setRuleEnabled: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 1 }),
     listTargetProjections: vi.fn(),
     previewTargetProjection: vi.fn(),
     createTargetProjection: vi.fn(),
@@ -111,6 +114,16 @@ describe("ClassifierAdminService", () => {
 
     expect(preview.ambiguousObservations).toBe(1);
     expect(preview.examples[0]?.outcome).toBe("ambiguous");
+  });
+
+  it("rejects unsafe bare model rules", async () => {
+    const deps = repositories([candidate("1", "101", "Nike ACG Pegasus Trail", "Nike")]);
+    const service = new ClassifierAdminService(deps.admin, deps.classification);
+
+    await expect(service.previewRule({
+      ...draft,
+      conditions: [{ field: "sourceValue", operator: "equals", value: "Pegasus" }],
+    })).rejects.toThrow("Model rules require");
   });
 
   it("recomputes preview and queues only products affected by a new rule", async () => {

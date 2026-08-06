@@ -273,6 +273,9 @@ export interface TargetClassificationProjectionRecord {
   readonly externalLabel: string;
   readonly metadata: JsonObject;
   readonly revision: string;
+  readonly active?: boolean;
+  readonly createdAt?: Timestamp;
+  readonly updatedAt?: Timestamp;
 }
 
 export interface TargetClassificationProjectionPreviewExample {
@@ -669,6 +672,78 @@ export interface ClassificationDecisionContext extends ClassificationDecisionKey
   readonly observationId: EntityId;
   readonly sourceCode: string;
   readonly sourceValue: string;
+}
+
+export type ClassificationConfigKind = "mapping" | "rule" | "target_mapping" | "projection";
+export type ClassificationConfigStatus = "active" | "inactive" | "ignored";
+
+export interface ClassificationConfigListQuery {
+  readonly kind?: ClassificationConfigKind;
+  readonly sourceId?: EntityId;
+  readonly targetId?: EntityId;
+  readonly typeCode?: string;
+  readonly status?: ClassificationConfigStatus;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ClassificationConfigListItem {
+  readonly kind: ClassificationConfigKind;
+  readonly id: EntityId;
+  readonly sourceId: EntityId | null;
+  readonly sourceCode: string | null;
+  readonly targetId: EntityId | null;
+  readonly targetCode: string | null;
+  readonly typeCode: string | null;
+  readonly typeName: string | null;
+  readonly scope: string | null;
+  readonly sourceValue: string | null;
+  readonly normalizedSourceValue: string | null;
+  readonly context: JsonObject;
+  readonly contextKey: string | null;
+  readonly referenceValueId: EntityId | null;
+  readonly referenceName: string | null;
+  readonly targetScope: string | null;
+  readonly targetExternalId: string | null;
+  readonly targetLabel: string | null;
+  readonly targetTaxonomy: string | null;
+  readonly ruleName: string | null;
+  readonly conditions: readonly ClassificationRuleConditionRecord[];
+  readonly priority: number | null;
+  readonly status: ClassificationConfigStatus;
+  readonly revision: string;
+  readonly actor: string | null;
+  readonly reason: string | null;
+  readonly affectedProductCount: number;
+  readonly examples: readonly ClassificationReviewExample[];
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+}
+
+export interface ClassificationConfigListResult {
+  readonly items: readonly ClassificationConfigListItem[];
+  readonly total: number;
+  readonly sources: readonly { readonly id: EntityId; readonly code: string; readonly name: string }[];
+  readonly targets: readonly { readonly id: EntityId; readonly code: string; readonly name: string }[];
+  readonly types: readonly { readonly code: string; readonly name: string }[];
+}
+
+export interface UpdateClassificationRuleInput {
+  readonly ruleId: EntityId;
+  readonly name: string;
+  readonly priority: number;
+  readonly conditions: readonly ClassificationRuleConditionRecord[];
+  readonly referenceValueId: EntityId;
+  readonly actor: string;
+  readonly reason?: string;
+  readonly affectedSourceProductIds: readonly EntityId[];
+}
+
+export interface UpdateClassificationRuleResult {
+  readonly ruleId: EntityId;
+  readonly revision: string;
+  readonly affectedProductCount: number;
 }
 
 export interface TargetDictionaryValueRecord {

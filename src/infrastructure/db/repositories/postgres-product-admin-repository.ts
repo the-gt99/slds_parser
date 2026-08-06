@@ -296,18 +296,58 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                  job.updated_at DESC, job.id DESC
         LIMIT 1
       ) active_export ON TRUE`;
-    const countResult = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
+    const countResult = await client.query<DatabaseRow>(
+      query.stage || query.classificationStatus || query.targetStatus || query.search
+        ? `SELECT COUNT(*) AS total ${from} ${filter}`
+        : `SELECT COUNT(*) AS total FROM source_products product JOIN sources source ON source.id = product.source_id ${filter}`,
+      parameters,
+    );
     const limit = add(query.limit); const offset = add(query.offset);
     const result = await client.query<DatabaseRow>(
-      `SELECT product.id AS source_product_id, source.id AS source_id, source.code AS source_code,
+      `WITH page_ids AS (
+         SELECT product.id
+         ${from} ${filter}
+         ORDER BY product.updated_at DESC, product.id DESC
+         LIMIT ${limit} OFFSET ${offset}
+       )
+       SELECT product.id AS source_product_id, source.id AS source_id, source.code AS source_code,
               source.name AS source_name, product.source_key, product.external_id,
               NULLIF(COALESCE(internal.data->>'title', product.discovery_metadata->>'title'), '') AS title,
               product.status AS source_status, ${stageSql} AS stage, ${classificationSql} AS classification_status,
               parts.collected_at, internal.processed_at, ${targetStatusSql} AS target_status,
               active_export.status AS target_job_status,
               target_state.external_id AS target_external_id,
-              EXISTS (SELECT 1 FROM target_product_snapshots snapshot WHERE snapshot.source_product_id = product.id) AS has_target_snapshot
-       ${from} ${filter} ORDER BY product.updated_at DESC, product.id DESC LIMIT ${limit} OFFSET ${offset}`,
+              snapshot.source_product_id IS NOT NULL AS has_target_snapshot
+       FROM page_ids
+       JOIN source_products product ON product.id = page_ids.id
+       JOIN sources source ON source.id = product.source_id
+       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+       LEFT JOIN LATERAL (SELECT MAX(fetched_at) AS collected_at FROM source_product_parts WHERE source_product_id = product.id) parts ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT target.id AS target_id, product.status, product.external_id
+         FROM targets target
+         LEFT JOIN target_products product
+           ON product.target_id = target.id AND product.internal_product_id = internal.id
+         WHERE target.code = 'slamdunk' OR product.id IS NOT NULL
+         ORDER BY (target.code = 'slamdunk') DESC, product.updated_at DESC NULLS LAST, target.id
+         LIMIT 1
+       ) target_state ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT job.status
+         FROM jobs job
+         WHERE job.job_type = 'export_product'
+           AND job.status IN ('pending', 'running', 'retry')
+           AND job.payload->>'internalProductId' = internal.id::TEXT
+           AND job.payload->>'targetId' = target_state.target_id::TEXT
+         ORDER BY CASE job.status WHEN 'running' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
+                  job.updated_at DESC, job.id DESC
+         LIMIT 1
+       ) active_export ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT snapshot.source_product_id FROM target_product_snapshots snapshot
+         WHERE snapshot.source_product_id = product.id LIMIT 1
+       ) snapshot ON TRUE
+       ORDER BY product.updated_at DESC, product.id DESC`,
       parameters,
     );
     const sources = await client.query<DatabaseRow>("SELECT code, name FROM sources ORDER BY name, id");

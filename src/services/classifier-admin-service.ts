@@ -4,6 +4,7 @@ import type { EntityId, ReferenceCandidateDTO } from "../contracts/index.js";
 import { IntegrationContractError } from "../core/errors/index.js";
 import type {
   ClassificationAdminRepository,
+  ClassificationConfigListQuery,
   ClassificationDecisionKey,
   ClassificationReferenceValueOption,
   ClassificationRepository,
@@ -107,6 +108,14 @@ function validateRuleDraft(draft: ClassificationRuleDraft): void {
   for (const condition of draft.conditions) {
     matchesClassificationCondition(emptyCandidate, condition);
   }
+  if (draft.typeCode === "model") {
+    const hasContext = draft.conditions.some((condition) =>
+      condition.field.startsWith("context.") || condition.field.startsWith("evidence."));
+    const sourceOnly = draft.conditions.length === 1 && draft.conditions[0]?.field === "sourceValue";
+    if (!hasContext || sourceOnly) {
+      throw new IntegrationContractError("Model rules require product context or evidence; bare sourceValue rules are unsafe");
+    }
+  }
 }
 
 export class ClassifierAdminService {
@@ -132,6 +141,10 @@ export class ClassifierAdminService {
 
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]> {
     return this.adminRepository.listReviewQueue(query);
+  }
+
+  listConfiguration(query: ClassificationConfigListQuery) {
+    return this.adminRepository.listConfiguration(query);
   }
 
   listReferenceValues(
@@ -257,6 +270,29 @@ export class ClassifierAdminService {
       affectedSourceProductIds: preview.affectedSourceProductIds,
     });
     return { ...result, preview };
+  }
+
+  async updateRule(ruleId: EntityId, draft: ClassificationRuleDraft, actor = this.actor) {
+    validateText(ruleId, "ruleId", 64);
+    const preview = await this.previewRule(draft);
+    const result = await this.adminRepository.updateRule({
+      ruleId,
+      ...draft,
+      name: draft.name.trim(),
+      actor,
+      affectedSourceProductIds: preview.affectedSourceProductIds,
+    });
+    return { ...result, preview };
+  }
+
+  setRuleEnabled(ruleId: EntityId, enabled: boolean, actor = this.actor, reason?: string) {
+    validateText(ruleId, "ruleId", 64);
+    return this.adminRepository.setRuleEnabled({
+      ruleId,
+      enabled,
+      actor,
+      ...(reason === undefined ? {} : { reason }),
+    });
   }
 
   getDecisionContext(key: ClassificationDecisionKey) {

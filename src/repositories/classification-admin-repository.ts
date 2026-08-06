@@ -1,6 +1,8 @@
 import type {
   ClassificationDecisionContext,
   ClassificationDecisionKey,
+  ClassificationConfigListQuery,
+  ClassificationConfigListResult,
   ClassificationReferenceValueOption,
   ClassificationReviewItem,
   ClassificationReviewQuery,
@@ -12,9 +14,12 @@ import type {
   CreateClassificationRuleResult,
   SaveClassificationDecisionInput,
   SaveClassificationDecisionResult,
+  UpdateClassificationRuleInput,
+  UpdateClassificationRuleResult,
 } from "./types.js";
 
 export interface ClassificationAdminRepository {
+  listConfiguration(query: ClassificationConfigListQuery): Promise<ClassificationConfigListResult>;
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]>;
   listReferenceValues(
     typeCode: string,
@@ -28,6 +33,13 @@ export interface ClassificationAdminRepository {
   getDecisionContext(key: ClassificationDecisionKey): Promise<ClassificationDecisionContext | null>;
   saveDecision(input: SaveClassificationDecisionInput): Promise<SaveClassificationDecisionResult>;
   createRule(input: CreateClassificationRuleInput): Promise<CreateClassificationRuleResult>;
+  updateRule(input: UpdateClassificationRuleInput): Promise<UpdateClassificationRuleResult>;
+  setRuleEnabled(input: {
+    readonly ruleId: string;
+    readonly enabled: boolean;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly affectedProductCount: number; readonly revision: string }>;
   listTargetProjections(
     targetId: string,
     resolutionKind: "mapping" | "rule",

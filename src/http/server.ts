@@ -60,6 +60,9 @@ interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
+interface ConfigQuery { readonly kind?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface RuleParams { readonly ruleId: string }
+interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
@@ -178,6 +181,22 @@ function projectionBody(value: unknown) {
 function projectionReason(value: unknown): string | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   return optionalString((value as Record<string, unknown>).reason);
+}
+
+function configKind(value: string | undefined) {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "mapping" && value !== "rule" && value !== "target_mapping" && value !== "projection") {
+    throw new HttpInputError("kind must be mapping, rule, target_mapping or projection");
+  }
+  return value;
+}
+
+function configStatus(value: string | undefined) {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "active" && value !== "inactive" && value !== "ignored") {
+    throw new HttpInputError("status must be active, inactive or ignored");
+  }
+  return value;
 }
 
 function targetTermBody(targetId: string, value: unknown): CreateTargetTermCommand {
@@ -328,6 +347,21 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     return { items: await dependencies.classifier.listReferenceValues(typeCode, request.query.search, limit) };
   });
 
+  server.get<{ Querystring: ConfigQuery }>("/api/classifier/configuration", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 200);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+    return dependencies.classifier.listConfiguration({
+      ...(configKind(request.query.kind) === undefined ? {} : { kind: configKind(request.query.kind)! }),
+      ...(request.query.sourceId === undefined || request.query.sourceId === "" ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
+      ...(request.query.targetId === undefined || request.query.targetId === "" ? {} : { targetId: entityId(request.query.targetId, "targetId") }),
+      ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
+      ...(configStatus(request.query.status) === undefined ? {} : { status: configStatus(request.query.status)! }),
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      limit,
+      offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
+  });
+
   server.post("/api/classifier/decisions", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
     decision: await dependencies.classifier.saveDecision(decisionBody(request.body), actor(request)),
   }));
@@ -339,6 +373,36 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.post("/api/classifier/rules", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
     rule: await dependencies.classifier.createRule(ruleBody(request.body), actor(request)),
   }));
+
+  server.patch<{ Params: RuleParams }>("/api/classifier/rules/:ruleId", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    rule: await dependencies.classifier.updateRule(entityId(request.params.ruleId, "ruleId"), ruleBody(request.body), actor(request)),
+  }));
+
+  server.post<{ Params: RuleParams; Body: RuleStatusBody }>(
+    "/api/classifier/rules/:ruleId/deactivate",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      rule: await dependencies.classifier.setRuleEnabled(
+        entityId(request.params.ruleId, "ruleId"),
+        false,
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
+
+  server.post<{ Params: RuleParams; Body: RuleStatusBody }>(
+    "/api/classifier/rules/:ruleId/reactivate",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      rule: await dependencies.classifier.setRuleEnabled(
+        entityId(request.params.ruleId, "ruleId"),
+        true,
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
 
   server.get<{ Querystring: ProjectionQuery }>("/api/classifier/projections", { preHandler: requireAdmin }, async (request) => {
     const resolutionKind = requiredString(request.query.resolutionKind, "resolutionKind");
