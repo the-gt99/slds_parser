@@ -82,7 +82,7 @@
 
 Пустые media и offers допустимы во внутреннем DTO: товар только с GOAT placeholder сохраняется с `images: []`, товар без offers — с `variants: []`. Нельзя выдумывать изображение, размер, остаток или цену. WordPress exporter отдельно блокирует оба случая до внешнего HTTP-вызова, пока соответствующие target-контракты не согласованы.
 
-Worker использует одну последовательную lane для `discover_source`, `collect_product` и `export_product`, а для `process_product` — от 1 до 8 отдельных lanes через `WORKER_PROCESS_CONCURRENCY`. Не запускать несколько полных worker-процессов ради ускорения: collection должен оставаться последовательным. GOAT image downloader использует общий лимит и отдельный cookie jar `.images-N` на каждый транспортный slot, поэтому processing не пишет одновременно в source cookie jar.
+Worker использует одну последовательную lane для `discover_source`, `collect_product` и `export_product`, а для `process_product` — от 1 до 8 отдельных lanes через `WORKER_PROCESS_CONCURRENCY`. Production сейчас настроен на четыре processing lane. Не запускать несколько полных worker-процессов ради ускорения: collection должен оставаться последовательным. GOAT image downloader использует общий лимит и отдельный cookie jar `.images-N` на каждый транспортный slot, поэтому processing не пишет одновременно в source cookie jar.
 
 HTML-описание магазина намеренно не является универсальной операцией: его нужно формировать при сборке WordPress payload.
 
@@ -258,6 +258,7 @@ Parser:
 - production deployment прошёл `typecheck`, `176` тестов, build и migrations (`No pending migrations`);
 - API и worker активны, внутренний и внешний health возвращают 200;
 - production worktree чистый;
+- `WORKER_PROCESS_CONCURRENCY=4`; четыре lane подтверждены полным forced processing smoke;
 - target `slamdunk` ID `1` выключен;
 - `requiredReferenceTypes`: `brand`, `model`, `category`;
 - title prefixes настроены для category term IDs `74`, `75`, `865`;
@@ -315,9 +316,9 @@ WordPress:
 Rep500 завершён. Не обрабатывать весь каталог сразу.
 
 1. Следующая партия — `2000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
-2. Target оставить выключенным; collection остаётся последовательным, processing сначала оставить на подтверждённых двух lanes.
+2. Target оставить выключенным; collection остаётся последовательным, processing выполнять на подтверждённых четырёх lanes.
 3. После партии сравнить collection/processing rate, no-offers, no-images, retry/failures, media, диск и PostgreSQL.
-4. Только по результатам этой партии проверить processing concurrency `4`; не повышать source collection concurrency.
+4. Не повышать source collection concurrency; новые уровни processing concurrency проверять отдельными forced smoke.
 5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 2000 перейти к 5000, затем партиям 10000–20000.
 
 Массовые правила модели строить по evidence `brand + family` и проверять preview конфликтов. Отдельно вернуться к Pegasus/Surge и другим семействам, где голое название неоднозначно. Движок классификатора не переписывать под GOAT.
@@ -360,7 +361,9 @@ Rep500:
 
 Команда `npm run classifier:exact-matches` применена только для `brand,model,color,tag`: сохранено 69 однозначных решений — 63 brand, 5 model и 1 tag. Материалы и категории автоматически не применялись. Решения поставили 232 уникальных товара на повторную обработку; все 232 jobs завершены двумя processing lanes без ошибок. Повторный dry-run exact matches вернул `0`.
 
-Текущие active observations после переобработки: brand `resolved=469/unresolved=99`, category `86/482`, color `403/165`, material `77/117`, model `24/544`, tag `46/97`; ambiguous отсутствуют. Это количества наблюдений/товаров, а не уникальных значений очереди. Следующий безопасный шаг — cohort 2000 и анализ частот unresolved. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
+Четыре processing lane проверены на 100 уже собранных товарах с `force=true`, по 50 sneakers/apparel. Все шесть операций выполнялись заново: `100/100 completed`, retry/failures и export jobs отсутствуют. Полный wall time `190.327 с`, скорость `31.52 товара/мин`, среднее время attempt `7.485 с`, p95 `21.923 с`, максимум `23.243 с`. Выборка содержала 230 реальных изображений, четыре товара с `images: []` и 32 с `variants: []`. Во время нагрузки worker использовал около 280 MB RAM и 44% одного CPU.
+
+Текущие active observations после переобработки: brand `resolved=469/unresolved=99`, category `86/482`, color `403/165`, material `77/117`, model `24/544`, tag `46/97`; ambiguous отсутствуют. Это количества наблюдений/товаров, а не уникальных значений очереди. Следующий безопасный шаг — cohort 2000 на четырёх processing lanes и анализ частот unresolved. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
 
 ### 4. Следующие WordPress smoke
 
@@ -384,6 +387,7 @@ Target оставить выключенным. Выполнить контро�
 - добавить ETag/304 там, где источник поддерживает;
 - подтвердить политику исчезнувших товаров;
 - масштабировать только processing lanes через `WORKER_PROCESS_CONCURRENCY`; не запускать несколько полных workers с параллельным GOAT collection;
+- текущая конфигурация использует один GOAT proxy endpoint; дополнительные прокси не начнут использоваться автоматически. Для этого нужен явный proxy pool с раздельными сессиями и распределением source/image transport;
 - настроить мониторинг jobs, ошибок, зависших locks, диска, PostgreSQL и media;
 - настроить резервное копирование PostgreSQL и `/srv/slds-parser/state`.
 
