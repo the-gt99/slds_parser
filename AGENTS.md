@@ -335,7 +335,7 @@ Parser:
 - API и worker активны, внутренний и внешний health возвращают 200;
 - production worktree чистый;
 - `WORKER_PROCESS_CONCURRENCY=4`; четыре lane подтверждены полным forced processing smoke;
-- `WORKER_COLLECTION_CONCURRENCY=3`, `GOAT_PROXY_POOL_ENABLED=true`;
+- на время полного sneakers collection `WORKER_COLLECTION_CONCURRENCY=15`, `GOAT_PROXY_CONCURRENCY_PER_PROXY=5`, `GOAT_PROXY_POOL_ENABLED=true`;
 - три прокси healthy/enabled; credentials у всех трёх зашифрованы, API secret fields не отдаёт;
 - target `slamdunk` ID `1` выключен;
 - `requiredReferenceTypes`: `brand`, `model`, `category`;
@@ -394,7 +394,7 @@ WordPress:
 Rep500 и cohort 2000 завершены. Не обрабатывать весь каталог сразу.
 
 1. Следующая партия — `5000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
-2. Target оставить выключенным; collection держать на трёх lane, processing — на подтверждённых четырёх lane.
+2. Target оставить выключенным. Пока идёт полный sneakers collection, не ставить новые processing jobs и не менять подтверждённые `15` collection lane / `5` session slots на прокси.
 3. Не повышать collection concurrency внутри смешанной рабочей партии. Изолированный collection-only smoke на 12 lane уже пройден успешно, но он не доказывает отсутствие конкуренции с image leases при одновременном processing.
 4. Новые уровни processing/image concurrency проверять отдельным forced smoke, не смешивая с репрезентативной выборкой.
 5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 5000 переходить к партиям 10000–20000 только при стабильных proxy/retry/error метриках.
@@ -614,6 +614,22 @@ Production parser обновлён до `55a8b83`, применена мигра
 - `/api/products` сначала выбирает IDs страницы и только затем читает parts/jobs/snapshots. Production timings после индексов: конфигурация примерно `63–187 ms`, classification stage примерно `59–135 ms` после прогрева, target `not_exported` примерно `193–277 ms`; прежние запросы занимали примерно `1.7–3.1 s`.
 
 После dry-run на production поставлено `1498` штатных `process_product` jobs для internal products со старой версией processor: job IDs выше baseline `7579` (`7580–9077`). Очередь намеренно оставлена worker в фоне по просьбе владельца. При следующей проверке дождаться terminal status всех этих jobs, сгруппировать failures по `last_error`, проверить остаток `internal_products.processor_version <> '2.9.0'`, active observations `category=Running`, target `slamdunk=false` и отсутствие export jobs. Не ставить этот batch повторно, пока существуют active jobs с этими IDs.
+
+## Полный collection sneakers 6 августа 2026
+
+Владелец явно разрешил собрать весь сохранённый каталог `sneakers`, но пока не запускать processing/export. Parser commit `8db807a` (`Добавить массовый сбор раздела`) добавил dry-run-first команду `npm run goat:enqueue-route-collection`. Она одним атомарным PostgreSQL-запросом выбирает весь ещё не собранный route и создаёт jobs с явным `enqueueProcessing=false`.
+
+- production dry-run нашёл ровно `340372` ещё не собранных sneakers;
+- одним apply поставлены все `340372/340372` `collect_product` jobs, диапазон IDs `10078–350449`;
+- старт очереди: `2026-08-06 22:58 MSK`;
+- конфигурация оставлена активной: `WORKER_COLLECTION_CONCURRENCY=15`, `GOAT_PROXY_CONCURRENCY_PER_PROXY=5`, три healthy/enabled proxy;
+- baseline proxy counters: proxy `1` — `4145/2`, proxy `2` — `3944/1`, proxy `3` — `4519/3` (`success/failure`);
+- все `340372` payload проверены: `enqueueProcessing=false`; новых process/export jobs после baseline нет;
+- начальный production snapshot через `213.684 с`: completed `551`, pending `339806`, running `15`, retry `0`, failed `0`, средняя скорость от commit очереди `154.71 товара/мин`;
+- при таком начальном темпе полный проход займёт около `36.7 ч`; это прогноз, а не подтверждённое время завершения;
+- failure counters на стартовом интервале не выросли, API/worker active, health `200`, свободно около `71 GB`.
+
+Не ставить этот route повторно. При следующей проверке использовать jobs `10078–350449`, контролировать completed/pending/running/retry/failed, прирост proxy failure counters, свободный диск и отсутствие process/export jobs. После полного завершения отдельно проверить `1000 product + offers` на одной proxy-сессии по выборке и итоговую полноту parts для всех успешно завершённых товаров.
 
 ## Старые материалы
 
