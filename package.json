@@ -15,6 +15,7 @@
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
     "goat:enqueue-discovery": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-discovery.ts",
     "goat:enqueue-cohort": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-cohort.ts",
+    "goat:enqueue-route-collection": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-route-collection.ts",
     "goat:enqueue-smoke": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-smoke.ts",
     "proxy:import-env": "node --env-file-if-exists=.env --import tsx src/cli/proxy-import-env.ts",
     "proxy:test": "node --env-file-if-exists=.env --import tsx src/cli/proxy-test.ts",

@@ -112,6 +112,8 @@ CLI создаёт или обновляет source `goat`, записывает
 
 Для уже сохранённого discovery-каталога используйте `npm run goat:enqueue-cohort`. Команда ничего не записывает без `GOAT_COHORT_APPLY=true`, выбирает только ещё не собранные товары и требует явный лимит от 1 до 20000. `GOAT_COHORT_ROUTES` делит квоту поровну между маршрутами, а `GOAT_COHORT_SEED` делает выборку воспроизводимой. Вместо лимита можно передать точный список `GOAT_COHORT_PRODUCT_IDS`; смешивать два режима нельзя. Если выбран полный объём не набран, jobs не создаются. По умолчанию успешный collection ставит downstream processing; для изолированного замера сбора задайте `GOAT_COHORT_ENQUEUE_PROCESSING=false`, и это значение будет явно сохранено в payload каждой collection job.
 
+Для постановки всего ещё не собранного source route используйте `npm run goat:enqueue-route-collection` с явным `GOAT_ROUTE_COLLECTION_ROUTE`. Команда по умолчанию выполняет только подсчёт. `GOAT_ROUTE_COLLECTION_APPLY=true` одним атомарным PostgreSQL-запросом создаёт collection jobs для всего текущего остатка route; payload всегда содержит `enqueueProcessing=false`, поэтому processing и export не запускаются.
+
 `npm run classifier:exact-matches` показывает однозначные точные совпадения unresolved-значений с актуальным словарём выключенного target. По умолчанию разрешены только однотипные связи brand, model, color, material и tag; категории исключены из-за иерархии. Дубли имён target пропускаются. Запись выполняется только с `CLASSIFIER_EXACT_MATCH_APPLY=true` через штатный сервис решений с аудитом и точечной постановкой переобработки.
 
 `PARSER_IMAGE_BASE_DIR` должен быть доступен HTTP-серверу по адресу, образованному из `PARSER_PUBLIC_BASE_URL`, `PARSER_PUBLIC_PATH_PREFIX` и относительного пути файла. Без реального публичного URL worker не запускается: выдуманный адрес сделал бы сохранённые ссылки нерабочими. Переводчик перенесён из старого проекта через отдельный provider и использует его неофициальный Google Translate endpoint; поэтому его можно заменить, не меняя операцию и DTO.
@@ -186,6 +188,7 @@ WordPress importer скачивает готовые WebP по публичны�
 - `npm run db:migrate` — применить PostgreSQL-миграции;
 - `npm run goat:enqueue-discovery` — сохранить полный sitemap-реестр без collection;
 - `npm run goat:enqueue-cohort` — проверить либо поставить ограниченную выборку discovery-товаров на collection;
+- `npm run goat:enqueue-route-collection` — посчитать либо атомарно поставить весь остаток route на collection без downstream processing;
 - `npm run goat:enqueue-smoke` — создать ограниченный GOAT source и поставить discovery-задачу;
 - `npm run proxy:import-env` — идемпотентно импортировать текущий `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` или legacy `GOAT_HTTP_PROXY`/`GOAT_SOCKS5_PROXY` в зашифрованную выключенную запись;
 - `npm run proxy:test`, `npm run proxy:enable`, `npm run proxy:disable` — проверить и управлять proxy record по ID без печати секретов;
