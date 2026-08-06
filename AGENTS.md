@@ -423,7 +423,21 @@ Production cohort 2000 запущен с `GOAT_COHORT_PRODUCT_LIMIT=2000`, `GOAT
 
 Следующий безопасный шаг — разбор частот unresolved по cohort 2000 и создание подтверждённых mappings/rules через preview, затем cohort 5000 на тех же `collection=3` и `processing=4`. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
 
-### 5. Следующие WordPress smoke
+### 5. WordPress/GOAT cohort 100 от 6 августа 2026
+
+Первый этап WordPress cohort выполнен без анализа mappings/rules/projections и без изменений WordPress. Метод выбора: точное пересечение `source_products.external_id` нового parser с опубликованными variable WordPress-товарами по `goat_id`; legacy slug matching не понадобился. Из 737 однозначных exact intersections выбран стабильный cohort из 100 товаров seed `20260806`: обязательный контрольный товар `goat_id=855174`, `WordPress product ID=2585427`, `sourceProductId=316480` включён; выборка содержит 57 уникальных WordPress-брендов и 10 товаров с несколькими `pa_brand`.
+
+Manifest сохранён на production parser: `/srv/slds-parser/state/audits/2026-08-06-cohort-100-wordpress-goat.jsonl`, SHA-256 `c09ac7ed169cb2a89fb93c4d64f1c6725fb0bc7b25f43a27e8e6d3ed4bef43ff`. Bootstrap report: `/srv/slds-parser/state/audits/2026-08-06-cohort-100-wordpress-bootstrap-report.json`, SHA-256 `32d4b7bae0d037ddd3905249a221c62d4f6fa74b949b69f75f3272df4bc36683`.
+
+Baseline перед enqueue: production HEAD `6332f5f`, max job `5691`, `source_products.external_id=2590`, `internal_products=2590`, snapshots `18`, PostgreSQL `697 MB`, state `828 MB`, свободно `72 GB`, target `slamdunk=false`, export jobs `0`, active jobs `0`, proxy `1/2/3` healthy/enabled. Штатный `goat:enqueue-cohort` dry-run для exact cohort вернул `0`, потому что CLI фильтрует только never-collected товары; после отдельного dry-run точного списка jobs поставлены через `JobRepository.enqueue`.
+
+Job ranges: collect `5692`-`5791`, process `5792`-`5891`. Результат: collection `100 completed / 0 failed / 0 retry`, processing `100 completed / 0 failed / 0 retry`, snapshots `100 saved / 0 not_found`. Для всех 100 есть parts `product` и `offers`; свежий GOAT `product.id` совпал с WordPress `goat_id`; `source_products.external_id` совпал; product/offers одного collect attempt использовали один proxy. Collection distribution: proxy `1=40`, `2=20`, `3=40`. Пустые данные: `offers: []` у 14, `variants: []` у 14, `images: []` у 0.
+
+Инвентаризация cohort: WordPress product categories — `Мужские кроссовки=48`, `Кроссовки женские=17`, `Кроссовки детские {SEO_FILTER}=14`, `Мужские ботинки=9`, `Женские сандалии=4`, `Мужские сандалии=3`, `Женские ботинки=2`, `Мужские тапочки=2`, `Мужские кеды=1`. GOAT route `sneakers=100`, `productCategory shoes=100`, `productType sneakers=98 / cleats=1 / boots=1`; GOAT category includes `Lifestyle=47`, `Running=18`, `Basketball=5`. Непустые GOAT поля: `category=100`, `activity=8`, `midsole=44`, `upperMaterial=76`, `composition=0`, `ageGroups=1`, `taxonomyLevel1=100`, `taxonomyLevel2=100`, `taxonomyLevel3=20`, `taxonomyLevel4=9`.
+
+Классификация после processing: `classified=2`, `classification_pending=98`; observations: brand `resolved=89/unresolved=11`, category `32/68`, color `75/25`, material `20/56`, model `6/94`, tag `8/36`, ambiguous нет. Финально active jobs `0`, target `slamdunk=false`, export jobs `0`, API/worker active, internal/external health `200`, production parser worktree чистый, WordPress production worktree чистый на `661cc03`. Mappings/rules/projections не создавались и не редактировались; следующий этап — только анализ соответствий по сохранённым данным.
+
+### 6. Следующие WordPress smoke
 
 Target оставить выключенным. Выполнить контролируемо:
 
