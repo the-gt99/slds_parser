@@ -205,6 +205,31 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("protects projection mutations with CSRF and never calls WordPress write services", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      previewTargetProjection: vi.fn().mockResolvedValue({ observationCount: 18, productCount: 18, affectedSourceProductIds: ["1"], examples: [], duplicate: null, cardinalityConflicts: [] }),
+      createTargetProjection: vi.fn().mockResolvedValue({ projection: { id: "1" }, affectedProductCount: 1 }),
+    } as unknown as ClassifierAdminService;
+    const targetDictionaries = { createTermAndDecide: vi.fn() } as unknown as TargetDictionaryService;
+    const server = createHttpServer({ ...dependencies(database), classifier, targetDictionaries });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const payload = { targetId: "10", resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "88" };
+
+    const forbidden = await server.inject({ method: "POST", url: "/api/classifier/projections", headers: { cookie }, payload });
+    const preview = await server.inject({ method: "POST", url: "/api/classifier/projections/preview", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
+    const created = await server.inject({ method: "POST", url: "/api/classifier/projections", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
+
+    expect(forbidden.statusCode).toBe(403);
+    expect(preview.statusCode).toBe(200);
+    expect(created.statusCode).toBe(201);
+    expect(classifier.previewTargetProjection).toHaveBeenCalledWith(payload);
+    expect(classifier.createTargetProjection).toHaveBeenCalledWith(payload, "admin");
+    expect(targetDictionaries.createTermAndDecide).not.toHaveBeenCalled();
+    await server.close();
+  });
+
   it("protects proxy management with admin auth and CSRF without exposing credentials", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const proxies = {

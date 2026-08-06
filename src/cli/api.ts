@@ -48,18 +48,21 @@ async function main(): Promise<void> {
     const wordpress = loadWordPressTargetConfig();
     pool = createPostgresPool();
     const repositories = createPostgresRepositories(pool);
+    const providers = new TargetDictionaryProviderRegistry();
+    if (wordpress !== null) providers.register(new WordPressDictionaryProvider(wordpress));
+    const targetDictionaryRepository = new PostgresTargetDictionaryRepository(pool);
     const classifier = new ClassifierAdminService(
       new PostgresClassificationAdminRepository(pool),
       repositories.classifications,
+      targetDictionaryRepository,
+      providers,
     );
-    const providers = new TargetDictionaryProviderRegistry();
-    if (wordpress !== null) providers.register(new WordPressDictionaryProvider(wordpress));
     const operations = new ProductOperationRegistry();
     registerProductOperations(operations);
     const exporters = new TargetExporterRegistry();
     if (wordpress !== null) exporters.register(new WordPressExporter(wordpress));
     const targetDictionaries = new TargetDictionaryService(
-      new PostgresTargetDictionaryRepository(pool),
+      targetDictionaryRepository,
       providers,
       classifier,
     );

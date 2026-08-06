@@ -275,6 +275,23 @@ export interface TargetClassificationProjectionRecord {
   readonly revision: string;
 }
 
+export interface TargetClassificationProjectionPreviewExample {
+  readonly sourceProductId: EntityId;
+  readonly sourceKey: string;
+  readonly title: string | null;
+  readonly sku: string | null;
+  readonly currentTerms: readonly string[];
+}
+
+export interface TargetClassificationProjectionPreview {
+  readonly observationCount: number;
+  readonly productCount: number;
+  readonly affectedSourceProductIds: readonly EntityId[];
+  readonly examples: readonly TargetClassificationProjectionPreviewExample[];
+  readonly duplicate: TargetClassificationProjectionRecord | null;
+  readonly cardinalityConflicts: readonly EntityId[];
+}
+
 export interface SaveTargetClassificationProjectionInput {
   readonly targetId: EntityId;
   readonly resolutionKind: ReferenceResolutionKind;
@@ -282,6 +299,17 @@ export interface SaveTargetClassificationProjectionInput {
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
   readonly actor: string;
+  readonly reason?: string;
+}
+
+export interface TargetClassificationProjectionCommand {
+  readonly targetId: EntityId;
+  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly actor: string;
+  readonly reason?: string;
 }
 
 export interface TargetRecord {

@@ -5,6 +5,9 @@ import type {
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
+  TargetClassificationProjectionCommand,
+  TargetClassificationProjectionPreview,
+  TargetClassificationProjectionRecord,
   CreateClassificationRuleInput,
   CreateClassificationRuleResult,
   SaveClassificationDecisionInput,
@@ -25,4 +28,21 @@ export interface ClassificationAdminRepository {
   getDecisionContext(key: ClassificationDecisionKey): Promise<ClassificationDecisionContext | null>;
   saveDecision(input: SaveClassificationDecisionInput): Promise<SaveClassificationDecisionResult>;
   createRule(input: CreateClassificationRuleInput): Promise<CreateClassificationRuleResult>;
+  listTargetProjections(
+    targetId: string,
+    resolutionKind: "mapping" | "rule",
+    resolutionId: string,
+  ): Promise<readonly TargetClassificationProjectionRecord[]>;
+  previewTargetProjection(input: TargetClassificationProjectionCommand): Promise<TargetClassificationProjectionPreview>;
+  createTargetProjection(input: TargetClassificationProjectionCommand): Promise<{
+    readonly projection: TargetClassificationProjectionRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }>;
+  deactivateTargetProjection(input: {
+    readonly targetId: string;
+    readonly projectionId: string;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly preview: TargetClassificationProjectionPreview; readonly affectedProductCount: number }>;
 }

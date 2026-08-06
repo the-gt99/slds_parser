@@ -58,6 +58,8 @@ interface ProductListQuery { readonly search?: string; readonly source?: string;
 interface SnapshotListQuery { readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
+interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
@@ -155,6 +157,27 @@ function ruleBody(value: unknown): ClassificationRuleDraft {
     referenceValueId: entityId(body.referenceValueId, "referenceValueId"),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
+}
+
+function projectionBody(value: unknown) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  const body = value as Record<string, unknown>;
+  const resolutionKind = requiredString(body.resolutionKind, "resolutionKind");
+  if (resolutionKind !== "mapping" && resolutionKind !== "rule") throw new HttpInputError("resolutionKind must be mapping or rule");
+  const parsedKind: "mapping" | "rule" = resolutionKind;
+  return {
+    targetId: entityId(body.targetId, "targetId"),
+    resolutionKind: parsedKind,
+    resolutionId: entityId(body.resolutionId, "resolutionId"),
+    targetScope: requiredString(body.targetScope, "targetScope"),
+    dictionaryValueId: entityId(body.dictionaryValueId, "dictionaryValueId"),
+    ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
+  };
+}
+
+function projectionReason(value: unknown): string | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return optionalString((value as Record<string, unknown>).reason);
 }
 
 function targetTermBody(targetId: string, value: unknown): CreateTargetTermCommand {
@@ -316,6 +339,39 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.post("/api/classifier/rules", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
     rule: await dependencies.classifier.createRule(ruleBody(request.body), actor(request)),
   }));
+
+  server.get<{ Querystring: ProjectionQuery }>("/api/classifier/projections", { preHandler: requireAdmin }, async (request) => {
+    const resolutionKind = requiredString(request.query.resolutionKind, "resolutionKind");
+    if (resolutionKind !== "mapping" && resolutionKind !== "rule") throw new HttpInputError("resolutionKind must be mapping or rule");
+    return {
+      items: await dependencies.classifier.listTargetProjections(
+        entityId(request.query.targetId, "targetId"),
+        resolutionKind,
+        entityId(request.query.resolutionId, "resolutionId"),
+      ),
+    };
+  });
+
+  server.post("/api/classifier/projections/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    preview: await dependencies.classifier.previewTargetProjection(projectionBody(request.body)),
+  }));
+
+  server.post("/api/classifier/projections", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
+    projection: await dependencies.classifier.createTargetProjection(projectionBody(request.body), actor(request)),
+  }));
+
+  server.post<{ Params: ProjectionParams }>(
+    "/api/targets/:targetId/classification-projections/:projectionId/deactivate",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      projection: await dependencies.classifier.deactivateTargetProjection(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.projectionId, "projectionId"),
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
 
   server.get("/api/targets", { preHandler: requireAdmin }, async () => ({
     items: await dependencies.targetDictionaries.listTargets(),

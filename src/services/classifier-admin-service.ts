@@ -12,7 +12,11 @@ import type {
   ClassificationRuleConditionRecord,
   ClassificationRuleRecord,
   SaveClassificationDecisionResult,
+  TargetClassificationProjectionCommand,
+  TargetDictionaryRepository,
+  TargetRecord,
 } from "../repositories/index.js";
+import type { TargetDictionaryProviderRegistry } from "../integrations/index.js";
 import {
   classificationRuleScore,
   compareClassificationRuleScore,
@@ -61,6 +65,15 @@ export interface ClassificationRulePreview {
   readonly affectedSourceProductIds: readonly EntityId[];
 }
 
+export interface ProjectionCommand {
+  readonly targetId: EntityId;
+  readonly resolutionKind: "mapping" | "rule";
+  readonly resolutionId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly reason?: string;
+}
+
 function validateText(value: string, field: string, maximum: number): string {
   const trimmed = value.trim();
   if (trimmed === "" || trimmed.length > maximum) {
@@ -97,11 +110,25 @@ function validateRuleDraft(draft: ClassificationRuleDraft): void {
 }
 
 export class ClassifierAdminService {
+  private readonly targetDictionaries: TargetDictionaryRepository | undefined;
+  private readonly targetProviders: TargetDictionaryProviderRegistry | undefined;
+  private readonly actor: string;
+
   constructor(
     private readonly adminRepository: ClassificationAdminRepository,
     private readonly classificationRepository: ClassificationRepository,
-    private readonly actor = "admin-api",
-  ) {}
+    targetDictionariesOrActor?: TargetDictionaryRepository | string,
+    targetProviders?: TargetDictionaryProviderRegistry,
+    actor = "admin-api",
+  ) {
+    if (typeof targetDictionariesOrActor === "string") {
+      this.actor = targetDictionariesOrActor;
+      return;
+    }
+    this.targetDictionaries = targetDictionariesOrActor;
+    this.targetProviders = targetProviders;
+    this.actor = actor;
+  }
 
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]> {
     return this.adminRepository.listReviewQueue(query);
@@ -235,4 +262,103 @@ export class ClassifierAdminService {
   getDecisionContext(key: ClassificationDecisionKey) {
     return this.adminRepository.getDecisionContext(key);
   }
+
+  async listTargetProjections(targetId: EntityId, resolutionKind: "mapping" | "rule", resolutionId: EntityId) {
+    validateText(targetId, "targetId", 64);
+    validateText(resolutionId, "resolutionId", 64);
+    if (resolutionKind !== "mapping" && resolutionKind !== "rule") {
+      throw new IntegrationContractError("resolutionKind must be mapping or rule");
+    }
+    return this.adminRepository.listTargetProjections(targetId, resolutionKind, resolutionId);
+  }
+
+  async previewTargetProjection(command: ProjectionCommand) {
+    return this.adminRepository.previewTargetProjection(await this.validatedProjectionCommand(command, this.actor));
+  }
+
+  async createTargetProjection(command: ProjectionCommand, actor = this.actor) {
+    return this.adminRepository.createTargetProjection(await this.validatedProjectionCommand(command, actor));
+  }
+
+  async deactivateTargetProjection(targetId: EntityId, projectionId: EntityId, actor = this.actor, reason?: string) {
+    this.requireProjectionDependencies();
+    validateText(targetId, "targetId", 64);
+    validateText(projectionId, "projectionId", 64);
+    return this.adminRepository.deactivateTargetProjection({
+      targetId,
+      projectionId,
+      actor,
+      ...(reason === undefined ? {} : { reason }),
+    });
+  }
+
+  private async validatedProjectionCommand(command: ProjectionCommand, actor: string): Promise<TargetClassificationProjectionCommand> {
+    this.requireProjectionDependencies();
+    validateText(command.targetId, "targetId", 64);
+    validateText(command.resolutionId, "resolutionId", 64);
+    validateText(command.targetScope, "targetScope", 200);
+    validateText(command.dictionaryValueId, "dictionaryValueId", 64);
+    if (command.resolutionKind !== "mapping" && command.resolutionKind !== "rule") {
+      throw new IntegrationContractError("resolutionKind must be mapping or rule");
+    }
+    const target = await this.target(command.targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const scopes = capabilitiesForTarget(target, provider.classificationCapabilities);
+    const capability = scopes.find((item) => item.targetScope === command.targetScope);
+    if (capability === undefined) {
+      throw new IntegrationContractError(`Target scope is not supported: ${command.targetScope}`);
+    }
+    const dictionary = await this.targetDictionaries!.getValue(command.targetId, command.dictionaryValueId);
+    if (dictionary === null) {
+      throw new IntegrationContractError("Target dictionary value does not exist or is inactive");
+    }
+    if (dictionary.entityType !== capability.entityType) {
+      throw new IntegrationContractError(`Dictionary value ${dictionary.entityType} cannot be used for ${command.targetScope}`);
+    }
+    return {
+      targetId: command.targetId,
+      resolutionKind: command.resolutionKind,
+      resolutionId: command.resolutionId,
+      targetScope: command.targetScope,
+      dictionaryValueId: command.dictionaryValueId,
+      actor,
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
+    };
+  }
+
+  private requireProjectionDependencies(): void {
+    if (this.targetDictionaries === undefined || this.targetProviders === undefined) {
+      throw new IntegrationContractError("Target projection management is not configured");
+    }
+  }
+
+  private async target(targetId: EntityId): Promise<TargetRecord> {
+    const target = (await this.targetDictionaries!.listTargets()).find((item) => item.id === targetId);
+    if (target === undefined) throw new IntegrationContractError(`Target does not exist: ${targetId}`);
+    return target;
+  }
+}
+
+function providerCode(config: Record<string, unknown>, exporterCode: string): string {
+  const configured = config.dictionaryProviderCode;
+  return typeof configured === "string" && configured.trim() !== "" ? configured.trim() : exporterCode;
+}
+
+function stringMap(value: unknown): Readonly<Record<string, string>> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) =>
+    typeof entry === "string" && entry.trim() !== "" ? [[key, entry.trim()]] : []));
+}
+
+function capabilitiesForTarget(
+  target: TargetRecord,
+  capabilities: readonly { readonly typeCode: string; readonly entityType: string; readonly targetScope: string; readonly cardinality: "single" | "multiple" }[],
+) {
+  const entityOverrides = stringMap(target.config.dictionaryEntityMap);
+  const scopeOverrides = stringMap(target.config.targetScopeMap);
+  return capabilities.map((capability) => ({
+    ...capability,
+    entityType: entityOverrides[capability.typeCode] ?? capability.entityType,
+    targetScope: scopeOverrides[capability.targetScope] ?? capability.targetScope,
+  }));
 }

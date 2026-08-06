@@ -65,6 +65,18 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
     });
   }
 
+  async getValue(targetId: string, valueId: string): Promise<TargetDictionaryValueRecord | null> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT *
+         FROM target_dictionary_values
+         WHERE target_id = $1 AND id = $2 AND active = TRUE`,
+        [targetId, valueId],
+      );
+      return result.rows[0] === undefined ? null : mapDictionaryValue(result.rows[0]);
+    });
+  }
+
   async listValues(query: TargetDictionaryQuery): Promise<readonly TargetDictionaryValueRecord[]> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(

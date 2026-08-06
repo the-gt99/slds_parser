@@ -9,6 +9,7 @@ import type {
 
 export interface TargetDictionaryRepository {
   listTargets(): Promise<readonly TargetRecord[]>;
+  getValue(targetId: EntityId, valueId: EntityId): Promise<TargetDictionaryValueRecord | null>;
   listValues(query: TargetDictionaryQuery): Promise<readonly TargetDictionaryValueRecord[]>;
   replaceEntityValues(
     targetId: EntityId,

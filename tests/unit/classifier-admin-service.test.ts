@@ -7,6 +7,8 @@ import type {
   ClassificationRuleRecord,
 } from "../../src/repositories/index.js";
 import { ClassifierAdminService } from "../../src/services/index.js";
+import { TargetDictionaryProviderRegistry, type TargetDictionaryProvider } from "../../src/integrations/index.js";
+import type { TargetDictionaryRepository } from "../../src/repositories/index.js";
 
 function candidate(
   id: string,
@@ -44,6 +46,10 @@ function repositories(
     getDecisionContext: vi.fn(),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "1", referenceValueId: "2", revision: "1", affectedProductCount: 1, affectedExportCount: 0 }),
     createRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "1", affectedProductCount: 1 }),
+    listTargetProjections: vi.fn(),
+    previewTargetProjection: vi.fn(),
+    createTargetProjection: vi.fn(),
+    deactivateTargetProjection: vi.fn(),
   } satisfies ClassificationAdminRepository;
   const classification = {
     listReferenceTypes: vi.fn(),
@@ -140,5 +146,74 @@ describe("ClassifierAdminService", () => {
       generatedReferenceCode: expect.stringMatching(/^ref-[0-9a-f-]+$/u),
       actor: "admin-api",
     }));
+  });
+
+  it("validates and creates a cross-type target projection through the audited repository flow", async () => {
+    const deps = repositories([]);
+    const provider: TargetDictionaryProvider = {
+      code: "wordpress",
+      supportedEntityTypes: ["tags", "activities"],
+      creatableEntityTypes: [],
+      classificationCapabilities: [
+        { typeCode: "tag", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
+        { typeCode: "activity", entityType: "activities", targetScope: "product.activity", cardinality: "multiple" },
+      ],
+      fetchPage: vi.fn(),
+      createTerm: vi.fn(),
+    };
+    const providers = new TargetDictionaryProviderRegistry();
+    providers.register(provider);
+    const targets: TargetDictionaryRepository = {
+      listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
+      getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "tags", externalId: "777", name: "Кроссовки для бега", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
+      listValues: vi.fn(),
+      replaceEntityValues: vi.fn(),
+      upsertValue: vi.fn(),
+      startTermCreation: vi.fn(),
+      completeTermCreation: vi.fn(),
+      failTermCreation: vi.fn(),
+    };
+    deps.admin.createTargetProjection.mockResolvedValue({
+      projection: { id: "1", targetId: "10", resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "88", externalValue: "777", externalLabel: "Кроссовки для бега", metadata: {}, revision: "1" },
+      preview: { observationCount: 18, productCount: 18, affectedSourceProductIds: ["1"], examples: [], duplicate: null, cardinalityConflicts: [] },
+      affectedProductCount: 1,
+    });
+    const service = new ClassifierAdminService(deps.admin, deps.classification, targets, providers);
+
+    await service.createTargetProjection({ targetId: "10", resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "88" }, "admin");
+
+    expect(deps.admin.createTargetProjection).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      resolutionKind: "mapping",
+      targetScope: "product.tag",
+      dictionaryValueId: "88",
+      actor: "admin",
+    }));
+  });
+
+  it("rejects a WordPress activity term when projection scope is product.tag", async () => {
+    const deps = repositories([]);
+    const provider: TargetDictionaryProvider = {
+      code: "wordpress",
+      supportedEntityTypes: ["tags", "activities"],
+      creatableEntityTypes: [],
+      classificationCapabilities: [
+        { typeCode: "tag", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
+        { typeCode: "activity", entityType: "activities", targetScope: "product.activity", cardinality: "multiple" },
+      ],
+      fetchPage: vi.fn(),
+      createTerm: vi.fn(),
+    };
+    const providers = new TargetDictionaryProviderRegistry();
+    providers.register(provider);
+    const targets = {
+      listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
+      getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "activities", externalId: "777", name: "Бег", slug: null, parentExternalId: null, taxonomy: "pa_vid", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
+    } as unknown as TargetDictionaryRepository;
+    const service = new ClassifierAdminService(deps.admin, deps.classification, targets, providers);
+
+    await expect(service.previewTargetProjection({ targetId: "10", resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "88" }))
+      .rejects.toThrow("cannot be used");
+    expect(deps.admin.previewTargetProjection).not.toHaveBeenCalled();
   });
 });

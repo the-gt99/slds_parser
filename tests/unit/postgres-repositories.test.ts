@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   PostgresClassificationRepository,
+  PostgresClassificationAdminRepository,
   PostgresJobRepository,
   PostgresProductAdminRepository,
   PostgresReferenceRepository,
@@ -147,6 +148,27 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(projections[0]).toMatchObject({ resolutionKind: "mapping", resolutionId: "21", externalValue: "892" });
     expect(executor.calls[0]?.text).toContain("JSONB_TO_RECORDSET");
     expect(executor.calls[0]?.values[1]).toContain('"resolution_kind":"mapping"');
+  });
+
+  it("previews rule projections through observation rule_id columns", async () => {
+    const executor = new FakeExecutor([
+      [{ id: "21" }],
+      [],
+      [{ observation_count: 0, product_count: 0, source_product_ids: [] }],
+      [],
+      [],
+    ]);
+    await new PostgresClassificationAdminRepository(pool(executor)).previewTargetProjection({
+      targetId: "7",
+      resolutionKind: "rule",
+      resolutionId: "21",
+      targetScope: "product.tag",
+      dictionaryValueId: "61",
+      actor: "test",
+    });
+    const sql = executor.calls.map((call) => call.text).join("\n");
+    expect(sql).toContain("observation.rule_id = $2");
+    expect(sql).not.toContain("observation.resolution_kind");
   });
 
   it("saves a target snapshot and links the observed target product atomically", async () => {

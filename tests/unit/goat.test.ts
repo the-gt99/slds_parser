@@ -67,7 +67,7 @@ describe("GOAT adapter and processor", () => {
     expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available", quantity: 1 }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:brand", typeCode: "brand", sourceValue: "Example Brand" }),
-      expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "apparel" }),
+      expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "tops" }),
       expect.objectContaining({ key: "product:color", typeCode: "color", sourceValue: "blue" }),
     ]));
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
@@ -107,11 +107,16 @@ describe("GOAT adapter and processor", () => {
       category: ["sneakers", "ignored"],
       details: "Leather details",
       upperMaterial: "Mesh",
+      composition: "Synthetic",
+      ageGroups: ["adult"],
       midsole: "Foam",
       technologies: [{ name: "Foam" }, { label: "Zoom Air" }],
+      activity: "Training",
+      activities: ["Running", { name: "Running" }],
       activitiesList: [{ name: "Running" }],
       tags: ["Limited", { value: "Performance" }],
       season: "2026",
+      designer: "Jane Designer",
     } satisfies JsonObject;
     const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: { route: "sneakers" } }, parts: [
       { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
@@ -130,23 +135,90 @@ describe("GOAT adapter and processor", () => {
         details: "Leather details",
         upperMaterial: "Mesh",
         midsole: "Foam",
+        composition: "Synthetic",
+        ageGroups: ["adult"],
       },
     });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
-      expect.objectContaining({ key: "product:category", typeCode: "category", context: { route: "sneakers", productCategory: "apparel", productType: "tops", audience: "men" } }),
+      expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "tops", context: { route: "sneakers", productCategory: "apparel", productType: "tops", audience: "men", ageGroups: "adult" } }),
+      expect.objectContaining({ key: "product:merchandising-category", typeCode: "merchandising_category", scope: "product.merchandising_category", sourceValue: "sneakers" }),
       expect.objectContaining({ key: "product:tag:technology:0", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Foam" }),
       expect.objectContaining({ key: "product:tag:technology:1", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Zoom Air" }),
-      expect.objectContaining({ key: "product:activity:0", typeCode: "activity", scope: "product.activity", sourceValue: "Running" }),
+      expect.objectContaining({ key: "product:activity:0", typeCode: "activity", scope: "product.activity", sourceValue: "Training" }),
+      expect.objectContaining({ key: "product:activity:1", typeCode: "activity", scope: "product.activity", sourceValue: "Running" }),
       expect.objectContaining({ key: "product:tag:source:0", typeCode: "tag", scope: "product.tag.source", sourceValue: "Limited" }),
       expect.objectContaining({ key: "product:tag:source:1", typeCode: "tag", scope: "product.tag.source", sourceValue: "Performance" }),
     ]));
+    expect(product.referenceCandidates.find((candidate) => candidate.key === "product:category")?.evidence).toMatchObject({
+      taxonomy: { taxonomyLevel1: "Apparel", taxonomyLevel2: "Tops" },
+      ageGroups: ["adult"],
+      composition: "Synthetic",
+    });
     expect(product.referenceCandidates.some((candidate) => candidate.scope === "product.tag.activity")).toBe(false);
+    expect(product.referenceCandidates.some((candidate) => candidate.typeCode === "brand" && candidate.sourceValue === "Jane Designer")).toBe(false);
     expect(product.referenceCandidates.filter((candidate) => candidate.scope === "product.tag.technology" && candidate.sourceValue === "Foam")).toHaveLength(1);
     expect(product.metadata).toMatchObject({ route: "sneakers" });
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
       expect.arrayContaining(["product_family", "gender", "season"]),
     );
+  });
+  it("keeps GOAT categoryRaw as merchandising only and does not synthesize activity", async () => {
+    const processor = new GoatSourceProcessor();
+    const productPayload = {
+      ...(jsonFixture("product.json") as JsonObject),
+      category: ["Running"],
+      productCategory: "shoes",
+      productType: "sneakers",
+      singleGender: "men",
+    } satisfies JsonObject;
+    const context = { source: source(), sourceProduct: { id: "855174", sourceId: "1", sourceKey: "under-armour-hovr-phantom-2", metadata: { route: "sneakers" } }, parts: [
+      { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+      { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+    ] } satisfies ProcessingContext;
+    const product = await processor.process(context);
+    expect(product.referenceCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "product:category", typeCode: "category", scope: "product.category", sourceValue: "sneakers", context: expect.objectContaining({ audience: "men" }) }),
+      expect.objectContaining({ key: "product:merchandising-category", typeCode: "merchandising_category", scope: "product.merchandising_category", sourceValue: "Running" }),
+    ]));
+    expect(product.referenceCandidates.some((candidate) => candidate.typeCode === "category" && candidate.sourceValue === "Running")).toBe(false);
+    expect(product.referenceCandidates.some((candidate) => candidate.typeCode === "activity")).toBe(false);
+  });
+  it("reads activity from strings, arrays and named objects with deduplication", async () => {
+    const processor = new GoatSourceProcessor();
+    const productPayload = {
+      ...(jsonFixture("product.json") as JsonObject),
+      activity: "Running",
+      activities: ["Running", "Basketball"],
+      activitiesList: [{ label: "Basketball" }, { value: "Training" }, { title: "training" }],
+    } satisfies JsonObject;
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "activity-test", metadata: {} }, parts: [
+      { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+      { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+    ] } satisfies ProcessingContext;
+    const product = await processor.process(context);
+    expect(product.referenceCandidates
+      .filter((candidate) => candidate.typeCode === "activity")
+      .map((candidate) => candidate.sourceValue)).toEqual(["Running", "Basketball", "Training"]);
+  });
+  it("keeps Pegasus and Surge model candidates contextual instead of family-only global values", async () => {
+    const processor = new GoatSourceProcessor();
+    const productPayload = {
+      ...(jsonFixture("product.json") as JsonObject),
+      brandName: "Nike",
+      name: "Nike Air Zoom Pegasus 40 'Black'",
+      color: "Black",
+      silhouette: "Pegasus",
+    } satisfies JsonObject;
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "pegasus", metadata: {} }, parts: [
+      { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+      { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+    ] } satisfies ProcessingContext;
+    const product = await processor.process(context);
+    expect(product.referenceCandidates.find((candidate) => candidate.key === "product:model")).toMatchObject({
+      sourceValue: "Nike Air Zoom Pegasus 40",
+      context: { brand: "Nike", family: "Pegasus" },
+    });
   });
   it("groups GOAT colorways by a stable model value without merging different models from one family", async () => {
     const processor = new GoatSourceProcessor();

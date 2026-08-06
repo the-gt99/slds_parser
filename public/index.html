@@ -138,6 +138,34 @@
               </div>
             </div>
           </section>
+
+          <section id="projection-section" class="section projection-section" hidden>
+            <div class="section-title mapping-title">
+              <div>
+                <p class="eyebrow">WordPress</p>
+                <h3>Дополнительные выходы</h3>
+              </div>
+              <span id="projection-origin" class="count-pill"></span>
+            </div>
+            <div id="projection-list" class="projection-list"></div>
+            <div class="projection-controls">
+              <label class="field">
+                <span>Taxonomy / scope</span>
+                <select id="projection-scope"></select>
+              </label>
+              <label class="field">
+                <span>Термин WordPress</span>
+                <input id="projection-search" type="search" placeholder="Поиск без ограничения исходного типа">
+              </label>
+            </div>
+            <div id="projection-results" class="mapping-results"></div>
+            <div id="projection-preview" class="rule-preview" hidden></div>
+            <p id="projection-error" class="form-error" hidden></p>
+            <div class="decision-actions">
+              <button id="preview-projection" class="button secondary" type="button" disabled>Проверить projection</button>
+              <button id="create-projection" class="button primary" type="button" disabled>Добавить projection</button>
+            </div>
+          </section>
         </div>
       </section>
     </main>

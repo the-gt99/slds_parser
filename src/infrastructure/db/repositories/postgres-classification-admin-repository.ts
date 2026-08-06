@@ -13,9 +13,12 @@ import type {
   CreateClassificationRuleResult,
   SaveClassificationDecisionInput,
   SaveClassificationDecisionResult,
+  TargetClassificationProjectionCommand,
+  TargetClassificationProjectionPreview,
+  TargetClassificationProjectionRecord,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
-import type { DatabaseRow } from "./row-mappers.js";
+import { mapTargetClassificationProjection, type DatabaseRow } from "./row-mappers.js";
 
 function timestamp(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
@@ -29,6 +32,10 @@ function jsonObject(value: unknown): JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as JsonObject
     : {};
+}
+
+function stringArray(value: unknown): readonly string[] {
+  return Array.isArray(value) ? value.flatMap((item) => typeof item === "string" ? [item] : []) : [];
 }
 
 function reviewExamples(value: unknown): readonly ClassificationReviewExample[] {
@@ -346,6 +353,157 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
+  async listTargetProjections(
+    targetId: string,
+    resolutionKind: "mapping" | "rule",
+    resolutionId: string,
+  ): Promise<readonly TargetClassificationProjectionRecord[]> {
+    return withClient(this.pool, async (client) => {
+      const column = resolutionKind === "mapping" ? "mapping_id" : "rule_id";
+      const result = await client.query<DatabaseRow>(
+        `SELECT projection.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+         FROM target_classification_projections projection
+         JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+         WHERE projection.target_id = $1
+           AND projection.${column} = $2
+           AND projection.active = TRUE
+           AND dictionary.active = TRUE
+         ORDER BY projection.target_scope, dictionary.name, projection.id`,
+        [targetId, resolutionId],
+      );
+      return result.rows.map(mapTargetClassificationProjection);
+    });
+  }
+
+  async previewTargetProjection(input: TargetClassificationProjectionCommand): Promise<TargetClassificationProjectionPreview> {
+    return withClient(this.pool, (client) => this.previewTargetProjectionWithClient(client, input));
+  }
+
+  async createTargetProjection(input: TargetClassificationProjectionCommand): Promise<{
+    readonly projection: TargetClassificationProjectionRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const preview = await this.previewTargetProjectionWithClient(client, input);
+        const column = input.resolutionKind === "mapping" ? "mapping_id" : "rule_id";
+        const table = input.resolutionKind === "mapping" ? "source_reference_mappings" : "source_reference_rules";
+        const predicate = input.resolutionKind === "mapping" ? "mapping_id IS NOT NULL" : "rule_id IS NOT NULL";
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_classification_projections
+           WHERE target_id = $1 AND ${column} = $2 AND target_scope = $3 AND dictionary_value_id = $4
+           FOR UPDATE`,
+          [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId],
+        );
+        const previous = previousResult.rows[0];
+        const result = await client.query<DatabaseRow>(
+          `WITH selected_resolution AS (
+             SELECT id FROM ${table} WHERE id = $2
+           ), selected_dictionary AS (
+             SELECT id FROM target_dictionary_values
+             WHERE id = $4 AND target_id = $1 AND active = TRUE
+           ), saved AS (
+             INSERT INTO target_classification_projections (
+               target_id, ${column}, target_scope, dictionary_value_id,
+               metadata, active, revision, created_by
+             )
+             SELECT $1, selected_resolution.id, $3, selected_dictionary.id,
+                    '{}'::JSONB, TRUE, 1, $5
+             FROM selected_resolution CROSS JOIN selected_dictionary
+             ON CONFLICT (target_id, ${column}, target_scope, dictionary_value_id)
+               WHERE ${predicate}
+             DO UPDATE SET active = TRUE,
+               revision = CASE WHEN target_classification_projections.active THEN target_classification_projections.revision ELSE target_classification_projections.revision + 1 END,
+               updated_at = NOW()
+             RETURNING *
+           )
+           SELECT saved.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+           FROM saved
+           JOIN target_dictionary_values dictionary ON dictionary.id = saved.dictionary_value_id`,
+          [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId, input.actor],
+        );
+        const row = result.rows[0];
+        if (row === undefined) throw new EntityNotFoundError("Target projection resolution or dictionary value", `${input.resolutionKind}/${input.resolutionId}/${input.dictionaryValueId}`);
+        const projection = mapTargetClassificationProjection(row);
+        const changed = previous === undefined || previous.active !== true;
+        if (changed) {
+          await client.query(
+            `INSERT INTO target_classification_projection_history (
+               projection_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+            [
+              projection.id,
+              previous === undefined ? "create" : "reactivate",
+              previous === undefined ? null : JSON.stringify(previous),
+              JSON.stringify(row),
+              input.actor,
+              input.reason ?? null,
+            ],
+          );
+        }
+        const affectedProductCount = changed ? await enqueueProducts(client, preview.affectedSourceProductIds) : 0;
+        await client.query("COMMIT");
+        return { projection, preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async deactivateTargetProjection(input: {
+    readonly targetId: string;
+    readonly projectionId: string;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly preview: TargetClassificationProjectionPreview; readonly affectedProductCount: number }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const projectionResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_classification_projections
+           WHERE id = $1 AND target_id = $2 AND active = TRUE
+           FOR UPDATE`,
+          [input.projectionId, input.targetId],
+        );
+        const previous = projectionResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Target projection", input.projectionId);
+        const resolutionKind = previous.mapping_id === null || previous.mapping_id === undefined ? "rule" : "mapping";
+        const resolutionId = String(resolutionKind === "mapping" ? previous.mapping_id : previous.rule_id);
+        const preview = await this.previewTargetProjectionWithClient(client, {
+          targetId: input.targetId,
+          resolutionKind,
+          resolutionId,
+          targetScope: String(previous.target_scope),
+          dictionaryValueId: String(previous.dictionary_value_id),
+          actor: input.actor,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        });
+        const deactivated = await client.query<DatabaseRow>(
+          `UPDATE target_classification_projections
+           SET active = FALSE, revision = revision + 1, updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [input.projectionId],
+        );
+        await client.query(
+          `INSERT INTO target_classification_projection_history (
+             projection_id, action, previous_value, new_value, actor, reason
+           ) VALUES ($1, 'deactivate', $2::JSONB, $3::JSONB, $4, $5)`,
+          [input.projectionId, JSON.stringify(previous), JSON.stringify(deactivated.rows[0]), input.actor, input.reason ?? null],
+        );
+        const affectedProductCount = await enqueueProducts(client, preview.affectedSourceProductIds);
+        await client.query("COMMIT");
+        return { preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   async saveDecision(input: SaveClassificationDecisionInput): Promise<SaveClassificationDecisionResult> {
     return withClient(this.pool, async (client) => {
       await client.query("BEGIN");
@@ -660,5 +818,125 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       );
     }
     return !unchanged;
+  }
+
+  private async previewTargetProjectionWithClient(
+    client: SqlClient,
+    input: TargetClassificationProjectionCommand,
+  ): Promise<TargetClassificationProjectionPreview> {
+    const resolutionColumn = input.resolutionKind === "mapping" ? "mapping_id" : "rule_id";
+    const resolutionTable = input.resolutionKind === "mapping" ? "source_reference_mappings" : "source_reference_rules";
+    const resolutionFilter = input.resolutionKind === "mapping"
+      ? "observation.mapping_id = $2"
+      : "observation.rule_id = $2";
+    const resolutionResult = await client.query<DatabaseRow>(
+      `SELECT id FROM ${resolutionTable} WHERE id = $1`,
+      [input.resolutionId],
+    );
+    if (resolutionResult.rows[0] === undefined) {
+      throw new EntityNotFoundError("Classification resolution", `${input.resolutionKind}/${input.resolutionId}`);
+    }
+
+    const duplicateResult = await client.query<DatabaseRow>(
+      `SELECT projection.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+       FROM target_classification_projections projection
+       JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+       WHERE projection.target_id = $1
+         AND projection.${resolutionColumn} = $2
+         AND projection.target_scope = $3
+         AND projection.dictionary_value_id = $4
+         AND projection.active = TRUE
+       LIMIT 1`,
+      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId],
+    );
+
+    const stats = await client.query<DatabaseRow>(
+      `WITH affected AS (
+         SELECT DISTINCT observation.id AS observation_id, observation.source_product_id
+         FROM source_reference_observations observation
+         WHERE observation.active = TRUE
+           AND observation.status = 'resolved'
+           AND ${resolutionFilter}
+       )
+       SELECT COUNT(*)::INTEGER AS observation_count,
+              COUNT(DISTINCT source_product_id)::INTEGER AS product_count,
+              COALESCE(JSONB_AGG(DISTINCT source_product_id::TEXT), '[]'::JSONB) AS source_product_ids
+       FROM affected`,
+      [input.targetId, input.resolutionId],
+    );
+    const sourceProductIds = stringArray(stats.rows[0]?.source_product_ids);
+
+    const examplesResult = await client.query<DatabaseRow>(
+      `WITH affected AS (
+         SELECT DISTINCT observation.source_product_id
+         FROM source_reference_observations observation
+         WHERE observation.active = TRUE
+           AND observation.status = 'resolved'
+           AND ${resolutionFilter}
+       )
+       SELECT product.id AS source_product_id,
+              product.source_key,
+              internal.data->>'title' AS title,
+              internal.data->>'sku' AS sku,
+              COALESCE((
+                SELECT JSONB_AGG(DISTINCT term->>'name')
+                FROM target_product_snapshots snapshot,
+                     JSONB_ARRAY_ELEMENTS(COALESCE(snapshot.payload->'product'->'taxonomies'->taxonomy.name, '[]'::JSONB)) AS term
+                WHERE snapshot.target_id = $1
+                  AND snapshot.source_product_id = product.id
+                  AND term ? 'name'
+              ), '[]'::JSONB) AS current_terms
+       FROM affected
+       JOIN source_products product ON product.id = affected.source_product_id
+       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+       CROSS JOIN LATERAL (
+         SELECT CASE $3
+           WHEN 'product.brand' THEN 'pa_brand'
+           WHEN 'product.model' THEN 'pa_model'
+           WHEN 'product.category' THEN 'product_cat'
+           WHEN 'product.tag' THEN 'product_tag'
+           WHEN 'product.color' THEN 'pa_tsvet'
+           WHEN 'product.material' THEN 'pa_material'
+           WHEN 'product.activity' THEN 'pa_vid'
+           WHEN 'product.shoe_height' THEN 'pa_shoe_height'
+           WHEN 'product.season' THEN 'pa_season'
+           ELSE ''
+         END AS name
+       ) taxonomy
+       ORDER BY product.id
+       LIMIT 10`,
+      [input.targetId, input.resolutionId, input.targetScope],
+    );
+
+    const conflictResult = await client.query<DatabaseRow>(
+      `SELECT DISTINCT observation.source_product_id
+       FROM source_reference_observations observation
+       JOIN target_classification_projections projection
+         ON projection.target_id = $1
+        AND projection.${resolutionColumn} = $2
+        AND projection.target_scope = $3
+        AND projection.dictionary_value_id <> $4
+        AND projection.active = TRUE
+       WHERE observation.active = TRUE
+         AND observation.status = 'resolved'
+         AND ${resolutionFilter}
+       LIMIT 100`,
+      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId],
+    );
+
+    return {
+      observationCount: Number(stats.rows[0]?.observation_count ?? 0),
+      productCount: Number(stats.rows[0]?.product_count ?? 0),
+      affectedSourceProductIds: sourceProductIds,
+      examples: examplesResult.rows.map((row) => ({
+        sourceProductId: String(row.source_product_id),
+        sourceKey: String(row.source_key),
+        title: nullableText(row.title),
+        sku: nullableText(row.sku),
+        currentTerms: stringArray(row.current_terms),
+      })),
+      duplicate: duplicateResult.rows[0] === undefined ? null : mapTargetClassificationProjection(duplicateResult.rows[0]),
+      cardinalityConflicts: conflictResult.rows.map((row) => String(row.source_product_id)),
+    };
   }
 }

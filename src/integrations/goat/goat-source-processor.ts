@@ -98,6 +98,10 @@ function facts(values: Readonly<Record<string, string>>): JsonObject {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
 }
 
+function textList(value: JsonValue | undefined): string[] {
+  return namedValues(value);
+}
+
 function namedValues(value: JsonValue | undefined): string[] {
   const entries = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
   const unique = new Map<string, string>();
@@ -165,7 +169,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.8.0";
+  readonly version = "2.9.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -183,20 +187,24 @@ export class GoatSourceProcessor implements SourceProcessor {
     const family = text(product.silhouette);
     const color = text(product.color);
     const gender = text(product.singleGender) || text(product.gender);
-    const categoryRaw = Array.isArray(product.category) ? text(product.category[0]) : text(product.productCategory);
+    const categoryRaw = Array.isArray(product.category) ? text(product.category[0]) : text(product.categoryRaw ?? product.category);
     const productCategory = text(product.productCategory);
     const productType = text(product.productType);
+    const route = text(context.sourceProduct.metadata.route);
+    const structuralCategory = productType || productCategory || route;
     const sizeType = text(product.sizeType);
     const sizeUnit = text(product.sizeUnit);
+    const ageGroups = textList(product.ageGroups);
+    const composition = text(product.composition);
     const normalizedAudience = audience(gender);
     const normalizedSizeSystem = sizeSystem(sizeType, sizeUnit);
-    const route = text(context.sourceProduct.metadata.route);
     const taxonomy: Record<string, JsonValue> = {};
     for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) {
       if (product[key] !== undefined) taxonomy[key] = product[key]!;
     }
     const productEvidence: JsonObject = {
-      ...facts({ title, brand, family, audience: gender, category: categoryRaw || productCategory, productCategory, productType, route }),
+      ...facts({ title, brand, family, audience: gender, productCategory, productType, route, composition }),
+      ...(ageGroups.length === 0 ? {} : { ageGroups }),
       ...(Object.keys(taxonomy).length === 0 ? {} : { taxonomy }),
     };
     const variantsBySize = new Map<string, VariantCandidate>();
@@ -204,7 +212,9 @@ export class GoatSourceProcessor implements SourceProcessor {
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", modelSourceValue(title, color),
       facts({ brand, family }), productEvidence));
-    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", categoryRaw || productCategory,
+    appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", structuralCategory,
+      facts({ route, productCategory, productType, audience: gender, ageGroups: ageGroups.join("|") }), productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:merchandising-category", "merchandising_category", "product.merchandising_category", categoryRaw,
       facts({ route, productCategory, productType, audience: gender }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:color", "color", "product.color", color, {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:material", "material", "product.material", text(product.upperMaterial), {}, productEvidence));
@@ -215,7 +225,11 @@ export class GoatSourceProcessor implements SourceProcessor {
     }
     technologies.forEach((value, index) => appendCandidate(referenceCandidates,
       candidate(`product:tag:technology:${index}`, "tag", "product.tag.technology", value, {}, productEvidence)));
-    const activities = namedValues(product.activitiesList ?? product.activities);
+    const activities = [...new Map([
+      ...namedValues(product.activity),
+      ...namedValues(product.activities),
+      ...namedValues(product.activitiesList),
+    ].map((value) => [value.toLocaleLowerCase("en-US"), value])).values()];
     activities.forEach((value, index) => appendCandidate(referenceCandidates,
       candidate(`product:activity:${index}`, "activity", "product.activity", value,
         facts({ productCategory, productType }), productEvidence)));
@@ -263,7 +277,7 @@ export class GoatSourceProcessor implements SourceProcessor {
       images: images(product.images, title), variants, referenceCandidates,
       attributes: { brand: product.brandName ?? product.brand ?? null, family, gender, color: product.color ?? null,
         story: product.story ?? product.description ?? null, details: product.details ?? null, upperMaterial: product.upperMaterial ?? null,
-        midsole: product.midsole ?? null, categoryRaw,
+        midsole: product.midsole ?? null, composition: product.composition ?? null, ageGroups, categoryRaw,
         productCategory: product.productCategory ?? null, productType: product.productType ?? null, taxonomy,
         season: product.season ?? null, releaseDate: product.releaseDate ?? null, status: product.status ?? null },
       metadata: { source: "goat", productId, slug: product.slug ?? context.sourceProduct.slug ?? null, route: route || null, countryCode,

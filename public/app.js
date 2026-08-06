@@ -10,8 +10,12 @@ const state = {
   mappingResults: [],
   selectedMapping: null,
   currentReferenceId: null,
+  currentResolution: null,
   resolved: false,
   rulePreview: null,
+  projectionResults: [],
+  selectedProjectionTerm: null,
+  projectionPreview: null,
   typeNames: new Map(),
 };
 
@@ -25,6 +29,7 @@ function typeName(itemOrCode) {
 let toastTimer;
 let queueSearchTimer;
 let mappingSearchTimer;
+let projectionSearchTimer;
 
 function showToast(message) {
   const toast = byId("toast");
@@ -233,6 +238,9 @@ function selectQueueItem(item) {
   state.selected = item;
   state.selectedMapping = null;
   state.currentReferenceId = null;
+  state.currentResolution = null;
+  state.selectedProjectionTerm = null;
+  state.projectionPreview = null;
   state.resolved = false;
   renderQueue();
   renderDetail();
@@ -264,6 +272,7 @@ function renderDetail() {
   byId("decision-success").hidden = !state.resolved;
   byId("ignore-button").disabled = state.resolved;
   updateMappingModeAvailability();
+  renderProjectionSection();
 }
 
 function contextSummary(context) {
@@ -338,6 +347,10 @@ function activeTarget() {
 function activeCapability(item = state.selected) {
   return activeTarget()?.dictionary?.classificationCapabilities
     ?.find((capability) => capability.typeCode === item?.typeCode) ?? null;
+}
+
+function allCapabilities() {
+  return activeTarget()?.dictionary?.classificationCapabilities ?? [];
 }
 
 function dictionaryEntity(item = state.selected) {
@@ -446,8 +459,10 @@ async function confirmDecision(action = "confirm") {
     }
     const response = await api("/api/classifier/decisions", { method: "POST", body });
     state.currentReferenceId = response.decision.referenceValueId;
+    state.currentResolution = { kind: "mapping", id: response.decision.mappingId };
     state.resolved = true;
     renderDetail();
+    await loadProjections();
     showToast(action === "ignore" ? "Значение будет игнорироваться." : "Сопоставление сохранено.");
   } catch (error) {
     showToast(error.message);
@@ -728,11 +743,228 @@ async function createRule(event) {
   button.disabled = true;
   try {
     const response = await api("/api/classifier/rules", { method: "POST", body: ruleDraft() });
+    state.currentResolution = { kind: "rule", id: response.rule.ruleId };
     byId("rule-dialog").close();
+    renderProjectionSection();
+    await loadProjections();
     showToast(`Правило создано. На обработку поставлено товаров: ${response.rule.affectedProductCount}.`);
   } catch (error) {
     showError(byId("rule-error"), error.message);
     button.disabled = false;
+  }
+}
+
+function renderProjectionSection() {
+  const section = byId("projection-section");
+  const target = activeTarget();
+  const resolution = state.currentResolution;
+  section.hidden = !target?.dictionary?.configured || !resolution;
+  if (section.hidden) return;
+  byId("projection-origin").textContent = `${resolution.kind} #${resolution.id}`;
+  const select = byId("projection-scope");
+  const current = select.value;
+  select.replaceChildren();
+  for (const capability of allCapabilities()) {
+    const label = `${capability.targetScope} · ${capability.entityType}`;
+    select.append(new Option(label, capability.targetScope));
+  }
+  if ([...select.options].some((option) => option.value === current)) select.value = current;
+  else select.value = targetScope();
+  byId("projection-search").value ||= state.selected?.sourceValue ?? "";
+  void loadProjectionResults();
+}
+
+function projectionEntity() {
+  const scope = byId("projection-scope").value;
+  return allCapabilities().find((capability) => capability.targetScope === scope)?.entityType ?? null;
+}
+
+async function loadProjections() {
+  const target = activeTarget();
+  const resolution = state.currentResolution;
+  const list = byId("projection-list");
+  if (!target || !resolution) return;
+  list.replaceChildren(loading("Загружаем projections…"));
+  try {
+    const params = new URLSearchParams({ targetId: target.id, resolutionKind: resolution.kind, resolutionId: resolution.id });
+    const response = await api(`/api/classifier/projections?${params}`);
+    renderProjectionList(response.items ?? []);
+  } catch (error) {
+    list.replaceChildren(emptyText(error.message));
+  }
+}
+
+function renderProjectionList(items) {
+  const list = byId("projection-list");
+  list.replaceChildren();
+  if (items.length === 0) {
+    list.append(emptyText("Активных projections нет."));
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "projection-row";
+    const text = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = item.externalLabel;
+    const small = document.createElement("span");
+    small.textContent = `${item.targetScope} · term #${item.externalValue} · projection`;
+    text.append(strong, small);
+    const button = document.createElement("button");
+    button.className = "button danger-quiet small-button";
+    button.type = "button";
+    button.textContent = "Отключить";
+    button.addEventListener("click", () => deactivateProjection(item.id));
+    row.append(text, button);
+    list.append(row);
+  }
+}
+
+async function loadProjectionResults() {
+  const target = activeTarget();
+  const entityType = projectionEntity();
+  const results = byId("projection-results");
+  state.selectedProjectionTerm = null;
+  state.projectionPreview = null;
+  byId("preview-projection").disabled = true;
+  byId("create-projection").disabled = true;
+  byId("projection-preview").hidden = true;
+  clearError(byId("projection-error"));
+  if (!target || !entityType || byId("projection-section").hidden) return;
+  results.replaceChildren(loading("Ищем термины…"));
+  try {
+    const params = new URLSearchParams({ entityType, search: byId("projection-search").value.trim(), limit: "100" });
+    const response = await api(`/api/targets/${target.id}/dictionary?${params}`);
+    state.projectionResults = response.items ?? [];
+    renderProjectionResults();
+  } catch (error) {
+    results.replaceChildren(emptyText(error.message));
+  }
+}
+
+function renderProjectionResults() {
+  const container = byId("projection-results");
+  container.replaceChildren();
+  if (state.projectionResults.length === 0) {
+    container.append(emptyText("Совпадений не найдено."));
+    return;
+  }
+  for (const result of state.projectionResults) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `mapping-result${state.selectedProjectionTerm?.id === result.id ? " selected" : ""}`;
+    const content = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = result.name;
+    const details = document.createElement("small");
+    details.textContent = [result.entityType, result.taxonomy, result.slug].filter(Boolean).join(" · ");
+    content.append(name, details);
+    const id = document.createElement("span");
+    id.className = "result-id";
+    id.textContent = `term #${result.externalId}`;
+    button.append(content, id);
+    button.addEventListener("click", () => {
+      state.selectedProjectionTerm = result;
+      state.projectionPreview = null;
+      byId("preview-projection").disabled = false;
+      byId("create-projection").disabled = true;
+      byId("projection-preview").hidden = true;
+      renderProjectionResults();
+    });
+    container.append(button);
+  }
+}
+
+function projectionBody() {
+  const target = activeTarget();
+  const resolution = state.currentResolution;
+  return {
+    targetId: target.id,
+    resolutionKind: resolution.kind,
+    resolutionId: resolution.id,
+    targetScope: byId("projection-scope").value,
+    dictionaryValueId: state.selectedProjectionTerm.id,
+  };
+}
+
+async function previewProjection() {
+  if (!state.selectedProjectionTerm || !state.currentResolution) return;
+  const button = byId("preview-projection");
+  button.disabled = true;
+  clearError(byId("projection-error"));
+  try {
+    const response = await api("/api/classifier/projections/preview", { method: "POST", body: projectionBody() });
+    state.projectionPreview = response.preview;
+    renderProjectionPreview(response.preview);
+    byId("create-projection").disabled = false;
+  } catch (error) {
+    showError(byId("projection-error"), error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderProjectionPreview(preview) {
+  const box = byId("projection-preview");
+  box.replaceChildren();
+  const stats = document.createElement("div");
+  stats.className = "preview-stats";
+  for (const [value, label] of [
+    [preview.observationCount, "observations"],
+    [preview.productCount, "товаров"],
+    [preview.duplicate ? 1 : 0, "дублей"],
+    [preview.cardinalityConflicts?.length ?? 0, "конфликтов"],
+  ]) {
+    const stat = document.createElement("div");
+    stat.className = "preview-stat";
+    const strong = document.createElement("strong");
+    strong.textContent = String(value);
+    const span = document.createElement("span");
+    span.textContent = label;
+    stat.append(strong, span);
+    stats.append(stat);
+  }
+  box.append(stats);
+  const examples = document.createElement("div");
+  examples.className = "preview-examples";
+  for (const item of preview.examples ?? []) {
+    const row = document.createElement("div");
+    row.className = "preview-example";
+    const title = document.createElement("span");
+    title.textContent = item.title || item.sourceKey;
+    const terms = document.createElement("span");
+    terms.textContent = item.currentTerms?.length ? item.currentTerms.join(" · ") : "нет в snapshot";
+    row.append(title, terms);
+    examples.append(row);
+  }
+  box.append(examples);
+  box.hidden = false;
+}
+
+async function createProjection() {
+  if (!state.projectionPreview || !state.selectedProjectionTerm) return;
+  const button = byId("create-projection");
+  button.disabled = true;
+  try {
+    const response = await api("/api/classifier/projections", { method: "POST", body: projectionBody() });
+    showToast(`Projection сохранена. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
+    await loadProjections();
+  } catch (error) {
+    showError(byId("projection-error"), error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deactivateProjection(projectionId) {
+  const target = activeTarget();
+  if (!target) return;
+  try {
+    const response = await api(`/api/targets/${target.id}/classification-projections/${projectionId}/deactivate`, { method: "POST", body: {} });
+    showToast(`Projection отключена. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
+    await loadProjections();
+  } catch (error) {
+    showToast(error.message);
   }
 }
 
@@ -770,6 +1002,13 @@ byId("mapping-search").addEventListener("input", () => {
   clearTimeout(mappingSearchTimer);
   mappingSearchTimer = setTimeout(loadMappingResults, 250);
 });
+byId("projection-scope").addEventListener("change", loadProjectionResults);
+byId("projection-search").addEventListener("input", () => {
+  clearTimeout(projectionSearchTimer);
+  projectionSearchTimer = setTimeout(loadProjectionResults, 250);
+});
+byId("preview-projection").addEventListener("click", previewProjection);
+byId("create-projection").addEventListener("click", createProjection);
 for (const tab of byId("mapping-tabs").querySelectorAll(".tab")) {
   tab.addEventListener("click", () => {
     if (tab.disabled) return;

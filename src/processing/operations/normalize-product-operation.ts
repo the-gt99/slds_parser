@@ -34,6 +34,7 @@ const PRODUCT_ATTRIBUTE_TEXT_FIELDS = [
   "details",
   "upperMaterial",
   "midsole",
+  "composition",
   "categoryRaw",
   "productCategory",
   "productType",

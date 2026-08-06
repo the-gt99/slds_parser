@@ -26,6 +26,7 @@ function setup() {
       id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
       config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     }]),
+    getValue: vi.fn(),
     listValues: vi.fn(),
     replaceEntityValues: vi.fn().mockResolvedValue(2),
     upsertValue: vi.fn().mockResolvedValue({
