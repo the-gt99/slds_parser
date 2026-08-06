@@ -395,7 +395,7 @@ Rep500 и cohort 2000 завершены. Не обрабатывать весь
 
 1. Следующая партия — `5000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
 2. Target оставить выключенным; collection держать на трёх lane, processing — на подтверждённых четырёх lane.
-3. Не повышать collection concurrency внутри рабочей партии. Если нужна проверка `collection=6/9/12`, делать отдельный малый smoke на 100–200 товаров с контролем 403/429/retry/proxy failures.
+3. Не повышать collection concurrency внутри смешанной рабочей партии. Изолированный collection-only smoke на 12 lane уже пройден успешно, но он не доказывает отсутствие конкуренции с image leases при одновременном processing.
 4. Новые уровни processing/image concurrency проверять отдельным forced smoke, не смешивая с репрезентативной выборкой.
 5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 5000 переходить к партиям 10000–20000 только при стабильных proxy/retry/error метриках.
 
@@ -442,6 +442,22 @@ Rep500:
 Четыре processing lane проверены на 100 уже собранных товарах с `force=true`, по 50 sneakers/apparel. Все шесть операций выполнялись заново: `100/100 completed`, retry/failures и export jobs отсутствуют. Полный wall time `190.327 с`, скорость `31.52 товара/мин`, среднее время attempt `7.485 с`, p95 `21.923 с`, максимум `23.243 с`. Выборка содержала 230 реальных изображений, четыре товара с `images: []` и 32 с `variants: []`. Во время нагрузки worker использовал около 280 MB RAM и 44% одного CPU.
 
 Proxy pool проверен на production с тремя реальными healthy/enabled прокси и тремя collection lane. В отдельном cohort из 12 товаров collection завершился `12/12`, processing `12/12`, attempts по одному, retry/failures и export jobs отсутствуют. Товары распределились между proxy IDs ровно `4/4/4`; у каждого товара parts `product` и `offers` содержат один и тот же `_transport.proxy.id`. После smoke активных jobs нет, target `slamdunk=false`, API/worker active, internal/external health `200`.
+
+### Collection-only concurrency smoke 6 августа 2026
+
+Parser commit `05742b6` (`Настроить параллельные сессии прокси`) добавил `GOAT_PROXY_CONCURRENCY_PER_PROXY` от 1 до 16. Каждый proxy/session slot использует отдельный cookie jar `.proxy-ID.session-N`; product и offers одной попытки остаются на одном slot. Для cohort CLI и `collect_product` payload добавлен явный `enqueueProcessing`; default остаётся `true`, а `GOAT_COHORT_ENQUEUE_PROCESSING=false` позволяет измерять только collection без downstream processing.
+
+Production smoke выполнен на трёх healthy proxy с `GOAT_PROXY_CONCURRENCY_PER_PROXY=4`, `WORKER_COLLECTION_CONCURRENCY=12`, выборкой `1000` ещё не собранных товаров (`500 sneakers`, `500 apparel`, seed `20260810`). Перед запуском старая processing-очередь была полностью завершена.
+
+- jobs `9078`–`10077`: `1000/1000 completed`, attempts ровно `1`, retry/failed и `last_error` отсутствуют;
+- wall time от создания первой job до завершения последней `380.835 с` (`6.35 мин`), средняя пропускная способность `157.55 товара/мин`;
+- старый показатель `25.49 товара/мин` нельзя считать строго сопоставимым: cohort 2000 выполнял collection одновременно с processing и image leases;
+- сохранено ровно `2000` parts: `1000 product` и `1000 offers`, пропущенных `_transport.proxy.id` нет;
+- у всех `1000/1000` товаров product и offers собраны через один proxy, расхождений `0`;
+- распределение collection по proxy IDs: `1 — 328`, `2 — 336`, `3 — 336`;
+- proxy failure counters не выросли: остались `2/1/3`; job-level retries не было;
+- `process_product` и `export_product` jobs для smoke не создавались;
+- после проверки production возвращён на `WORKER_COLLECTION_CONCURRENCY=3` и `GOAT_PROXY_CONCURRENCY_PER_PROXY=1`; active jobs `0`, target `slamdunk=false`, API/worker active, health `200`.
 
 ### 4. Cohort 2000 от 6 августа 2026
 
