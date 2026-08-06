@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ProductAdminService, ProxyAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -153,6 +153,41 @@ describe("HTTP server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain("SLDS · Прокси");
+    await server.close();
+  });
+
+  it("serves the runtime interface and protects runtime state", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const runtime = {
+      status: vi.fn().mockResolvedValue({
+        running: false,
+        startedAt: null,
+        stoppedAt: null,
+        workerId: "worker:admin",
+        settings: { processConcurrency: 2, collectionConcurrency: 3 },
+        queue: [],
+        logs: [],
+      }),
+      start: vi.fn().mockReturnValue({ processConcurrency: 2, collectionConcurrency: 3 }),
+    } as unknown as RuntimeAdminService;
+    const server = createHttpServer({ ...dependencies(database), runtime });
+
+    const page = await server.inject({ method: "GET", url: "/runtime" });
+    const unauthorized = await server.inject({ method: "GET", url: "/api/runtime" });
+    const authorized = await server.inject({ method: "GET", url: "/api/runtime", headers: { authorization: `Bearer ${adminToken}` } });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const forbidden = await server.inject({ method: "POST", url: "/api/runtime/start", headers: { cookie }, payload: {} });
+    const started = await server.inject({ method: "POST", url: "/api/runtime/start", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: {} });
+
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("/runtime");
+    expect(unauthorized.statusCode).toBe(401);
+    expect(authorized.statusCode).toBe(200);
+    expect(forbidden.statusCode).toBe(403);
+    expect(started.statusCode).toBe(200);
+    expect(runtime.status).toHaveBeenCalledOnce();
+    expect(runtime.start).toHaveBeenCalledOnce();
     await server.close();
   });
 

@@ -15,7 +15,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ClassifierAdminService, ProductAdminService, ProxyAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { ClassifierAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -24,6 +24,7 @@ function errorMessage(error: unknown): string {
 async function main(): Promise<void> {
   let pool: Pool | undefined;
   let server: FastifyInstance | undefined;
+  let runtime: RuntimeAdminService | undefined;
   let shuttingDown = false;
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
     console.info(`Received ${signal}, stopping API`);
 
     try {
+      if (runtime) await runtime.stop();
       if (server) await server.close();
       if (pool) await pool.end();
     } catch (error) {
@@ -82,7 +84,8 @@ async function main(): Promise<void> {
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
+    runtime = new RuntimeAdminService(pool, repositories);
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));
@@ -91,6 +94,7 @@ async function main(): Promise<void> {
     await server.listen(config);
   } catch (error) {
     for (const signal of signals) process.removeAllListeners(signal);
+    await Promise.allSettled([runtime?.stop()]);
     await Promise.allSettled([server?.close(), pool?.end()]);
     console.error(`Failed to start API: ${errorMessage(error)}`);
     process.exitCode = 1;

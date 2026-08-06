@@ -3,9 +3,11 @@ const mode = location.pathname.includes("operations")
   ? "operations"
   : location.pathname.includes("wordpress-snapshots")
     ? "snapshots"
-    : location.pathname.includes("classifier-config")
-      ? "classifierConfig"
-      : "products";
+    : location.pathname.includes("runtime")
+      ? "runtime"
+      : location.pathname.includes("classifier-config")
+        ? "classifierConfig"
+        : "products";
 
 const state = {
   session: null,
@@ -157,6 +159,71 @@ function renderSnapshots(items) {
     cell(tr, links);
     body.append(tr);
   }
+}
+
+function runtimeStatusLabel(value) {
+  return value ? "Запущен" : "Остановлен";
+}
+
+function queueLabel(jobType) {
+  return ({
+    discover_source: "Discovery",
+    collect_product: "Сбор товаров",
+    process_product: "Обработка",
+    export_product: "Экспорт",
+  })[jobType] || jobType;
+}
+
+function renderRuntimeQueue(items) {
+  const queue = byId("runtime-queue");
+  queue.replaceChildren();
+  if (!items.length) {
+    queue.textContent = "В очереди нет активных или ошибочных задач.";
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "runtime-row";
+    row.append(textBlock(queueLabel(item.jobType), status(item.status)));
+    const count = document.createElement("strong");
+    count.textContent = item.count;
+    row.append(count);
+    queue.append(row);
+  }
+}
+
+function renderRuntimeLogs(items) {
+  const logs = byId("runtime-logs");
+  logs.replaceChildren();
+  if (!items.length) {
+    logs.textContent = "Событий пока нет.";
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = `runtime-log ${item.level}`;
+    const time = document.createElement("time");
+    time.textContent = date(item.at);
+    const message = document.createElement("span");
+    message.textContent = item.message;
+    row.append(time, message);
+    logs.append(row);
+  }
+}
+
+function renderRuntime(data) {
+  byId("runtime-status").textContent = runtimeStatusLabel(data.running);
+  byId("runtime-status").className = `badge ${data.running ? "status-running" : "status-failed"}`;
+  byId("runtime-worker").textContent = data.workerId;
+  byId("runtime-started").textContent = date(data.startedAt);
+  byId("runtime-stopped").textContent = date(data.stoppedAt);
+  byId("process-concurrency").value = data.settings.processConcurrency;
+  byId("collection-concurrency").value = data.settings.collectionConcurrency;
+  byId("runtime-start").disabled = data.running;
+  byId("runtime-stop").disabled = !data.running;
+  byId("runtime-save-settings").disabled = data.running;
+  renderRuntimeQueue(data.queue || []);
+  renderRuntimeLogs(data.logs || []);
 }
 
 function configKind(value) {
@@ -952,6 +1019,7 @@ function configure() {
   const titles = {
     products: "Товары",
     operations: "Реестр операций",
+    runtime: "Парсер",
     snapshots: "Снимки WordPress",
     classifierConfig: "Настройки классификации",
   };
@@ -964,7 +1032,70 @@ function configure() {
       item.setAttribute("aria-current", "page");
     }
   }
-  if (mode === "operations") byId("filters").hidden = true;
+  if (mode === "operations" || mode === "runtime") byId("filters").hidden = true;
+  if (mode === "runtime") {
+    const runtime = document.createElement("section");
+    runtime.id = "runtime-panel";
+    runtime.className = "runtime-grid";
+    runtime.innerHTML = `
+      <section class="section runtime-card">
+        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Worker</h2></div><span id="runtime-status" class="badge">-</span></div>
+        <dl class="config-meta-grid">
+          <dt>Worker ID</dt><dd id="runtime-worker">-</dd>
+          <dt>Запущен</dt><dd id="runtime-started">-</dd>
+          <dt>Остановлен</dt><dd id="runtime-stopped">-</dd>
+        </dl>
+        <div class="runtime-actions">
+          <button id="runtime-start" class="button primary" type="button">Запустить worker</button>
+          <button id="runtime-stop" class="button danger-quiet" type="button">Остановить</button>
+          <button id="runtime-refresh" class="button quiet" type="button">Обновить</button>
+        </div>
+      </section>
+      <section class="section runtime-card">
+        <div class="section-title"><div><p class="eyebrow">Настройки</p><h2>Потоки</h2></div></div>
+        <label class="field"><span>Processing lanes</span><input id="process-concurrency" type="number" min="1" max="8"></label>
+        <label class="field"><span>Collection lanes</span><input id="collection-concurrency" type="number" min="1" max="16"></label>
+        <button id="runtime-save-settings" class="button secondary" type="button">Сохранить настройки</button>
+      </section>
+      <section class="section runtime-card">
+        <div class="section-title"><div><p class="eyebrow">GOAT</p><h2>Discovery</h2></div></div>
+        <label class="field"><span>Размер страницы</span><input id="discovery-batch-size" type="number" min="1" value="500"></label>
+        <label class="field"><span>Задержка запросов, мс</span><input id="discovery-delay" type="number" min="1" value="1000"></label>
+        <label class="confirm-check"><input id="discovery-enqueue-collection" type="checkbox"><span>После discovery сразу ставить товары на сбор. Для полного каталога включать только осознанно.</span></label>
+        <button id="runtime-discovery" class="button secondary" type="button">Поставить discovery</button>
+      </section>
+      <section class="section runtime-card runtime-wide">
+        <div class="section-title"><div><p class="eyebrow">Очередь</p><h2>Jobs</h2></div></div>
+        <div id="runtime-queue" class="runtime-list"></div>
+      </section>
+      <section class="section runtime-card runtime-wide">
+        <div class="section-title"><div><p class="eyebrow">Логи</p><h2>События API runtime</h2></div></div>
+        <div id="runtime-logs" class="runtime-logs"></div>
+      </section>
+    `;
+    byId("filters").after(runtime);
+    byId("runtime-start").addEventListener("click", async () => { await api("/api/runtime/start", { method: "POST", body: {} }); await load(); });
+    byId("runtime-stop").addEventListener("click", async () => { await api("/api/runtime/stop", { method: "POST", body: {} }); await load(); });
+    byId("runtime-refresh").addEventListener("click", load);
+    byId("runtime-save-settings").addEventListener("click", async () => {
+      await api("/api/runtime/settings", { method: "PATCH", body: {
+        processConcurrency: byId("process-concurrency").value,
+        collectionConcurrency: byId("collection-concurrency").value,
+      } });
+      await load();
+    });
+    byId("runtime-discovery").addEventListener("click", async () => {
+      const enqueueCollection = byId("discovery-enqueue-collection").checked;
+      if (enqueueCollection && !confirm("Discovery полного каталога с автоматическим сбором может поставить много collect_product jobs. Продолжить?")) return;
+      const result = await api("/api/runtime/goat/discovery", { method: "POST", body: {
+        discoveryBatchSize: byId("discovery-batch-size").value,
+        requestDelayMs: byId("discovery-delay").value,
+        enqueueCollection,
+      } });
+      alert(`Discovery job создан: ${result.item.job.id}`);
+      await load();
+    });
+  }
   if (mode === "snapshots") for (const id of ["source-filter", "stage-filter", "classification-filter", "target-filter"]) byId(id).hidden = true;
   if (mode === "classifierConfig") {
     byId("search").placeholder = "Исходное, внутреннее или WordPress-значение";
@@ -1040,6 +1171,8 @@ async function load() {
     let data;
     if (mode === "operations") {
       data = await api("/api/operations");
+    } else if (mode === "runtime") {
+      data = await api("/api/runtime");
     } else {
       const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) });
       const search = byId("search").value.trim();
@@ -1066,6 +1199,15 @@ async function load() {
     }
     const items = data.items || [];
     state.total = data.total ?? items.length;
+    if (mode === "runtime") {
+      renderRuntime(data);
+      byId("empty").hidden = true;
+      byId("table-section").hidden = true;
+      byId("page-info").textContent = "";
+      byId("prev").disabled = true;
+      byId("next").disabled = true;
+      return;
+    }
     if (mode === "products") renderProducts(items);
     else if (mode === "operations") renderOperations(items);
     else if (mode === "classifierConfig") renderConfig(items);

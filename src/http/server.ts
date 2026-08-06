@@ -17,6 +17,7 @@ import type {
   CreateTargetTermCommand,
   ProductAdminService,
   ProxyAdminService,
+  RuntimeAdminService,
   TargetDictionaryService,
   WordPressPreviewService,
 } from "../services/index.js";
@@ -34,6 +35,7 @@ export interface HttpServerDependencies {
   readonly targetDictionaries: TargetDictionaryService;
   readonly productAdmin: ProductAdminService;
   readonly proxies?: ProxyAdminService;
+  readonly runtime?: RuntimeAdminService;
   readonly wordpressPreview?: WordPressPreviewService;
 }
 
@@ -69,6 +71,8 @@ interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
+interface RuntimeSettingsBody { readonly processConcurrency?: unknown; readonly collectionConcurrency?: unknown }
+interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
 interface ProxyBody {
   readonly name?: unknown;
@@ -271,6 +275,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   const proxyService = (): ProxyAdminService => {
     if (dependencies.proxies === undefined) throw new HttpInputError("Proxy management is not configured");
     return dependencies.proxies;
+  };
+  const runtimeService = (): RuntimeAdminService => {
+    if (dependencies.runtime === undefined) throw new HttpInputError("Runtime management is not configured");
+    return dependencies.runtime;
   };
 
   registerStaticUi(server);
@@ -546,6 +554,47 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   });
 
   server.get("/api/operations", { preHandler: requireAdmin }, async () => ({ items: dependencies.productAdmin.listOperations() }));
+
+  server.get("/api/runtime", { preHandler: requireAdmin }, async () => runtimeService().status());
+
+  server.patch<{ Body: RuntimeSettingsBody }>(
+    "/api/runtime/settings",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      try {
+        return { settings: runtimeService().updateSettings(request.body ?? {}) };
+      } catch (error) {
+        throw new HttpInputError(error instanceof Error ? error.message : "Invalid runtime settings");
+      }
+    },
+  );
+
+  server.post(
+    "/api/runtime/start",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async () => ({ settings: runtimeService().start() }),
+  );
+
+  server.post(
+    "/api/runtime/stop",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async () => {
+      await runtimeService().stop();
+      return { stopped: true };
+    },
+  );
+
+  server.post<{ Body: RuntimeDiscoveryBody }>(
+    "/api/runtime/goat/discovery",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      try {
+        return { item: await runtimeService().enqueueGoatDiscovery(request.body ?? {}) };
+      } catch (error) {
+        throw new HttpInputError(error instanceof Error ? error.message : "Invalid discovery settings");
+      }
+    },
+  );
 
   server.get("/api/proxies", { preHandler: requireAdmin }, async () => ({
     items: await proxyService().list(),

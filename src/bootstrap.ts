@@ -11,6 +11,10 @@ import { ProductClassifier, TargetReferenceMappingService } from "./services/ind
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
 
+export interface ApplicationOptions {
+  readonly workerLogError?: (message: string) => void;
+}
+
 function proxyPoolEnabled(environment: GoatProxyPoolEnvironment): boolean {
   return environment.GOAT_PROXY_POOL_ENABLED === "1" || environment.GOAT_PROXY_POOL_ENABLED?.toLowerCase() === "true";
 }
@@ -48,7 +52,7 @@ export function registerPipelineComponents(registries: {
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }
 
-export function createApplication(environment: ApplicationEnvironment = process.env) {
+export function createApplication(environment: ApplicationEnvironment = process.env, options: ApplicationOptions = {}) {
   const pool = createPostgresPool(environment);
   const repositories = createPostgresRepositories(pool);
   const proxyPool = proxyPoolEnabled(environment)
@@ -76,7 +80,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
     loadWorkerConfig(environment),
     undefined,
     Date.now,
-    console.error,
+    options.workerLogError ?? console.error,
     proxyPool === undefined
       ? undefined
       : async (jobTypes) => jobTypes.length === 1 && jobTypes[0] === "collect_product" ? proxyPool.reserveClaim() : { run: async (callback) => callback(), releaseUnused: async () => {} },
