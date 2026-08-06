@@ -203,7 +203,7 @@ export class GoatSourceProcessor implements SourceProcessor {
       if (product[key] !== undefined) taxonomy[key] = product[key]!;
     }
     const productEvidence: JsonObject = {
-      ...facts({ title, brand, family, audience: gender, productCategory, productType, route, composition }),
+      ...facts({ title, brand, family, audience: gender, productCategory, productType, route, merchandisingCategory: categoryRaw, composition }),
       ...(ageGroups.length === 0 ? {} : { ageGroups }),
       ...(Object.keys(taxonomy).length === 0 ? {} : { taxonomy }),
     };
