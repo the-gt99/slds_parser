@@ -171,6 +171,27 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).not.toContain("observation.resolution_kind");
   });
 
+  it("previews mapping projections with typed target id in stats query", async () => {
+    const executor = new FakeExecutor([
+      [{ id: "21" }],
+      [],
+      [{ observation_count: 0, product_count: 0, source_product_ids: [] }],
+      [],
+      [],
+    ]);
+    await new PostgresClassificationAdminRepository(pool(executor)).previewTargetProjection({
+      targetId: "7",
+      resolutionKind: "mapping",
+      resolutionId: "21",
+      targetScope: "product.tag",
+      dictionaryValueId: "61",
+      actor: "test",
+    });
+    const statsSql = executor.calls[2]?.text ?? "";
+    expect(statsSql).toContain("$1::BIGINT IS NOT NULL");
+    expect(statsSql).toContain("observation.mapping_id = $2");
+  });
+
   it("saves a target snapshot and links the observed target product atomically", async () => {
     const executor = new FakeExecutor([[targetSnapshotRow]]);
     const snapshot = await new PostgresTargetRepository(executor).saveProductSnapshot({ targetId: "1", sourceProductId: "2", externalId: "321", sourceExternalId: "100", payload: { product: { target_id: 321 } }, contentHash: "snapshot-hash", fetchedAt: "2026-04-02T00:00:00.000Z" });

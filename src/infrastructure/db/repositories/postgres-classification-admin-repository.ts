@@ -856,6 +856,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          FROM source_reference_observations observation
          WHERE observation.active = TRUE
            AND observation.status = 'resolved'
+           AND $1::BIGINT IS NOT NULL
            AND ${resolutionFilter}
        )
        SELECT COUNT(*)::INTEGER AS observation_count,
