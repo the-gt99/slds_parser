@@ -261,8 +261,15 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
     const where: string[] = [];
     const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
     if (query.search) {
-      const p = add(`%${query.search}%`);
-      where.push(`(product.id::TEXT ILIKE ${p} OR product.source_key ILIKE ${p} OR COALESCE(product.external_id, '') ILIKE ${p} OR COALESCE(internal.data->>'title', product.discovery_metadata->>'title', '') ILIKE ${p})`);
+      const search = query.search.trim();
+      if (/^\d+$/u.test(search)) {
+        const id = add(search);
+        const text = add(search);
+        where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${text} OR product.source_key = ${text})`);
+      } else {
+        const p = add(`%${search}%`);
+        where.push(`(product.source_key ILIKE ${p} OR COALESCE(product.external_id, '') ILIKE ${p} OR COALESCE(internal.data->>'title', product.discovery_metadata->>'title', '') ILIKE ${p})`);
+      }
     }
     if (query.sourceCode) where.push(`source.code = ${add(query.sourceCode)}`);
     const stageSql = `CASE WHEN parts.collected_at IS NULL THEN 'discovered' WHEN internal.id IS NULL THEN 'collected' WHEN internal.status = 'classification_pending' THEN 'classification_pending' WHEN internal.status = 'classified' THEN 'classified' ELSE internal.status END`;
