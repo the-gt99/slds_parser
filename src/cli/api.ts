@@ -9,11 +9,13 @@ import {
   createPostgresPool,
   createPostgresRepositories,
   PostgresClassificationAdminRepository,
+  PostgresGoatProxyRepository,
   PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
 } from "../infrastructure/db/index.js";
-import { TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
-import { ClassifierAdminService, ProductAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
+import { ProxyCredentialsCrypto } from "../proxies/index.js";
+import { ClassifierAdminService, ProductAdminService, ProxyAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -68,7 +70,10 @@ async function main(): Promise<void> {
     );
     const targetMappings = new TargetReferenceMappingService(repositories.references);
     const wordpressPreview = wordpress === null ? undefined : new WordPressPreviewService(repositories, exporters, targetMappings);
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
+    const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
+      ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
+      : undefined;
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

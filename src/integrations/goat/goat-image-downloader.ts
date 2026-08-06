@@ -1,6 +1,7 @@
 import type { ProductOperationContext } from "../../contracts/index.js";
 import type { ImageBinaryDownloader } from "../../processing/index.js";
 import { GoatHttpClient, type GoatHttpEnvironment } from "./goat-http-client.js";
+import type { GoatProxyLease, GoatProxyPool } from "./goat-proxy-pool.js";
 
 interface GoatImageHttpClient {
   getBuffer(url: string): Promise<Buffer>;
@@ -11,6 +12,7 @@ export interface GoatImageDownloaderOptions {
 }
 
 export type GoatImageHttpClientFactory = (environment: GoatHttpEnvironment) => GoatImageHttpClient;
+export type GoatImagePooledHttpClientFactory = (lease: GoatProxyLease, cookieJarSuffix: string) => GoatImageHttpClient;
 
 export class GoatImageDownloader implements ImageBinaryDownloader {
   readonly code = "goat-http";
@@ -24,6 +26,8 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
     private readonly environment: GoatHttpEnvironment = process.env,
     private readonly options: GoatImageDownloaderOptions = { concurrency: 1 },
     private readonly clientFactory: GoatImageHttpClientFactory = (clientEnvironment) => new GoatHttpClient(clientEnvironment),
+    private readonly proxyPool?: GoatProxyPool,
+    private readonly pooledClientFactory: GoatImagePooledHttpClientFactory = (lease, cookieJarSuffix) => lease.client(cookieJarSuffix),
   ) {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1 || options.concurrency > 16) {
       throw new Error("GOAT image transport concurrency must be an integer from 1 to 16");
@@ -34,8 +38,19 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
 
   async download(url: string, _context: ProductOperationContext): Promise<Buffer> {
     const slot = await this.#acquire();
+    const lease = await this.proxyPool?.acquireForImage();
     try {
-      return await this.#client(slot).getBuffer(url);
+      const started = Date.now();
+      try {
+        const result = lease === undefined || lease === null
+          ? await this.#client(slot).getBuffer(url)
+          : await this.pooledClientFactory(lease, `.images-${slot + 1}`).getBuffer(url);
+        await lease?.release(true, Date.now() - started);
+        return result;
+      } catch (error) {
+        await lease?.release(false, Date.now() - started);
+        throw error;
+      }
     } finally {
       this.#release(slot);
     }

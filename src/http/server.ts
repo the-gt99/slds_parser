@@ -16,6 +16,7 @@ import type {
   ClassifierAdminService,
   CreateTargetTermCommand,
   ProductAdminService,
+  ProxyAdminService,
   TargetDictionaryService,
   WordPressPreviewService,
 } from "../services/index.js";
@@ -32,6 +33,7 @@ export interface HttpServerDependencies {
   readonly classifier: ClassifierAdminService;
   readonly targetDictionaries: TargetDictionaryService;
   readonly productAdmin: ProductAdminService;
+  readonly proxies?: ProxyAdminService;
   readonly wordpressPreview?: WordPressPreviewService;
 }
 
@@ -59,6 +61,15 @@ interface DictionaryQuery { readonly entityType?: string; readonly search?: stri
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
+interface ProxyParams { readonly proxyId: string }
+interface ProxyBody {
+  readonly name?: unknown;
+  readonly protocol?: unknown;
+  readonly host?: unknown;
+  readonly port?: unknown;
+  readonly username?: unknown;
+  readonly password?: unknown;
+}
 
 class HttpInputError extends Error {}
 
@@ -193,6 +204,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     }
   };
   const actor = (request: FastifyRequest): string => authContexts.get(request)?.operator ?? "unknown";
+  const proxyService = (): ProxyAdminService => {
+    if (dependencies.proxies === undefined) throw new HttpInputError("Proxy management is not configured");
+    return dependencies.proxies;
+  };
 
   registerStaticUi(server);
 
@@ -320,6 +335,34 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   });
 
   server.get("/api/operations", { preHandler: requireAdmin }, async () => ({ items: dependencies.productAdmin.listOperations() }));
+
+  server.get("/api/proxies", { preHandler: requireAdmin }, async () => ({
+    items: await proxyService().list(),
+  }));
+
+  server.get<{ Params: ProxyParams }>("/api/proxies/:proxyId", { preHandler: requireAdmin }, async (request) => ({
+    item: await proxyService().get(entityId(request.params.proxyId, "proxyId")),
+  }));
+
+  server.post<{ Body: ProxyBody }>("/api/proxies", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
+    item: await proxyService().create(request.body ?? {}, actor(request)),
+  }));
+
+  server.patch<{ Params: ProxyParams; Body: ProxyBody }>("/api/proxies/:proxyId", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    item: await proxyService().update(entityId(request.params.proxyId, "proxyId"), request.body ?? {}, actor(request)),
+  }));
+
+  server.post<{ Params: ProxyParams }>("/api/proxies/:proxyId/test", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    item: await proxyService().test(entityId(request.params.proxyId, "proxyId"), actor(request)),
+  }));
+
+  server.post<{ Params: ProxyParams }>("/api/proxies/:proxyId/enable", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    item: await proxyService().enable(entityId(request.params.proxyId, "proxyId"), actor(request)),
+  }));
+
+  server.post<{ Params: ProxyParams }>("/api/proxies/:proxyId/disable", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    item: await proxyService().disable(entityId(request.params.proxyId, "proxyId"), actor(request)),
+  }));
 
   server.get<{ Querystring: SnapshotListQuery }>("/api/wordpress-snapshots", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);

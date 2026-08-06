@@ -1,6 +1,7 @@
 import type { CollectedSourceProduct, CollectProductInput, DiscoveryInput, DiscoveryResult, JsonObject, JsonValue, SourceAdapter } from "../../contracts/index.js";
 import { IntegrationContractError, PermanentError } from "../../core/errors/index.js";
 import { GoatHttpClient, type GoatRequestExecutor } from "./goat-http-client.js";
+import type { GoatProxyLease, GoatProxyPool } from "./goat-proxy-pool.js";
 import { parseProductSitemap, parseSitemapIndex, sitemapMetadata, type GoatSitemapProduct } from "./sitemap.js";
 
 interface GoatSourceConfig { sitemapUrl: string; countryCode: string; discoveryBatchSize: number; maxProductsPerRun?: number; requestDelayMs: number }
@@ -78,36 +79,54 @@ export class GoatSourceAdapter implements SourceAdapter {
 
   constructor(private readonly request?: GoatRequestExecutor,
     private readonly jsonRequest?: (url: string, expected: "product" | "offers") => Promise<JsonValue>,
-    private readonly environment: ConstructorParameters<typeof GoatHttpClient>[0] = process.env) {}
+    private readonly environment: ConstructorParameters<typeof GoatHttpClient>[0] = process.env,
+    private readonly proxyPool?: GoatProxyPool) {}
 
-  static create(environment: ConstructorParameters<typeof GoatHttpClient>[0] = process.env): GoatSourceAdapter {
-    return new GoatSourceAdapter(undefined, undefined, environment);
+  static create(environment: ConstructorParameters<typeof GoatHttpClient>[0] = process.env, proxyPool?: GoatProxyPool): GoatSourceAdapter {
+    return new GoatSourceAdapter(undefined, undefined, environment, proxyPool);
   }
 
-  #http(): GoatHttpClient {
+  #http(lease?: GoatProxyLease): GoatHttpClient {
+    if (lease !== undefined) return lease.client();
     this.#client ??= new GoatHttpClient(this.environment);
     return this.#client;
   }
 
-  async #get(url: string, delay: number): Promise<Buffer> {
+  async #withLease<Result>(callback: (lease?: GoatProxyLease) => Promise<Result>): Promise<Result> {
+    const current = this.proxyPool?.currentLease();
+    if (current !== undefined || this.proxyPool?.enabled !== true) return callback(current);
+    const acquired = await this.proxyPool.acquireForImage();
+    if (acquired === null) return callback(undefined);
+    let success = false;
+    try {
+      const result = await callback(acquired);
+      success = true;
+      return result;
+    } finally {
+      await acquired.release(success, null);
+    }
+  }
+
+  async #get(url: string, delay: number, lease?: GoatProxyLease): Promise<Buffer> {
     const wait = this.#nextRequestAt - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    const result = this.request ? await this.request(url) : await this.#http().getBuffer(url);
+    const result = this.request ? await this.request(url) : await this.#http(lease).getBuffer(url);
     this.#nextRequestAt = Date.now() + delay;
     return result;
   }
 
   async discover(input: DiscoveryInput): Promise<DiscoveryResult> {
+    return this.#withLease(async (lease) => {
     const settings = config(input.source.config);
     let children = this.#indexes.get(settings.sitemapUrl);
-    if (!children) { children = parseSitemapIndex(await this.#get(settings.sitemapUrl, settings.requestDelayMs)); this.#indexes.set(settings.sitemapUrl, children); }
+    if (!children) { children = parseSitemapIndex(await this.#get(settings.sitemapUrl, settings.requestDelayMs, lease)); this.#indexes.set(settings.sitemapUrl, children); }
     let state = checkpoint(input.checkpoint);
     const items = [];
     while (items.length < settings.discoveryBatchSize && state.childIndex < children.length) {
       const childUrl = children[state.childIndex];
       if (!childUrl) break;
       let products = this.#children.get(childUrl);
-      if (!products) { products = parseProductSitemap(await this.#get(childUrl, settings.requestDelayMs)); this.#children.set(childUrl, products); }
+      if (!products) { products = parseProductSitemap(await this.#get(childUrl, settings.requestDelayMs, lease)); this.#children.set(childUrl, products); }
       while (items.length < settings.discoveryBatchSize && state.itemIndex < products.length) {
         if (settings.maxProductsPerRun !== undefined && state.emitted >= settings.maxProductsPerRun) break;
         const product = products[state.itemIndex];
@@ -121,9 +140,11 @@ export class GoatSourceAdapter implements SourceAdapter {
     const limited = settings.maxProductsPerRun !== undefined && state.emitted >= settings.maxProductsPerRun;
     const exhausted = state.childIndex >= children.length;
     return { items, checkpoint: { childIndex: state.childIndex, itemIndex: state.itemIndex, emitted: state.emitted }, hasMore: !limited && !exhausted, completeness: limited ? "partial" : exhausted ? "complete" : "unknown", stats: { processed: items.length, discovered: items.length } };
+    });
   }
 
   async collectProduct(input: CollectProductInput): Promise<CollectedSourceProduct> {
+    return this.#withLease(async (lease) => {
     const settings = config(input.source.config);
     const requested = input.requestedPartKeys ?? ["product", "offers"];
     for (const key of requested) if (key !== "product" && key !== "offers") throw new PermanentError(`Unknown GOAT part: ${key}`, { code: "UNKNOWN_GOAT_PART" });
@@ -133,11 +154,11 @@ export class GoatSourceAdapter implements SourceAdapter {
     const fetchProduct = async (): Promise<void> => {
       if (parsedProduct) return;
       const url = `https://www.goat.com/web-api/v1/product_templates/${encodeURIComponent(slug)}?countryCode=${encodeURIComponent(settings.countryCode)}`;
-      rawProduct = await this.#json(url, "product", settings.requestDelayMs);
+      rawProduct = await this.#json(url, "product", settings.requestDelayMs, lease);
       const card = object(rawProduct, "product");
       if ((typeof card.id !== "string" && typeof card.id !== "number") || typeof card.name !== "string") throw new IntegrationContractError("GOAT product response is missing id or name");
       const images = productImages(card, input.product.metadata);
-      parsedProduct = { ...card, id: String(card.id), images };
+      parsedProduct = { ...card, id: String(card.id), images, ...(lease === undefined ? {} : { _transport: { proxy: lease.publicProxy } }) };
     };
     const parts = [];
     let externalId = input.product.externalId;
@@ -148,21 +169,22 @@ export class GoatSourceAdapter implements SourceAdapter {
       } else {
         if (!externalId) { await fetchProduct(); externalId = String(parsedProduct!.id); }
         const url = `https://www.goat.com/web-api/v1/product_variants/buy_bar_data?productTemplateId=${encodeURIComponent(externalId)}&countryCode=${encodeURIComponent(settings.countryCode)}`;
-        const rawOffers = await this.#json(url, "offers", settings.requestDelayMs);
+        const rawOffers = await this.#json(url, "offers", settings.requestDelayMs, lease);
         const offers = array(rawOffers, "offers");
         for (const offer of offers) object(offer, "offer");
-        parts.push({ partKey: "offers", rawPayload: rawOffers, parsedPayload: { market: settings.countryCode, countryCode: settings.countryCode, offers }, adapterVersion: this.version });
+        parts.push({ partKey: "offers", rawPayload: rawOffers, parsedPayload: { market: settings.countryCode, countryCode: settings.countryCode, offers, ...(lease === undefined ? {} : { _transport: { proxy: lease.publicProxy } }) }, adapterVersion: this.version });
       }
     }
     return { sourceKey: input.product.sourceKey, ...(externalId ? { externalId } : {}), slug, ...(input.product.url ? { url: input.product.url } : {}), parts };
+    });
   }
 
-  async #json(url: string, expected: "product" | "offers", delay: number): Promise<JsonValue> {
+  async #json(url: string, expected: "product" | "offers", delay: number, lease?: GoatProxyLease): Promise<JsonValue> {
     const wait = this.#nextRequestAt - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const result = this.jsonRequest ? await this.jsonRequest(url, expected)
       : this.request ? JSON.parse((await this.request(url)).toString("utf8")) as JsonValue
-        : await this.#http().getJson(url, expected);
+        : await this.#http(lease).getJson(url, expected);
     this.#nextRequestAt = Date.now() + delay;
     return result;
   }

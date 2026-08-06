@@ -4,6 +4,7 @@ import { PostgresClassificationRepository } from "./postgres-classification-repo
 import { PostgresClassificationAdminRepository } from "./postgres-classification-admin-repository.js";
 import { PostgresInternalProductRepository } from "./postgres-internal-product-repository.js";
 import { PostgresJobRepository } from "./postgres-job-repository.js";
+import { PostgresGoatProxyRepository } from "./postgres-goat-proxy-repository.js";
 import { PostgresProductOperationHistoryRepository } from "./postgres-product-operation-history-repository.js";
 import { PostgresProductAdminRepository } from "./postgres-product-admin-repository.js";
 import { PostgresReferenceRepository } from "./postgres-reference-repository.js";
@@ -17,6 +18,7 @@ export { PostgresClassificationRepository } from "./postgres-classification-repo
 export { PostgresClassificationAdminRepository } from "./postgres-classification-admin-repository.js";
 export { PostgresInternalProductRepository } from "./postgres-internal-product-repository.js";
 export { PostgresJobRepository } from "./postgres-job-repository.js";
+export { PostgresGoatProxyRepository } from "./postgres-goat-proxy-repository.js";
 export { PostgresProductOperationHistoryRepository } from "./postgres-product-operation-history-repository.js";
 export { PostgresProductAdminRepository } from "./postgres-product-admin-repository.js";
 export { PostgresReferenceRepository } from "./postgres-reference-repository.js";

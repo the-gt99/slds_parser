@@ -33,7 +33,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - `process_product` — построение внутреннего товара;
 - `export_product` — экспорт внутреннего товара в одну цель.
 
-Один `Worker` использует отдельную последовательную lane для discovery/collection/export и настраиваемое число lanes только для `process_product`. Поэтому запросы карточек и offers GOAT не распараллеливаются, а перевод, обработка медиа и классификация могут идти одновременно с последовательным collection. Число processing lanes задаётся `WORKER_PROCESS_CONCURRENCY` от 1 до 8. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
+Один `Worker` использует отдельные lane-группы для discovery, collection, processing и export. Processing lanes задаются `WORKER_PROCESS_CONCURRENCY` от 1 до 8, collection lanes — `WORKER_COLLECTION_CONCURRENCY` от 1 до 16. При включённом GOAT proxy pool collection lane сначала резервирует proxy session и только потом claim-ит `collect_product`; если доступных проверенных proxy нет, job остаётся `pending` без увеличения attempts. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
 
 Повторяются только `RetryableError`, пока число попыток меньше `MAX_JOB_ATTEMPTS`. Задержка растёт экспоненциально от `JOB_RETRY_BASE_MS` и ограничивается `JOB_RETRY_MAX_MS`. `PermanentError` и неизвестные программные ошибки сразу завершают задачу как `failed`. Terminal failure discovery дополнительно помечает активный `source_collection_run` как `failed`.
 
@@ -69,6 +69,9 @@ GOAT_CLI_CURL_BIN=C:\path\to\goat-curl.cmd
 GOAT_COOKIE_JAR_PATH=/mnt/c/path/to/goat-cookie-jar.txt
 GOAT_PROXY_HTTP=
 GOAT_PROXY_SOCKS5=
+GOAT_PROXY_POOL_ENABLED=false
+GOAT_PROXY_TEST_URL=https://www.goat.com/
+PARSER_PROXY_ENCRYPTION_KEY=
 GOAT_CF_CLEARANCE=
 GOAT_HTTP_TIMEOUT_MS=25000
 GOAT_MAX_RESPONSE_BYTES=10485760
@@ -89,9 +92,11 @@ PARSER_TRANSLATION_ATTEMPTS=2
 PARSER_TRANSLATION_RETRY_DELAY_MS=400
 ```
 
-HTTP и SOCKS5 proxy взаимоисключающие. Реальные proxy credentials и cookies должны находиться только в gitignored `.env`. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
+HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
 
-Путь `GOAT_COOKIE_JAR_PATH` должен быть понятен самому curl-процессу: для Windows wrapper, запускающего бинарник через WSL, используйте путь `/mnt/c/...`; для нативного Windows-бинарника — обычный Windows path. Загрузчик изображений создаёт рядом отдельные jars с суффиксами `.images-N`, чтобы processing lanes не записывали source-session одновременно.
+Страница `/proxies` и API `/api/proxies` требуют admin authentication; browser mutations дополнительно требуют CSRF. API не возвращает username, password, ciphertext, IV/auth tag или полный proxy URL. Новый proxy создаётся выключенным, включение разрешено только после успешной проверки через тот же curl-impersonate transport. Password в форме редактирования не предзаполняется; пустое поле не стирает сохранённый secret. Проверочный URL задаётся сервером через `GOAT_PROXY_TEST_URL` и не принимается от клиента.
+
+Путь `GOAT_COOKIE_JAR_PATH` должен быть понятен самому curl-процессу: для Windows wrapper, запускающего бинарник через WSL, используйте путь `/mnt/c/...`; для нативного Windows-бинарника — обычный Windows path. В pool-режиме collection jar получает suffix `.proxy-ID`, а загрузчик изображений создаёт отдельные jars `.images-N.proxy-ID`, чтобы processing lanes не писали в source-session одновременно. Product и offers одного `collect_product` attempt идут через один закреплённый proxy/client/cookie jar; следующий retry может получить другой proxy по deterministic round-robin.
 
 Для безопасной живой проверки задайте `GOAT_SMOKE_PRODUCT_LIMIT` от 1 до 100, затем выполните:
 
@@ -180,8 +185,10 @@ WordPress importer скачивает готовые WebP по публичны�
 - `npm run goat:enqueue-discovery` — сохранить полный sitemap-реестр без collection;
 - `npm run goat:enqueue-cohort` — проверить либо поставить ограниченную выборку discovery-товаров на collection;
 - `npm run goat:enqueue-smoke` — создать ограниченный GOAT source и поставить discovery-задачу;
+- `npm run proxy:import-env` — идемпотентно импортировать текущий `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` или legacy `GOAT_HTTP_PROXY`/`GOAT_SOCKS5_PROXY` в зашифрованную выключенную запись;
+- `npm run proxy:test`, `npm run proxy:enable`, `npm run proxy:disable` — проверить и управлять proxy record по ID без печати секретов;
 - `npm run classifier:exact-matches` — найти либо применить однозначные точные связи с target-справочником;
-- `npm run worker` — запустить worker с последовательной общей lane и processing lanes; `SIGINT` и `SIGTERM` корректно останавливают цикл и закрывают Pool;
+- `npm run worker` — запустить worker с отдельными discovery, collection, processing и export lanes; `SIGINT` и `SIGTERM` корректно останавливают цикл и закрывают Pool;
 - `npm run typecheck` — проверить типы;
 - `npm test` — однократно запустить unit-тесты;
 - `npm run test:watch` — запустить тесты в watch-режиме;

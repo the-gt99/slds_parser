@@ -16,6 +16,10 @@ export interface GoatHttpEnvironment {
   readonly GOAT_SESSION_TTL_MS?: string;
 }
 
+export interface GoatHttpClientOptions {
+  readonly proxyUrl?: string;
+}
+
 export interface GoatHttpResponse {
   readonly status: number;
   readonly body: Buffer;
@@ -39,6 +43,24 @@ export function maskProxyCredentials(value: string): string {
   return value.replace(/\b(https?|socks5h?):\/\/[^\s/@:]+(?::[^\s/@]*)?@/gi, "$1://***:***@");
 }
 
+export function sanitizeCurlError(value: string, credentials: readonly string[] = []): string {
+  let result = maskProxyCredentials(value);
+  for (const credential of credentials) {
+    if (credential !== "") result = result.split(credential).join("***");
+  }
+  return result;
+}
+
+function proxyCredentialHints(proxy: string | undefined): readonly string[] {
+  if (proxy === undefined) return [];
+  try {
+    const url = new URL(proxy);
+    return [decodeURIComponent(url.username), decodeURIComponent(url.password)].filter((item) => item !== "");
+  } catch {
+    return [];
+  }
+}
+
 export function assertGoatHttpStatus(status: number, url: string): void {
   if (status >= 200 && status < 300) return;
   if (status === 404 && url.includes("/product_templates/")) throw new PermanentError("GOAT product was not found", { code: "GOAT_PRODUCT_NOT_FOUND" });
@@ -60,7 +82,7 @@ export class GoatHttpClient {
   #sessionWarmedAt = 0;
   #warming: Promise<void> | undefined;
 
-  constructor(private readonly environment: GoatHttpEnvironment = process.env) {
+  constructor(private readonly environment: GoatHttpEnvironment = process.env, options: GoatHttpClientOptions = {}) {
     this.#bin = environment.GOAT_CLI_CURL_BIN?.trim() ?? "";
     if (this.#bin === "") throw new PermanentError("GOAT_CLI_CURL_BIN is required; curl-impersonate is not configured", { code: "GOAT_CURL_NOT_CONFIGURED" });
     this.#cookieJar = environment.GOAT_COOKIE_JAR_PATH?.trim() ?? "";
@@ -68,7 +90,7 @@ export class GoatHttpClient {
     const httpProxy = environment.GOAT_PROXY_HTTP?.trim();
     const socksProxy = environment.GOAT_PROXY_SOCKS5?.trim();
     if (httpProxy && socksProxy) throw new PermanentError("Configure only one GOAT proxy", { code: "INVALID_GOAT_CONFIG" });
-    this.#proxy = httpProxy || socksProxy || undefined;
+    this.#proxy = options.proxyUrl?.trim() || httpProxy || socksProxy || undefined;
     this.#clearance = environment.GOAT_CF_CLEARANCE?.trim() || undefined;
     this.#timeoutMs = positiveInteger(environment.GOAT_HTTP_TIMEOUT_MS, 25_000, "GOAT_HTTP_TIMEOUT_MS");
     this.#maxBytes = positiveInteger(environment.GOAT_MAX_RESPONSE_BYTES, 10 * 1024 * 1024, "GOAT_MAX_RESPONSE_BYTES");
@@ -165,7 +187,7 @@ export class GoatHttpClient {
       child.on("close", (code) => {
         clearTimeout(watchdog);
         if (settled) return;
-        if (code !== 0) { fail(new RetryableError(`GOAT curl transport failed with exit code ${String(code)}`, { code: "GOAT_TRANSPORT", cause: maskProxyCredentials(stderr.trim()) })); return; }
+        if (code !== 0) { fail(new RetryableError(`GOAT curl transport failed with exit code ${String(code)}`, { code: "GOAT_TRANSPORT", cause: sanitizeCurlError(stderr.trim(), proxyCredentialHints(this.#proxy)) })); return; }
         const output = Buffer.concat(chunks);
         const markerBuffer = Buffer.from(marker);
         const markerAt = output.lastIndexOf(markerBuffer);

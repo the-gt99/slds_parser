@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ProductAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ProductAdminService, ProxyAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -103,6 +103,17 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("serves the proxy interface", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const server = createHttpServer(dependencies(database));
+
+    const response = await server.inject({ method: "GET", url: "/proxies" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("SLDS · Прокси");
+    await server.close();
+  });
+
   it("serves a product page and protects its data endpoint", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const productAdmin = {
@@ -191,6 +202,32 @@ describe("HTTP server", () => {
     expect(forbidden.statusCode).toBe(403);
     expect(allowed.statusCode).toBe(200);
     expect(classifier.saveDecision).toHaveBeenCalledWith(expect.anything(), "admin");
+    await server.close();
+  });
+
+  it("protects proxy management with admin auth and CSRF without exposing credentials", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const proxies = {
+      list: vi.fn().mockResolvedValue([{ id: "1", name: "main", protocol: "http", address: "proxy.test:8080", host: "proxy.test", port: 8080, hasCredentials: true, enabled: false, healthStatus: "healthy", lastTestedAt: null, lastTestLatencyMs: null, lastTestError: null, lastUsedAt: null, successCount: "0", failureCount: "0" }]),
+      create: vi.fn().mockResolvedValue({ id: "1", name: "main", hasCredentials: true }),
+    } as unknown as ProxyAdminService;
+    const server = createHttpServer({ ...dependencies(database), proxies });
+
+    const unauthorized = await server.inject({ method: "GET", url: "/api/proxies" });
+    const authorized = await server.inject({ method: "GET", url: "/api/proxies", headers: { authorization: `Bearer ${adminToken}` } });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const forbidden = await server.inject({ method: "POST", url: "/api/proxies", headers: { cookie }, payload: { name: "main", protocol: "http", host: "proxy.test", port: 8080, username: "u", password: "secret" } });
+    const created = await server.inject({ method: "POST", url: "/api/proxies", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: { name: "main", protocol: "http", host: "proxy.test", port: 8080, username: "u", password: "secret" } });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.body).not.toContain("secret");
+    expect(authorized.body).not.toContain("ciphertext");
+    expect(forbidden.statusCode).toBe(403);
+    expect(created.statusCode).toBe(201);
+    expect(created.body).not.toContain("secret");
+    expect(proxies.create).toHaveBeenCalledWith(expect.objectContaining({ password: "secret" }), "admin");
     await server.close();
   });
 

@@ -14,6 +14,7 @@ export {
   PostgresClassificationAdminRepository,
   PostgresClassificationRepository,
   PostgresInternalProductRepository,
+  PostgresGoatProxyRepository,
   PostgresJobRepository,
   PostgresProductOperationHistoryRepository,
   PostgresProductAdminRepository,

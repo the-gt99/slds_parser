@@ -22,4 +22,11 @@ describe("worker config", () => {
       "WORKER_PROCESS_CONCURRENCY must be an integer from 1 to 8",
     );
   });
+
+  it("accepts a separately bounded collection concurrency", () => {
+    expect(loadWorkerConfig({ ...environment, WORKER_COLLECTION_CONCURRENCY: "4" }).collectionConcurrency).toBe(4);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_COLLECTION_CONCURRENCY: "17" })).toThrow(
+      "WORKER_COLLECTION_CONCURRENCY must be an integer from 1 to 16",
+    );
+  });
 });

@@ -2,6 +2,11 @@ import { PermanentError, RetryableError } from "../core/errors/index.js";
 import type { JobRepository, JobRecord, JobType } from "../repositories/index.js";
 import type { JobHandler } from "./job-dispatcher.js";
 
+export interface WorkerClaimPermit {
+  run<Result>(callback: () => Promise<Result>): Promise<Result>;
+  releaseUnused(): Promise<void>;
+}
+
 export interface WorkerOptions {
   readonly workerId: string;
   readonly pollIntervalMs: number;
@@ -10,10 +15,12 @@ export interface WorkerOptions {
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
   readonly processConcurrency?: number;
+  readonly collectionConcurrency?: number;
 }
 
 export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 export type WorkerLogger = (message: string) => void;
+export type WorkerClaimPermitProvider = (jobTypes: readonly JobType[]) => Promise<WorkerClaimPermit | null>;
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -36,14 +43,24 @@ export class Worker {
   constructor(private readonly jobs: JobRepository, private readonly dispatcher: JobHandler,
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
     private readonly currentTime: () => number = Date.now,
-    private readonly logError: WorkerLogger = console.error) {}
+    private readonly logError: WorkerLogger = console.error,
+    private readonly claimPermit?: WorkerClaimPermitProvider) {}
 
   async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
+    const permit = this.claimPermit === undefined ? undefined : await this.claimPermit(jobTypes ?? []);
+    if (permit === null) return false;
     const job = await this.jobs.claimNext(workerId, this.options.lockTimeoutMs, jobTypes);
-    if (job === null) return false;
-    try {
+    if (job === null) {
+      await permit?.releaseUnused();
+      return false;
+    }
+    const process = async (): Promise<void> => {
       await this.dispatcher.dispatch(job);
       await this.jobs.complete(job.id);
+    };
+    try {
+      if (permit === undefined) await process();
+      else await permit.run(process);
     } catch (error) {
       if (error instanceof RetryableError && job.attempts < this.options.maxJobAttempts) {
         const delay = Math.min(this.options.retryMaxMs, this.options.retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
@@ -63,17 +80,23 @@ export class Worker {
   }
 
   async run(signal: AbortSignal): Promise<void> {
-    const generalJobTypes = ["discover_source", "collect_product", "export_product"] satisfies readonly JobType[];
+    const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
+    const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
+    const exportJobTypes = ["export_product"] satisfies readonly JobType[];
     const processConcurrency = this.options.processConcurrency ?? 1;
+    const collectionConcurrency = this.options.collectionConcurrency ?? 1;
     const controller = new AbortController();
     const stop = (): void => controller.abort();
     if (signal.aborted) stop();
     else signal.addEventListener("abort", stop, { once: true });
     try {
       await Promise.all([
-        this.runLane(controller.signal, generalJobTypes, `${this.options.workerId}:general`),
+        this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),
+        ...Array.from({ length: collectionConcurrency }, (_, index) =>
+          this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: processConcurrency }, (_, index) =>
           this.runLane(controller.signal, ["process_product"], `${this.options.workerId}:process-${index + 1}`)),
+        this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);
