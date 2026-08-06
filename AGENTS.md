@@ -246,6 +246,80 @@ WordPress legacy-вариации выявили отдельную пробле
 
 ## Текущее production-состояние на 2026-08-06
 
+### Legacy classification import 6 августа 2026
+
+Проверены старые данные read-only:
+
+- `ssh_parser` снова доступен, host `srv42-h-st`;
+- parser v1 база `j61064897_parser` доступна через конфиг старого parser;
+- фактические таблицы v1: `target_classifier_mapping`, `target_classifier_suggestion`, `target_dictionary_entry`, `wait_for_classifier`;
+- `target_classifier_mapping`: `10164` строк;
+- ручные v1 decisions: brand `9`, model `290`, tag `10`; ignored model `131`;
+- auto/legacy goat tags не переносились: `legacy_goat_tags_exact_*`, `legacy_goat_tags_partial_unique`, `dictionary_suggested` отклонены как небезопасные;
+- тестовый brand probe `__brand_probe__` исключен;
+- суперстарая `j61064897_import` под v1 DB user недоступна: `SELECT command denied` для `j61064897_import.goat`; отдельные credentials не найдены безопасным коротким поиском.
+
+Применение выполнено на production через service layer `ClassifierAdminService.saveDecision`, target `slamdunk` все время был `enabled=false`, WordPress writes/export не выполнялись.
+
+Import preview:
+
+- candidates `47`;
+- accepted `17`;
+- rejected `12`;
+- conflicts `0`;
+- already_exists `18`.
+
+Применено `17` безопасных mappings:
+
+- colors: `130` Pink -> Розовый, `131` Blue -> Синий, `132` Orange -> Оранжевый, `133` Yellow -> Желтый, `134` Purple -> Фиолетовый, `135` Gold -> Золотой, `136` Cream -> Кремовый;
+- materials: `137` Leather -> Кожа, `138` Suede -> Замша, `139` Synthetic -> Синтетика, `140` Canvas -> Холст, `141` Nubuck -> Нубук, `142` Nylon -> Нейлон, `143` Rubber -> Резина, `144` Polyester -> Полиэстер, `145` Neoprene -> Неопрен, `146` Cotton -> Хлопок.
+
+Не создавались rules/projections: безопасных context model rules и technology tag mappings с текущими доказательствами не было. V1 manual brand mappings уже существовали в новом parser как mappings `1`-`8`. Generic technology tags `Air`, `Boost`, `React`, `Flyknit`, `Primeknit`, `Zoom Air`, `Air Max`, `Fresh Foam`, `Gel` отклонены: актуальных самостоятельных `product_tag` terms нет, найденные совпадения в target dictionary являются моделями/персонами/командами.
+
+После apply service layer поставил `1021` `process_product` jobs. Collection/export jobs не создавались. Worker дошел до `active_jobs=0`, `export_jobs=0`. Общие failed process jobs `20` остались из известных причин обработки: пустые изображения, no offers, translation verification; новых export failures нет.
+
+Classification before/after по всем active observations:
+
+- color: resolved `1836 -> 2520`, unresolved `754 -> 70`;
+- material: resolved `308 -> 762`, unresolved `539 -> 85`;
+- brand: `2014/576` без изменения;
+- model: `49/2541` без изменения;
+- tag: `284/346` без изменения;
+- category и merchandising_category изменились из-за штатной переобработки текущим processor/rules: category resolved `366 -> 310`, unresolved `2224 -> 2280`; merchandising_category resolved `131 -> 587`, unresolved `52 -> 173`.
+
+Idempotency preview после apply:
+
+- candidates `47`;
+- accepted `0`;
+- rejected `12`;
+- conflicts `0`;
+- already_exists `35`.
+
+WordPress previews read-only:
+
+- `sourceProductId=316480`: built, taxonomy diff `[]`, regression нет;
+- Pink: `90394`, `146924` snapshot saved, blocked только по отсутствующим required `model/category`, taxonomy diff `[]`;
+- Leather `235980`: blocked по required `model/category`, taxonomy diff `[]`;
+- Suede `270188`: blocked по required `model/category`, taxonomy diff `[]`;
+- Mesh `24`: built, ожидаемый material enrichment diff `pa_material [25882]` vs `[]`;
+- multi-brand `27`: blocked по required category, multi-brand не исправлялся;
+- no-offers `25`: blocked `WordPress export requires product variants until the sold-out contract is configured`.
+
+Audit reports сохранены на production:
+
+`/srv/slds-parser/state/audits/2026-08-06-legacy-classification-import/`
+
+- `candidates.jsonl` SHA-256 `a244a4d05604c0b234b82a3e32fe7e3fc6836549952d4494d1c48b063717fef6`;
+- `accepted.jsonl` `199a766215e92e56dca47373d38023523178150288718261dbf757deeeae23b8`;
+- `rejected.jsonl` `453fb256696c89fe7bafc721ccf500b820e3a9c28aabb8f914bd721b87d0dd67`;
+- `conflicts.jsonl` `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
+- `apply-result.json` `98840ea4c6b9bf840f0bc5f16d6d3805d48b33157638afe584efe1069753506b`;
+- `summary.md` `a0ba1670d121cf3de929dba8f602eb02781d5a825cc38320c904376755caa654`.
+
+Код importer добавлен локально и запушен коммитом `1f4f9a4` (`Добавить импорт старой классификации`). Production deploy этого коммита заблокирован: `/srv/slds-parser/app` remote использует `git@github-slds-parser:the-gt99/slds_parser.git`, алиас `github-slds-parser` не резолвится, в `/root/.ssh` нет private key, `git@github.com` возвращает `Permission denied (publickey)`, HTTPS требует GitHub credentials. Origin/deploy keys не менять без отдельного решения.
+
+Следующий отдельный блок после завершения deployment blocker: переводчик. Не начинать его в рамках legacy classification import.
+
 Parser:
 
 - GitHub: `git@github.com:the-gt99/slds_parser.git`;
