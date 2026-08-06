@@ -125,6 +125,34 @@ describe("GoatProxyPool", () => {
     expect(repository.useRecords).toEqual([{ id: "1", success: true }, { id: "2", success: false }]);
   });
 
+  it("allows the configured number of isolated sessions on one proxy", async () => {
+    const repository = new MemoryProxyRepository([proxy({ id: "1" })]);
+    const pool = new GoatProxyPool(repository, {
+      GOAT_PROXY_POOL_ENABLED: "true",
+      GOAT_PROXY_CONCURRENCY_PER_PROXY: "4",
+      PARSER_PROXY_ENCRYPTION_KEY: key,
+      GOAT_CLI_CURL_BIN: "curl",
+      GOAT_COOKIE_JAR_PATH: "/tmp/goat.jar",
+    });
+
+    const leases = await Promise.all(Array.from({ length: 5 }, () => pool.tryAcquire()));
+
+    expect(leases.map((lease) => lease?.sessionSlot ?? null)).toEqual([1, 2, 3, 4, null]);
+    await leases[1]?.release(true, 1);
+    const reused = await pool.tryAcquire();
+    expect(reused?.sessionSlot).toBe(2);
+    await Promise.all([...leases.filter((lease, index) => lease !== null && index !== 1), reused].map((lease) => lease?.release(true, 1)));
+  });
+
+  it("rejects invalid per-proxy concurrency", () => {
+    const repository = new MemoryProxyRepository([proxy()]);
+    expect(() => new GoatProxyPool(repository, {
+      GOAT_PROXY_POOL_ENABLED: "true",
+      GOAT_PROXY_CONCURRENCY_PER_PROXY: "17",
+      PARSER_PROXY_ENCRYPTION_KEY: key,
+    })).toThrow("GOAT_PROXY_CONCURRENCY_PER_PROXY must be an integer from 1 to 16");
+  });
+
   it("excludes disabled proxies from new leases and allows a retry to use another proxy", async () => {
     const repository = new MemoryProxyRepository([proxy({ id: "1", enabled: false }), proxy({ id: "2", name: "two" }), proxy({ id: "3", name: "three" })]);
     const pool = new GoatProxyPool(repository, { GOAT_PROXY_POOL_ENABLED: "true", PARSER_PROXY_ENCRYPTION_KEY: key, GOAT_CLI_CURL_BIN: "curl", GOAT_COOKIE_JAR_PATH: "/tmp/goat.jar" });
@@ -183,7 +211,7 @@ describe("GOAT pool integration", () => {
       }),
     }), pool, (lease, suffix) => ({
       getBuffer: vi.fn(async () => {
-        clients.push(`${suffix}.proxy-${lease.proxyId}`);
+        clients.push(`${suffix}.proxy-${lease.proxyId}.session-${lease.sessionSlot}`);
         active += 1; maxActive = Math.max(maxActive, active);
         await new Promise<void>((resolve) => releases.push(resolve));
         active -= 1;
@@ -200,7 +228,7 @@ describe("GOAT pool integration", () => {
 
     expect(maxActive).toBe(2);
     expect(repository.useRecords.filter((item) => item.success)).toHaveLength(3);
-    expect(clients.every((jar) => jar.includes(".images-") && jar.includes(".proxy-"))).toBe(true);
+    expect(clients.every((jar) => jar.includes(".images-") && jar.includes(".proxy-") && jar.includes(".session-"))).toBe(true);
   });
 });
 

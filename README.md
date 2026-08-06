@@ -33,7 +33,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - `process_product` — построение внутреннего товара;
 - `export_product` — экспорт внутреннего товара в одну цель.
 
-Один `Worker` использует отдельные lane-группы для discovery, collection, processing и export. Processing lanes задаются `WORKER_PROCESS_CONCURRENCY` от 1 до 8, collection lanes — `WORKER_COLLECTION_CONCURRENCY` от 1 до 16. При включённом GOAT proxy pool collection lane сначала резервирует proxy session и только потом claim-ит `collect_product`; если доступных проверенных proxy нет, job остаётся `pending` без увеличения attempts. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
+Один `Worker` использует отдельные lane-группы для discovery, collection, processing и export. Processing lanes задаются `WORKER_PROCESS_CONCURRENCY` от 1 до 8, collection lanes — `WORKER_COLLECTION_CONCURRENCY` от 1 до 16. При включённом GOAT proxy pool collection lane сначала резервирует свободный session slot и только потом claim-ит `collect_product`; если свободных слотов на проверенных proxy нет, job остаётся `pending` без увеличения attempts. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
 
 Повторяются только `RetryableError`, пока число попыток меньше `MAX_JOB_ATTEMPTS`. Задержка растёт экспоненциально от `JOB_RETRY_BASE_MS` и ограничивается `JOB_RETRY_MAX_MS`. `PermanentError` и неизвестные программные ошибки сразу завершают задачу как `failed`. Terminal failure discovery дополнительно помечает активный `source_collection_run` как `failed`.
 
@@ -70,6 +70,7 @@ GOAT_COOKIE_JAR_PATH=/mnt/c/path/to/goat-cookie-jar.txt
 GOAT_PROXY_HTTP=
 GOAT_PROXY_SOCKS5=
 GOAT_PROXY_POOL_ENABLED=false
+GOAT_PROXY_CONCURRENCY_PER_PROXY=1
 GOAT_PROXY_TEST_URL=https://www.goat.com/
 PARSER_PROXY_ENCRYPTION_KEY=
 GOAT_CF_CLEARANCE=
@@ -81,6 +82,7 @@ GOAT_COHORT_PRODUCT_LIMIT=500
 GOAT_COHORT_ROUTES=sneakers,apparel
 GOAT_COHORT_SEED=1
 GOAT_COHORT_APPLY=false
+GOAT_COHORT_ENQUEUE_PROCESSING=true
 GOAT_IMAGE_DOWNLOAD_CONCURRENCY=2
 PARSER_IMAGE_BASE_DIR=/srv/slds-parser/state/images
 PARSER_PUBLIC_BASE_URL=https://static.example.com
@@ -92,11 +94,11 @@ PARSER_TRANSLATION_ATTEMPTS=2
 PARSER_TRANSLATION_RETRY_DELAY_MS=400
 ```
 
-HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
+HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
 
 Страница `/proxies` и API `/api/proxies` требуют admin authentication; browser mutations дополнительно требуют CSRF. API не возвращает username, password, ciphertext, IV/auth tag или полный proxy URL. Новый proxy создаётся выключенным, включение разрешено только после успешной проверки через тот же curl-impersonate transport. Password в форме редактирования не предзаполняется; пустое поле не стирает сохранённый secret. Проверочный URL задаётся сервером через `GOAT_PROXY_TEST_URL` и не принимается от клиента.
 
-Путь `GOAT_COOKIE_JAR_PATH` должен быть понятен самому curl-процессу: для Windows wrapper, запускающего бинарник через WSL, используйте путь `/mnt/c/...`; для нативного Windows-бинарника — обычный Windows path. В pool-режиме collection jar получает suffix `.proxy-ID`, а загрузчик изображений создаёт отдельные jars `.images-N.proxy-ID`, чтобы processing lanes не писали в source-session одновременно. Product и offers одного `collect_product` attempt идут через один закреплённый proxy/client/cookie jar; следующий retry может получить другой proxy по deterministic round-robin.
+Путь `GOAT_COOKIE_JAR_PATH` должен быть понятен самому curl-процессу: для Windows wrapper, запускающего бинарник через WSL, используйте путь `/mnt/c/...`; для нативного Windows-бинарника — обычный Windows path. В pool-режиме collection jar получает suffix `.proxy-ID.session-N`, а загрузчик изображений создаёт отдельные jars `.images-N.proxy-ID.session-N`, поэтому параллельные сессии и processing lanes не пишут в один cookie-файл. Product и offers одного `collect_product` attempt идут через один закреплённый proxy/session/client/cookie jar; следующий retry может получить другой proxy или свободный session slot по deterministic round-robin.
 
 Для безопасной живой проверки задайте `GOAT_SMOKE_PRODUCT_LIMIT` от 1 до 100, затем выполните:
 
@@ -108,7 +110,7 @@ npm run worker
 
 CLI создаёт или обновляет source `goat`, записывает лимит в его config и ставит одну discovery-задачу. Не запускайте smoke-команду без лимита; обычный адаптер без `maxProductsPerRun` рассчитан на полный каталог.
 
-Для уже сохранённого discovery-каталога используйте `npm run goat:enqueue-cohort`. Команда ничего не записывает без `GOAT_COHORT_APPLY=true`, выбирает только ещё не собранные товары и требует явный лимит от 1 до 20000. `GOAT_COHORT_ROUTES` делит квоту поровну между маршрутами, а `GOAT_COHORT_SEED` делает выборку воспроизводимой. Вместо лимита можно передать точный список `GOAT_COHORT_PRODUCT_IDS`; смешивать два режима нельзя. Если выбран полный объём не набран, jobs не создаются.
+Для уже сохранённого discovery-каталога используйте `npm run goat:enqueue-cohort`. Команда ничего не записывает без `GOAT_COHORT_APPLY=true`, выбирает только ещё не собранные товары и требует явный лимит от 1 до 20000. `GOAT_COHORT_ROUTES` делит квоту поровну между маршрутами, а `GOAT_COHORT_SEED` делает выборку воспроизводимой. Вместо лимита можно передать точный список `GOAT_COHORT_PRODUCT_IDS`; смешивать два режима нельзя. Если выбран полный объём не набран, jobs не создаются. По умолчанию успешный collection ставит downstream processing; для изолированного замера сбора задайте `GOAT_COHORT_ENQUEUE_PROCESSING=false`, и это значение будет явно сохранено в payload каждой collection job.
 
 `npm run classifier:exact-matches` показывает однозначные точные совпадения unresolved-значений с актуальным словарём выключенного target. По умолчанию разрешены только однотипные связи brand, model, color, material и tag; категории исключены из-за иерархии. Дубли имён target пропускаются. Запись выполняется только с `CLASSIFIER_EXACT_MATCH_APPLY=true` через штатный сервис решений с аудитом и точечной постановкой переобработки.
 

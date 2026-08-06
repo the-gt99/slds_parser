@@ -45,6 +45,17 @@ describe("CollectionRunner", () => {
     expect([...store.jobs.values()].map((job) => job.jobType)).toEqual(["process_product"]);
   });
 
+  it("saves collected parts without enqueueing processing when explicitly disabled", async () => {
+    const collectProduct = vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [{ partKey: "custom", rawPayload: {}, parsedPayload: { value: 1 }, adapterVersion: "1" }] });
+    const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn(), collectProduct };
+    const { runner, store } = setup(adapter); seedProduct(store);
+
+    await runner.collectProduct({ sourceProductId: "2", enqueueProcessing: false });
+
+    expect(store.parts.get("2/custom")?.parsedPayload).toEqual({ value: 1 });
+    expect(store.jobs).toHaveLength(0);
+  });
+
   it("rejects missing requested parts without overwriting old parts", async () => {
     const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn(), collectProduct: vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [] }) };
     const { runner, store } = setup(adapter); seedProduct(store);

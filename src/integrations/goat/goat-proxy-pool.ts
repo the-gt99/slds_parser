@@ -6,12 +6,14 @@ import { GoatHttpClient, type GoatHttpEnvironment } from "./goat-http-client.js"
 
 export interface GoatProxyPoolEnvironment extends GoatHttpEnvironment {
   readonly GOAT_PROXY_POOL_ENABLED?: string;
+  readonly GOAT_PROXY_CONCURRENCY_PER_PROXY?: string;
   readonly PARSER_PROXY_ENCRYPTION_KEY?: string;
 }
 
 export interface GoatProxyLease {
   readonly proxyId: EntityId;
   readonly proxyName: string;
+  readonly sessionSlot: number;
   readonly publicProxy: { readonly id: EntityId; readonly name: string };
   client(cookieJarSuffix?: string): GoatHttpClient;
   release(success: boolean | null, latencyMs: number | null): Promise<void>;
@@ -24,6 +26,15 @@ export interface WorkerClaimPermit {
 
 function isEnabled(value: string | undefined): boolean {
   return value === "1" || value?.toLowerCase() === "true";
+}
+
+function concurrencyPerProxy(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 1;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 16) {
+    throw new Error("GOAT_PROXY_CONCURRENCY_PER_PROXY must be an integer from 1 to 16");
+  }
+  return parsed;
 }
 
 function buildProxyUrl(record: ProxyRecord, credentials: ProxyCredentials | null): string {
@@ -43,6 +54,7 @@ class Lease implements GoatProxyLease {
     private readonly environment: GoatProxyPoolEnvironment,
     private readonly record: ProxyRecord,
     private readonly credentials: ProxyCredentials | null,
+    readonly sessionSlot: number,
   ) {
     this.publicProxy = { id: record.id, name: record.name };
   }
@@ -56,7 +68,7 @@ class Lease implements GoatProxyLease {
     const baseCookieJar = this.environment.GOAT_COOKIE_JAR_PATH?.trim();
     const clientEnvironment: GoatHttpEnvironment = {
       ...this.environment,
-      ...(baseCookieJar === undefined || baseCookieJar === "" ? {} : { GOAT_COOKIE_JAR_PATH: `${baseCookieJar}${cookieJarSuffix}.proxy-${this.record.id}` }),
+      ...(baseCookieJar === undefined || baseCookieJar === "" ? {} : { GOAT_COOKIE_JAR_PATH: `${baseCookieJar}${cookieJarSuffix}.proxy-${this.record.id}.session-${this.sessionSlot}` }),
     };
     const created = new GoatHttpClient(clientEnvironment, { proxyUrl: buildProxyUrl(this.record, this.credentials) });
     this.#clients.set(cookieJarSuffix, created);
@@ -66,14 +78,15 @@ class Lease implements GoatProxyLease {
   async release(success: boolean | null, latencyMs: number | null): Promise<void> {
     if (this.#released) return;
     this.#released = true;
-    await this.pool.release(this.record.id, success, latencyMs ?? Date.now() - this.#startedAt);
+    await this.pool.release(this.record.id, this.sessionSlot, success, latencyMs ?? Date.now() - this.#startedAt);
   }
 }
 
 export class GoatProxyPool {
   readonly #storage = new AsyncLocalStorage<GoatProxyLease>();
   readonly #crypto: ProxyCredentialsCrypto;
-  readonly #active = new Set<EntityId>();
+  readonly #activeSlots = new Map<EntityId, Set<number>>();
+  readonly #concurrencyPerProxy: number;
   #roundRobin = 0;
 
   constructor(
@@ -82,6 +95,7 @@ export class GoatProxyPool {
     crypto?: ProxyCredentialsCrypto,
   ) {
     this.#crypto = crypto ?? new ProxyCredentialsCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY);
+    this.#concurrencyPerProxy = concurrencyPerProxy(environment.GOAT_PROXY_CONCURRENCY_PER_PROXY);
   }
 
   get enabled(): boolean {
@@ -128,17 +142,28 @@ export class GoatProxyPool {
   }
 
   async tryAcquire(): Promise<GoatProxyLease | null> {
-    const available = (await this.repository.listAvailable()).filter((record) => !this.#active.has(record.id));
+    const available = await this.repository.listAvailable();
     if (available.length === 0) return null;
-    const record = available[this.#roundRobin % available.length]!;
-    this.#roundRobin += 1;
-    this.#active.add(record.id);
-    const credentials = record.credentialsCiphertext === null ? null : this.#crypto.decrypt(record.credentialsCiphertext);
-    return new Lease(this, this.environment, record, credentials);
+    for (let offset = 0; offset < available.length; offset += 1) {
+      const index = (this.#roundRobin + offset) % available.length;
+      const record = available[index]!;
+      const active = this.#activeSlots.get(record.id) ?? new Set<number>();
+      if (active.size >= this.#concurrencyPerProxy) continue;
+      let sessionSlot = 1;
+      while (active.has(sessionSlot)) sessionSlot += 1;
+      const credentials = record.credentialsCiphertext === null ? null : this.#crypto.decrypt(record.credentialsCiphertext);
+      active.add(sessionSlot);
+      this.#activeSlots.set(record.id, active);
+      this.#roundRobin = (index + 1) % available.length;
+      return new Lease(this, this.environment, record, credentials, sessionSlot);
+    }
+    return null;
   }
 
-  async release(id: EntityId, success: boolean | null, latencyMs: number | null): Promise<void> {
-    this.#active.delete(id);
+  async release(id: EntityId, sessionSlot: number, success: boolean | null, latencyMs: number | null): Promise<void> {
+    const active = this.#activeSlots.get(id);
+    active?.delete(sessionSlot);
+    if (active?.size === 0) this.#activeSlots.delete(id);
     if (success !== null) await this.repository.recordUse(id, { success, latencyMs });
   }
 }

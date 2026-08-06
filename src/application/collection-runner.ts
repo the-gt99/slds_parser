@@ -94,9 +94,11 @@ export class CollectionRunner {
           rawPayload: part.rawPayload, parsedPayload: part.parsedPayload, contentHash: hashStableJson(part.parsedPayload),
           ...(part.sourceUpdatedAt === undefined ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), fetchedAt: now(), adapterVersion: part.adapterVersion });
       }
-      // ProcessingRunner owns the full input hash, including processor and operation versions.
-      // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
-      await repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
+      if (payload.enqueueProcessing !== false) {
+        // ProcessingRunner owns the full input hash, including processor and operation versions.
+        // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
+        await repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
+      }
     });
     return { status: "completed" };
   }

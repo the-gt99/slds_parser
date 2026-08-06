@@ -28,6 +28,13 @@ function routes(value: string | undefined): string[] {
   return result;
 }
 
+function boolean(value: string | undefined, name: string, fallback: boolean): boolean {
+  if (value === undefined || value.trim() === "") return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be true or false`);
+}
+
 const explicitIds = ids(process.env.GOAT_COHORT_PRODUCT_IDS);
 const explicitMode = explicitIds.length > 0;
 if (explicitMode && process.env.GOAT_COHORT_PRODUCT_LIMIT !== undefined) {
@@ -39,10 +46,8 @@ const limit = explicitMode
 if (limit > MAX_COHORT_SIZE) throw new Error(`Cohort cannot exceed ${MAX_COHORT_SIZE} products`);
 const seed = integer(process.env.GOAT_COHORT_SEED ?? "1", "GOAT_COHORT_SEED", 0, 2_147_483_647);
 const selectedRoutes = explicitMode ? undefined : routes(process.env.GOAT_COHORT_ROUTES);
-const apply = process.env.GOAT_COHORT_APPLY === "true";
-if (process.env.GOAT_COHORT_APPLY !== undefined && !["true", "false"].includes(process.env.GOAT_COHORT_APPLY)) {
-  throw new Error("GOAT_COHORT_APPLY must be true or false");
-}
+const apply = boolean(process.env.GOAT_COHORT_APPLY, "GOAT_COHORT_APPLY", false);
+const enqueueProcessing = boolean(process.env.GOAT_COHORT_ENQUEUE_PROCESSING, "GOAT_COHORT_ENQUEUE_PROCESSING", true);
 
 const application = createApplication();
 try {
@@ -63,6 +68,7 @@ try {
   }, {})).sort(([left], [right]) => left.localeCompare(right));
   console.log(`GOAT cohort: ${candidates.length}`);
   console.log(`Routes: ${routeCounts.map(([route, count]) => `${route || "unknown"}=${count}`).join(", ")}`);
+  console.log(`Enqueue processing: ${enqueueProcessing}`);
   console.log(`Selection: ${candidates.slice(0, 20).map((product) => product.id).join(", ")}${candidates.length > 20 ? ", ..." : ""}`);
   if (!apply) {
     console.log("Dry run: set GOAT_COHORT_APPLY=true to enqueue collection jobs");
@@ -70,7 +76,7 @@ try {
     for (const product of candidates) {
       await application.repositories.jobs.enqueue({
         jobType: "collect_product",
-        payload: { sourceProductId: product.id },
+        payload: { sourceProductId: product.id, enqueueProcessing },
         uniqueKey: `source-product:${product.id}:collect`,
       });
     }
