@@ -37,7 +37,7 @@ try {
      WHERE internal.processor_version IS DISTINCT FROM expected.processor_version
      ORDER BY internal.source_product_id
      LIMIT $2`,
-    [expectedVersions.map((item) => ({ source_id: item.sourceId, processor_version: item.processorVersion })), configuredLimit],
+    [JSON.stringify(expectedVersions.map((item) => ({ source_id: item.sourceId, processor_version: item.processorVersion }))), configuredLimit],
   );
 
   console.log(`Outdated processed products: ${result.rowCount ?? result.rows.length}`);
