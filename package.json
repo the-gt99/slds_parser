@@ -10,6 +10,7 @@
     "api": "node --env-file-if-exists=.env dist/src/cli/api.js",
     "build": "tsc -p tsconfig.json",
     "classifier:exact-matches": "node --env-file-if-exists=.env --import tsx src/cli/classifier-exact-matches.ts",
+    "classifier:legacy-import": "node --env-file-if-exists=.env --import tsx src/cli/legacy-classification-import.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
     "goat:enqueue-discovery": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-discovery.ts",
     "goat:enqueue-cohort": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-cohort.ts",
