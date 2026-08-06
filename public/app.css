@@ -46,8 +46,26 @@ h3 { font-size: 17px; line-height: 1.3; }
 .admin-table th { color: var(--muted); background: var(--surface-soft); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .admin-table a { color: var(--accent); }
 .admin-title-cell { min-width: 220px; }
+.admin-title-cell strong, .admin-title-cell small { display: block; }
+.admin-title-cell small { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.admin-table tr.clickable-row { cursor: pointer; }
+.admin-table tr.clickable-row:hover td { background: var(--surface-soft); }
+.admin-table tr.selected-row td { background: var(--accent-soft); }
 .pagination { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px; }
 .compact-links { display: flex; gap: 8px; }
+.config-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.config-shell.with-detail { grid-template-columns: minmax(0, 1fr) minmax(320px, 430px); }
+.config-detail { border-left: 1px solid var(--line); background: var(--surface); padding: 18px; min-width: 0; }
+.config-detail h3 { margin-top: 6px; overflow-wrap: anywhere; }
+.config-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.config-meta-grid { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; margin-top: 14px; font-size: 12px; }
+.config-meta-grid dt { color: var(--muted); }
+.config-meta-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.config-code { max-height: 220px; margin: 12px 0 0; padding: 10px; overflow: auto; border-radius: 9px; background: var(--surface-soft); font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.config-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.config-pill { display: inline-flex; align-items: center; min-height: 23px; padding: 2px 8px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 11px; font-weight: 650; }
+.config-pill.active { background: var(--accent-soft); color: var(--accent); }
+.config-pill.inactive, .config-pill.ignored { background: var(--warning-soft); color: var(--warning); }
 .stage-list { display: grid; gap: 10px; }
 .stage-row { display: grid; gap: 6px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .stage-row:last-child { border-bottom: 0; }
@@ -58,7 +76,8 @@ h3 { font-size: 17px; line-height: 1.3; }
 .data-details pre { max-height: 420px; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 @media (max-width: 1000px) { .admin-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .admin-page { width: min(100% - 20px, 1500px); margin-top: 14px; } .admin-filters { grid-template-columns: 1fr; } .admin-table th, .admin-table td { min-width: 120px; padding: 9px; } .admin-title-cell { min-width: 190px; } .part-payloads { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .config-shell.with-detail { grid-template-columns: 1fr; } .config-detail { border-left: 0; border-top: 1px solid var(--line); } }
+@media (max-width: 640px) { .admin-page { width: min(100% - 20px, 1500px); margin-top: 14px; } .admin-filters { grid-template-columns: 1fr; } .admin-table th, .admin-table td { min-width: 120px; padding: 9px; } .admin-title-cell { min-width: 190px; } .part-payloads { grid-template-columns: 1fr; } .config-meta-grid { grid-template-columns: 1fr; } }
 
 .brand-mark {
   display: grid;
