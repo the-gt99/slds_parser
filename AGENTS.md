@@ -321,6 +321,40 @@ WordPress:
 
 Массовые правила модели строить по evidence `brand + family` и проверять preview конфликтов. Отдельно вернуться к Pegasus/Surge и другим семействам, где голое название неоднозначно. Движок классификатора не переписывать под GOAT.
 
+### 3. Smoke и выборка 6 августа 2026
+
+После parser commit `0b89abb` и WordPress commit `661cc03` изменения развёрнуты на production. Target `slamdunk` оставался выключенным, export jobs не создавались.
+
+Проверки deployment:
+
+- parser production обновлён fast-forward до `0b89abb`, выполнены `npm ci`, `npm run typecheck`, `npm test` (`169` tests), `npm run build`, `npm run db:migrate` (`No pending migrations`), `node --check public/app.js`, `node --check public/product.js`;
+- перезапущены `slds-parser-api.service` и `slds-parser-worker.service`, оба active, internal health `200`;
+- WordPress production обновлён fast-forward до `661cc03`, `php -l product-snapshots.php` и все пять target-import PHP-тестов прошли;
+- target `slamdunk` ID `1` проверен как `enabled=false`, `export_product` jobs после discovery `0`.
+
+Smoke 50:
+
+- поставлено 48 новых `collect_product` jobs и 2 forced `process_product` jobs для старых no-offers товаров `25` и `30`;
+- результат: 48 collection completed, 49 processing completed, 1 failed;
+- failed товар `sourceProductId=5329` (`air-afterburner-flight-bg-146033-101`) имел только GOAT placeholder `missing.png`; ошибка `Product images are empty` корректна;
+- 19 из 49 обработанных товаров получили `variants: []`, то есть `offers: []` теперь проходит processing без выдуманных размеров и цен;
+- media около `59 MB`, PostgreSQL около `601 MB`, свободно около `73 GB`.
+
+Rep500:
+
+- поставлено ровно 500 новых `collect_product` jobs: 250 sneakers и 250 apparel; фактический диапазон jobs `295`–`1294`;
+- collection: 500 completed;
+- processing: 487 completed, 13 failed;
+- все 13 failed — `Product images are empty`; каждый failed product имел только GOAT `placeholders/product_templates/.../missing.png`;
+- обработанные товары по route: apparel `248`, sneakers `239`;
+- no-offers среди обработанных: `182/487` (`37.4%`), из них apparel `125`, sneakers `57`;
+- media после выборки около `183 MB`, PostgreSQL около `620 MB`, свободно около `72 GB`;
+- классификатор по rep500: `brand resolved=200/unresolved=287`, `category resolved=58/unresolved=429`, `color resolved=343/unresolved=144`, `material resolved=61/unresolved=103`, `model resolved=2/unresolved=485`, `tag resolved=32/unresolved=89`;
+- частые unresolved не сопоставлялись автоматически: `clothing`, `Running`, `Lifestyle`, `Blue`, `Leather`, `Basketball`, `Puma`, `Kith`, `Off-White`, `EVA`, `Zoom Air` и другие требуют проверки;
+- Pegasus/Surge проверены в выборке и остались unresolved с контекстом: `Nike Air Zoom Pegasus 36 'Tokyo Running Pack'` (`brand=Nike`, `family=Air Zoom Pegasus 36`) и `Under Armour Wmns Surge 4 'Sky Blue White'` (`brand=Under Armour`, `family=Surge`). Не создавать глобальные model mappings по голым `Pegasus` или `Surge`.
+
+Следующий безопасный шаг — разобрать classifier queue по rep500, создавая только доказанные mappings/rules с preview конфликтов. До согласования sold-out write contract и multi-brand cardinality не запускать WordPress export.
+
 ### 4. Следующие WordPress smoke
 
 Target оставить выключенным. Выполнить контролируемо:
