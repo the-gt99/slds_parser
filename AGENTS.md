@@ -317,13 +317,13 @@ WordPress:
 
 ### 2. Репрезентативная классификационная выборка
 
-Rep500 завершён. Не обрабатывать весь каталог сразу.
+Rep500 и cohort 2000 завершены. Не обрабатывать весь каталог сразу.
 
-1. Следующая партия — `2000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
-2. Target оставить выключенным; collection остаётся последовательным, processing выполнять на подтверждённых четырёх lanes.
-3. После партии сравнить collection/processing rate, no-offers, no-images, retry/failures, media, диск и PostgreSQL.
-4. Не повышать source collection concurrency; новые уровни processing concurrency проверять отдельными forced smoke.
-5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 2000 перейти к 5000, затем партиям 10000–20000.
+1. Следующая партия — `5000` discovery-товаров, поровну `sneakers`/`apparel`, через dry-run и затем `GOAT_COHORT_APPLY=true`.
+2. Target оставить выключенным; collection держать на трёх lane, processing — на подтверждённых четырёх lane.
+3. Не повышать collection concurrency внутри рабочей партии. Если нужна проверка `collection=6/9/12`, делать отдельный малый smoke на 100–200 товаров с контролем 403/429/retry/proxy failures.
+4. Новые уровни processing/image concurrency проверять отдельным forced smoke, не смешивая с репрезентативной выборкой.
+5. Разбирать очередь по частоте, формируя точные mappings и контекстные rules; после cohort 5000 переходить к партиям 10000–20000 только при стабильных proxy/retry/error метриках.
 
 Массовые правила модели строить по evidence `brand + family` и проверять preview конфликтов. Отдельно вернуться к Pegasus/Surge и другим семействам, где голое название неоднозначно. Движок классификатора не переписывать под GOAT.
 
@@ -369,9 +369,61 @@ Rep500:
 
 Proxy pool проверен на production с тремя реальными healthy/enabled прокси и тремя collection lane. В отдельном cohort из 12 товаров collection завершился `12/12`, processing `12/12`, attempts по одному, retry/failures и export jobs отсутствуют. Товары распределились между proxy IDs ровно `4/4/4`; у каждого товара parts `product` и `offers` содержат один и тот же `_transport.proxy.id`. После smoke активных jobs нет, target `slamdunk=false`, API/worker active, internal/external health `200`.
 
-Текущие active observations после переобработки: brand `resolved=469/unresolved=99`, category `86/482`, color `403/165`, material `77/117`, model `24/544`, tag `46/97`; ambiguous отсутствуют. Это количества наблюдений/товаров, а не уникальных значений очереди. Следующий безопасный шаг — cohort 2000 на четырёх processing lanes и анализ частот unresolved. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
+### 4. Cohort 2000 от 6 августа 2026
 
-### 4. Следующие WordPress smoke
+Production cohort 2000 запущен с `GOAT_COHORT_PRODUCT_LIMIT=2000`, `GOAT_COHORT_ROUTES=sneakers,apparel`, `GOAT_COHORT_SEED=20260808`. Dry-run вернул ровно `2000` товаров: `1000 sneakers` и `1000 apparel`; без `GOAT_COHORT_APPLY=true` jobs не создавались. Target `slamdunk` оставался `enabled=false`, export jobs не создавались, WordPress endpoints не вызывались.
+
+Настройки во время прохода: production commit на старте `b406347`, `WORKER_COLLECTION_CONCURRENCY=3`, `WORKER_PROCESS_CONCURRENCY=4`, `GOAT_PROXY_POOL_ENABLED=true`, три proxy healthy/enabled. Concurrency во время партии не менялась.
+
+Результат первого прохода:
+
+- collection: `2000 completed`, `0 failed`, `0 pending/running/retry`;
+- processing: `1996 completed`, `4 failed`, `0 pending/running/retry`;
+- все 4 failed имели одну причину: `Translation verification failed for upperMaterial`;
+- конкретные значения `upperMaterial`: `Flymesh`, `Flyweave`, `NDure`, `IntelliKnit`;
+- причина подтверждена кодом `TranslateContentOperation`: верификация требовала кириллицу для любого `upperMaterial`, хотя это валидные фирменные material terms.
+
+Исправление сделано в parser commit `c3c32e2` (`Добавить переводы материалов`): добавлены только подтверждённые переводы `Flymesh -> Флаймеш`, `Flyweave -> Флайвив`, `NDure -> Эн-Дьюр`, `IntelliKnit -> ИнтеллиКнит` и unit-тест. Локально и на production прошли `npm run typecheck`, `npm test` (`191` tests), `npm run build`, `node --check public/app.js`, `node --check public/product.js`. Production обновлён fast-forward до `c3c32e2`, API/worker перезапущены.
+
+После исправления точечно поставлены только 4 forced `process_product` jobs (`5688`–`5691`) для source products `47926`, `87288`, `194461`, `319324`. Все 4 завершились `completed` с первой попытки. Latest status по cohort: `2000/2000` товаров обработаны, failed нет. Исторические failed jobs первого прохода оставлены в истории и не скрываются.
+
+Скорость и нагрузка:
+
+- collection wall time `4707.73 с` (`78.46 мин`), средняя скорость `25.49 товара/мин`;
+- original processing wall time `7078.95 с` (`117.98 мин`), средняя скорость `16.93 товара/мин`;
+- latest processing attempt duration: avg `13.653 с`, p50 `8.084 с`, p95 `38.969 с`, p99 `101.460 с`, max `295.148 с`;
+- максимальный reconstructed pending processing queue первого прохода: `973`;
+- во время мониторинга worker доходил примерно до `305 MB RSS` и около `18.8% CPU` по `ps`; после завершения около `171 MB RSS`.
+
+Проверки данных cohort:
+
+- route: `1000 sneakers`, `1000 apparel`;
+- у `2000/2000` товаров есть обе parts: `product` и `offers`;
+- `product` и `offers` одного товара всегда собраны через один `_transport.proxy.id`;
+- collection distribution без image leases: proxy `1` — `546`, proxy `2` — `728`, proxy `3` — `726`;
+- дубликаты source products: `0`; дубликаты source parts: `0`;
+- `offers: []`: `801`;
+- latest `variants: []`: `831`;
+- latest `images: []`: `35`.
+
+Классификация cohort после точечной переобработки: `classification complete=4`, `pending=1996`, ambiguous отсутствуют. Наблюдения по типам: brand `resolved=1523/unresolved=473`, category `271/1725`, color `1413/583`, material `229/412`, model `24/1972`, tag `167/311`. Частые unresolved: brand `Fear of God Essentials`, `Aimé Leon Dore`, `Anti Social Social Club`; category `clothing`, `Running`, `Lifestyle`; color `Blue`, `Pink`, `Cream`; material `Leather`, `Suede`, `Synthetic`; tag `EVA`, `Boost`, `Zoom Air`. Mappings/rules по результатам cohort автоматически не создавались.
+
+Ресурсы после cohort и фикса:
+
+- PostgreSQL `697 MB`;
+- `/srv/slds-parser/state` `828 MB`;
+- свободно около `72 GB`;
+- всего `source_products=591828`, с `external_id=2590`;
+- `source_product_parts`: `2590` товаров, `5180` rows;
+- `internal_products`: `classification_pending=2572`, `classified=18`;
+- proxy counters относительно раннего baseline выросли с failures только у proxy `1` на `+2`; финально все три proxy `enabled=true`, `health_status=healthy`;
+- active jobs `0`, export jobs после baseline `0`, target `slamdunk=false`;
+- API и worker active, internal/external health `200`;
+- production worktree чистый.
+
+Следующий безопасный шаг — разбор частот unresolved по cohort 2000 и создание подтверждённых mappings/rules через preview, затем cohort 5000 на тех же `collection=3` и `processing=4`. До согласования sold-out write contract и multi-brand cardinality WordPress export не запускать.
+
+### 5. Следующие WordPress smoke
 
 Target оставить выключенным. Выполнить контролируемо:
 
@@ -384,7 +436,7 @@ Target оставить выключенным. Выполнить контро�
 
 Только после серии из 5–50 проверенных товаров обсуждать включение target. Сам факт одного успешного update не разрешает массовый export.
 
-### 5. Эксплуатация полного каталога
+### 6. Эксплуатация полного каталога
 
 После успешной классификационной выборки и exporter smoke:
 
