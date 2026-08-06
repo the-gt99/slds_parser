@@ -164,6 +164,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       resolutionId: "21",
       targetScope: "product.tag",
       dictionaryValueId: "61",
+      targetCardinality: "multiple",
       actor: "test",
     });
     const sql = executor.calls.map((call) => call.text).join("\n");
@@ -185,6 +186,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       resolutionId: "21",
       targetScope: "product.tag",
       dictionaryValueId: "61",
+      targetCardinality: "multiple",
       actor: "test",
     });
     const statsSql = executor.calls[2]?.text ?? "";
@@ -249,7 +251,9 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(result.items[0]).toMatchObject({ targetStatus: "observed", targetJobStatus: null });
     expect(executor.calls[0]?.values).toContain("observed");
-    expect(executor.calls[0]?.text).toContain("CASE WHEN active_export.status IS NOT NULL THEN 'pending'");
+    expect(executor.calls[0]?.text).toContain("internal.id::TEXT NOT IN");
+    expect(executor.calls[0]?.text).toContain("target_product.status = $1");
+    expect(executor.calls[0]?.text).toContain("export_target.id::TEXT = job.payload->>'targetId'");
     expect(executor.calls[1]?.text).toContain("CASE WHEN active_export.status IS NOT NULL THEN 'pending'");
   });
 
@@ -269,7 +273,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(result.items[0]).toMatchObject({ targetStatus: "pending", targetJobStatus: "running" });
     expect(executor.calls[0]?.text).toContain("job.status IN ('pending', 'running', 'retry')");
-    expect(executor.calls[0]?.text).toContain("job.payload->>'targetId' = target_state.target_id::TEXT");
+    expect(executor.calls[0]?.text).toContain("export_target.id::TEXT = job.payload->>'targetId'");
   });
 
   it.each(["complete", "retry", "fail"] as const)("%s clears the job lock", async (operation) => {

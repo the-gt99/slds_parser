@@ -31,6 +31,10 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
   registry.register(new ValidateProcessedProductOperation(["goat"]));
 }
 
+export function registerSourceProcessors(registry: SourceProcessorRegistry): void {
+  registry.register(new GoatSourceProcessor());
+}
+
 export function registerPipelineComponents(registries: {
   readonly adapters: SourceAdapterRegistry;
   readonly processors: SourceProcessorRegistry;
@@ -38,7 +42,7 @@ export function registerPipelineComponents(registries: {
   readonly exporters: TargetExporterRegistry;
 }, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool): void {
   registries.adapters.register(GoatSourceAdapter.create(environment, proxyPool));
-  registries.processors.register(new GoatSourceProcessor());
+  registerSourceProcessors(registries.processors);
   registerProductOperations(registries.operations, environment, proxyPool);
   const wordpress = loadWordPressTargetConfig(environment);
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));

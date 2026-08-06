@@ -23,6 +23,7 @@ function candidate(
     sourceKey: `product-${sourceProductId}`,
     title,
     sku: `SKU-${sourceProductId}`,
+    mappingId: null,
     candidate: {
       key: "product:model",
       typeCode: "model",
@@ -44,14 +45,24 @@ function repositories(
     listReviewQueue: vi.fn(),
     listReferenceValues: vi.fn(),
     listRuleCandidates: vi.fn().mockResolvedValue(candidates),
+    getRule: vi.fn(),
+    listRuleConditionFields: vi.fn(),
+    listConfigurationHistory: vi.fn(),
+    previewDecision: vi.fn(),
     getDecisionContext: vi.fn(),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "1", referenceValueId: "2", revision: "1", affectedProductCount: 1, affectedExportCount: 0 }),
     createRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "1", affectedProductCount: 1 }),
     updateRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "2", affectedProductCount: 1 }),
     setRuleEnabled: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 1 }),
+    getTargetValueMapping: vi.fn(),
+    previewTargetValueMapping: vi.fn(),
+    updateTargetValueMapping: vi.fn(),
+    setTargetValueMappingEnabled: vi.fn(),
     listTargetProjections: vi.fn(),
+    getTargetProjection: vi.fn(),
     previewTargetProjection: vi.fn(),
     createTargetProjection: vi.fn(),
+    updateTargetProjection: vi.fn(),
     deactivateTargetProjection: vi.fn(),
   } satisfies ClassificationAdminRepository;
   const classification = {
@@ -116,6 +127,35 @@ describe("ClassifierAdminService", () => {
     expect(preview.examples[0]?.outcome).toBe("ambiguous");
   });
 
+  it("shows exact mappings as shadowed instead of letting a rule override them", async () => {
+    const exact = { ...candidate("1", "101", "Nike ACG Pegasus Trail", "Nike"), mappingId: "77" };
+    const deps = repositories([exact]);
+    const service = new ClassifierAdminService(deps.admin, deps.classification);
+
+    const preview = await service.previewRule(draft);
+
+    expect(preview).toMatchObject({ matchedProducts: 1, affectedProducts: 0, shadowedObservations: 1 });
+    expect(preview.examples[0]?.outcome).toBe("shadowed");
+  });
+
+  it("does not compare an edited rule with its previous revision", async () => {
+    const existing: ClassificationRuleRecord = {
+      id: "10", sourceId: "1", typeCode: "model", name: "Old", priority: 100,
+      conditions: draft.conditions, referenceValueId: "999", revision: "1",
+    };
+    const deps = repositories([candidate("1", "101", "Nike ACG Pegasus Trail", "Nike")], [existing]);
+    deps.admin.getRule.mockResolvedValue({ ...existing, enabled: true });
+    const service = new ClassifierAdminService(deps.admin, deps.classification);
+
+    const result = await service.updateRule("10", draft);
+
+    expect(result.preview.ambiguousObservations).toBe(0);
+    expect(deps.admin.updateRule).toHaveBeenCalledWith(expect.objectContaining({
+      ruleId: "10",
+      affectedSourceProductIds: ["101"],
+    }));
+  });
+
   it("rejects unsafe bare model rules", async () => {
     const deps = repositories([candidate("1", "101", "Nike ACG Pegasus Trail", "Nike")]);
     const service = new ClassifierAdminService(deps.admin, deps.classification);
@@ -139,6 +179,19 @@ describe("ClassifierAdminService", () => {
       affectedSourceProductIds: ["101"],
       actor: "admin-api",
     }));
+  });
+
+  it("filters review data and rule candidates by the current processor version", async () => {
+    const deps = repositories([]);
+    const service = new ClassifierAdminService(deps.admin, deps.classification, undefined, undefined, "admin-api", { "1": "2.9.0" });
+
+    await service.listReviewQueue({ limit: 20, offset: 0 });
+    await service.listConfiguration({ kind: "mapping", limit: 20, offset: 0 });
+    await service.listRuleConditionFields("1", "model");
+
+    expect(deps.admin.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
+    expect(deps.admin.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
+    expect(deps.admin.listRuleConditionFields).toHaveBeenCalledWith("1", "model", "2.9.0");
   });
 
   it("creates an opaque internal reference when a target term is linked directly", async () => {

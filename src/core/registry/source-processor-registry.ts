@@ -27,4 +27,8 @@ export class SourceProcessorRegistry {
 
     return processor;
   }
+
+  list(): readonly SourceProcessor[] {
+    return [...this.#processors.values()];
+  }
 }

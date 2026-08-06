@@ -9,6 +9,7 @@ const state = {
   mappingMode: "wordpress",
   mappingResults: [],
   selectedMapping: null,
+  decisionPreview: null,
   currentReferenceId: null,
   currentResolution: null,
   resolved: false,
@@ -237,6 +238,7 @@ function renderQueue() {
 function selectQueueItem(item) {
   state.selected = item;
   state.selectedMapping = null;
+  state.decisionPreview = null;
   state.currentReferenceId = null;
   state.currentResolution = null;
   state.selectedProjectionTerm = null;
@@ -271,6 +273,10 @@ function renderDetail() {
   byId("decision-actions").hidden = state.resolved;
   byId("decision-success").hidden = !state.resolved;
   byId("ignore-button").disabled = state.resolved;
+  if (!state.resolved && !state.decisionPreview) {
+    byId("decision-preview").hidden = true;
+    byId("confirm-button").textContent = "Проверить связь";
+  }
   updateMappingModeAvailability();
   renderProjectionSection();
 }
@@ -377,6 +383,7 @@ async function loadMappingResults() {
   const item = state.selected;
   if (!item) return;
   state.selectedMapping = null;
+  resetDecisionPreview();
   byId("confirm-button").disabled = true;
   const results = byId("mapping-results");
   const message = byId("mapping-message");
@@ -432,6 +439,7 @@ function renderMappingResults() {
     button.append(content, id);
     button.addEventListener("click", () => {
       state.selectedMapping = result;
+      resetDecisionPreview();
       state.currentReferenceId = state.mappingMode === "internal" ? result.id : null;
       byId("confirm-button").disabled = false;
       renderMappingResults();
@@ -457,17 +465,38 @@ async function confirmDecision(action = "confirm") {
         dictionaryValueId: state.selectedMapping.id,
       };
     }
+    if (action === "confirm" && !state.decisionPreview) {
+      const response = await api("/api/classifier/decisions/preview", { method: "POST", body });
+      state.decisionPreview = response.preview;
+      const preview = byId("decision-preview");
+      preview.textContent = response.preview.unchanged
+        ? `Эта связь уже настроена. Затронуто товаров: ${response.preview.productCount}.`
+        : `Будет переобработано товаров: ${response.preview.productCount}. WordPress сейчас не изменяется.`;
+      preview.hidden = false;
+      button.textContent = "Сохранить связь";
+      button.disabled = false;
+      return;
+    }
     const response = await api("/api/classifier/decisions", { method: "POST", body });
     state.currentReferenceId = response.decision.referenceValueId;
     state.currentResolution = { kind: "mapping", id: response.decision.mappingId };
     state.resolved = true;
     renderDetail();
     await loadProjections();
-    showToast(action === "ignore" ? "Значение будет игнорироваться." : "Сопоставление сохранено.");
+    if (action === "confirm" && !byId("projection-section").hidden) {
+      byId("projection-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    showToast(action === "ignore" ? "Значение будет игнорироваться." : "Основная связь сохранена. Ниже можно добавить категории, метки или другие назначения WordPress.");
   } catch (error) {
     showToast(error.message);
     button.disabled = false;
   }
+}
+
+function resetDecisionPreview() {
+  state.decisionPreview = null;
+  byId("decision-preview").hidden = true;
+  byId("confirm-button").textContent = "Проверить связь";
 }
 
 function decisionBodyFor(item) {
@@ -765,13 +794,27 @@ function renderProjectionSection() {
   const current = select.value;
   select.replaceChildren();
   for (const capability of allCapabilities()) {
-    const label = `${capability.targetScope} · ${capability.entityType}`;
+    const label = `${targetScopeLabel(capability.targetScope)} · ${capability.targetScope}`;
     select.append(new Option(label, capability.targetScope));
   }
   if ([...select.options].some((option) => option.value === current)) select.value = current;
   else select.value = targetScope();
   byId("projection-search").value ||= state.selected?.sourceValue ?? "";
   void loadProjectionResults();
+}
+
+function targetScopeLabel(scope) {
+  return ({
+    "product.brand": "Бренд",
+    "product.model": "Модель",
+    "product.category": "Категория товара",
+    "product.tag": "Метка товара",
+    "product.color": "Цвет",
+    "product.material": "Материал",
+    "product.activity": "Вид спорта / назначение",
+    "product.shoe_height": "Высота обуви",
+    "product.season": "Сезон",
+  })[scope] || scope;
 }
 
 function projectionEntity() {
@@ -784,7 +827,7 @@ async function loadProjections() {
   const resolution = state.currentResolution;
   const list = byId("projection-list");
   if (!target || !resolution) return;
-  list.replaceChildren(loading("Загружаем projections…"));
+  list.replaceChildren(loading("Загружаем дополнительные назначения…"));
   try {
     const params = new URLSearchParams({ targetId: target.id, resolutionKind: resolution.kind, resolutionId: resolution.id });
     const response = await api(`/api/classifier/projections?${params}`);
@@ -798,7 +841,7 @@ function renderProjectionList(items) {
   const list = byId("projection-list");
   list.replaceChildren();
   if (items.length === 0) {
-    list.append(emptyText("Активных projections нет."));
+    list.append(emptyText("Дополнительных назначений пока нет."));
     return;
   }
   for (const item of items) {
@@ -808,7 +851,7 @@ function renderProjectionList(items) {
     const strong = document.createElement("strong");
     strong.textContent = item.externalLabel;
     const small = document.createElement("span");
-    small.textContent = `${item.targetScope} · term #${item.externalValue} · projection`;
+    small.textContent = `${targetScopeLabel(item.targetScope)} · ${item.targetScope} · term #${item.externalValue}`;
     text.append(strong, small);
     const button = document.createElement("button");
     button.className = "button danger-quiet small-button";
@@ -896,7 +939,7 @@ async function previewProjection() {
     const response = await api("/api/classifier/projections/preview", { method: "POST", body: projectionBody() });
     state.projectionPreview = response.preview;
     renderProjectionPreview(response.preview);
-    byId("create-projection").disabled = false;
+    byId("create-projection").disabled = Boolean(response.preview.duplicate) || (response.preview.cardinalityConflicts?.length || 0) > 0;
   } catch (error) {
     showError(byId("projection-error"), error.message);
   } finally {
@@ -910,7 +953,7 @@ function renderProjectionPreview(preview) {
   const stats = document.createElement("div");
   stats.className = "preview-stats";
   for (const [value, label] of [
-    [preview.observationCount, "observations"],
+    [preview.observationCount, "наблюдений"],
     [preview.productCount, "товаров"],
     [preview.duplicate ? 1 : 0, "дублей"],
     [preview.cardinalityConflicts?.length ?? 0, "конфликтов"],
@@ -925,6 +968,14 @@ function renderProjectionPreview(preview) {
     stats.append(stat);
   }
   box.append(stats);
+  if (preview.duplicate || (preview.cardinalityConflicts?.length || 0) > 0) {
+    const warning = document.createElement("p");
+    warning.className = "inline-message";
+    warning.textContent = preview.duplicate
+      ? "Такое назначение уже активно. Создавать дубль не нужно."
+      : "Это поле допускает одно значение, а для решения уже настроено другое назначение.";
+    box.append(warning);
+  }
   const examples = document.createElement("div");
   examples.className = "preview-examples";
   for (const item of preview.examples ?? []) {
@@ -947,7 +998,7 @@ async function createProjection() {
   button.disabled = true;
   try {
     const response = await api("/api/classifier/projections", { method: "POST", body: projectionBody() });
-    showToast(`Projection сохранена. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
+    showToast(`Дополнительное назначение сохранено. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
     await loadProjections();
   } catch (error) {
     showError(byId("projection-error"), error.message);
@@ -961,7 +1012,7 @@ async function deactivateProjection(projectionId) {
   if (!target) return;
   try {
     const response = await api(`/api/targets/${target.id}/classification-projections/${projectionId}/deactivate`, { method: "POST", body: {} });
-    showToast(`Projection отключена. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
+    showToast(`Дополнительное назначение отключено. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
     await loadProjections();
   } catch (error) {
     showToast(error.message);
@@ -999,6 +1050,7 @@ byId("queue-search").addEventListener("input", () => {
 byId("type-filter").addEventListener("change", () => loadQueue());
 byId("status-filter").addEventListener("change", () => loadQueue());
 byId("mapping-search").addEventListener("input", () => {
+  resetDecisionPreview();
   clearTimeout(mappingSearchTimer);
   mappingSearchTimer = setTimeout(loadMappingResults, 250);
 });
@@ -1015,6 +1067,7 @@ for (const tab of byId("mapping-tabs").querySelectorAll(".tab")) {
     state.mappingMode = tab.dataset.mode;
     state.selectedMapping = null;
     state.currentReferenceId = null;
+    resetDecisionPreview();
     updateMappingModeAvailability();
     void loadMappingResults();
   });

@@ -5,13 +5,18 @@ import type {
   ClassificationConfigListItem,
   ClassificationConfigListQuery,
   ClassificationConfigListResult,
+  ClassificationConfigHistoryRecord,
+  ClassificationConfigOutput,
   ClassificationDecisionContext,
+  ClassificationDecisionPreview,
   ClassificationDecisionKey,
   ClassificationReferenceValueOption,
   ClassificationReviewExample,
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
+  ClassificationRuleAdminRecord,
+  ClassificationRuleConditionFieldOption,
   CreateClassificationRuleInput,
   CreateClassificationRuleResult,
   SaveClassificationDecisionInput,
@@ -19,6 +24,8 @@ import type {
   TargetClassificationProjectionCommand,
   TargetClassificationProjectionPreview,
   TargetClassificationProjectionRecord,
+  TargetValueMappingAdminRecord,
+  TargetValueMappingCommand,
   UpdateClassificationRuleInput,
   UpdateClassificationRuleResult,
 } from "../../../repositories/index.js";
@@ -80,6 +87,45 @@ function reviewExamples(value: unknown): readonly ClassificationReviewExample[] 
   });
 }
 
+function configOutputs(value: unknown): readonly ClassificationConfigOutput[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const row = jsonObject(entry);
+    if (row.kind !== "target_mapping" && row.kind !== "projection") return [];
+    return [{
+      kind: row.kind,
+      id: String(row.id),
+      targetId: String(row.target_id),
+      targetCode: String(row.target_code),
+      targetScope: String(row.target_scope),
+      targetExternalId: String(row.target_external_id),
+      targetLabel: String(row.target_label),
+      targetTaxonomy: nullableText(row.target_taxonomy),
+      status: row.status === "active" ? "active" as const : "inactive" as const,
+    }];
+  });
+}
+
+function processorVersions(value: Readonly<Record<string, string>> | undefined): string {
+  return JSON.stringify(value ?? {});
+}
+
+function mapTargetValueMappingAdmin(row: DatabaseRow): TargetValueMappingAdminRecord {
+  return {
+    id: String(row.id),
+    targetId: String(row.target_id),
+    referenceValueId: String(row.reference_value_id),
+    targetScope: String(row.target_scope),
+    externalValue: String(row.external_value),
+    externalLabel: String(row.external_label),
+    metadata: jsonObject(row.metadata),
+    dictionaryValueId: nullableText(row.dictionary_value_id),
+    active: row.active === true,
+    revision: String(row.revision),
+    typeCode: String(row.type_code),
+  };
+}
+
 async function withClient<Result>(
   pool: SqlPool,
   callback: (client: SqlClient) => Promise<Result>,
@@ -136,12 +182,13 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const typeCode = add(filters.typeCode);
       const status = add(filters.status);
       const search = add(filters.search);
+      const versions = add(processorVersions(query.currentProcessorVersions));
       const union = `
         SELECT 'mapping' AS kind, mapping.id, mapping.source_id, source.code AS source_code,
                NULL::BIGINT AS target_id, NULL::TEXT AS target_code, type.code AS type_code, type.name AS type_name,
                mapping.scope, mapping.source_value, mapping.normalized_source_value, mapping.context, mapping.context_key,
                mapping.reference_value_id, value.name AS reference_name, NULL::TEXT AS target_scope,
-               NULL::TEXT AS target_external_id, NULL::TEXT AS target_label, NULL::TEXT AS target_taxonomy,
+               NULL::TEXT AS target_external_id, NULL::TEXT AS target_label, NULL::TEXT AS target_taxonomy, NULL::BIGINT AS target_dictionary_value_id,
                NULL::TEXT AS rule_name, '[]'::JSONB AS conditions, NULL::INTEGER AS priority,
                CASE WHEN mapping.status = 'ignored' THEN 'ignored' ELSE 'active' END AS status,
                mapping.revision, mapping.decided_by AS actor, mapping.decision_reason AS reason,
@@ -155,7 +202,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                NULL::BIGINT AS target_id, NULL::TEXT AS target_code, type.code AS type_code, type.name AS type_name,
                NULL::TEXT AS scope, NULL::TEXT AS source_value, NULL::TEXT AS normalized_source_value,
                '{}'::JSONB AS context, NULL::TEXT AS context_key, rule.reference_value_id, value.name AS reference_name,
-               NULL::TEXT AS target_scope, NULL::TEXT AS target_external_id, NULL::TEXT AS target_label, NULL::TEXT AS target_taxonomy,
+               NULL::TEXT AS target_scope, NULL::TEXT AS target_external_id, NULL::TEXT AS target_label, NULL::TEXT AS target_taxonomy, NULL::BIGINT AS target_dictionary_value_id,
                rule.name AS rule_name, rule.conditions, rule.priority,
                CASE WHEN rule.enabled THEN 'active' ELSE 'inactive' END AS status,
                rule.revision, rule.updated_by AS actor, NULL::TEXT AS reason, rule.created_at, rule.updated_at,
@@ -170,7 +217,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                NULL::TEXT AS scope, NULL::TEXT AS source_value, NULL::TEXT AS normalized_source_value,
                '{}'::JSONB AS context, NULL::TEXT AS context_key, mapping.reference_value_id, value.name AS reference_name,
                mapping.target_scope, mapping.external_value AS target_external_id, mapping.external_label AS target_label,
-               dictionary.taxonomy AS target_taxonomy, NULL::TEXT AS rule_name, '[]'::JSONB AS conditions,
+               dictionary.taxonomy AS target_taxonomy, dictionary.id AS target_dictionary_value_id, NULL::TEXT AS rule_name, '[]'::JSONB AS conditions,
                NULL::INTEGER AS priority, CASE WHEN mapping.active THEN 'active' ELSE 'inactive' END AS status,
                mapping.revision, NULL::TEXT AS actor, NULL::TEXT AS reason, mapping.created_at, mapping.updated_at,
                NULL::TEXT AS resolution_kind, NULL::BIGINT AS resolution_id
@@ -186,7 +233,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                mapping.scope, mapping.source_value, mapping.normalized_source_value, COALESCE(mapping.context, '{}'::JSONB) AS context,
                mapping.context_key, COALESCE(mapping.reference_value_id, rule.reference_value_id) AS reference_value_id,
                value.name AS reference_name, projection.target_scope, dictionary.external_id AS target_external_id,
-               dictionary.name AS target_label, dictionary.taxonomy AS target_taxonomy,
+               dictionary.name AS target_label, dictionary.taxonomy AS target_taxonomy, dictionary.id AS target_dictionary_value_id,
                rule.name AS rule_name, COALESCE(rule.conditions, '[]'::JSONB) AS conditions, rule.priority,
                CASE WHEN projection.active THEN 'active' ELSE 'inactive' END AS status,
                projection.revision, projection.created_by AS actor, NULL::TEXT AS reason,
@@ -222,17 +269,80 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              COALESCE((
                SELECT COUNT(DISTINCT observation.source_product_id)::INTEGER
                FROM source_reference_observations observation
+               JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
                WHERE observation.active = TRUE
+                 AND (${versions}::JSONB = '{}'::JSONB
+                   OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
                  AND (
                    (item.kind = 'mapping' AND observation.mapping_id = item.id)
                    OR (item.kind = 'rule' AND observation.rule_id = item.id)
+                   OR (item.kind = 'target_mapping' AND observation.resolved_reference_value_id = item.reference_value_id)
                    OR (item.kind = 'projection' AND (
                      (item.resolution_kind = 'mapping' AND observation.mapping_id = item.resolution_id)
                      OR (item.resolution_kind = 'rule' AND observation.rule_id = item.resolution_id)
                    ))
                  )
              ), 0) AS affected_product_count,
-             '[]'::JSONB AS examples
+             COALESCE((
+               SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
+               FROM (
+                 SELECT observation.id AS observation_id,
+                        observation.source_product_id,
+                        product.source_key,
+                        internal.data->>'title' AS title,
+                        internal.data->>'sku' AS sku,
+                        observation.evidence,
+                        '[]'::JSONB AS target_snapshots
+                 FROM source_reference_observations observation
+                 JOIN source_products product ON product.id = observation.source_product_id
+                 JOIN internal_products internal ON internal.source_product_id = observation.source_product_id
+                 WHERE observation.active = TRUE
+                   AND (${versions}::JSONB = '{}'::JSONB
+                     OR internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                   AND (
+                     (item.kind = 'mapping' AND observation.mapping_id = item.id)
+                     OR (item.kind = 'rule' AND observation.rule_id = item.id)
+                     OR (item.kind = 'target_mapping' AND observation.resolved_reference_value_id = item.reference_value_id)
+                     OR (item.kind = 'projection' AND (
+                       (item.resolution_kind = 'mapping' AND observation.mapping_id = item.resolution_id)
+                       OR (item.resolution_kind = 'rule' AND observation.rule_id = item.resolution_id)
+                     ))
+                   )
+                 ORDER BY observation.last_seen_at DESC, observation.id DESC
+                 LIMIT 5
+               ) example
+             ), '[]'::JSONB) AS examples,
+             COALESCE((
+               SELECT JSONB_AGG(TO_JSONB(output) ORDER BY output.kind, output.target_scope, output.target_label)
+               FROM (
+                 SELECT 'target_mapping'::TEXT AS kind, target_mapping.id,
+                        target_mapping.target_id, target.code AS target_code,
+                        target_mapping.target_scope,
+                        target_mapping.external_value AS target_external_id,
+                        target_mapping.external_label AS target_label,
+                        dictionary.taxonomy AS target_taxonomy,
+                        CASE WHEN target_mapping.active THEN 'active' ELSE 'inactive' END AS status
+                 FROM target_value_mappings target_mapping
+                 JOIN targets target ON target.id = target_mapping.target_id
+                 LEFT JOIN target_dictionary_values dictionary ON dictionary.id = target_mapping.dictionary_value_id
+                 WHERE item.kind IN ('mapping', 'rule')
+                   AND target_mapping.reference_value_id = item.reference_value_id
+                 UNION ALL
+                 SELECT 'projection'::TEXT AS kind, projection.id,
+                        projection.target_id, target.code AS target_code,
+                        projection.target_scope,
+                        dictionary.external_id AS target_external_id,
+                        dictionary.name AS target_label,
+                        dictionary.taxonomy AS target_taxonomy,
+                        CASE WHEN projection.active THEN 'active' ELSE 'inactive' END AS status
+                 FROM target_classification_projections projection
+                 JOIN targets target ON target.id = projection.target_id
+                 JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+                 WHERE item.kind IN ('mapping', 'rule')
+                   AND ((item.kind = 'mapping' AND projection.mapping_id = item.id)
+                     OR (item.kind = 'rule' AND projection.rule_id = item.id))
+               ) output
+             ), '[]'::JSONB) AS outputs
            ${filtered}
            ORDER BY item.updated_at DESC, item.kind, item.id DESC
            LIMIT ${limit} OFFSET ${offset}
@@ -270,6 +380,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           targetExternalId: nullableText(row.target_external_id),
           targetLabel: nullableText(row.target_label),
           targetTaxonomy: nullableText(row.target_taxonomy),
+          targetDictionaryValueId: nullableText(row.target_dictionary_value_id),
           ruleName: nullableText(row.rule_name),
           conditions: ruleConditions(row.conditions),
           priority: row.priority === null || row.priority === undefined ? null : Number(row.priority),
@@ -279,6 +390,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           reason: nullableText(row.reason),
           affectedProductCount: Number(row.affected_product_count),
           examples: reviewExamples(row.examples),
+          outputs: configOutputs(row.outputs),
           createdAt: timestamp(row.created_at),
           updatedAt: timestamp(row.updated_at),
         })),
@@ -310,8 +422,11 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           FROM source_reference_observations observation
           JOIN sources source ON source.id = observation.source_id
           JOIN reference_types type ON type.id = observation.reference_type_id
+          JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
           WHERE observation.active = TRUE
             AND observation.status IN ('unresolved', 'ambiguous')
+            AND ($5::JSONB = '{}'::JSONB
+              OR current_internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
             AND ($1::BIGINT IS NULL OR observation.source_id = $1)
             AND ($2::TEXT = '' OR type.code = $2)
             AND ($3::TEXT = '' OR observation.status = $3)
@@ -331,7 +446,8 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                 distinct_product.source_key,
                 distinct_product.title,
                 distinct_product.sku,
-                distinct_product.evidence
+                distinct_product.evidence,
+                distinct_product.target_snapshots
               FROM (
                 SELECT
                   observation.id AS observation_id,
@@ -365,6 +481,8 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                   AND observation.normalized_source_value = review_groups.normalized_source_value
                   AND observation.context_key = review_groups.context_key
                   AND observation.status = review_groups.status
+                  AND ($5::JSONB = '{}'::JSONB
+                    OR internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
               ) distinct_product
               WHERE distinct_product.product_rank = 1
               ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id
@@ -373,8 +491,16 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           ), '[]'::JSONB) AS examples
         FROM review_groups
         ORDER BY product_count DESC, last_seen_at DESC, source_value
-        LIMIT $5 OFFSET $6`,
-        [query.sourceId ?? null, query.typeCode ?? "", query.status ?? "", query.search?.trim() ?? "", query.limit, query.offset],
+        LIMIT $6 OFFSET $7`,
+        [
+          query.sourceId ?? null,
+          query.typeCode ?? "",
+          query.status ?? "",
+          query.search?.trim() ?? "",
+          processorVersions(query.currentProcessorVersions),
+          query.limit,
+          query.offset,
+        ],
       );
 
       return result.rows.map((row) => ({
@@ -432,6 +558,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
   async listRuleCandidates(
     sourceId: string,
     typeCode: string,
+    currentProcessorVersion?: string,
   ): Promise<readonly ClassificationRuleCandidateRecord[]> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
@@ -442,6 +569,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            product.source_key,
            internal.data->>'title' AS title,
            internal.data->>'sku' AS sku,
+           observation.mapping_id,
            observation.candidate_key,
            type.code AS type_code,
            observation.scope,
@@ -455,12 +583,11 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          JOIN source_products product ON product.id = observation.source_product_id
          LEFT JOIN internal_products internal ON internal.source_product_id = product.id
          WHERE observation.active = TRUE
-           AND observation.mapping_id IS NULL
-           AND observation.status <> 'ignored'
            AND observation.source_id = $1
            AND type.code = $2
+           AND ($3::TEXT IS NULL OR internal.processor_version = $3)
          ORDER BY observation.id`,
-        [sourceId, typeCode],
+        [sourceId, typeCode, currentProcessorVersion ?? null],
       );
 
       return result.rows.map((row) => {
@@ -473,6 +600,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           sourceKey: String(row.source_key),
           title: nullableText(row.title),
           sku: nullableText(row.sku),
+          mappingId: nullableText(row.mapping_id),
           candidate: {
             key: String(row.candidate_key),
             typeCode: String(row.type_code),
@@ -485,6 +613,156 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           },
         };
       });
+    });
+  }
+
+  async getRule(ruleId: string): Promise<ClassificationRuleAdminRecord | null> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT rule.*, type.code AS type_code
+         FROM source_reference_rules rule
+         JOIN reference_types type ON type.id = rule.reference_type_id
+         WHERE rule.id = $1`,
+        [ruleId],
+      );
+      const row = result.rows[0];
+      return row === undefined ? null : {
+        id: String(row.id),
+        sourceId: nullableText(row.source_id),
+        typeCode: String(row.type_code),
+        name: String(row.name),
+        priority: Number(row.priority),
+        conditions: ruleConditions(row.conditions),
+        referenceValueId: String(row.reference_value_id),
+        revision: String(row.revision),
+        enabled: row.enabled === true,
+      };
+    });
+  }
+
+  async listRuleConditionFields(
+    sourceId: string,
+    typeCode: string,
+    currentProcessorVersion?: string,
+  ): Promise<readonly ClassificationRuleConditionFieldOption[]> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `WITH candidates AS (
+           SELECT observation.source_value, observation.scope, observation.subject_kind,
+                  observation.context, observation.evidence
+           FROM source_reference_observations observation
+           JOIN reference_types type ON type.id = observation.reference_type_id
+           JOIN internal_products internal ON internal.source_product_id = observation.source_product_id
+           WHERE observation.active = TRUE
+             AND observation.source_id = $1
+             AND type.code = $2
+             AND ($3::TEXT IS NULL OR internal.processor_version = $3)
+         ), fields AS (
+           SELECT 'sourceValue'::TEXT AS field, source_value AS value FROM candidates
+           UNION ALL SELECT 'scope', scope FROM candidates
+           UNION ALL SELECT 'subjectKind', subject_kind FROM candidates
+           UNION ALL
+           SELECT 'context.' || entry.key, entry.value #>> '{}'
+           FROM candidates CROSS JOIN LATERAL JSONB_EACH(candidates.context) entry
+           WHERE JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')
+           UNION ALL
+           SELECT 'evidence.' || entry.key, entry.value #>> '{}'
+           FROM candidates CROSS JOIN LATERAL JSONB_EACH(candidates.evidence) entry
+           WHERE JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')
+         )
+         SELECT field, (ARRAY_AGG(DISTINCT value ORDER BY value) FILTER (WHERE value <> ''))[1:8] AS examples
+         FROM fields
+         GROUP BY field
+         ORDER BY CASE field WHEN 'sourceValue' THEN 0 WHEN 'scope' THEN 1 WHEN 'subjectKind' THEN 2 ELSE 3 END, field`,
+        [sourceId, typeCode, currentProcessorVersion ?? null],
+      );
+      return result.rows.map((row) => ({ field: String(row.field), exampleValues: stringArray(row.examples) }));
+    });
+  }
+
+  async listConfigurationHistory(
+    kind: "mapping" | "rule" | "target_mapping" | "projection",
+    id: string,
+  ): Promise<readonly ClassificationConfigHistoryRecord[]> {
+    return withClient(this.pool, async (client) => {
+      const query = kind === "mapping"
+        ? `SELECT id, action, previous_value, new_value, actor, reason, created_at
+           FROM source_reference_decision_history WHERE mapping_id = $1 ORDER BY created_at DESC, id DESC`
+        : kind === "rule"
+          ? `SELECT id, action, previous_value, new_value, actor, reason, created_at
+             FROM source_reference_decision_history WHERE rule_id = $1 ORDER BY created_at DESC, id DESC`
+          : kind === "target_mapping"
+            ? `SELECT id, action, previous_value, new_value, actor, reason, created_at
+               FROM target_value_mapping_history WHERE mapping_id = $1 ORDER BY created_at DESC, id DESC`
+            : `SELECT id, action, previous_value, new_value, actor, reason, created_at
+               FROM target_classification_projection_history WHERE projection_id = $1 ORDER BY created_at DESC, id DESC`;
+      const result = await client.query<DatabaseRow>(query, [id]);
+      return result.rows.map((row) => ({
+        id: String(row.id),
+        action: String(row.action),
+        previousValue: row.previous_value === null || row.previous_value === undefined ? null : jsonObject(row.previous_value),
+        newValue: row.new_value === null || row.new_value === undefined ? null : jsonObject(row.new_value),
+        actor: nullableText(row.actor),
+        reason: nullableText(row.reason),
+        createdAt: timestamp(row.created_at),
+      }));
+    });
+  }
+
+  async previewDecision(input: SaveClassificationDecisionInput): Promise<ClassificationDecisionPreview> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `WITH matched AS (
+           SELECT observation.*, product.source_key,
+                  internal.data->>'title' AS title, internal.data->>'sku' AS sku
+           FROM source_reference_observations observation
+           JOIN reference_types type ON type.id = observation.reference_type_id
+           JOIN source_products product ON product.id = observation.source_product_id
+           LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+           WHERE observation.active = TRUE
+             AND observation.source_id = $1
+             AND type.code = $2
+             AND observation.scope = $3
+             AND observation.normalized_source_value = $4
+             AND observation.context_key = $5
+         ), existing AS (
+           SELECT mapping.status, mapping.reference_value_id
+           FROM source_reference_mappings mapping
+           JOIN reference_types type ON type.id = mapping.reference_type_id
+           WHERE mapping.source_id = $1 AND type.code = $2 AND mapping.scope = $3
+             AND mapping.normalized_source_value = $4 AND mapping.context_key = $5
+         )
+         SELECT (SELECT COUNT(*)::INTEGER FROM matched) AS observation_count,
+                (SELECT COUNT(DISTINCT source_product_id)::INTEGER FROM matched) AS product_count,
+                COALESCE((SELECT JSONB_AGG(DISTINCT source_product_id::TEXT) FROM matched), '[]'::JSONB) AS product_ids,
+                (SELECT status FROM existing) AS current_status,
+                (SELECT reference_value_id FROM existing) AS current_reference_value_id,
+                COALESCE((
+                  SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
+                  FROM (
+                    SELECT id AS observation_id, source_product_id, source_key, title, sku, evidence,
+                           '[]'::JSONB AS target_snapshots
+                    FROM matched ORDER BY last_seen_at DESC, id DESC LIMIT 5
+                  ) example
+                ), '[]'::JSONB) AS examples`,
+        [input.sourceId, input.typeCode, input.scope, input.normalizedSourceValue, input.contextKey],
+      );
+      const row = result.rows[0]!;
+      const proposedStatus = input.action === "confirm" ? "confirmed" as const : "ignored" as const;
+      const proposedReferenceValueId = input.action === "confirm" ? input.referenceValueId ?? null : null;
+      const currentStatus = nullableText(row.current_status) as ClassificationDecisionPreview["currentStatus"];
+      const currentReferenceValueId = nullableText(row.current_reference_value_id);
+      return {
+        observationCount: Number(row.observation_count),
+        productCount: Number(row.product_count),
+        affectedSourceProductIds: stringArray(row.product_ids),
+        currentReferenceValueId,
+        proposedReferenceValueId,
+        currentStatus,
+        proposedStatus,
+        unchanged: currentStatus === proposedStatus && currentReferenceValueId === proposedReferenceValueId && input.targetLink === undefined,
+        examples: reviewExamples(row.examples),
+      };
     });
   }
 
@@ -515,6 +793,142 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
+  async getTargetValueMapping(mappingId: string): Promise<TargetValueMappingAdminRecord | null> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT mapping.*, type.code AS type_code
+         FROM target_value_mappings mapping
+         JOIN reference_values value ON value.id = mapping.reference_value_id
+         JOIN reference_types type ON type.id = value.type_id
+         WHERE mapping.id = $1`,
+        [mappingId],
+      );
+      return result.rows[0] === undefined ? null : mapTargetValueMappingAdmin(result.rows[0]);
+    });
+  }
+
+  async previewTargetValueMapping(input: TargetValueMappingCommand): Promise<TargetClassificationProjectionPreview> {
+    return withClient(this.pool, (client) => this.previewTargetValueMappingWithClient(client, input));
+  }
+
+  async updateTargetValueMapping(input: TargetValueMappingCommand): Promise<{
+    readonly mapping: TargetValueMappingAdminRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT mapping.*, type.code AS type_code
+           FROM target_value_mappings mapping
+           JOIN reference_values value ON value.id = mapping.reference_value_id
+           JOIN reference_types type ON type.id = value.type_id
+           WHERE mapping.id = $1 FOR UPDATE OF mapping`,
+          [input.mappingId],
+        );
+        const previous = previousResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Target value mapping", input.mappingId);
+        const preview = await this.previewTargetValueMappingWithClient(client, input);
+        const dictionaryResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_dictionary_values
+           WHERE id = $1 AND target_id = $2 AND active = TRUE`,
+          [input.dictionaryValueId, previous.target_id],
+        );
+        const dictionary = dictionaryResult.rows[0];
+        if (dictionary === undefined) throw new EntityNotFoundError("Target dictionary value", input.dictionaryValueId);
+        const unchanged = String(previous.dictionary_value_id) === input.dictionaryValueId && previous.active === true;
+        const result = await client.query<DatabaseRow>(
+          `UPDATE target_value_mappings
+           SET external_value = $2, external_label = $3,
+               metadata = $4::JSONB, dictionary_value_id = $5, active = TRUE,
+               revision = CASE WHEN $6::BOOLEAN THEN revision ELSE revision + 1 END,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *, $7::TEXT AS type_code`,
+          [
+            input.mappingId,
+            String(dictionary.external_id),
+            String(dictionary.name),
+            JSON.stringify({
+              entityType: String(dictionary.entity_type),
+              slug: nullableText(dictionary.slug),
+              taxonomy: nullableText(dictionary.taxonomy),
+              attributeCode: nullableText(dictionary.attribute_code),
+            }),
+            input.dictionaryValueId,
+            unchanged,
+            String(previous.type_code),
+          ],
+        );
+        const row = result.rows[0]!;
+        if (!unchanged) {
+          await client.query(
+            `INSERT INTO target_value_mapping_history (
+               mapping_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+            [input.mappingId, previous.active === true ? "update" : "reactivate", JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
+          );
+        }
+        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, preview.affectedSourceProductIds);
+        await client.query("COMMIT");
+        return { mapping: mapTargetValueMappingAdmin(row), preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async setTargetValueMappingEnabled(input: {
+    readonly mappingId: string;
+    readonly enabled: boolean;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly affectedProductCount: number; readonly revision: string }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_value_mappings WHERE id = $1 FOR UPDATE`,
+          [input.mappingId],
+        );
+        const previous = previousResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Target value mapping", input.mappingId);
+        const unchanged = previous.active === input.enabled;
+        const result = await client.query<DatabaseRow>(
+          `UPDATE target_value_mappings
+           SET active = $2,
+               revision = CASE WHEN $3::BOOLEAN THEN revision ELSE revision + 1 END,
+               updated_at = NOW()
+           WHERE id = $1 RETURNING *`,
+          [input.mappingId, input.enabled, unchanged],
+        );
+        const row = result.rows[0]!;
+        if (!unchanged) {
+          await client.query(
+            `INSERT INTO target_value_mapping_history (
+               mapping_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+            [input.mappingId, input.enabled ? "reactivate" : "deactivate", JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
+          );
+        }
+        const affected = await client.query<DatabaseRow>(
+          `SELECT DISTINCT source_product_id
+           FROM source_reference_observations
+           WHERE active = TRUE AND resolved_reference_value_id = $1`,
+          [previous.reference_value_id],
+        );
+        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, affected.rows.map((row) => String(row.source_product_id)));
+        await client.query("COMMIT");
+        return { affectedProductCount, revision: String(row.revision) };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   async listTargetProjections(
     targetId: string,
     resolutionKind: "mapping" | "rule",
@@ -537,6 +951,19 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
+  async getTargetProjection(targetId: string, projectionId: string): Promise<TargetClassificationProjectionRecord | null> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT projection.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+         FROM target_classification_projections projection
+         JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+         WHERE projection.target_id = $1 AND projection.id = $2`,
+        [targetId, projectionId],
+      );
+      return result.rows[0] === undefined ? null : mapTargetClassificationProjection(result.rows[0]);
+    });
+  }
+
   async previewTargetProjection(input: TargetClassificationProjectionCommand): Promise<TargetClassificationProjectionPreview> {
     return withClient(this.pool, (client) => this.previewTargetProjectionWithClient(client, input));
   }
@@ -550,6 +977,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       await client.query("BEGIN");
       try {
         const preview = await this.previewTargetProjectionWithClient(client, input);
+        if (preview.duplicate === null && input.targetCardinality === "single" && preview.cardinalityConflicts.length > 0) {
+          throw new IntegrationContractError(`Target scope ${input.targetScope} accepts one value`);
+        }
         const column = input.resolutionKind === "mapping" ? "mapping_id" : "rule_id";
         const table = input.resolutionKind === "mapping" ? "source_reference_mappings" : "source_reference_rules";
         const predicate = input.resolutionKind === "mapping" ? "mapping_id IS NOT NULL" : "rule_id IS NOT NULL";
@@ -615,6 +1045,71 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
+  async updateTargetProjection(input: TargetClassificationProjectionCommand & { readonly projectionId: string }): Promise<{
+    readonly projection: TargetClassificationProjectionRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_classification_projections
+           WHERE id = $1 AND target_id = $2 FOR UPDATE`,
+          [input.projectionId, input.targetId],
+        );
+        const previous = previousResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Target projection", input.projectionId);
+        const preview = await this.previewTargetProjectionWithClient(client, input, input.projectionId);
+        if (preview.duplicate !== null) {
+          throw new IntegrationContractError("An identical active target projection already exists");
+        }
+        if (input.targetCardinality === "single" && preview.cardinalityConflicts.length > 0) {
+          throw new IntegrationContractError(`Target scope ${input.targetScope} accepts one value`);
+        }
+        const dictionaryResult = await client.query<DatabaseRow>(
+          `SELECT id FROM target_dictionary_values
+           WHERE id = $1 AND target_id = $2 AND active = TRUE`,
+          [input.dictionaryValueId, input.targetId],
+        );
+        if (dictionaryResult.rows[0] === undefined) throw new EntityNotFoundError("Target dictionary value", input.dictionaryValueId);
+        const unchanged = String(previous.target_scope) === input.targetScope
+          && String(previous.dictionary_value_id) === input.dictionaryValueId
+          && previous.active === true;
+        const result = await client.query<DatabaseRow>(
+          `UPDATE target_classification_projections
+           SET target_scope = $3, dictionary_value_id = $4, active = TRUE,
+               revision = CASE WHEN $5::BOOLEAN THEN revision ELSE revision + 1 END,
+               updated_at = NOW()
+           WHERE id = $1 AND target_id = $2
+           RETURNING *`,
+          [input.projectionId, input.targetId, input.targetScope, input.dictionaryValueId, unchanged],
+        );
+        const row = result.rows[0]!;
+        const dictionary = await client.query<DatabaseRow>(
+          `SELECT external_id, name FROM target_dictionary_values WHERE id = $1`,
+          [input.dictionaryValueId],
+        );
+        const mapped = { ...row, external_value: dictionary.rows[0]!.external_id, external_label: dictionary.rows[0]!.name };
+        const projection = mapTargetClassificationProjection(mapped);
+        if (!unchanged) {
+          await client.query(
+            `INSERT INTO target_classification_projection_history (
+               projection_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+            [input.projectionId, previous.active === true ? "update" : "reactivate", JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
+          );
+        }
+        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, preview.affectedSourceProductIds);
+        await client.query("COMMIT");
+        return { projection, preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   async deactivateTargetProjection(input: {
     readonly targetId: string;
     readonly projectionId: string;
@@ -640,6 +1135,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           resolutionId,
           targetScope: String(previous.target_scope),
           dictionaryValueId: String(previous.dictionary_value_id),
+          targetCardinality: "multiple",
           actor: input.actor,
           ...(input.reason === undefined ? {} : { reason: input.reason }),
         });
@@ -762,8 +1258,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           }
         }
 
+        let targetLinkChanged = false;
         if (input.targetLink !== undefined && dictionary !== undefined && referenceValueId !== null) {
-          await this.saveTargetLink(client, input, referenceValueId, dictionary);
+          targetLinkChanged = await this.saveTargetLink(client, input, referenceValueId, dictionary);
         }
 
         const previousResult = await client.query<DatabaseRow>(
@@ -850,7 +1347,16 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           [input.sourceId, observation.type_id, input.scope, input.normalizedSourceValue, input.contextKey],
         );
         const affectedIds = affectedResult.rows.map((row) => String(row.source_product_id));
-        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, affectedIds);
+        if (targetLinkChanged && referenceValueId !== null) {
+          const sharedResult = await client.query<DatabaseRow>(
+            `SELECT DISTINCT source_product_id
+             FROM source_reference_observations
+             WHERE active = TRUE AND resolved_reference_value_id = $1`,
+            [referenceValueId],
+          );
+          affectedIds.push(...sharedResult.rows.map((row) => String(row.source_product_id)));
+        }
+        const affectedProductCount = unchanged && !targetLinkChanged ? 0 : await enqueueProducts(client, affectedIds);
         const affectedExportCount = 0;
 
         await client.query("COMMIT");
@@ -926,6 +1432,12 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         );
         const previous = previousResult.rows[0];
         if (previous === undefined) throw new EntityNotFoundError("Classification rule", input.ruleId);
+        const previouslyAffected = await client.query<DatabaseRow>(
+          `SELECT DISTINCT source_product_id
+           FROM source_reference_observations
+           WHERE active = TRUE AND rule_id = $1`,
+          [input.ruleId],
+        );
 
         const referenceResult = await client.query<DatabaseRow>(
           `SELECT value.id
@@ -962,7 +1474,10 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             [input.ruleId, JSON.stringify(previous), JSON.stringify(rule), input.actor, input.reason ?? null],
           );
         }
-        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, input.affectedSourceProductIds);
+        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, [
+          ...input.affectedSourceProductIds,
+          ...previouslyAffected.rows.map((row) => String(row.source_product_id)),
+        ]);
         await client.query("COMMIT");
         return { ruleId: String(rule.id), revision: String(rule.revision), affectedProductCount };
       } catch (error) {
@@ -977,6 +1492,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     readonly enabled: boolean;
     readonly actor: string;
     readonly reason?: string;
+    readonly affectedSourceProductIds: readonly string[];
   }): Promise<{ readonly affectedProductCount: number; readonly revision: string }> {
     return withClient(this.pool, async (client) => {
       await client.query("BEGIN");
@@ -1007,13 +1523,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             [input.ruleId, input.enabled ? "reactivate" : "deactivate", JSON.stringify(previous), JSON.stringify(rule), input.actor, input.reason ?? null],
           );
         }
-        const affectedResult = await client.query<DatabaseRow>(
-          `SELECT DISTINCT source_product_id
-           FROM source_reference_observations
-           WHERE active = TRUE AND rule_id = $1`,
-          [input.ruleId],
-        );
-        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, affectedResult.rows.map((row) => String(row.source_product_id)));
+        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, input.affectedSourceProductIds);
         await client.query("COMMIT");
         return { revision: String(rule.revision), affectedProductCount };
       } catch (error) {
@@ -1091,9 +1601,86 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     return !unchanged;
   }
 
+  private async previewTargetValueMappingWithClient(
+    client: SqlClient,
+    input: TargetValueMappingCommand,
+  ): Promise<TargetClassificationProjectionPreview> {
+    const mappingResult = await client.query<DatabaseRow>(
+      `SELECT mapping.*, dictionary.target_id AS dictionary_target_id
+       FROM target_value_mappings mapping
+       LEFT JOIN target_dictionary_values dictionary ON dictionary.id = $2
+       WHERE mapping.id = $1`,
+      [input.mappingId, input.dictionaryValueId],
+    );
+    const mapping = mappingResult.rows[0];
+    if (mapping === undefined) throw new EntityNotFoundError("Target value mapping", input.mappingId);
+    if (mapping.dictionary_target_id === null || mapping.dictionary_target_id === undefined
+      || String(mapping.dictionary_target_id) !== String(mapping.target_id)) {
+      throw new EntityNotFoundError("Target dictionary value", input.dictionaryValueId);
+    }
+    const stats = await client.query<DatabaseRow>(
+      `SELECT COUNT(*)::INTEGER AS observation_count,
+              COUNT(DISTINCT source_product_id)::INTEGER AS product_count,
+              COALESCE(JSONB_AGG(DISTINCT source_product_id::TEXT), '[]'::JSONB) AS source_product_ids
+       FROM source_reference_observations
+       WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1`,
+      [mapping.reference_value_id],
+    );
+    const examples = await client.query<DatabaseRow>(
+      `SELECT product.id AS source_product_id, product.source_key,
+              internal.data->>'title' AS title, internal.data->>'sku' AS sku,
+              COALESCE((
+                SELECT JSONB_AGG(DISTINCT term->>'name')
+                FROM target_product_snapshots snapshot,
+                     JSONB_ARRAY_ELEMENTS(COALESCE(snapshot.payload->'product'->'taxonomies'->taxonomy.name, '[]'::JSONB)) term
+                WHERE snapshot.target_id = $2
+                  AND snapshot.source_product_id = product.id
+                  AND term ? 'name'
+              ), '[]'::JSONB) AS current_terms
+       FROM (
+         SELECT DISTINCT source_product_id
+         FROM source_reference_observations
+         WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1
+       ) affected
+       JOIN source_products product ON product.id = affected.source_product_id
+       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+       CROSS JOIN LATERAL (
+         SELECT CASE $3
+           WHEN 'product.brand' THEN 'pa_brand'
+           WHEN 'product.model' THEN 'pa_model'
+           WHEN 'product.category' THEN 'product_cat'
+           WHEN 'product.tag' THEN 'product_tag'
+           WHEN 'product.color' THEN 'pa_tsvet'
+           WHEN 'product.material' THEN 'pa_material'
+           WHEN 'product.activity' THEN 'pa_vid'
+           WHEN 'product.shoe_height' THEN 'pa_shoe_height'
+           WHEN 'product.season' THEN 'pa_season'
+           ELSE ''
+         END AS name
+       ) taxonomy
+       ORDER BY product.id LIMIT 10`,
+      [mapping.reference_value_id, mapping.target_id, mapping.target_scope],
+    );
+    return {
+      observationCount: Number(stats.rows[0]?.observation_count ?? 0),
+      productCount: Number(stats.rows[0]?.product_count ?? 0),
+      affectedSourceProductIds: stringArray(stats.rows[0]?.source_product_ids),
+      examples: examples.rows.map((row) => ({
+        sourceProductId: String(row.source_product_id),
+        sourceKey: String(row.source_key),
+        title: nullableText(row.title),
+        sku: nullableText(row.sku),
+        currentTerms: stringArray(row.current_terms),
+      })),
+      duplicate: null,
+      cardinalityConflicts: [],
+    };
+  }
+
   private async previewTargetProjectionWithClient(
     client: SqlClient,
     input: TargetClassificationProjectionCommand,
+    excludeProjectionId = input.excludeProjectionId,
   ): Promise<TargetClassificationProjectionPreview> {
     const resolutionColumn = input.resolutionKind === "mapping" ? "mapping_id" : "rule_id";
     const resolutionTable = input.resolutionKind === "mapping" ? "source_reference_mappings" : "source_reference_rules";
@@ -1117,8 +1704,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          AND projection.target_scope = $3
          AND projection.dictionary_value_id = $4
          AND projection.active = TRUE
+         AND ($5::BIGINT IS NULL OR projection.id <> $5)
        LIMIT 1`,
-      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId],
+      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId, excludeProjectionId ?? null],
     );
 
     const stats = await client.query<DatabaseRow>(
@@ -1181,19 +1769,44 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     );
 
     const conflictResult = await client.query<DatabaseRow>(
-      `SELECT DISTINCT observation.source_product_id
-       FROM source_reference_observations observation
-       JOIN target_classification_projections projection
-         ON projection.target_id = $1
-        AND projection.${resolutionColumn} = $2
-        AND projection.target_scope = $3
-        AND projection.dictionary_value_id <> $4
-        AND projection.active = TRUE
-       WHERE observation.active = TRUE
-         AND observation.status = 'resolved'
-         AND ${resolutionFilter}
+      `WITH affected AS (
+         SELECT DISTINCT observation.source_product_id
+         FROM source_reference_observations observation
+         WHERE observation.active = TRUE
+           AND observation.status = 'resolved'
+           AND ${resolutionFilter}
+       ), existing_outputs AS (
+         SELECT observation.source_product_id, target_mapping.dictionary_value_id
+         FROM affected
+         JOIN source_reference_observations observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE
+          AND observation.status = 'resolved'
+         JOIN target_value_mappings target_mapping
+           ON target_mapping.target_id = $1
+          AND target_mapping.reference_value_id = observation.resolved_reference_value_id
+          AND target_mapping.target_scope = $3
+          AND target_mapping.active = TRUE
+         UNION ALL
+         SELECT observation.source_product_id, projection.dictionary_value_id
+         FROM affected
+         JOIN source_reference_observations observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE
+          AND observation.status = 'resolved'
+         JOIN target_classification_projections projection
+           ON projection.target_id = $1
+          AND projection.target_scope = $3
+          AND projection.active = TRUE
+          AND (projection.mapping_id = observation.mapping_id OR projection.rule_id = observation.rule_id)
+          AND ($6::BIGINT IS NULL OR projection.id <> $6)
+       )
+       SELECT DISTINCT source_product_id
+       FROM existing_outputs
+       WHERE dictionary_value_id <> $4
+         AND $5::TEXT = 'single'
        LIMIT 100`,
-      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId],
+      [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId, input.targetCardinality, excludeProjectionId ?? null],
     );
 
     return {

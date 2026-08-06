@@ -2,8 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 
 import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../config/index.js";
-import { registerProductOperations } from "../bootstrap.js";
-import { ProductOperationRegistry, TargetExporterRegistry } from "../core/registry/index.js";
+import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
+import { ProductOperationRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
 import {
   createPostgresPool,
@@ -51,11 +51,17 @@ async function main(): Promise<void> {
     const providers = new TargetDictionaryProviderRegistry();
     if (wordpress !== null) providers.register(new WordPressDictionaryProvider(wordpress));
     const targetDictionaryRepository = new PostgresTargetDictionaryRepository(pool);
+    const processors = new SourceProcessorRegistry();
+    registerSourceProcessors(processors);
+    const sources = await repositories.sources.listEnabled();
+    const currentProcessorVersions = Object.fromEntries(sources.map((source) => [source.id, processors.get(source.code).version]));
     const classifier = new ClassifierAdminService(
       new PostgresClassificationAdminRepository(pool),
       repositories.classifications,
       targetDictionaryRepository,
       providers,
+      "admin-api",
+      currentProcessorVersions,
     );
     const operations = new ProductOperationRegistry();
     registerProductOperations(operations);

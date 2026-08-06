@@ -311,6 +311,8 @@ export interface TargetClassificationProjectionCommand {
   readonly resolutionId: EntityId;
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
+  readonly targetCardinality: "single" | "multiple";
+  readonly excludeProjectionId?: EntityId;
   readonly actor: string;
   readonly reason?: string;
 }
@@ -606,6 +608,7 @@ export interface ClassificationReviewQuery {
   readonly search?: string;
   readonly limit: number;
   readonly offset: number;
+  readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
 }
 
 export interface ClassificationReferenceValueOption {
@@ -647,6 +650,7 @@ export interface ClassificationRuleCandidateRecord {
   readonly sourceKey: string;
   readonly title: string | null;
   readonly sku: string | null;
+  readonly mappingId: EntityId | null;
   readonly candidate: ReferenceCandidateDTO;
 }
 
@@ -686,6 +690,29 @@ export interface ClassificationConfigListQuery {
   readonly search?: string;
   readonly limit: number;
   readonly offset: number;
+  readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
+}
+
+export interface ClassificationConfigOutput {
+  readonly kind: "target_mapping" | "projection";
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly targetCode: string;
+  readonly targetScope: string;
+  readonly targetExternalId: string;
+  readonly targetLabel: string;
+  readonly targetTaxonomy: string | null;
+  readonly status: "active" | "inactive";
+}
+
+export interface ClassificationConfigHistoryRecord {
+  readonly id: EntityId;
+  readonly action: string;
+  readonly previousValue: JsonObject | null;
+  readonly newValue: JsonObject | null;
+  readonly actor: string | null;
+  readonly reason: string | null;
+  readonly createdAt: Timestamp;
 }
 
 export interface ClassificationConfigListItem {
@@ -708,6 +735,7 @@ export interface ClassificationConfigListItem {
   readonly targetExternalId: string | null;
   readonly targetLabel: string | null;
   readonly targetTaxonomy: string | null;
+  readonly targetDictionaryValueId: EntityId | null;
   readonly ruleName: string | null;
   readonly conditions: readonly ClassificationRuleConditionRecord[];
   readonly priority: number | null;
@@ -717,8 +745,44 @@ export interface ClassificationConfigListItem {
   readonly reason: string | null;
   readonly affectedProductCount: number;
   readonly examples: readonly ClassificationReviewExample[];
+  readonly outputs: readonly ClassificationConfigOutput[];
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;
+}
+
+export interface ClassificationRuleAdminRecord extends ClassificationRuleRecord {
+  readonly enabled: boolean;
+}
+
+export interface ClassificationRuleConditionFieldOption {
+  readonly field: string;
+  readonly exampleValues: readonly string[];
+}
+
+export interface ClassificationDecisionPreview {
+  readonly observationCount: number;
+  readonly productCount: number;
+  readonly affectedSourceProductIds: readonly EntityId[];
+  readonly currentReferenceValueId: EntityId | null;
+  readonly proposedReferenceValueId: EntityId | null;
+  readonly currentStatus: "confirmed" | "ignored" | null;
+  readonly proposedStatus: "confirmed" | "ignored";
+  readonly unchanged: boolean;
+  readonly examples: readonly ClassificationReviewExample[];
+}
+
+export interface TargetValueMappingAdminRecord extends TargetValueMappingRecord {
+  readonly dictionaryValueId: EntityId | null;
+  readonly active: boolean;
+  readonly revision: string;
+  readonly typeCode: string;
+}
+
+export interface TargetValueMappingCommand {
+  readonly mappingId: EntityId;
+  readonly dictionaryValueId: EntityId;
+  readonly actor: string;
+  readonly reason?: string;
 }
 
 export interface ClassificationConfigListResult {

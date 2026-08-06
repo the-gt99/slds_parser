@@ -257,118 +257,115 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
   async listProducts(query: ProductListQuery): Promise<ProductListResult> {
     const client = await this.pool.connect();
     try {
-    const parameters: unknown[] = [];
-    const where: string[] = [];
-    const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
-    if (query.search) {
-      const search = query.search.trim();
-      if (/^\d+$/u.test(search)) {
-        const id = add(search);
-        const text = add(search);
-        where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${text})`);
-      } else {
-        const p = add(`%${search}%`);
-        where.push(`(product.source_key ILIKE ${p} OR COALESCE(product.external_id, '') ILIKE ${p} OR COALESCE(internal.data->>'title', product.discovery_metadata->>'title', '') ILIKE ${p})`);
-      }
-    }
-    if (query.sourceCode) where.push(`source.code = ${add(query.sourceCode)}`);
-    const stageSql = `CASE WHEN parts.collected_at IS NULL THEN 'discovered' WHEN internal.id IS NULL THEN 'collected' WHEN internal.status = 'classification_pending' THEN 'classification_pending' WHEN internal.status = 'classified' THEN 'classified' ELSE internal.status END`;
-    const classificationSql = `CASE WHEN internal.id IS NULL THEN 'not_processed' WHEN internal.status = 'classification_pending' THEN 'pending' WHEN internal.data->'classification'->>'status' = 'complete' THEN 'complete' ELSE 'pending' END`;
-    if (query.stage) where.push(`${stageSql} = ${add(query.stage)}`);
-    if (query.classificationStatus) where.push(`${classificationSql} = ${add(query.classificationStatus)}`);
-    const targetStatusSql = `CASE WHEN active_export.status IS NOT NULL THEN 'pending' ELSE COALESCE(target_state.status, 'not_exported') END`;
-    if (query.targetStatus) where.push(`${targetStatusSql} = ${add(query.targetStatus)}`);
-    const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
-    const from = `FROM source_products product
-      JOIN sources source ON source.id = product.source_id
-      LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-      LEFT JOIN LATERAL (SELECT MAX(fetched_at) AS collected_at FROM source_product_parts WHERE source_product_id = product.id) parts ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT target.id AS target_id, product.status, product.external_id
-        FROM targets target
-        LEFT JOIN target_products product
-          ON product.target_id = target.id AND product.internal_product_id = internal.id
-        WHERE target.code = 'slamdunk' OR product.id IS NOT NULL
-        ORDER BY (target.code = 'slamdunk') DESC, product.updated_at DESC NULLS LAST, target.id
-        LIMIT 1
-      ) target_state ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT job.status
+      const parameters: unknown[] = [];
+      const where: string[] = [];
+      const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+      const hasPartsSql = "EXISTS (SELECT 1 FROM source_product_parts part WHERE part.source_product_id = product.id)";
+      const stageSql = `CASE WHEN NOT ${hasPartsSql} THEN 'discovered' WHEN internal.id IS NULL THEN 'collected' WHEN internal.status = 'classification_pending' THEN 'classification_pending' WHEN internal.status = 'classified' THEN 'classified' ELSE internal.status END`;
+      const classificationSql = `CASE WHEN internal.id IS NULL THEN 'not_processed' WHEN internal.status = 'classification_pending' THEN 'pending' WHEN internal.data->'classification'->>'status' = 'complete' THEN 'complete' ELSE 'pending' END`;
+      const activeExportProductsSql = `SELECT job.payload->>'internalProductId'
         FROM jobs job
+        JOIN targets export_target ON export_target.id::TEXT = job.payload->>'targetId'
         WHERE job.job_type = 'export_product'
           AND job.status IN ('pending', 'running', 'retry')
-          AND job.payload->>'internalProductId' = internal.id::TEXT
-          AND job.payload->>'targetId' = target_state.target_id::TEXT
-        ORDER BY CASE job.status WHEN 'running' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
-                 job.updated_at DESC, job.id DESC
-        LIMIT 1
-      ) active_export ON TRUE`;
-    const countResult = await client.query<DatabaseRow>(
-      query.stage || query.classificationStatus || query.targetStatus || query.search
-        ? `SELECT COUNT(*) AS total ${from} ${filter}`
-        : `SELECT COUNT(*) AS total FROM source_products product JOIN sources source ON source.id = product.source_id ${filter}`,
-      parameters,
-    );
-    const limit = add(query.limit); const offset = add(query.offset);
-    const result = await client.query<DatabaseRow>(
-      `WITH page_ids AS (
-         SELECT product.id
-         ${from} ${filter}
-         ORDER BY product.updated_at DESC, product.id DESC
-         LIMIT ${limit} OFFSET ${offset}
-       )
-       SELECT product.id AS source_product_id, source.id AS source_id, source.code AS source_code,
-              source.name AS source_name, product.source_key, product.external_id,
-              NULLIF(COALESCE(internal.data->>'title', product.discovery_metadata->>'title'), '') AS title,
-              product.status AS source_status, ${stageSql} AS stage, ${classificationSql} AS classification_status,
-              parts.collected_at, internal.processed_at, ${targetStatusSql} AS target_status,
-              active_export.status AS target_job_status,
-              target_state.external_id AS target_external_id,
-              snapshot.source_product_id IS NOT NULL AS has_target_snapshot
-       FROM page_ids
-       JOIN source_products product ON product.id = page_ids.id
-       JOIN sources source ON source.id = product.source_id
-       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-       LEFT JOIN LATERAL (SELECT MAX(fetched_at) AS collected_at FROM source_product_parts WHERE source_product_id = product.id) parts ON TRUE
-       LEFT JOIN LATERAL (
-         SELECT target.id AS target_id, product.status, product.external_id
-         FROM targets target
-         LEFT JOIN target_products product
-           ON product.target_id = target.id AND product.internal_product_id = internal.id
-         WHERE target.code = 'slamdunk' OR product.id IS NOT NULL
-         ORDER BY (target.code = 'slamdunk') DESC, product.updated_at DESC NULLS LAST, target.id
-         LIMIT 1
-       ) target_state ON TRUE
-       LEFT JOIN LATERAL (
-         SELECT job.status
-         FROM jobs job
-         WHERE job.job_type = 'export_product'
-           AND job.status IN ('pending', 'running', 'retry')
-           AND job.payload->>'internalProductId' = internal.id::TEXT
-           AND job.payload->>'targetId' = target_state.target_id::TEXT
-         ORDER BY CASE job.status WHEN 'running' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
-                  job.updated_at DESC, job.id DESC
-         LIMIT 1
-       ) active_export ON TRUE
-       LEFT JOIN LATERAL (
-         SELECT snapshot.source_product_id FROM target_product_snapshots snapshot
-         WHERE snapshot.source_product_id = product.id LIMIT 1
-       ) snapshot ON TRUE
-       ORDER BY product.updated_at DESC, product.id DESC`,
-      parameters,
-    );
-    const sources = await client.query<DatabaseRow>("SELECT code, name FROM sources ORDER BY name, id");
-    return {
-      total: Number(countResult.rows[0]?.total ?? 0),
-      sources: sources.rows.map((row) => ({ code: text(row, "code"), name: text(row, "name") })),
-      items: result.rows.map((row) => ({
-        sourceProductId: text(row, "source_product_id"), sourceId: text(row, "source_id"), sourceCode: text(row, "source_code"), sourceName: text(row, "source_name"),
-        sourceKey: text(row, "source_key"), externalId: nullableText(row, "external_id"), title: nullableText(row, "title"), sourceStatus: text(row, "source_status"),
-        stage: text(row, "stage"), classificationStatus: text(row, "classification_status"), collectedAt: nullableTimestamp(row, "collected_at"), processedAt: nullableTimestamp(row, "processed_at"),
-        targetStatus: text(row, "target_status"), targetJobStatus: nullableText(row, "target_job_status") as ProductListItem["targetJobStatus"],
-        targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
-      })),
-    };
+          AND job.payload->>'internalProductId' IS NOT NULL
+          AND export_target.code = 'slamdunk'`;
+      const mappedTargetProductsSql = `SELECT target_product.internal_product_id::TEXT
+        FROM target_products target_product
+        JOIN targets product_target ON product_target.id = target_product.target_id
+        WHERE product_target.code = 'slamdunk'`;
+      if (query.search) {
+        const search = query.search.trim();
+        if (/^\d+$/u.test(search)) {
+          const id = add(search);
+          const externalId = add(search);
+          where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${externalId})`);
+        } else {
+          const pattern = add(`%${search}%`);
+          where.push(`(product.source_key ILIKE ${pattern} OR product.external_id ILIKE ${pattern} OR COALESCE(internal.data->>'title', '') ILIKE ${pattern} OR COALESCE(product.discovery_metadata->>'title', '') ILIKE ${pattern})`);
+        }
+      }
+      if (query.sourceCode) where.push(`source.code = ${add(query.sourceCode)}`);
+      if (query.stage === "discovered") where.push(`NOT ${hasPartsSql}`);
+      else if (query.stage === "collected") where.push(`${hasPartsSql} AND internal.id IS NULL`);
+      else if (query.stage === "classification_pending" || query.stage === "classified") where.push(`internal.status = ${add(query.stage)}`);
+      else if (query.stage) where.push(`${stageSql} = ${add(query.stage)}`);
+      if (query.classificationStatus === "not_processed") where.push("internal.id IS NULL");
+      else if (query.classificationStatus === "complete") where.push("internal.data->'classification'->>'status' = 'complete'");
+      else if (query.classificationStatus === "pending") where.push("internal.id IS NOT NULL AND (internal.status = 'classification_pending' OR COALESCE(internal.data->'classification'->>'status', '') <> 'complete')");
+      else if (query.classificationStatus) where.push(`${classificationSql} = ${add(query.classificationStatus)}`);
+      if (query.targetStatus === "pending") where.push(`internal.id::TEXT IN (${activeExportProductsSql})`);
+      else if (query.targetStatus === "not_exported") where.push(`(internal.id IS NULL OR internal.id::TEXT NOT IN (
+        ${mappedTargetProductsSql}
+        UNION
+        ${activeExportProductsSql}
+      ))`);
+      else if (query.targetStatus) where.push(`internal.id::TEXT NOT IN (${activeExportProductsSql}) AND internal.id::TEXT IN (
+        ${mappedTargetProductsSql} AND target_product.status = ${add(query.targetStatus)}
+      )`);
+      const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
+      const baseFrom = `FROM source_products product
+        JOIN sources source ON source.id = product.source_id
+        LEFT JOIN internal_products internal ON internal.source_product_id = product.id`;
+
+      const countResult = await client.query<DatabaseRow>(
+        `SELECT COUNT(*) AS total ${baseFrom} ${filter}`,
+        parameters,
+      );
+      const limit = add(query.limit);
+      const offset = add(query.offset);
+      const result = await client.query<DatabaseRow>(
+        `WITH page_ids AS MATERIALIZED (
+           SELECT product.id, product.updated_at
+           ${baseFrom} ${filter}
+           ORDER BY product.updated_at DESC, product.id DESC
+           LIMIT ${limit} OFFSET ${offset}
+         )
+         SELECT product.id AS source_product_id, source.id AS source_id, source.code AS source_code,
+                source.name AS source_name, product.source_key, product.external_id,
+                NULLIF(COALESCE(internal.data->>'title', product.discovery_metadata->>'title'), '') AS title,
+                product.status AS source_status, ${stageSql} AS stage, ${classificationSql} AS classification_status,
+                parts.collected_at, internal.processed_at,
+                CASE WHEN active_export.status IS NOT NULL THEN 'pending' ELSE COALESCE(target_state.status, 'not_exported') END AS target_status,
+                active_export.status AS target_job_status, target_state.external_id AS target_external_id,
+                EXISTS (SELECT 1 FROM target_product_snapshots snapshot WHERE snapshot.source_product_id = product.id) AS has_target_snapshot
+         FROM page_ids
+         JOIN source_products product ON product.id = page_ids.id
+         JOIN sources source ON source.id = product.source_id
+         LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+         LEFT JOIN targets target ON target.code = 'slamdunk'
+         LEFT JOIN target_products target_state
+           ON target_state.target_id = target.id AND target_state.internal_product_id = internal.id
+         LEFT JOIN LATERAL (
+           SELECT MAX(part.fetched_at) AS collected_at
+           FROM source_product_parts part WHERE part.source_product_id = product.id
+         ) parts ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT job.status
+           FROM jobs job
+           WHERE job.job_type = 'export_product'
+             AND job.status IN ('pending', 'running', 'retry')
+             AND job.payload->>'internalProductId' = internal.id::TEXT
+             AND job.payload->>'targetId' = target.id::TEXT
+           ORDER BY CASE job.status WHEN 'running' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
+                    job.updated_at DESC, job.id DESC
+           LIMIT 1
+         ) active_export ON TRUE
+         ORDER BY page_ids.updated_at DESC, product.id DESC`,
+        parameters,
+      );
+      const sources = await client.query<DatabaseRow>("SELECT code, name FROM sources ORDER BY name, id");
+      return {
+        total: Number(countResult.rows[0]?.total ?? 0),
+        sources: sources.rows.map((row) => ({ code: text(row, "code"), name: text(row, "name") })),
+        items: result.rows.map((row) => ({
+          sourceProductId: text(row, "source_product_id"), sourceId: text(row, "source_id"), sourceCode: text(row, "source_code"), sourceName: text(row, "source_name"),
+          sourceKey: text(row, "source_key"), externalId: nullableText(row, "external_id"), title: nullableText(row, "title"), sourceStatus: text(row, "source_status"),
+          stage: text(row, "stage"), classificationStatus: text(row, "classification_status"), collectedAt: nullableTimestamp(row, "collected_at"), processedAt: nullableTimestamp(row, "processed_at"),
+          targetStatus: text(row, "target_status"), targetJobStatus: nullableText(row, "target_job_status") as ProductListItem["targetJobStatus"],
+          targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
+        })),
+      };
     } finally { client.release(); }
   }
 

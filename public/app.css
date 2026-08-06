@@ -53,11 +53,6 @@ h3 { font-size: 17px; line-height: 1.3; }
 .admin-table tr.selected-row td { background: var(--accent-soft); }
 .pagination { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px; }
 .compact-links { display: flex; gap: 8px; }
-.config-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
-.config-shell.with-detail { grid-template-columns: minmax(0, 1fr) minmax(320px, 430px); }
-.config-detail { border-left: 1px solid var(--line); background: var(--surface); padding: 18px; min-width: 0; }
-.config-detail h3 { margin-top: 6px; overflow-wrap: anywhere; }
-.config-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .config-meta-grid { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; margin-top: 14px; font-size: 12px; }
 .config-meta-grid dt { color: var(--muted); }
 .config-meta-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -66,6 +61,26 @@ h3 { font-size: 17px; line-height: 1.3; }
 .config-pill { display: inline-flex; align-items: center; min-height: 23px; padding: 2px 8px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 11px; font-weight: 650; }
 .config-pill.active { background: var(--accent-soft); color: var(--accent); }
 .config-pill.inactive, .config-pill.ignored { background: var(--warning-soft); color: var(--warning); }
+.config-intro { display: grid; gap: 16px; margin-bottom: 18px; }
+.config-intro h2 { margin-bottom: 6px; }
+.config-intro p { max-width: 900px; line-height: 1.5; }
+.config-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+.config-tab { min-height: 38px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); white-space: nowrap; }
+.config-tab:hover { background: var(--surface-soft); color: var(--text); }
+.config-tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.config-output-list { display: flex; flex-wrap: wrap; gap: 5px; min-width: 190px; color: var(--muted); }
+.config-output { display: inline-flex; padding: 4px 7px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+.config-output.inactive { background: var(--surface-soft); color: var(--muted); text-decoration: line-through; }
+.config-summary { margin: 4px 0 18px; }
+.config-summary h3 { margin-bottom: 5px; font-size: 22px; }
+.config-meta-readable { margin-bottom: 20px; padding: 15px; border-radius: 12px; background: var(--surface-soft); }
+.config-examples, .config-history { display: grid; gap: 8px; margin-top: 18px; }
+.config-examples h3, .config-history h3 { margin-bottom: 3px; }
+.config-examples a { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); text-decoration: none; }
+.history-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mapping-current { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 18px; }
+.mapping-current > div { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.compact-results { max-height: 190px; }
 .stage-list { display: grid; gap: 10px; }
 .stage-row { display: grid; gap: 6px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .stage-row:last-child { border-bottom: 0; }
@@ -76,7 +91,6 @@ h3 { font-size: 17px; line-height: 1.3; }
 .data-details pre { max-height: 420px; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 @media (max-width: 1000px) { .admin-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 1100px) { .config-shell.with-detail { grid-template-columns: 1fr; } .config-detail { border-left: 0; border-top: 1px solid var(--line); } }
 @media (max-width: 640px) { .admin-page { width: min(100% - 20px, 1500px); margin-top: 14px; } .admin-filters { grid-template-columns: 1fr; } .admin-table th, .admin-table td { min-width: 120px; padding: 9px; } .admin-title-cell { min-width: 190px; } .part-payloads { grid-template-columns: 1fr; } .config-meta-grid { grid-template-columns: 1fr; } }
 
 .brand-mark {
@@ -256,6 +270,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .small-button { min-height: 32px; padding: 0 10px; font-size: 12px; }
 
 .dialog { width: min(calc(100% - 28px), 600px); max-height: min(88vh, 820px); padding: 0; border: 0; border-radius: 20px; background: var(--surface); box-shadow: 0 28px 90px rgba(20, 23, 31, .24); }
+.dialog.dialog-wide { width: min(calc(100% - 28px), 820px); }
 .dialog::backdrop { background: rgba(20, 23, 31, .46); backdrop-filter: blur(3px); }
 .dialog form { max-height: 88vh; overflow-y: auto; padding: 25px; }
 .dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
@@ -272,6 +287,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .confirm-check input { margin-top: 2px; }
 .form-error { padding: 10px 12px; border-radius: 9px; background: var(--danger-soft); color: var(--danger); font-size: 12px; line-height: 1.45; }
 .dialog-actions { padding-top: 5px; }
+.sticky-dialog-actions { position: sticky; z-index: 2; bottom: -25px; margin-right: -25px; margin-left: -25px; padding: 14px 25px 25px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .96); backdrop-filter: blur(8px); }
 .dialog-actions.split { justify-content: space-between; }
 .dialog-actions.split > div { display: flex; gap: 8px; }
 .conditions-heading { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 9px; }
@@ -365,6 +381,8 @@ h3 { font-size: 17px; line-height: 1.3; }
 }
 
 @media (max-width: 600px) {
+  .mapping-current { grid-template-columns: 1fr; }
+  .config-tabs { width: calc(100vw - 20px); }
   .topbar { height: auto; align-items: flex-start; padding: 14px; }
   .topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
   .operator, #sync-button { display: none; }

@@ -6,6 +6,7 @@ import type {
   ClassificationAdminRepository,
   ClassificationConfigListQuery,
   ClassificationDecisionKey,
+  ClassificationDecisionPreview,
   ClassificationReferenceValueOption,
   ClassificationRepository,
   ClassificationReviewItem,
@@ -16,6 +17,7 @@ import type {
   TargetClassificationProjectionCommand,
   TargetDictionaryRepository,
   TargetRecord,
+  TargetValueMappingCommand,
 } from "../repositories/index.js";
 import type { TargetDictionaryProviderRegistry } from "../integrations/index.js";
 import {
@@ -122,6 +124,7 @@ export class ClassifierAdminService {
   private readonly targetDictionaries: TargetDictionaryRepository | undefined;
   private readonly targetProviders: TargetDictionaryProviderRegistry | undefined;
   private readonly actor: string;
+  private readonly currentProcessorVersions: Readonly<Record<EntityId, string>>;
 
   constructor(
     private readonly adminRepository: ClassificationAdminRepository,
@@ -129,7 +132,9 @@ export class ClassifierAdminService {
     targetDictionariesOrActor?: TargetDictionaryRepository | string,
     targetProviders?: TargetDictionaryProviderRegistry,
     actor = "admin-api",
+    currentProcessorVersions: Readonly<Record<EntityId, string>> = {},
   ) {
+    this.currentProcessorVersions = currentProcessorVersions;
     if (typeof targetDictionariesOrActor === "string") {
       this.actor = targetDictionariesOrActor;
       return;
@@ -140,11 +145,16 @@ export class ClassifierAdminService {
   }
 
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]> {
-    return this.adminRepository.listReviewQueue(query);
+    return this.adminRepository.listReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
   }
 
   listConfiguration(query: ClassificationConfigListQuery) {
-    return this.adminRepository.listConfiguration(query);
+    return this.adminRepository.listConfiguration({ ...query, currentProcessorVersions: this.currentProcessorVersions });
+  }
+
+  listConfigurationHistory(kind: "mapping" | "rule" | "target_mapping" | "projection", id: EntityId) {
+    validateText(id, "id", 64);
+    return this.adminRepository.listConfigurationHistory(kind, id);
   }
 
   listReferenceValues(
@@ -179,11 +189,29 @@ export class ClassifierAdminService {
     });
   }
 
-  async previewRule(draft: ClassificationRuleDraft): Promise<ClassificationRulePreview> {
+  previewDecision(command: ClassificationDecisionCommand): Promise<ClassificationDecisionPreview> {
+    validateText(command.sourceId, "sourceId", 64);
+    validateText(command.scope, "scope", 200);
+    validateText(command.normalizedSourceValue, "normalizedSourceValue", 1_000);
+    validateText(command.contextKey, "contextKey", 10_000);
+    if (command.action === "confirm" && command.referenceValueId === undefined && command.targetLink === undefined) {
+      throw new IntegrationContractError("Confirmed classification decision requires a reference value or target term");
+    }
+    return this.adminRepository.previewDecision({ ...command, actor: this.actor });
+  }
+
+  listRuleConditionFields(sourceId: EntityId, typeCode: string) {
+    validateText(sourceId, "sourceId", 64);
+    if (!/^[a-z][a-z0-9_]*$/u.test(typeCode)) throw new IntegrationContractError("Invalid classification type code");
+    return this.adminRepository.listRuleConditionFields(sourceId, typeCode, this.currentProcessorVersions[sourceId]);
+  }
+
+  async previewRule(draft: ClassificationRuleDraft, excludeRuleId?: EntityId): Promise<ClassificationRulePreview> {
     validateRuleDraft(draft);
     const [candidates, existingRules] = await Promise.all([
-      this.adminRepository.listRuleCandidates(draft.sourceId, draft.typeCode),
-      this.classificationRepository.listActiveRules(draft.sourceId, [draft.typeCode]),
+      this.adminRepository.listRuleCandidates(draft.sourceId, draft.typeCode, this.currentProcessorVersions[draft.sourceId]),
+      this.classificationRepository.listActiveRules(draft.sourceId, [draft.typeCode])
+        .then((rules) => rules.filter((rule) => rule.id !== excludeRuleId)),
     ]);
     const proposed: ClassificationRuleRecord = {
       id: "preview",
@@ -207,6 +235,21 @@ export class ClassifierAdminService {
       if (!matchesClassificationRule(item.candidate, draft.conditions)) continue;
       matchedObservations += 1;
       matchedProductIds.add(item.sourceProductId);
+      if (item.mappingId !== null) {
+        shadowedObservations += 1;
+        if (examples.length < 10) {
+          examples.push({
+            observationId: item.observationId,
+            sourceProductId: item.sourceProductId,
+            sourceKey: item.sourceKey,
+            title: item.title,
+            sku: item.sku,
+            sourceValue: item.candidate.sourceValue,
+            outcome: "shadowed",
+          });
+        }
+        continue;
+      }
       const existingMatches = existingRules
         .filter((rule) => matchesClassificationRule(item.candidate, rule.conditions))
         .map((rule) => ({ rule, score: classificationRuleScore(item.sourceId, rule) }))
@@ -274,7 +317,12 @@ export class ClassifierAdminService {
 
   async updateRule(ruleId: EntityId, draft: ClassificationRuleDraft, actor = this.actor) {
     validateText(ruleId, "ruleId", 64);
-    const preview = await this.previewRule(draft);
+    const existing = await this.adminRepository.getRule(ruleId);
+    if (existing === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
+    if (existing.sourceId !== draft.sourceId || existing.typeCode !== draft.typeCode) {
+      throw new IntegrationContractError("Rule source and classification type cannot be changed");
+    }
+    const preview = await this.previewRule({ ...draft, sourceId: existing.sourceId, typeCode: existing.typeCode }, ruleId);
     const result = await this.adminRepository.updateRule({
       ruleId,
       ...draft,
@@ -287,16 +335,31 @@ export class ClassifierAdminService {
 
   setRuleEnabled(ruleId: EntityId, enabled: boolean, actor = this.actor, reason?: string) {
     validateText(ruleId, "ruleId", 64);
-    return this.adminRepository.setRuleEnabled({
-      ruleId,
-      enabled,
-      actor,
+    return this.ruleAffectedProducts(ruleId).then((affectedSourceProductIds) => this.adminRepository.setRuleEnabled({
+      ruleId, enabled, actor, affectedSourceProductIds,
       ...(reason === undefined ? {} : { reason }),
-    });
+    }));
   }
 
   getDecisionContext(key: ClassificationDecisionKey) {
     return this.adminRepository.getDecisionContext(key);
+  }
+
+  async previewTargetValueMapping(mappingId: EntityId, dictionaryValueId: EntityId) {
+    return this.adminRepository.previewTargetValueMapping(
+      await this.validatedTargetValueMappingCommand(mappingId, dictionaryValueId, this.actor),
+    );
+  }
+
+  async updateTargetValueMapping(mappingId: EntityId, dictionaryValueId: EntityId, actor = this.actor, reason?: string) {
+    return this.adminRepository.updateTargetValueMapping(
+      await this.validatedTargetValueMappingCommand(mappingId, dictionaryValueId, actor, reason),
+    );
+  }
+
+  setTargetValueMappingEnabled(mappingId: EntityId, enabled: boolean, actor = this.actor, reason?: string) {
+    validateText(mappingId, "mappingId", 64);
+    return this.adminRepository.setTargetValueMappingEnabled({ mappingId, enabled, actor, ...(reason === undefined ? {} : { reason }) });
   }
 
   async listTargetProjections(targetId: EntityId, resolutionKind: "mapping" | "rule", resolutionId: EntityId) {
@@ -316,6 +379,38 @@ export class ClassifierAdminService {
     return this.adminRepository.createTargetProjection(await this.validatedProjectionCommand(command, actor));
   }
 
+  async updateTargetProjection(targetId: EntityId, projectionId: EntityId, command: Pick<ProjectionCommand, "targetScope" | "dictionaryValueId" | "reason">, actor = this.actor) {
+    validateText(targetId, "targetId", 64);
+    validateText(projectionId, "projectionId", 64);
+    const existing = await this.adminRepository.getTargetProjection(targetId, projectionId);
+    if (existing === null) throw new IntegrationContractError(`Target projection does not exist: ${projectionId}`);
+    const validated = await this.validatedProjectionCommand({
+      targetId,
+      resolutionKind: existing.resolutionKind,
+      resolutionId: existing.resolutionId,
+      targetScope: command.targetScope,
+      dictionaryValueId: command.dictionaryValueId,
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
+    }, actor);
+    return this.adminRepository.updateTargetProjection({ ...validated, projectionId });
+  }
+
+  async previewTargetProjectionUpdate(targetId: EntityId, projectionId: EntityId, command: Pick<ProjectionCommand, "targetScope" | "dictionaryValueId" | "reason">) {
+    validateText(targetId, "targetId", 64);
+    validateText(projectionId, "projectionId", 64);
+    const existing = await this.adminRepository.getTargetProjection(targetId, projectionId);
+    if (existing === null) throw new IntegrationContractError(`Target projection does not exist: ${projectionId}`);
+    const validated = await this.validatedProjectionCommand({
+      targetId,
+      resolutionKind: existing.resolutionKind,
+      resolutionId: existing.resolutionId,
+      targetScope: command.targetScope,
+      dictionaryValueId: command.dictionaryValueId,
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
+    }, this.actor);
+    return this.adminRepository.previewTargetProjection({ ...validated, excludeProjectionId: projectionId });
+  }
+
   async deactivateTargetProjection(targetId: EntityId, projectionId: EntityId, actor = this.actor, reason?: string) {
     this.requireProjectionDependencies();
     validateText(targetId, "targetId", 64);
@@ -326,6 +421,22 @@ export class ClassifierAdminService {
       actor,
       ...(reason === undefined ? {} : { reason }),
     });
+  }
+
+  private async ruleAffectedProducts(ruleId: EntityId): Promise<readonly EntityId[]> {
+    const rule = await this.adminRepository.getRule(ruleId);
+    if (rule === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
+    if (rule.sourceId === null) {
+      throw new IntegrationContractError("Global rule activation is not supported by the administrative workflow");
+    }
+    const candidates = await this.adminRepository.listRuleCandidates(
+      rule.sourceId,
+      rule.typeCode,
+      this.currentProcessorVersions[rule.sourceId],
+    );
+    return [...new Set(candidates
+      .filter((item) => item.mappingId === null && matchesClassificationRule(item.candidate, rule.conditions))
+      .map((item) => item.sourceProductId))];
   }
 
   private async validatedProjectionCommand(command: ProjectionCommand, actor: string): Promise<TargetClassificationProjectionCommand> {
@@ -357,9 +468,35 @@ export class ClassifierAdminService {
       resolutionId: command.resolutionId,
       targetScope: command.targetScope,
       dictionaryValueId: command.dictionaryValueId,
+      targetCardinality: capability.cardinality,
       actor,
       ...(command.reason === undefined ? {} : { reason: command.reason }),
     };
+  }
+
+  private async validatedTargetValueMappingCommand(
+    mappingId: EntityId,
+    dictionaryValueId: EntityId,
+    actor: string,
+    reason?: string,
+  ): Promise<TargetValueMappingCommand> {
+    this.requireProjectionDependencies();
+    validateText(mappingId, "mappingId", 64);
+    validateText(dictionaryValueId, "dictionaryValueId", 64);
+    const mapping = await this.adminRepository.getTargetValueMapping(mappingId);
+    if (mapping === null) throw new IntegrationContractError(`Target value mapping does not exist: ${mappingId}`);
+    const target = await this.target(mapping.targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const capability = capabilitiesForTarget(target, provider.classificationCapabilities)
+      .find((item) => item.typeCode === mapping.typeCode && item.targetScope === mapping.targetScope);
+    if (capability === undefined) {
+      throw new IntegrationContractError(`Target scope ${mapping.targetScope} is not valid for ${mapping.typeCode}`);
+    }
+    const dictionary = await this.targetDictionaries!.getValue(mapping.targetId, dictionaryValueId);
+    if (dictionary === null || dictionary.entityType !== capability.entityType) {
+      throw new IntegrationContractError(`Dictionary value cannot be used for ${mapping.targetScope}`);
+    }
+    return { mappingId, dictionaryValueId, actor, ...(reason === undefined ? {} : { reason }) };
   }
 
   private requireProjectionDependencies(): void {

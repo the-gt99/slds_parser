@@ -90,6 +90,25 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("serves rule fields and audited configuration history", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      listRuleConditionFields: vi.fn().mockResolvedValue([{ field: "context.brand", exampleValues: ["Nike"] }]),
+      listConfigurationHistory: vi.fn().mockResolvedValue([{ id: "1", action: "update" }]),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const headers = { authorization: `Bearer ${adminToken}` };
+
+    const fields = await server.inject({ method: "GET", url: "/api/classifier/rule-fields?sourceId=1&typeCode=model", headers });
+    const history = await server.inject({ method: "GET", url: "/api/classifier/configuration/mapping/12/history", headers });
+
+    expect(fields.statusCode).toBe(200);
+    expect(history.statusCode).toBe(200);
+    expect(classifier.listRuleConditionFields).toHaveBeenCalledWith("1", "model");
+    expect(classifier.listConfigurationHistory).toHaveBeenCalledWith("mapping", "12");
+    await server.close();
+  });
+
   it("rejects malformed identifiers before reaching classifier commands", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = { saveDecision: vi.fn() } as unknown as ClassifierAdminService;
