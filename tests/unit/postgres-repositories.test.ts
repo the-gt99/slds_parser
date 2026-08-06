@@ -20,6 +20,11 @@ class FakeExecutor implements SqlExecutor {
   readonly calls: Call[] = [];
   constructor(private readonly results: QueryResultRow[][]) {}
   async query<Row extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []): Promise<SqlResult<Row>> {
+    const parameterNumbers = [...text.matchAll(/\$(\d+)/gu)].map((match) => Number(match[1]));
+    const expectedValueCount = parameterNumbers.length === 0 ? 0 : Math.max(...parameterNumbers);
+    if (values.length !== expectedValueCount) {
+      throw new Error(`SQL expects ${expectedValueCount} parameters but received ${values.length}`);
+    }
     this.calls.push({ text, values });
     const rows = this.results.shift() ?? [];
     return { rows: rows as Row[], rowCount: rows.length };

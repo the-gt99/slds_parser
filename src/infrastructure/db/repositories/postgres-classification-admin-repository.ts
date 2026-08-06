@@ -182,7 +182,6 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const typeCode = add(filters.typeCode);
       const status = add(filters.status);
       const search = add(filters.search);
-      const versions = add(processorVersions(query.currentProcessorVersions));
       const union = `
         SELECT 'mapping' AS kind, mapping.id, mapping.source_id, source.code AS source_code,
                NULL::BIGINT AS target_id, NULL::TEXT AS target_code, type.code AS type_code, type.name AS type_name,
@@ -261,6 +260,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             OR item.rule_name ILIKE '%' || ${search} || '%'
             OR item.context::TEXT ILIKE '%' || ${search} || '%')`;
       const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${filtered}`, parameters);
+      const versions = add(processorVersions(query.currentProcessorVersions));
       const limit = add(query.limit);
       const offset = add(query.offset);
       const result = await client.query<DatabaseRow>(
