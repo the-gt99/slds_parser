@@ -212,14 +212,21 @@ function renderRuntimeLogs(items) {
 }
 
 function renderRuntime(data) {
+  const external = data.externalWorker;
   byId("runtime-status").textContent = runtimeStatusLabel(data.running);
   byId("runtime-status").className = `badge ${data.running ? "status-running" : "status-failed"}`;
+  byId("external-worker-status").textContent = external === null
+    ? "Не найден"
+    : `${runtimeStatusLabel(external.active)}${external.mainPid ? ` · PID ${external.mainPid}` : ""}`;
+  byId("external-worker-status").className = `badge ${external?.active ? "status-running" : "status-failed"}`;
+  byId("external-worker-service").textContent = external?.serviceName || "-";
+  byId("external-worker-state").textContent = external ? `${external.state || "-"} / ${external.subState || "-"}` : "-";
   byId("runtime-worker").textContent = data.workerId;
   byId("runtime-started").textContent = date(data.startedAt);
   byId("runtime-stopped").textContent = date(data.stoppedAt);
   byId("process-concurrency").value = data.settings.processConcurrency;
   byId("collection-concurrency").value = data.settings.collectionConcurrency;
-  byId("runtime-start").disabled = data.running;
+  byId("runtime-start").disabled = data.running || Boolean(external?.active);
   byId("runtime-stop").disabled = !data.running;
   byId("runtime-save-settings").disabled = data.running;
   renderRuntimeQueue(data.queue || []);
@@ -1039,7 +1046,7 @@ function configure() {
     runtime.className = "runtime-grid";
     runtime.innerHTML = `
       <section class="section runtime-card">
-        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Worker</h2></div><span id="runtime-status" class="badge">-</span></div>
+        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Встроенный worker API</h2></div><span id="runtime-status" class="badge">-</span></div>
         <dl class="config-meta-grid">
           <dt>Worker ID</dt><dd id="runtime-worker">-</dd>
           <dt>Запущен</dt><dd id="runtime-started">-</dd>
@@ -1050,6 +1057,14 @@ function configure() {
           <button id="runtime-stop" class="button danger-quiet" type="button">Остановить</button>
           <button id="runtime-refresh" class="button quiet" type="button">Обновить</button>
         </div>
+      </section>
+      <section class="section runtime-card">
+        <div class="section-title"><div><p class="eyebrow">Production</p><h2>Systemd collector</h2></div><span id="external-worker-status" class="badge">-</span></div>
+        <dl class="config-meta-grid">
+          <dt>Service</dt><dd id="external-worker-service">-</dd>
+          <dt>State</dt><dd id="external-worker-state">-</dd>
+        </dl>
+        <p class="muted runtime-note">Если systemd collector активен, встроенный worker из API не запускается, чтобы не поднять второй полный процесс.</p>
       </section>
       <section class="section runtime-card">
         <div class="section-title"><div><p class="eyebrow">Настройки</p><h2>Потоки</h2></div></div>

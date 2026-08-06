@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
 import type { Pool } from "pg";
 
 import { createApplication, type ApplicationEnvironment } from "../bootstrap.js";
@@ -21,8 +24,19 @@ export interface RuntimeQueueSummary {
   readonly count: string;
 }
 
+export interface ExternalWorkerStatus {
+  readonly serviceName: string;
+  readonly available: boolean;
+  readonly active: boolean;
+  readonly state: string | null;
+  readonly subState: string | null;
+  readonly mainPid: string | null;
+  readonly checkedAt: string;
+}
+
 export interface RuntimeStatus {
   readonly running: boolean;
+  readonly externalWorker: ExternalWorkerStatus | null;
   readonly startedAt: string | null;
   readonly stoppedAt: string | null;
   readonly workerId: string;
@@ -41,6 +55,10 @@ interface RuntimeRepositories {
   readonly jobs: JobRepository;
 }
 
+type RuntimeAdminEnvironment = ApplicationEnvironment & {
+  readonly PARSER_WORKER_SYSTEMD_SERVICE?: string;
+};
+
 function integer(value: unknown, name: string, minimum: number, maximum: number): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
@@ -56,6 +74,8 @@ function positiveInteger(value: unknown, name: string, fallback: number): number
   return parsed;
 }
 
+const execFileAsync = promisify(execFile);
+
 export class RuntimeAdminService {
   private readonly logs: RuntimeLogRecord[] = [];
   private application: RuntimeApplication | null = null;
@@ -68,7 +88,7 @@ export class RuntimeAdminService {
   constructor(
     private readonly database: Pool,
     private readonly repositories: RuntimeRepositories,
-    private readonly environment: ApplicationEnvironment = process.env,
+    private readonly environment: RuntimeAdminEnvironment = process.env,
     initialSettings: RuntimeSettings = {
       processConcurrency: integer(environment.WORKER_PROCESS_CONCURRENCY ?? "1", "WORKER_PROCESS_CONCURRENCY", 1, 8),
       collectionConcurrency: integer(environment.WORKER_COLLECTION_CONCURRENCY ?? "1", "WORKER_COLLECTION_CONCURRENCY", 1, 16),
@@ -81,6 +101,7 @@ export class RuntimeAdminService {
   async status(): Promise<RuntimeStatus> {
     return {
       running: this.application !== null,
+      externalWorker: await this.externalWorkerStatus(),
       startedAt: this.startedAt,
       stoppedAt: this.stoppedAt,
       workerId: this.workerId(),
@@ -104,8 +125,13 @@ export class RuntimeAdminService {
     return this.settings;
   }
 
-  start(): RuntimeSettings {
+  async start(): Promise<RuntimeSettings> {
     if (this.application !== null) return this.settings;
+    const external = await this.externalWorkerStatus();
+    if (external?.active) {
+      this.record("error", `External worker is already active: ${external.serviceName}`);
+      throw new Error(`External worker is already active: ${external.serviceName}`);
+    }
     const controller = new AbortController();
     const runtimeEnvironment = {
       ...this.environment,
@@ -191,5 +217,35 @@ export class RuntimeAdminService {
         ORDER BY job_type, status`,
     );
     return result.rows;
+  }
+
+  private async externalWorkerStatus(): Promise<ExternalWorkerStatus | null> {
+    const serviceName = this.environment.PARSER_WORKER_SYSTEMD_SERVICE?.trim() || "slds-parser-worker.service";
+    try {
+      const { stdout } = await execFileAsync("systemctl", [
+        "show",
+        serviceName,
+        "-p", "ActiveState",
+        "-p", "SubState",
+        "-p", "MainPID",
+        "--no-pager",
+      ], { timeout: 2_000 });
+      const values = Object.fromEntries(stdout.trim().split(/\r?\n/u).map((line) => {
+        const separator = line.indexOf("=");
+        return separator === -1 ? [line, ""] : [line.slice(0, separator), line.slice(separator + 1)];
+      }));
+      const state = values.ActiveState || null;
+      return {
+        serviceName,
+        available: true,
+        active: state === "active",
+        state,
+        subState: values.SubState || null,
+        mainPid: values.MainPID && values.MainPID !== "0" ? values.MainPID : null,
+        checkedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
   }
 }

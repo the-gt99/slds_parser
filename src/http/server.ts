@@ -572,7 +572,13 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.post(
     "/api/runtime/start",
     { preHandler: [requireAdmin, requireMutationAccess] },
-    async () => ({ settings: runtimeService().start() }),
+    async () => {
+      try {
+        return { settings: await runtimeService().start() };
+      } catch (error) {
+        throw new HttpInputError(error instanceof Error ? error.message : "Runtime cannot be started");
+      }
+    },
   );
 
   server.post(
