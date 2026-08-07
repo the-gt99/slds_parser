@@ -566,6 +566,18 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     }),
   );
 
+  server.delete<{ Params: RuleParams; Body: RuleStatusBody }>(
+    "/api/classifier/rules/:ruleId",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      rule: await dependencies.classifier.deleteRule(
+        entityId(request.params.ruleId, "ruleId"),
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
+
   server.get<{ Querystring: ProjectionQuery }>("/api/classifier/projections", { preHandler: requireAdmin }, async (request) => {
     const resolutionKind = requiredString(request.query.resolutionKind, "resolutionKind");
     if (resolutionKind !== "mapping" && resolutionKind !== "rule") throw new HttpInputError("resolutionKind must be mapping or rule");

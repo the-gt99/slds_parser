@@ -253,6 +253,26 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).not.toContain("INSERT INTO source_reference_mappings");
   });
 
+  it("soft deletes a rule and deactivates its projections while preserving audit", async () => {
+    const previousRule = { id: "22", revision: "1", enabled: true, deleted_at: null };
+    const previousProjection = { id: "46", revision: "1", active: true, rule_id: "22" };
+    const executor = new FakeExecutor([
+      [], [previousRule], [previousProjection],
+      [{ ...previousRule, revision: "2", enabled: false, deleted_at: "2026-08-07T00:00:00Z" }],
+      [], [{ ...previousProjection, revision: "2", active: false }], [], [],
+    ]);
+
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).deleteRule({
+      ruleId: "22", actor: "admin", affectedSourceProductIds: [],
+    });
+
+    expect(result).toEqual({ revision: "2", affectedProductCount: 0 });
+    const sql = executor.calls.map((call) => call.text).join("\n");
+    expect(sql).toContain("deleted_at = NOW()");
+    expect(sql).toContain("UPDATE target_classification_projections");
+    expect(sql).toContain("'delete'");
+  });
+
   it("loads one classifier configuration record by kind and id", async () => {
     const executor = new FakeExecutor([[{ total: "0" }], [], [], [], []]);
     await new PostgresClassificationAdminRepository(pool(executor)).listConfiguration({

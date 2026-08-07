@@ -328,8 +328,17 @@ function renderClassifications(item) {
     content.append(name, source);
     const result = document.createElement("div");
     result.className = "classification-result";
-    result.append(badge(humanStatus(value.status), value.status));
-    if (value.resolvedReferenceName) {
+    const pending = value.pendingResolution;
+    result.append(badge(pending ? "Ожидает переобработки" : humanStatus(value.status), pending ? "pending" : value.status));
+    if (pending) {
+      const note = document.createElement("span");
+      note.textContent = pending.status === "resolved"
+        ? "Решение уже сохранено и будет применено после запуска обработки"
+        : pending.status === "ignored"
+          ? "Значение будет проигнорировано после запуска обработки"
+          : "Текущее решение будет снято после запуска обработки";
+      result.append(note);
+    } else if (value.resolvedReferenceName) {
       const target = document.createElement("span");
       target.textContent = `→ ${value.resolvedReferenceName}`;
       result.append(target);
@@ -356,7 +365,13 @@ function renderClassifications(item) {
     }
     const actions = document.createElement("div");
     actions.className = "classification-actions";
-    if (value.status === "unresolved" || value.status === "ambiguous") {
+    if (pending?.resolutionKind && pending.resolutionId) {
+      const details = document.createElement("a");
+      details.className = "button quiet small-button";
+      details.href = `/classifier-config?${new URLSearchParams({ kind: pending.resolutionKind, configId: pending.resolutionId })}`;
+      details.textContent = "Открыть сохранённое решение";
+      actions.append(details);
+    } else if (!pending && (value.status === "unresolved" || value.status === "ambiguous")) {
       const params = new URLSearchParams({
         sourceId: item.source.id,
         typeCode: value.typeCode,

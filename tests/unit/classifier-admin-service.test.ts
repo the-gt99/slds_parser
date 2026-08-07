@@ -56,6 +56,7 @@ function repositories(
     createRule: vi.fn().mockResolvedValue({ ruleId: "10", referenceValueId: "500", revision: "1", affectedProductCount: 1 }),
     updateRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "2", affectedProductCount: 1 }),
     setRuleEnabled: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 1 }),
+    deleteRule: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 1 }),
     getTargetValueMapping: vi.fn(),
     previewTargetValueMapping: vi.fn(),
     updateTargetValueMapping: vi.fn(),

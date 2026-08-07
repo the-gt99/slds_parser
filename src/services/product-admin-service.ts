@@ -15,6 +15,7 @@ import type {
   TargetRecord,
 } from "../repositories/index.js";
 import type { ProductOperationRegistry } from "../core/registry/index.js";
+import type { ProductClassifier } from "./product-classifier.js";
 
 function providerCode(target: TargetRecord): string {
   const configured = target.config.dictionaryProviderCode;
@@ -164,6 +165,7 @@ export class ProductAdminService {
     private readonly providers: TargetDictionaryProviderRegistry,
     private readonly operations?: ProductOperationRegistry,
     private readonly jobs?: JobRepository,
+    private readonly classifier?: ProductClassifier,
   ) {}
 
   listProducts(query: Parameters<NonNullable<ProductAdminRepository["listProducts"]>>[0]) {
@@ -317,6 +319,31 @@ export class ProductAdminService {
     const snapshot = await this.repository.getById(sourceProductId);
     if (snapshot === null) throw new EntityNotFoundError("Source product", sourceProductId);
     const internal = snapshot.internalProduct;
+    const hasPendingProcessing = snapshot.jobs.some((job) => job.jobType === "process_product" && activeJobStatuses.has(job.status));
+    const pendingResolutions = new Map<string, {
+      readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
+      readonly resolutionKind: "mapping" | "rule" | null;
+      readonly resolutionId: EntityId | null;
+    }>();
+    if (hasPendingProcessing && internal !== null && this.classifier !== undefined) {
+      const current = await this.classifier.classify(snapshot.source.id, internal.data);
+      for (const observation of current.observations) {
+        pendingResolutions.set(observation.candidate.key, {
+          status: observation.status,
+          resolutionKind: observation.resolutionKind,
+          resolutionId: observation.resolutionId,
+        });
+      }
+    }
+    const classifications = snapshot.classifications.map((observation) => {
+      const pending = pendingResolutions.get(observation.candidateKey);
+      const changed = pending !== undefined && (
+        pending.status !== observation.status
+        || pending.resolutionKind !== observation.resolutionKind
+        || pending.resolutionId !== observation.resolutionId
+      );
+      return { ...observation, pendingResolution: changed ? pending : null };
+    });
 
     return {
       source: {
@@ -369,8 +396,8 @@ export class ProductAdminService {
         statusCounts: statusCounts(snapshot.operations),
       },
       classification: {
-        observations: snapshot.classifications,
-        statusCounts: statusCounts(snapshot.classifications),
+        observations: classifications,
+        statusCounts: statusCounts(classifications),
       },
       jobs: snapshot.jobs.map((job) => ({
         id: job.id,

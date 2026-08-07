@@ -391,6 +391,14 @@ export class ClassifierAdminService {
     }));
   }
 
+  deleteRule(ruleId: EntityId, actor = this.actor, reason?: string) {
+    validateText(ruleId, "ruleId", 64);
+    return this.ruleAffectedProducts(ruleId).then((affectedSourceProductIds) => this.adminRepository.deleteRule({
+      ruleId, actor, affectedSourceProductIds,
+      ...(reason === undefined ? {} : { reason }),
+    }));
+  }
+
   getDecisionContext(key: ClassificationDecisionKey) {
     return this.adminRepository.getDecisionContext(key);
   }

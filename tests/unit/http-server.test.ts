@@ -382,6 +382,24 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("deletes a classifier rule through the audited admin endpoint", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      deleteRule: vi.fn().mockResolvedValue({ revision: "3", affectedProductCount: 12 }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+
+    const forbidden = await server.inject({ method: "DELETE", url: "/api/classifier/rules/10", headers: { cookie }, payload: {} });
+    const allowed = await server.inject({ method: "DELETE", url: "/api/classifier/rules/10", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: {} });
+
+    expect(forbidden.statusCode).toBe(403);
+    expect(allowed.statusCode).toBe(200);
+    expect(classifier.deleteRule).toHaveBeenCalledWith("10", "admin", undefined);
+    await server.close();
+  });
+
   it("accepts a classifier rule whose result is selected directly in WordPress", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = {

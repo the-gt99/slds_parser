@@ -212,6 +212,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         LEFT JOIN sources source ON source.id = rule.source_id
         JOIN reference_types type ON type.id = rule.reference_type_id
         JOIN reference_values value ON value.id = rule.reference_value_id
+        WHERE rule.deleted_at IS NULL
         UNION ALL
         SELECT 'target_mapping' AS kind, mapping.id, NULL::BIGINT AS source_id, NULL::TEXT AS source_code,
                mapping.target_id, target.code AS target_code, type.code AS type_code, type.name AS type_name,
@@ -248,7 +249,8 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         LEFT JOIN sources source ON source.id = COALESCE(mapping.source_id, rule.source_id)
         JOIN reference_values value ON value.id = COALESCE(mapping.reference_value_id, rule.reference_value_id)
         JOIN reference_types type ON type.id = value.type_id
-        JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id`;
+        JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+        WHERE projection.rule_id IS NULL OR rule.deleted_at IS NULL`;
       const filtered = `FROM (${union}) item
         WHERE (${kind}::TEXT = '' OR item.kind = ${kind})
           AND (${configId}::BIGINT IS NULL OR item.id = ${configId})
@@ -627,7 +629,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         `SELECT rule.*, type.code AS type_code
          FROM source_reference_rules rule
          JOIN reference_types type ON type.id = rule.reference_type_id
-         WHERE rule.id = $1`,
+         WHERE rule.id = $1 AND rule.deleted_at IS NULL`,
         [ruleId],
       );
       const row = result.rows[0];
@@ -1512,7 +1514,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           `SELECT rule.*, type.code AS type_code
            FROM source_reference_rules rule
            JOIN reference_types type ON type.id = rule.reference_type_id
-           WHERE rule.id = $1
+           WHERE rule.id = $1 AND rule.deleted_at IS NULL
            FOR UPDATE`,
           [input.ruleId],
         );
@@ -1584,7 +1586,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       await client.query("BEGIN");
       try {
         const previousResult = await client.query<DatabaseRow>(
-          `SELECT * FROM source_reference_rules WHERE id = $1 FOR UPDATE`,
+          `SELECT * FROM source_reference_rules WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
           [input.ruleId],
         );
         const previous = previousResult.rows[0];
@@ -1610,6 +1612,73 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           );
         }
         const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, input.affectedSourceProductIds);
+        await client.query("COMMIT");
+        return { revision: String(rule.revision), affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async deleteRule(input: {
+    readonly ruleId: string;
+    readonly actor: string;
+    readonly reason?: string;
+    readonly affectedSourceProductIds: readonly string[];
+  }): Promise<{ readonly affectedProductCount: number; readonly revision: string }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM source_reference_rules
+           WHERE id = $1 AND deleted_at IS NULL
+           FOR UPDATE`,
+          [input.ruleId],
+        );
+        const previous = previousResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Classification rule", input.ruleId);
+        const projections = await client.query<DatabaseRow>(
+          `SELECT * FROM target_classification_projections
+           WHERE rule_id = $1 AND active = TRUE
+           FOR UPDATE`,
+          [input.ruleId],
+        );
+        const result = await client.query<DatabaseRow>(
+          `UPDATE source_reference_rules
+           SET enabled = FALSE,
+               deleted_at = NOW(),
+               deleted_by = $2,
+               revision = revision + 1,
+               updated_by = $2,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [input.ruleId, input.actor],
+        );
+        const rule = result.rows[0]!;
+        await client.query(
+          `INSERT INTO source_reference_decision_history (
+             rule_id, action, previous_value, new_value, actor, reason
+           ) VALUES ($1, 'delete', $2::JSONB, $3::JSONB, $4, $5)`,
+          [input.ruleId, JSON.stringify(previous), JSON.stringify(rule), input.actor, input.reason ?? null],
+        );
+        for (const projection of projections.rows) {
+          const projectionResult = await client.query<DatabaseRow>(
+            `UPDATE target_classification_projections
+             SET active = FALSE, revision = revision + 1, updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [projection.id],
+          );
+          await client.query(
+            `INSERT INTO target_classification_projection_history (
+               projection_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, 'deactivate', $2::JSONB, $3::JSONB, $4, $5)`,
+            [projection.id, JSON.stringify(projection), JSON.stringify(projectionResult.rows[0]!), input.actor, `Удалено вместе с правилом #${input.ruleId}`],
+          );
+        }
+        const affectedProductCount = await enqueueProducts(client, input.affectedSourceProductIds);
         await client.query("COMMIT");
         return { revision: String(rule.revision), affectedProductCount };
       } catch (error) {

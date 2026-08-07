@@ -62,6 +62,12 @@ export interface ClassificationAdminRepository {
     readonly reason?: string;
     readonly affectedSourceProductIds: readonly string[];
   }): Promise<{ readonly affectedProductCount: number; readonly revision: string }>;
+  deleteRule(input: {
+    readonly ruleId: string;
+    readonly actor: string;
+    readonly reason?: string;
+    readonly affectedSourceProductIds: readonly string[];
+  }): Promise<{ readonly affectedProductCount: number; readonly revision: string }>;
   getTargetValueMapping(mappingId: string): Promise<TargetValueMappingAdminRecord | null>;
   previewTargetValueMapping(input: TargetValueMappingCommand): Promise<TargetClassificationProjectionPreview>;
   updateTargetValueMapping(input: TargetValueMappingCommand): Promise<{

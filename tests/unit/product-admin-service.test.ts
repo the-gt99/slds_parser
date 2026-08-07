@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TargetDictionaryProvider } from "../../src/integrations/index.js";
 import { TargetDictionaryProviderRegistry } from "../../src/integrations/index.js";
 import type { JobRecord, JobRepository, ProductAdminReadModel, ProductAdminRepository } from "../../src/repositories/index.js";
-import { ProductAdminService } from "../../src/services/index.js";
+import { ProductAdminService, type ProductClassifier } from "../../src/services/index.js";
 
 function snapshot(): ProductAdminReadModel {
   const now = "2026-08-02T00:00:00.000Z";
@@ -114,6 +114,44 @@ describe("ProductAdminService", () => {
 
     expect(result.processing.currentOutput?.title).toBe("Test shoe");
     expect(result.processing.attempts[0]?.classifiedOutput?.title).toBe("Old classified title");
+  });
+
+  it("shows a saved classification decision while product reprocessing is pending", async () => {
+    const value = snapshot();
+    const repository: ProductAdminRepository = {
+      getById: vi.fn().mockResolvedValue({
+        ...value,
+        classifications: [{
+          id: "70", candidateKey: "product:category", typeCode: "category", typeName: "Категория",
+          scope: "product.category", sourceValue: "sneakers", normalizedSourceValue: "sneakers",
+          contextKey: "{}", context: {}, evidence: {}, status: "unresolved", issueReason: "mapping_missing",
+          resolvedReferenceValueId: null, resolvedReferenceName: null, resolutionKind: null, resolutionId: null,
+          outputs: [], firstSeenAt: value.sourceProduct.createdAt, lastSeenAt: value.sourceProduct.updatedAt,
+        }],
+        jobs: [{
+          id: "80", jobType: "process_product", payload: { sourceProductId: "3", force: true }, status: "pending",
+          attempts: 0, availableAt: value.sourceProduct.updatedAt, lockedAt: null, lockedBy: null,
+          uniqueKey: "source-product:3:process", lastError: null, createdAt: value.sourceProduct.createdAt,
+          updatedAt: value.sourceProduct.updatedAt, finishedAt: null,
+        }],
+      }),
+    };
+    const classifier = {
+      classify: vi.fn().mockResolvedValue({
+        product: value.internalProduct!.data,
+        observations: [{
+          candidate: { key: "product:category" }, status: "resolved", resolutionKind: "mapping", resolutionId: "147",
+        }],
+      }),
+    } as unknown as ProductClassifier;
+
+    const result = await new ProductAdminService(
+      repository, new TargetDictionaryProviderRegistry(), undefined, undefined, classifier,
+    ).getProduct("3");
+
+    expect(result.classification.observations[0]?.pendingResolution).toEqual({
+      status: "resolved", resolutionKind: "mapping", resolutionId: "147",
+    });
   });
 
   it("previews product batch actions with deduplication and a server limit", async () => {

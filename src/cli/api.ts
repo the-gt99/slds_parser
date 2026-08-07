@@ -15,7 +15,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ClassifierAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { ClassifierAdminService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -79,6 +79,7 @@ async function main(): Promise<void> {
       providers,
       operations,
       repositories.jobs,
+      new ProductClassifier(repositories.classifications),
     );
     const targetMappings = new TargetReferenceMappingService(repositories.references);
     const wordpressPreview = wordpress === null

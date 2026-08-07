@@ -107,6 +107,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         AND value.type_id = type.id
         AND value.enabled = TRUE
       WHERE rule.enabled = TRUE
+        AND rule.deleted_at IS NULL
         AND (rule.source_id IS NULL OR rule.source_id = $1)
         AND type.code = ANY($2::text[])
       ORDER BY rule.priority DESC, JSONB_ARRAY_LENGTH(rule.conditions) DESC, rule.id`,

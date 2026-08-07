@@ -533,7 +533,9 @@ async function openConfigDetails(item) {
     projection.addEventListener("click", () => { dialog.close(); openProjectionDialog(item); });
     const toggle = button(item.status === "active" ? "Отключить" : "Включить");
     toggle.addEventListener("click", async () => { dialog.close(); await setRuleStatus(item); });
-    editActions.append(edit, projection, toggle);
+    const remove = button("Удалить", "button danger-quiet");
+    remove.addEventListener("click", async () => { dialog.close(); await deleteRule(item); });
+    editActions.append(edit, projection, toggle, remove);
   } else if (item.kind === "target_mapping") {
     const edit = button("Изменить поле WordPress", "button primary");
     edit.addEventListener("click", () => { dialog.close(); openTargetMappingDialog(item); });
@@ -1137,6 +1139,13 @@ async function setRuleStatus(item) {
   const action = item.status === "active" ? "deactivate" : "reactivate";
   const result = await api(`/api/classifier/rules/${item.id}/${action}`, { method: "POST", body: {} });
   alert(`Готово. На обработку поставлено товаров: ${result.rule.affectedProductCount}`);
+  await load();
+}
+
+async function deleteRule(item) {
+  if (!confirm(`Удалить правило «${item.ruleName}»? Оно исчезнет из настроек, связанные назначения отключатся, а товары будут поставлены на переобработку. WordPress сейчас не изменится.`)) return;
+  const result = await api(`/api/classifier/rules/${item.id}`, { method: "DELETE", body: {} });
+  alert(`Правило удалено. На обработку поставлено товаров: ${result.rule.affectedProductCount}`);
   await load();
 }
 
