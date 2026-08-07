@@ -326,6 +326,17 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(call?.values).toEqual(["worker", 30000, ["process_product"]]);
   });
 
+  it("claims only an explicitly selected pending processing job", async () => {
+    const executor = new FakeExecutor([[jobRow]]);
+    await new PostgresJobRepository(executor).claimById("42", "worker:manual", ["process_product"]);
+    const call = executor.calls[0];
+    expect(call?.text).toContain("WHERE id = $1");
+    expect(call?.text).toContain("job_type = ANY($3::TEXT[])");
+    expect(call?.text).toContain("status IN ('pending', 'retry')");
+    expect(call?.text).not.toContain("ORDER BY");
+    expect(call?.values).toEqual(["42", "worker:manual", ["process_product"]]);
+  });
+
   it("uses the computed target status for both filtering and product rows", async () => {
     const executor = new FakeExecutor([
       [{ total: "1" }],

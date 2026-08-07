@@ -191,7 +191,7 @@ function renderSnapshots(items) {
 
 function renderJobs(data) {
   const summary = data.summary || {};
-  headings(["Job", "Статус", "Товар", "Создан", "Длительность", "Попытки", "Worker/lane", "Ошибка"]);
+  headings(["Job", "Статус", "Товар", "Создан", "Длительность", "Попытки", "Worker/lane", "Ошибка", "Действие"]);
   const body = byId("table-body");
   body.replaceChildren();
   for (const item of data.items || []) {
@@ -207,6 +207,16 @@ function renderJobs(data) {
     error.textContent = item.lastError || "-";
     if (item.payload) error.append(jsonMini("payload", item.payload));
     cell(tr, error, "admin-title-cell");
+    const actions = document.createElement("span");
+    actions.className = "compact-links";
+    if (item.jobType === "process_product" && ["pending", "retry"].includes(item.status)) {
+      const run = button("Выполнить сейчас", "button secondary compact");
+      run.addEventListener("click", () => runProcessJob(item, run));
+      actions.append(run);
+    } else {
+      actions.textContent = "-";
+    }
+    cell(tr, actions);
     body.append(tr);
   }
   let dashboard = byId("jobs-dashboard");
@@ -228,6 +238,23 @@ function renderJobs(data) {
     <div class="runtime-actions"><button id="retry-process-failed" class="button secondary" type="button">Preview retry failed processing</button></div>
   `;
   byId("retry-process-failed").addEventListener("click", retryFailedProcessing);
+}
+
+async function runProcessJob(item, control) {
+  if (!confirm(`Выполнить сейчас только process_product job #${item.id} для товара #${item.sourceProductId || "-"}? Остальная очередь не будет запущена.`)) return;
+  control.disabled = true;
+  control.textContent = "Выполняется…";
+  try {
+    const response = await api(`/api/jobs/${item.id}/run`, { method: "POST", body: {} });
+    const result = response.result;
+    const suffix = result.error ? `\n${result.error}` : "";
+    alert(`Job #${result.jobId}: ${status(result.status)}${suffix}`);
+    await load();
+  } catch (error) {
+    alert(error.message);
+    control.disabled = false;
+    control.textContent = "Выполнить сейчас";
+  }
 }
 
 function jsonMini(title, value) {
@@ -351,23 +378,15 @@ function renderRuntimeLogs(items) {
 }
 
 function renderRuntime(data) {
-  const external = data.externalWorker;
-  byId("runtime-status").textContent = runtimeStatusLabel(data.running);
-  byId("runtime-status").className = `badge ${data.running ? "status-running" : "status-failed"}`;
-  byId("external-worker-status").textContent = external === null
+  const worker = data.worker;
+  byId("runtime-status").textContent = worker === null
     ? "Не найден"
-    : `${runtimeStatusLabel(external.active)}${external.mainPid ? ` · PID ${external.mainPid}` : ""}`;
-  byId("external-worker-status").className = `badge ${external?.active ? "status-running" : "status-failed"}`;
-  byId("external-worker-service").textContent = external?.serviceName || "-";
-  byId("external-worker-state").textContent = external ? `${external.state || "-"} / ${external.subState || "-"}` : "-";
-  byId("runtime-worker").textContent = data.workerId;
-  byId("runtime-started").textContent = date(data.startedAt);
-  byId("runtime-stopped").textContent = date(data.stoppedAt);
-  byId("process-concurrency").value = data.settings.processConcurrency;
-  byId("collection-concurrency").value = data.settings.collectionConcurrency;
-  byId("runtime-start").disabled = data.running || Boolean(external?.active);
-  byId("runtime-stop").disabled = !data.running;
-  byId("runtime-save-settings").disabled = data.running;
+    : `${runtimeStatusLabel(worker.active)}${worker.mainPid ? ` · PID ${worker.mainPid}` : ""}`;
+  byId("runtime-status").className = `badge ${worker?.active ? "status-running" : "status-failed"}`;
+  byId("runtime-worker-service").textContent = worker?.serviceName || "-";
+  byId("runtime-worker-state").textContent = worker ? `${worker.state || "-"} / ${worker.subState || "-"}` : "-";
+  byId("runtime-start").disabled = worker === null || worker.active;
+  byId("runtime-stop").disabled = worker === null || !worker.active;
   renderRuntimeQueue(data.queue || []);
   renderRuntimeLogs(data.logs || []);
 }
@@ -1206,31 +1225,17 @@ function configure() {
     runtime.className = "runtime-grid";
     runtime.innerHTML = `
       <section class="section runtime-card">
-        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Встроенный worker API</h2></div><span id="runtime-status" class="badge">-</span></div>
+        <div class="section-title"><div><p class="eyebrow">Production</p><h2>Worker парсера</h2></div><span id="runtime-status" class="badge">-</span></div>
         <dl class="config-meta-grid">
-          <dt>Worker ID</dt><dd id="runtime-worker">-</dd>
-          <dt>Запущен</dt><dd id="runtime-started">-</dd>
-          <dt>Остановлен</dt><dd id="runtime-stopped">-</dd>
+          <dt>Service</dt><dd id="runtime-worker-service">-</dd>
+          <dt>State</dt><dd id="runtime-worker-state">-</dd>
         </dl>
         <div class="runtime-actions">
           <button id="runtime-start" class="button primary" type="button">Запустить worker</button>
           <button id="runtime-stop" class="button danger-quiet" type="button">Остановить</button>
           <button id="runtime-refresh" class="button quiet" type="button">Обновить</button>
         </div>
-      </section>
-      <section class="section runtime-card">
-        <div class="section-title"><div><p class="eyebrow">Production</p><h2>Systemd collector</h2></div><span id="external-worker-status" class="badge">-</span></div>
-        <dl class="config-meta-grid">
-          <dt>Service</dt><dd id="external-worker-service">-</dd>
-          <dt>State</dt><dd id="external-worker-state">-</dd>
-        </dl>
-        <p class="muted runtime-note">Если systemd collector активен, встроенный worker из API не запускается, чтобы не поднять второй полный процесс.</p>
-      </section>
-      <section class="section runtime-card">
-        <div class="section-title"><div><p class="eyebrow">Настройки</p><h2>Потоки</h2></div></div>
-        <label class="field"><span>Processing lanes</span><input id="process-concurrency" type="number" min="1" max="8"></label>
-        <label class="field"><span>Collection lanes</span><input id="collection-concurrency" type="number" min="1" max="16"></label>
-        <button id="runtime-save-settings" class="button secondary" type="button">Сохранить настройки</button>
+        <p class="muted runtime-note">Это единственный production worker. Он выполняет discovery, сбор, обработку и экспорт по настроенным на сервере потокам.</p>
       </section>
       <section class="section runtime-card">
         <div class="section-title"><div><p class="eyebrow">GOAT</p><h2>Discovery</h2></div></div>
@@ -1244,21 +1249,22 @@ function configure() {
         <div id="runtime-queue" class="runtime-list"></div>
       </section>
       <section class="section runtime-card runtime-wide">
-        <div class="section-title"><div><p class="eyebrow">Логи</p><h2>События API runtime</h2></div></div>
+        <div class="section-title"><div><p class="eyebrow">Логи</p><h2>События управления</h2></div></div>
         <div id="runtime-logs" class="runtime-logs"></div>
       </section>
     `;
     byId("filters").after(runtime);
-    byId("runtime-start").addEventListener("click", async () => { await api("/api/runtime/start", { method: "POST", body: {} }); await load(); });
-    byId("runtime-stop").addEventListener("click", async () => { await api("/api/runtime/stop", { method: "POST", body: {} }); await load(); });
-    byId("runtime-refresh").addEventListener("click", load);
-    byId("runtime-save-settings").addEventListener("click", async () => {
-      await api("/api/runtime/settings", { method: "PATCH", body: {
-        processConcurrency: byId("process-concurrency").value,
-        collectionConcurrency: byId("collection-concurrency").value,
-      } });
+    byId("runtime-start").addEventListener("click", async () => {
+      if (!confirm("Запустить production worker? Он начнёт выполнять всю доступную очередь jobs.")) return;
+      await api("/api/runtime/start", { method: "POST", body: {} });
       await load();
     });
+    byId("runtime-stop").addEventListener("click", async () => {
+      if (!confirm("Остановить production worker после завершения текущей операции? Задачи в очереди сохранятся.")) return;
+      await api("/api/runtime/stop", { method: "POST", body: {} });
+      await load();
+    });
+    byId("runtime-refresh").addEventListener("click", load);
     byId("runtime-discovery").addEventListener("click", async () => {
       const enqueueCollection = byId("discovery-enqueue-collection").checked;
       if (enqueueCollection && !confirm("Discovery полного каталога с автоматическим сбором может поставить много collect_product jobs. Продолжить?")) return;

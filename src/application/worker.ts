@@ -54,6 +54,18 @@ export class Worker {
       await permit?.releaseUnused();
       return false;
     }
+    await this.processClaimed(job, permit);
+    return true;
+  }
+
+  async processById(jobId: string, jobTypes: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
+    const job = await this.jobs.claimById(jobId, workerId, jobTypes);
+    if (job === null) return false;
+    await this.processClaimed(job);
+    return true;
+  }
+
+  private async processClaimed(job: JobRecord, permit?: WorkerClaimPermit): Promise<void> {
     const process = async (): Promise<void> => {
       await this.dispatcher.dispatch(job);
       await this.jobs.complete(job.id);
@@ -76,7 +88,6 @@ export class Worker {
         }
       }
     }
-    return true;
   }
 
   async run(signal: AbortSignal): Promise<void> {

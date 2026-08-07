@@ -17,6 +17,20 @@ export class PostgresJobRepository implements JobRepository {
     return result.rows[0] ? mapJob(result.rows[0]) : null;
   }
 
+  async claimById(id: EntityId, workerId: string, jobTypes: readonly JobType[]): Promise<JobRecord | null> {
+    const result = await this.executor.query<DatabaseRow>(
+      `UPDATE jobs
+          SET status = 'running', locked_at = NOW(), locked_by = $2,
+              attempts = attempts + 1, finished_at = NULL, updated_at = NOW()
+        WHERE id = $1
+          AND job_type = ANY($3::TEXT[])
+          AND status IN ('pending', 'retry')
+      RETURNING *`,
+      [id, workerId, jobTypes],
+    );
+    return result.rows[0] ? mapJob(result.rows[0]) : null;
+  }
+
   async complete(id: EntityId): Promise<void> {
     const result = await this.executor.query<DatabaseRow>(`UPDATE jobs SET status = 'completed', finished_at = NOW(), locked_at = NULL, locked_by = NULL, updated_at = NOW() WHERE id = $1 RETURNING id`, [id]);
     requireRow(result.rows, "job", id);

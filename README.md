@@ -217,6 +217,9 @@ API запускается отдельным процессом после `npm
 - `GET /api/products/:productId` — безопасное представление товара, его частей, классификации, операций, jobs и состояния выгрузки;
 - `GET /api/products` — поиск, фильтры и пагинация общего реестра товаров;
 - `GET /api/operations` — фактический runtime registry операций;
+- `GET /api/jobs` — очередь с фильтрами, статусами и ошибками;
+- `POST /api/jobs/:jobId/run` — синхронно выполнить только выбранный pending/retry `process_product`, не запуская остальную очередь;
+- `GET /api/runtime`, `POST /api/runtime/start`, `POST /api/runtime/stop` — состояние и управление единственным production worker `slds-parser-worker.service`;
 - `GET /api/wordpress-snapshots` — поиск и пагинация сохранённых снимков WordPress;
 - `GET /api/products/:productId/wordpress-preview?targetId=...` — сборка общего payload экспортера и реальный read-only WordPress preflight;
 - `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
@@ -242,5 +245,7 @@ WordPress-адаптер включается только когда однов
 Адаптер читает `brands`, `models`, `tags`, `sizes`, `shoe_heights`, `product_categories`, `colors`, `materials`, `seasons` и `activities`. Создание доступно только для брендов, моделей, тегов и категорий: у остальных справочников сайта есть дополнительные метаданные, поэтому создавать для них неполные термины общей кнопкой нельзя. При создании можно явно передать slug, а для категории — родительский term ID. Повторная проверка имени и slug выполняется на стороне WordPress непосредственно перед `wp_insert_term`. Каждая попытка записывается в `target_term_creation_history` с оператором, результатом и ID созданного или найденного термина. Пароли и токены WordPress в таблицах не хранятся.
 
 Типы в фильтре классификатора берутся из реально ожидающих решения наблюдений и их имён в PostgreSQL, а не из списка в браузерном коде. Возможность привязки к WordPress, соответствующая сущность и кратность объявляются самим target-адаптером. Карточка товара открывается по `/products/:productId`; старые товары покажут имеющиеся высокоуровневые jobs, а детальная история операций начнёт заполняться при следующей обработке.
+
+Полный worker в процессе API не запускается: production использует только `slds-parser-worker.service`. Для управления службой из админки пользователь API должен получить polkit-разрешение только на start/stop этой службы; готовое правило находится в `deploy/polkit`. Точечная ручная обработка выполняется отдельным one-shot приложением и атомарно забирает конкретный job по ID. Для записи media из такого запуска API-службе требуется override из `deploy/systemd`.
 
 Процесс корректно закрывает HTTP-сервер и PostgreSQL pool по `SIGINT` и `SIGTERM`. Для production API следует запускать как отдельную службу за reverse proxy, не открывая внутренний порт наружу.

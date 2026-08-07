@@ -169,15 +169,11 @@ describe("HTTP server", () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const runtime = {
       status: vi.fn().mockResolvedValue({
-        running: false,
-        startedAt: null,
-        stoppedAt: null,
-        workerId: "worker:admin",
-        settings: { processConcurrency: 2, collectionConcurrency: 3 },
+        worker: { serviceName: "slds-parser-worker.service", active: false, state: "inactive", subState: "dead", mainPid: null },
         queue: [],
         logs: [],
       }),
-      start: vi.fn().mockReturnValue({ processConcurrency: 2, collectionConcurrency: 3 }),
+      start: vi.fn().mockResolvedValue({ serviceName: "slds-parser-worker.service", active: true }),
     } as unknown as RuntimeAdminService;
     const server = createHttpServer({ ...dependencies(database), runtime });
 
@@ -197,6 +193,25 @@ describe("HTTP server", () => {
     expect(started.statusCode).toBe(200);
     expect(runtime.status).toHaveBeenCalledOnce();
     expect(runtime.start).toHaveBeenCalledOnce();
+    await server.close();
+  });
+
+  it("runs only the selected processing job and protects the command with CSRF", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const runtime = {
+      runProcessJob: vi.fn().mockResolvedValue({ jobId: "350520", status: "completed", error: null }),
+    } as unknown as RuntimeAdminService;
+    const server = createHttpServer({ ...dependencies(database), runtime });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+
+    const forbidden = await server.inject({ method: "POST", url: "/api/jobs/350520/run", headers: { cookie }, payload: {} });
+    const executed = await server.inject({ method: "POST", url: "/api/jobs/350520/run", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: {} });
+
+    expect(forbidden.statusCode).toBe(403);
+    expect(executed.statusCode).toBe(200);
+    expect(executed.json()).toEqual({ result: { jobId: "350520", status: "completed", error: null } });
+    expect(runtime.runProcessJob).toHaveBeenCalledWith("350520");
     await server.close();
   });
 

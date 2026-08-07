@@ -21,4 +21,4 @@ export {
 } from "./target-dictionary-service.js";
 export { ProductAdminService } from "./product-admin-service.js";
 export { WordPressPreviewService } from "./wordpress-preview-service.js";
-export { RuntimeAdminService, type RuntimeSettings, type RuntimeStatus } from "./runtime-admin-service.js";
+export { RuntimeAdminService, type ManualJobRunResult, type RuntimeStatus } from "./runtime-admin-service.js";

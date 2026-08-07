@@ -25,4 +25,24 @@ describe("Worker", () => {
     expect([...value.store.jobs.values()].find((job) => job.jobType === "collect_product")).toMatchObject({ status: "completed", lockedBy: null });
     expect(value.store.jobs.get(value.job.id)?.status).toBe("pending");
   });
+
+  it("processes only the explicitly selected job", async () => {
+    const value = await setup();
+    const second = await value.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: "2", force: true }, uniqueKey: "two" });
+
+    const processed = await value.worker.processById(second.id, ["process_product"], "worker:manual");
+
+    expect(processed).toBe(true);
+    expect(value.store.jobs.get(second.id)).toMatchObject({ status: "completed", attempts: 1, lockedBy: null });
+    expect(value.store.jobs.get(value.job.id)?.status).toBe("pending");
+  });
+
+  it("does not run a completed or disallowed exact job", async () => {
+    const value = await setup();
+    await value.jobs.complete(value.job.id);
+
+    expect(await value.worker.processById(value.job.id, ["process_product"])).toBe(false);
+    const collection = await value.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: "2" }, uniqueKey: "two" });
+    expect(await value.worker.processById(collection.id, ["process_product"])).toBe(false);
+  });
 });

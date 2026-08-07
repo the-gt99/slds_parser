@@ -33,7 +33,6 @@ async function main(): Promise<void> {
     console.info(`Received ${signal}, stopping API`);
 
     try {
-      if (runtime) await runtime.stop();
       if (server) await server.close();
       if (pool) await pool.end();
     } catch (error) {
@@ -98,7 +97,6 @@ async function main(): Promise<void> {
     await server.listen(config);
   } catch (error) {
     for (const signal of signals) process.removeAllListeners(signal);
-    await Promise.allSettled([runtime?.stop()]);
     await Promise.allSettled([server?.close(), pool?.end()]);
     console.error(`Failed to start API: ${errorMessage(error)}`);
     process.exitCode = 1;

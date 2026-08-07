@@ -73,6 +73,7 @@ interface ProductBatchBody {
 }
 interface SnapshotListQuery { readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface JobsQuery { readonly jobType?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface JobParams { readonly jobId: string }
 interface RetryFailedBody { readonly jobType?: unknown; readonly limit?: unknown; readonly reason?: unknown }
 interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
@@ -86,7 +87,6 @@ interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
-interface RuntimeSettingsBody { readonly processConcurrency?: unknown; readonly collectionConcurrency?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
 interface ProxyBody {
@@ -706,14 +706,14 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     }),
   );
 
-  server.patch<{ Body: RuntimeSettingsBody }>(
-    "/api/runtime/settings",
+  server.post<{ Params: JobParams }>(
+    "/api/jobs/:jobId/run",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => {
       try {
-        return { settings: runtimeService().updateSettings(request.body ?? {}) };
+        return { result: await runtimeService().runProcessJob(entityId(request.params.jobId, "jobId")) };
       } catch (error) {
-        throw new HttpInputError(error instanceof Error ? error.message : "Invalid runtime settings");
+        throw new HttpInputError(error instanceof Error ? error.message : "Job cannot be processed");
       }
     },
   );
@@ -723,7 +723,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     { preHandler: [requireAdmin, requireMutationAccess] },
     async () => {
       try {
-        return { settings: await runtimeService().start() };
+        return { worker: await runtimeService().start() };
       } catch (error) {
         throw new HttpInputError(error instanceof Error ? error.message : "Runtime cannot be started");
       }
@@ -734,8 +734,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     "/api/runtime/stop",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async () => {
-      await runtimeService().stop();
-      return { stopped: true };
+      try {
+        return { worker: await runtimeService().stop() };
+      } catch (error) {
+        throw new HttpInputError(error instanceof Error ? error.message : "Runtime cannot be stopped");
+      }
     },
   );
 

@@ -7,11 +7,6 @@ import { createApplication, type ApplicationEnvironment } from "../bootstrap.js"
 import type { JsonObject } from "../contracts/index.js";
 import type { JobRepository, JobStatus, JobType, SourceRepository } from "../repositories/index.js";
 
-export interface RuntimeSettings {
-  readonly processConcurrency: number;
-  readonly collectionConcurrency: number;
-}
-
 export interface RuntimeLogRecord {
   readonly at: string;
   readonly level: "info" | "error";
@@ -35,18 +30,21 @@ export interface ExternalWorkerStatus {
 }
 
 export interface RuntimeStatus {
-  readonly running: boolean;
-  readonly externalWorker: ExternalWorkerStatus | null;
-  readonly startedAt: string | null;
-  readonly stoppedAt: string | null;
-  readonly workerId: string;
-  readonly settings: RuntimeSettings;
+  readonly worker: ExternalWorkerStatus | null;
   readonly queue: readonly RuntimeQueueSummary[];
   readonly logs: readonly RuntimeLogRecord[];
 }
 
+export interface ManualJobRunResult {
+  readonly jobId: string;
+  readonly status: JobStatus;
+  readonly error: string | null;
+}
+
 interface RuntimeApplication {
-  readonly worker: { run(signal: AbortSignal): Promise<void> };
+  readonly worker: {
+    processById(jobId: string, jobTypes: readonly JobType[], workerId?: string): Promise<boolean>;
+  };
   readonly close: () => Promise<void>;
 }
 
@@ -59,14 +57,6 @@ type RuntimeAdminEnvironment = ApplicationEnvironment & {
   readonly PARSER_WORKER_SYSTEMD_SERVICE?: string;
 };
 
-function integer(value: unknown, name: string, minimum: number, maximum: number): number {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
-  }
-  return parsed;
-}
-
 function positiveInteger(value: unknown, name: string, fallback: number): number {
   if (value === undefined || value === null || value === "") return fallback;
   const parsed = Number(value);
@@ -75,107 +65,68 @@ function positiveInteger(value: unknown, name: string, fallback: number): number
 }
 
 const execFileAsync = promisify(execFile);
+type SystemCommandRunner = (command: string, args: readonly string[], timeoutMs: number) => Promise<string>;
+
+const runSystemCommand: SystemCommandRunner = async (command, args, timeoutMs) => {
+  const { stdout } = await execFileAsync(command, [...args], { timeout: timeoutMs });
+  return stdout;
+};
 
 export class RuntimeAdminService {
   private readonly logs: RuntimeLogRecord[] = [];
-  private application: RuntimeApplication | null = null;
-  private controller: AbortController | null = null;
-  private runningPromise: Promise<void> | null = null;
-  private startedAt: string | null = null;
-  private stoppedAt: string | null = null;
-  private settings: RuntimeSettings;
 
   constructor(
     private readonly database: Pool,
     private readonly repositories: RuntimeRepositories,
     private readonly environment: RuntimeAdminEnvironment = process.env,
-    initialSettings: RuntimeSettings = {
-      processConcurrency: integer(environment.WORKER_PROCESS_CONCURRENCY ?? "1", "WORKER_PROCESS_CONCURRENCY", 1, 8),
-      collectionConcurrency: integer(environment.WORKER_COLLECTION_CONCURRENCY ?? "1", "WORKER_COLLECTION_CONCURRENCY", 1, 16),
-    },
     private readonly createRuntimeApplication: (environment: ApplicationEnvironment, options?: { readonly workerLogError?: (message: string) => void }) => RuntimeApplication = createApplication,
-  ) {
-    this.settings = initialSettings;
-  }
+    private readonly commandRunner: SystemCommandRunner = runSystemCommand,
+  ) {}
 
   async status(): Promise<RuntimeStatus> {
     return {
-      running: this.application !== null,
-      externalWorker: await this.externalWorkerStatus(),
-      startedAt: this.startedAt,
-      stoppedAt: this.stoppedAt,
-      workerId: this.workerId(),
-      settings: this.settings,
+      worker: await this.externalWorkerStatus(),
       queue: await this.queueSummary(),
       logs: this.logs.slice().reverse(),
     };
   }
 
-  updateSettings(input: { readonly processConcurrency?: unknown; readonly collectionConcurrency?: unknown }): RuntimeSettings {
-    if (this.application !== null) throw new Error("Stop runtime before changing worker settings");
-    this.settings = {
-      processConcurrency: input.processConcurrency === undefined
-        ? this.settings.processConcurrency
-        : integer(input.processConcurrency, "processConcurrency", 1, 8),
-      collectionConcurrency: input.collectionConcurrency === undefined
-        ? this.settings.collectionConcurrency
-        : integer(input.collectionConcurrency, "collectionConcurrency", 1, 16),
-    };
-    this.record("info", `Worker settings updated: processing=${this.settings.processConcurrency}, collection=${this.settings.collectionConcurrency}`);
-    return this.settings;
+  async start(): Promise<ExternalWorkerStatus> {
+    await this.controlExternalWorker("start");
+    const worker = await this.requireExternalWorkerStatus();
+    if (!worker.active) throw new Error(`${worker.serviceName} did not become active`);
+    this.record("info", `Production worker started: ${worker.serviceName}`);
+    return worker;
   }
 
-  async start(): Promise<RuntimeSettings> {
-    if (this.application !== null) return this.settings;
-    const external = await this.externalWorkerStatus();
-    if (external?.active) {
-      this.record("error", `External worker is already active: ${external.serviceName}`);
-      throw new Error(`External worker is already active: ${external.serviceName}`);
-    }
-    const controller = new AbortController();
-    const runtimeEnvironment = {
-      ...this.environment,
-      WORKER_ID: this.workerId(),
-      WORKER_POLL_INTERVAL_MS: this.environment.WORKER_POLL_INTERVAL_MS ?? "1000",
-      WORKER_LOCK_TIMEOUT_MS: this.environment.WORKER_LOCK_TIMEOUT_MS ?? "300000",
-      WORKER_PROCESS_CONCURRENCY: String(this.settings.processConcurrency),
-      WORKER_COLLECTION_CONCURRENCY: String(this.settings.collectionConcurrency),
-      MAX_JOB_ATTEMPTS: this.environment.MAX_JOB_ATTEMPTS ?? "3",
-      JOB_RETRY_BASE_MS: this.environment.JOB_RETRY_BASE_MS ?? "1000",
-      JOB_RETRY_MAX_MS: this.environment.JOB_RETRY_MAX_MS ?? "60000",
-    };
-    const application = this.createRuntimeApplication(runtimeEnvironment, {
+  async stop(): Promise<ExternalWorkerStatus> {
+    await this.controlExternalWorker("stop");
+    const worker = await this.requireExternalWorkerStatus();
+    if (worker.active) throw new Error(`${worker.serviceName} is still active`);
+    this.record("info", `Production worker stopped: ${worker.serviceName}`);
+    return worker;
+  }
+
+  async runProcessJob(jobId: string): Promise<ManualJobRunResult> {
+    const application = this.createRuntimeApplication(this.environment, {
       workerLogError: (message) => this.record("error", message),
     });
-    this.application = application;
-    this.controller = controller;
-    this.startedAt = new Date().toISOString();
-    this.stoppedAt = null;
-    this.record("info", `Worker started: ${runtimeEnvironment.WORKER_ID}`);
-    this.runningPromise = application.worker.run(controller.signal).catch((error: unknown) => {
-      this.record("error", `Worker stopped with error: ${error instanceof Error ? error.message : String(error)}`);
-    }).finally(async () => {
-      await application.close().catch((error: unknown) => {
-        this.record("error", `Worker close failed: ${error instanceof Error ? error.message : String(error)}`);
-      });
-      if (this.application === application) {
-        this.application = null;
-        this.controller = null;
-        this.runningPromise = null;
-        this.stoppedAt = new Date().toISOString();
-        this.record("info", "Worker stopped");
-      }
-    });
-    return this.settings;
-  }
-
-  async stop(): Promise<void> {
-    const controller = this.controller;
-    const promise = this.runningPromise;
-    if (controller === null || promise === null) return;
-    this.record("info", "Worker stop requested");
-    controller.abort();
-    await promise;
+    const workerId = `${this.environment.WORKER_ID?.trim() || "admin"}:manual-process-${jobId}`;
+    this.record("info", `Manual processing requested for job ${jobId}`);
+    try {
+      const processed = await application.worker.processById(jobId, ["process_product"], workerId);
+      if (!processed) throw new Error(`Job ${jobId} is not a pending or retry process_product job`);
+      const result = await this.database.query<{ status: JobStatus; last_error: string | null }>(
+        `SELECT status, last_error FROM jobs WHERE id = $1`,
+        [jobId],
+      );
+      const row = result.rows[0];
+      if (row === undefined) throw new Error(`Job ${jobId} was not found after processing`);
+      this.record(row.status === "completed" ? "info" : "error", `Manual processing finished for job ${jobId}: ${row.status}`);
+      return { jobId, status: row.status, error: row.last_error };
+    } finally {
+      await application.close();
+    }
   }
 
   async enqueueGoatDiscovery(input: { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }) {
@@ -198,9 +149,8 @@ export class RuntimeAdminService {
     return { source, job };
   }
 
-  private workerId(): string {
-    const base = this.environment.WORKER_ID?.trim() || "admin-worker";
-    return `${base}:admin`;
+  private serviceName(): string {
+    return this.environment.PARSER_WORKER_SYSTEMD_SERVICE?.trim() || "slds-parser-worker.service";
   }
 
   private record(level: RuntimeLogRecord["level"], message: string): void {
@@ -219,17 +169,33 @@ export class RuntimeAdminService {
     return result.rows;
   }
 
-  private async externalWorkerStatus(): Promise<ExternalWorkerStatus | null> {
-    const serviceName = this.environment.PARSER_WORKER_SYSTEMD_SERVICE?.trim() || "slds-parser-worker.service";
+  private async controlExternalWorker(action: "start" | "stop"): Promise<void> {
+    const serviceName = this.serviceName();
     try {
-      const { stdout } = await execFileAsync("systemctl", [
+      await this.commandRunner("systemctl", [action, serviceName, "--no-pager"], 15_000);
+    } catch (error) {
+      this.record("error", `Cannot ${action} production worker ${serviceName}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Cannot ${action} production worker ${serviceName}`);
+    }
+  }
+
+  private async requireExternalWorkerStatus(): Promise<ExternalWorkerStatus> {
+    const worker = await this.externalWorkerStatus();
+    if (worker === null) throw new Error(`Systemd service ${this.serviceName()} is not available`);
+    return worker;
+  }
+
+  private async externalWorkerStatus(): Promise<ExternalWorkerStatus | null> {
+    const serviceName = this.serviceName();
+    try {
+      const stdout = await this.commandRunner("systemctl", [
         "show",
         serviceName,
         "-p", "ActiveState",
         "-p", "SubState",
         "-p", "MainPID",
         "--no-pager",
-      ], { timeout: 2_000 });
+      ], 2_000);
       const values = Object.fromEntries(stdout.trim().split(/\r?\n/u).map((line) => {
         const separator = line.indexOf("=");
         return separator === -1 ? [line, ""] : [line.slice(0, separator), line.slice(separator + 1)];
