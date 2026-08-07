@@ -16,14 +16,14 @@ describe("WordPressProductSnapshotReader", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       ok: true,
       items: [
-        { source_external_id: "100", found: true, target_id: 321, snapshot: { product: { target_id: 321, taxonomies: {}, variations: [] } } },
+        { source_external_id: "100", found: true, target_id: 321, matched_by: "legacy_goat_id", snapshot: { product: { target_id: 321, taxonomies: {}, variations: [] } } },
         { source_external_id: "101", found: false, error_code: "target_not_found" },
       ],
     }), { status: 200 }));
     const reader = new WordPressProductSnapshotReader(config, fetchMock);
 
     await expect(reader.read("GOAT", ["100", "101"])).resolves.toEqual([
-      { sourceExternalId: "100", found: true, externalId: "321", snapshot: { product: { target_id: 321, taxonomies: {}, variations: [] } } },
+      { sourceExternalId: "100", found: true, externalId: "321", matchedBy: "legacy_goat_id", snapshot: { product: { target_id: 321, taxonomies: {}, variations: [] } } },
       { sourceExternalId: "101", found: false, errorCode: "target_not_found" },
     ]);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=product-snapshots");

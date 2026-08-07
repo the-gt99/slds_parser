@@ -1,10 +1,12 @@
 import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
+import { hashStableJson } from "../core/utils/index.js";
 import {
   applyWordPressTitlePolicy,
   buildWordPressDescriptionHtml,
   previewWordPressUpsertPayload,
+  type WordPressProductSnapshotReader,
   WordPressExporter,
 } from "../integrations/index.js";
 import type {
@@ -236,6 +238,7 @@ export class WordPressPreviewService {
     private readonly exporters: TargetExporterRegistry,
     private readonly mappings: TargetReferenceMappingService,
     private readonly targetDictionaries?: TargetDictionaryRepository,
+    private readonly snapshotReader?: Pick<WordPressProductSnapshotReader, "read">,
   ) {}
 
   async preview(sourceProductId: EntityId, targetId: EntityId) {
@@ -247,7 +250,31 @@ export class WordPressPreviewService {
     if (target === null) throw new EntityNotFoundError("Target", targetId);
     const exporter = this.exporters.get(target.exporterCode);
     if (!(exporter instanceof WordPressExporter)) throw new IntegrationContractError("Target does not use the WordPress exporter");
-    const snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
+    let snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
+    let lookupFound: boolean | null = null;
+    let lookupMatchedBy: string | null = null;
+    if (this.snapshotReader !== undefined && sourceProduct.externalId !== null) {
+      const [remote] = await this.snapshotReader.read(source.code, [sourceProduct.externalId]);
+      if (remote === undefined) throw new IntegrationContractError("WordPress snapshot lookup did not return the requested product");
+      lookupFound = remote.found;
+      if (remote.found) {
+        if (remote.externalId === undefined || remote.matchedBy === undefined || remote.snapshot === undefined) {
+          throw new IntegrationContractError("WordPress snapshot lookup returned an incomplete matched product");
+        }
+        lookupMatchedBy = remote.matchedBy;
+        snapshot = await this.repositories.targets.saveProductSnapshot({
+          targetId: target.id,
+          sourceProductId: sourceProduct.id,
+          externalId: remote.externalId,
+          sourceExternalId: sourceProduct.externalId,
+          payload: remote.snapshot,
+          contentHash: hashStableJson(remote.snapshot),
+          fetchedAt: new Date().toISOString(),
+        });
+      } else {
+        snapshot = null;
+      }
+    }
     const current = record(snapshot?.payload.product);
     const targetSummary = { id: target.id, code: target.code, name: target.name, enabled: target.enabled };
     const currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
@@ -256,8 +283,8 @@ export class WordPressPreviewService {
       return {
         target: targetSummary,
         externalId: snapshot?.externalId ?? null,
-        willCreate: snapshot === null,
-        matchedBy: snapshot === null ? null : "saved_snapshot",
+        willCreate: lookupFound === false || snapshot === null,
+        matchedBy: lookupMatchedBy ?? (snapshot === null ? null : "saved_snapshot"),
         readiness: {
           ready: false,
           phase: "processing",
@@ -295,8 +322,8 @@ export class WordPressPreviewService {
       return {
         target: targetSummary,
         externalId: snapshot?.externalId ?? targetProduct?.externalId ?? null,
-        willCreate: snapshot === null && targetProduct === null,
-        matchedBy: snapshot === null ? null : "saved_snapshot",
+        willCreate: lookupFound === false || (snapshot === null && targetProduct === null),
+        matchedBy: lookupMatchedBy ?? (snapshot === null ? null : "saved_snapshot"),
         readiness: {
           ready: false,
           phase: "payload",
@@ -362,8 +389,8 @@ export class WordPressPreviewService {
     return {
       target: targetSummary,
       externalId: preflight?.externalId ?? snapshot?.externalId ?? targetProduct?.externalId ?? null,
-      willCreate: preflight?.willCreate ?? (snapshot === null && targetProduct === null),
-      matchedBy: preflight?.matchedBy ?? (snapshot === null ? null : "saved_snapshot"),
+      willCreate: preflight?.willCreate ?? (lookupFound === false || (snapshot === null && targetProduct === null)),
+      matchedBy: preflight?.matchedBy ?? lookupMatchedBy ?? (snapshot === null ? null : "saved_snapshot"),
       ...(preflight === null ? {} : { payloadHash: preflight.payloadHash }),
       readiness: {
         ready,

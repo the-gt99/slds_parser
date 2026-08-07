@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -59,6 +59,12 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
           taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}, variations: [],
         } },
       }),
+      saveProductSnapshot: vi.fn().mockImplementation(async (input) => ({
+        id: "90",
+        ...input,
+        createdAt: input.fetchedAt,
+        updatedAt: input.fetchedAt,
+      })),
     },
   };
   const request = vi.fn(async (_url, init) => {
@@ -80,7 +86,25 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     resolveTargetProjections: vi.fn().mockResolvedValue([]),
   };
   const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue([]) };
-  return { service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never), request, repositories };
+  const snapshotReader = options.remoteSnapshot ? {
+    read: vi.fn().mockResolvedValue([{
+      sourceExternalId: "100",
+      found: true,
+      externalId: "321",
+      matchedBy: "legacy_goat_id",
+      snapshot: { product: {
+        title: "Remote old title", slug: "test-shoe", sku: "SKU-2",
+        description_html: "<p>Remote old</p>", short_description_html: "<p>Сохранить</p>",
+        images: [], taxonomies: {}, variations: [],
+      } },
+    }]),
+  } : undefined;
+  return {
+    service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never, snapshotReader),
+    request,
+    repositories,
+    snapshotReader,
+  };
 }
 
 describe("WordPressPreviewService", () => {
@@ -139,6 +163,26 @@ describe("WordPressPreviewService", () => {
       },
       comparison: { variations: { available: false, expectedCount: 1, actualCount: 0 } },
     });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("refreshes identity and snapshot before classification readiness", async () => {
+    const { service, request, repositories, snapshotReader } = setup(0, "created", { missingCategory: true, remoteSnapshot: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      externalId: "321",
+      willCreate: false,
+      matchedBy: "legacy_goat_id",
+      readiness: { ready: false, phase: "classification" },
+      current: { externalId: "321", product: { title: "Remote old title", sku: "SKU-2" } },
+    });
+    expect(snapshotReader?.read).toHaveBeenCalledWith("goat", ["100"]);
+    expect(repositories.targets.saveProductSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      sourceProductId: "2",
+      externalId: "321",
+      sourceExternalId: "100",
+    }));
     expect(request).not.toHaveBeenCalled();
   });
 

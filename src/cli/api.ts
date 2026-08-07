@@ -13,7 +13,7 @@ import {
   PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
 } from "../infrastructure/db/index.js";
-import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter } from "../integrations/index.js";
+import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
 import { ClassifierAdminService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     const targetMappings = new TargetReferenceMappingService(repositories.references);
     const wordpressPreview = wordpress === null
       ? undefined
-      : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository);
+      : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository, new WordPressProductSnapshotReader(wordpress));
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;

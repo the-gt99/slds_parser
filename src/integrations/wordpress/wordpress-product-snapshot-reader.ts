@@ -6,6 +6,7 @@ export interface WordPressProductSnapshotResult {
   readonly sourceExternalId: string;
   readonly found: boolean;
   readonly externalId?: string;
+  readonly matchedBy?: string;
   readonly snapshot?: JsonObject;
   readonly errorCode?: string;
 }
@@ -43,10 +44,13 @@ function normalizeItem(value: unknown): WordPressProductSnapshotResult {
   if (!/^\d+$/u.test(externalId) || BigInt(externalId) <= 0n) {
     throw new IntegrationContractError(`WordPress product snapshot ${sourceExternalId} has invalid target_id`);
   }
+  const matchedBy = text(item.matched_by);
+  if (matchedBy === "") throw new IntegrationContractError(`WordPress product snapshot ${sourceExternalId} has invalid matched_by`);
   return {
     sourceExternalId,
     found: true,
     externalId,
+    matchedBy,
     snapshot: record(item.snapshot, `WordPress product snapshot ${sourceExternalId}`) as JsonObject,
   };
 }
