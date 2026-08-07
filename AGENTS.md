@@ -155,7 +155,7 @@ GOAT сейчас выдаёт в классификатор только реа
 
 Наблюдаемость реализована в parser commit `2116833` и исправлена commit `343fe13`. Проверены `/classifier`, `/products`, `/operations`, `/wordpress-snapshots` и `/products/:id`.
 
-Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Это покрывает известный недостаток старого preview, но перед write всё равно нужно просматривать полный diff.
+Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. Длинное описание показывается безопасно отрендеренным до/после merge. Краткое описание не входит в managed fields нового parser и отображается как сохраняемое без изменений. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Перед write всё равно нужно просматривать полный diff.
 
 Точечную ручную обработку на production нельзя запускать от `root`: каталог media тогда получает владельца `root`, и Nginx отвечает `403`, хотя файл существует. Разовые processing-команды должны работать от пользователя `slds-parser`, как штатный worker.
 
@@ -688,6 +688,12 @@ Production snapshot после проверки:
 Parser commit `b0ca7c7` (`Добавить наглядное сравнение товара с WordPress`) развёрнут на production. `/products/:id` показывает две административные карточки «Сейчас в WordPress / После merge», readiness и конкретные блокеры, а также изменения полей, категорий, меток, атрибутов, изображений и вариаций со статусами «добавится / снимется / останется / изменится». Для неполной классификации возвращается честный черновик на общем WordPress payload path; записывающий endpoint не вызывается. Финальный preflight выполняется только для полностью собранного payload.
 
 Проверки локально и на production: `typecheck`, `225` тестов, `build`, миграции без pending, внутренний health `200`. Live API preview для `76399` вернул `200`, WordPress snapshot `772888`, target disabled и blocker `Категория`. Production HEAD `b0ca7c7`, API active, worker inactive. WordPress writes не выполнялись.
+
+## Исправления WordPress merge preview 7 августа 2026
+
+Устранены три ложных сигнала неполного preview. До WordPress preflight интерфейс больше не подменяет 22 исходные вариации пустым массивом: показывает их количество и прямо сообщает, что итоговые цены в рублях появятся после preflight. Для заголовка черновика применяется та же target-политика префикса, но к эффективной категории после merge, поэтому сохранённая `product_cat=75` даёт обязательный префикс `Кроссовки` даже пока новый category candidate остаётся unresolved. Длинное описание показывается отрендерированным до/после.
+
+Краткое описание исключено из `managed_fields` WordPress exporter и не передаётся пустой строкой. WordPress product-upsert сохраняет возможность явно управлять этим полем для других клиентов, но больше не требует его для создания полного parser snapshot. Parser commit `5772809` и WordPress commit `c422e93` развёрнуты. На production прошли `typecheck`, `227` тестов, `build`, миграции без pending и PHP contract test. Live preview `76399` подтвердил: title с префиксом, `22/22` вариации, `short_description managed=false/changed=false`. Target `slamdunk=false`, API active, worker inactive, WordPress writes не выполнялись.
 
 ## Старые материалы
 
