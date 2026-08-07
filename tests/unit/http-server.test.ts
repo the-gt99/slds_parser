@@ -272,10 +272,14 @@ describe("HTTP server", () => {
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
     const payload = { action: "collect", filter: { source: "goat" }, selectedIds: ["3"], limit: 100 };
 
+    const page = await server.inject({ method: "GET", url: "/products" });
     const forbidden = await server.inject({ method: "POST", url: "/api/products/batch/preview", headers: { cookie }, payload });
     const preview = await server.inject({ method: "POST", url: "/api/products/batch/preview", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
     const applied = await server.inject({ method: "POST", url: "/api/products/batch/apply", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
 
+    expect(page.body).toContain("Заново собрать → затем обработать");
+    expect(page.body).toContain("Принудительно переобработать сохранённые данные");
+    expect(page.body).toContain("Проверить действие");
     expect(forbidden.statusCode).toBe(403);
     expect(preview.statusCode).toBe(200);
     expect(applied.statusCode).toBe(200);

@@ -594,7 +594,14 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         `INSERT INTO product_admin_batch_actions (action, filter, dry_run, created_job_ids, actor, reason)
          VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6)
          RETURNING id`,
-        [input.action, input.filter, input.dryRun, input.createdJobIds, input.actor, input.reason ?? null],
+        [
+          input.action,
+          JSON.stringify(input.filter),
+          JSON.stringify(input.dryRun),
+          JSON.stringify(input.createdJobIds),
+          input.actor,
+          input.reason ?? null,
+        ],
       );
       return text(result.rows[0]!, "id");
     } finally { client.release(); }

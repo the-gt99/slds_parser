@@ -116,7 +116,7 @@ function skipReason(action: ProductBatchAction, item: ProductBatchCandidate): st
   if (action === "reprocess" && item.activeProcessJobId !== null) return "Уже есть активная задача обработки";
   if (action === "reprocess" && item.internalProductId === null && item.stage === "discovered") return "Товар ещё не собран";
   if (action === "retry_failed_processing" && item.activeProcessJobId !== null) return "Уже есть активная задача обработки";
-  if (action === "retry_failed_processing" && item.failedProcessJobId === null) return "Нет terminal failed processing job";
+  if (action === "retry_failed_processing" && item.failedProcessJobId === null) return "Нет завершившейся ошибкой задачи обработки";
   return null;
 }
 
@@ -202,7 +202,7 @@ export class ProductAdminService {
   async previewBatch(input: { readonly action: ProductBatchAction; readonly filter: ProductBatchFilter; readonly force?: boolean }): Promise<ProductBatchDryRun> {
     assertBatchAction(input.action);
     if (this.repository.listBatchCandidates === undefined) throw new Error("Product batch actions are not configured");
-    const force = input.action === "reprocess" || input.force === true;
+    const force = input.action === "reprocess" || input.action === "retry_failed_processing" || input.force === true;
     const filter = { ...input.filter, includeFailedProcessing: input.action === "retry_failed_processing" };
     const selected = await this.repository.listBatchCandidates(filter);
     const skipped: string[] = [];

@@ -178,6 +178,24 @@ describe("ProductAdminService", () => {
     expect(result.skipReasons).toEqual([{ reason: "Уже есть активная задача сбора", count: 1 }]);
   });
 
+  it("reports failed processing restart as forced processing", async () => {
+    const repository: ProductAdminRepository = {
+      getById: vi.fn(),
+      listBatchCandidates: vi.fn().mockResolvedValue({
+        total: 1,
+        items: [{ sourceProductId: "5", internalProductId: "7", stage: "classified", imageCount: 2, activeCollectJobId: null, activeProcessJobId: null, failedProcessJobId: "9" }],
+      }),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).previewBatch({
+      action: "retry_failed_processing",
+      filter: { selectedIds: ["5"], limit: 1 },
+    });
+
+    expect(result.force).toBe(true);
+    expect(result.jobsToCreate).toBe(1);
+  });
+
   it("applies batch actions through JobRepository and stores audit", async () => {
     const now = "2026-08-07T00:00:00.000Z";
     const repository: ProductAdminRepository = {

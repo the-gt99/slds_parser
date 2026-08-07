@@ -36,6 +36,29 @@ const state = {
   selectedProductIds: new Set(),
 };
 
+const bulkActions = {
+  collect: {
+    label: "Заново собрать — без обработки",
+    description: "Повторно запрашивает данные товара и offers у источника и обновляет сохранённые части. Обработку не запускает.",
+  },
+  collect_and_process: {
+    label: "Заново собрать → затем обработать",
+    description: "Повторно запрашивает товар у источника. После успешного сбора ставит обычную обработку; если данные и версии не изменились, она может завершиться без полного пересчёта.",
+  },
+  process: {
+    label: "Обработать сохранённые данные",
+    description: "Не обращается к источнику. Обрабатывает уже сохранённые части товара; неизменившийся результат может быть пропущен.",
+  },
+  reprocess: {
+    label: "Принудительно переобработать сохранённые данные",
+    description: "Не обращается к источнику. Заново запускает процессор и все операции по сохранённым частям, даже если входные данные не изменились.",
+  },
+  retry_failed_processing: {
+    label: "Создать новую обработку после ошибки",
+    description: "Выбирает только товары с завершившейся ошибкой обработки и создаёт для них новую принудительную обработку. Повторный сбор не выполняется.",
+  },
+};
+
 function date(value) {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -235,7 +258,8 @@ function renderJobs(data) {
       <div class="runtime-row"><span>Completion за 15 мин / час / сутки</span><strong>${speed.last15m ?? 0} / ${speed.last1h ?? 0} / ${speed.last24h ?? 0}</strong></div>
     </div>
     <details class="data-details"><summary>Группы ошибок</summary><pre>${JSON.stringify(summary.errorGroups || [], null, 2)}</pre></details>
-    <div class="runtime-actions"><button id="retry-process-failed" class="button secondary" type="button">Preview retry failed processing</button></div>
+    <div class="runtime-actions"><button id="retry-process-failed" class="button secondary" type="button">Вернуть ошибочные обработки в очередь</button></div>
+    <p class="muted runtime-note">Повторно запускает существующие process jobs со статусом «Ошибка». Сбор товаров не выполняется.</p>
   `;
   byId("retry-process-failed").addEventListener("click", retryFailedProcessing);
 }
@@ -285,9 +309,16 @@ function updateBulkState() {
   byId("bulk-count").textContent = String(state.selectedProductIds.size);
 }
 
+function updateBulkActionHelp() {
+  const action = bulkActions[byId("bulk-action")?.value];
+  const help = byId("bulk-action-help");
+  if (help) help.textContent = action?.description || "";
+}
+
 async function previewBulk() {
   const action = byId("bulk-action").value;
   if (action === "export") return;
+  const actionInfo = bulkActions[action];
   const selectedIds = [...state.selectedProductIds];
   const body = {
     action,
@@ -298,31 +329,31 @@ async function previewBulk() {
   };
   const response = await api("/api/products/batch/preview", { method: "POST", body });
   const preview = response.preview;
+  const skipReasons = (preview.skipReasons || []).map((item) => `${item.reason}: ${item.count}`).join("; ") || "нет";
   const message = [
-    `Выбрано по фильтру: ${preview.selectedCount}`,
-    `подходит: ${preview.eligibleCount}`,
-    `пропущено: ${preview.skippedCount}`,
-    `активных дублей: ${preview.activeDuplicateCount}`,
-    `будет создано jobs: ${preview.jobsToCreate}`,
-    `force: ${preview.force ? "да" : "нет"}`,
-    preview.enqueueProcessing === null ? "" : `enqueueProcessing: ${preview.enqueueProcessing ? "true" : "false"}`,
-    `изображений примерно: ${preview.estimatedImages}`,
+    `Действие: ${actionInfo?.label || action}`,
+    actionInfo?.description || "",
+    `Выбрано: ${preview.selectedCount}`,
+    `Будет поставлено задач: ${preview.jobsToCreate}`,
+    `Пропущено: ${preview.skippedCount}`,
+    `Причины пропуска: ${skipReasons}`,
+    `Изображений для обработки примерно: ${preview.estimatedImages}`,
     preview.disk?.warning || "",
   ].filter(Boolean).join("\n");
   byId("bulk-result").hidden = false;
-  byId("bulk-result").textContent = `${message}\nПричины пропуска: ${JSON.stringify(preview.skipReasons)}`;
-  if (!confirm(`${message}\n\nСоздать jobs?`)) return;
+  byId("bulk-result").textContent = message;
+  if (!confirm(`${message}\n\nПоставить задачи в очередь?`)) return;
   const apply = await api("/api/products/batch/apply", { method: "POST", body });
-  byId("bulk-result").textContent = `Готово. Audit #${apply.result.auditId}. Jobs: ${apply.result.createdJobIds.length}.`;
+  byId("bulk-result").textContent = `Готово. Поставлено задач: ${apply.result.createdJobIds.length}. Запись аудита: #${apply.result.auditId}.`;
   await load();
 }
 
 async function retryFailedProcessing() {
-  const limit = prompt("Сколько failed process_product jobs повторить? Максимум 5000.", "100");
+  const limit = prompt("Сколько существующих обработок со статусом «Ошибка» вернуть в очередь? Максимум 5000.", "100");
   if (!limit) return;
   const preview = await api("/api/jobs/failed/preview-retry", { method: "POST", body: { jobType: "process_product", limit } });
-  const text = `Failed: ${preview.preview.failedCount}\nБудет повторено: ${preview.preview.retryCount}\nАктивных дублей: ${preview.preview.activeDuplicateCount}`;
-  if (!confirm(`${text}\n\nПовторить terminal failed processing jobs?`)) return;
+  const text = `Ошибочных обработок: ${preview.preview.failedCount}\nБудет возвращено в очередь: ${preview.preview.retryCount}\nУже есть активная обработка: ${preview.preview.activeDuplicateCount}`;
+  if (!confirm(`${text}\n\nСбор товаров запускаться не будет. Продолжить?`)) return;
   await api("/api/jobs/failed/retry", { method: "POST", body: { jobType: "process_product", limit } });
   await load();
 }
@@ -1327,6 +1358,8 @@ function configure() {
   }
   if (mode === "products") {
     byId("bulk-panel").hidden = false;
+    byId("bulk-action").addEventListener("change", updateBulkActionHelp);
+    updateBulkActionHelp();
     byId("bulk-page").addEventListener("click", () => {
       for (const id of state.pageProductIds) state.selectedProductIds.add(id);
       renderProducts((state.lastItems || []));

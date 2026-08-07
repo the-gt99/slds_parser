@@ -75,6 +75,9 @@ h3 { font-size: 17px; line-height: 1.3; }
 .runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .bulk-panel { margin-bottom: 16px; }
 .bulk-panel select, .bulk-panel input { min-height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--surface); color: var(--text); }
+.bulk-limit-field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.bulk-limit-field input { width: 88px; }
+.bulk-action-help { max-width: 980px; margin: 12px 0 0; color: var(--text); font-size: 13px; line-height: 1.5; }
 .compact-json { margin-top: 8px; }
 .wordpress-visual-preview { display: grid; gap: 18px; }
 .preview-note { font-size: 12px; line-height: 1.5; }

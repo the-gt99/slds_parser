@@ -402,6 +402,40 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[5]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
   });
 
+  it("serializes every JSON batch audit field as JSON", async () => {
+    const executor = new FakeExecutor([[{ id: "12" }]]);
+    const filter = { selectedIds: ["83548"], limit: 1 };
+    const dryRun = {
+      action: "process" as const,
+      selectedCount: 1,
+      eligibleCount: 1,
+      skippedCount: 0,
+      activeDuplicateCount: 0,
+      jobsToCreate: 1,
+      force: false,
+      enqueueProcessing: null,
+      skipReasons: [],
+      sampleProductIds: ["83548"],
+      estimatedImages: 1,
+      disk: { availableBytes: 1000, warning: null },
+    };
+
+    const id = await new PostgresProductAdminRepository(pool(executor)).saveBatchAudit({
+      action: "process",
+      filter,
+      dryRun,
+      createdJobIds: ["350950"],
+      actor: "admin",
+    });
+
+    expect(id).toBe("12");
+    expect(executor.calls[0]?.values.slice(1, 4)).toEqual([
+      JSON.stringify(filter),
+      JSON.stringify(dryRun),
+      JSON.stringify(["350950"]),
+    ]);
+  });
+
   it.each(["complete", "retry", "fail"] as const)("%s clears the job lock", async (operation) => {
     const executor = new FakeExecutor([[{ id: "21" }]]);
     const repository = new PostgresJobRepository(executor);
