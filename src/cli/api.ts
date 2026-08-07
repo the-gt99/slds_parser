@@ -81,7 +81,9 @@ async function main(): Promise<void> {
       repositories.jobs,
     );
     const targetMappings = new TargetReferenceMappingService(repositories.references);
-    const wordpressPreview = wordpress === null ? undefined : new WordPressPreviewService(repositories, exporters, targetMappings);
+    const wordpressPreview = wordpress === null
+      ? undefined
+      : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository);
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;

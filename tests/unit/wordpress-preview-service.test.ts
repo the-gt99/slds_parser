@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -38,14 +38,15 @@ function setup(targetId: number, matchedBy: string) {
   const repositories = {
     sources: { getById: vi.fn().mockResolvedValue({ id: "1", code: "goat", name: "GOAT", adapterCode: "goat", config: {}, enabled: true }) },
     sourceProducts: { getById: vi.fn().mockResolvedValue({ id: "2", sourceId: "1", sourceKey: "test", externalId: "100", slug: "test-shoe", url: "https://goat.example/test", discoveryMetadata: {} }) },
-    internalProducts: { findBySourceProductId: vi.fn().mockResolvedValue({ id: "7", sourceProductId: "2", data: product }) },
+    internalProducts: { findBySourceProductId: vi.fn().mockResolvedValue(options.internalMissing ? null : { id: "7", sourceProductId: "2", data: product }) },
     targets: {
       getById: vi.fn().mockResolvedValue({
         id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", enabled: false,
-        config: { requiredReferenceTypes: ["brand"], sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }] },
+        config: { requiredReferenceTypes: options.missingCategory ? ["brand", "category"] : ["brand"], sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }] },
       }),
       findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 ? null : { externalId: String(targetId) }),
       findProductSnapshot: vi.fn().mockResolvedValue(targetId === 0 ? null : {
+        externalId: String(targetId),
         fetchedAt: "2026-08-06T00:00:00.000Z",
         payload: { product: {
           title: "Old title", slug: "test-shoe", sku: "SKU-2",
@@ -74,7 +75,8 @@ function setup(targetId: number, matchedBy: string) {
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
     resolveTargetProjections: vi.fn().mockResolvedValue([]),
   };
-  return { service: new WordPressPreviewService(repositories as never, exporters, mappings as never), request, repositories };
+  const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue([]) };
+  return { service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never), request, repositories };
 }
 
 describe("WordPressPreviewService", () => {
@@ -86,6 +88,7 @@ describe("WordPressPreviewService", () => {
       willCreate: false,
       matchedBy: "source_identity",
       target: { id: "10", enabled: false },
+      readiness: { ready: true, blockers: [] },
       payload: { fields: { title: "Test shoe", sku: "SKU-2" } },
       diff: {
         fields: expect.arrayContaining([
@@ -97,6 +100,38 @@ describe("WordPressPreviewService", () => {
     });
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");
+  });
+
+  it("returns the current WordPress card and a draft when a required classification is missing", async () => {
+    const { service, request } = setup(321, "source_identity", { missingCategory: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      externalId: "321",
+      readiness: {
+        ready: false,
+        phase: "classification",
+        blockers: [{
+          code: "required_reference_missing",
+          referenceType: "category",
+          message: "Не заполнено обязательное поле WordPress «Категория».",
+        }],
+      },
+      current: { externalId: "321", product: { title: "Old title" } },
+      proposed: { complete: false, sourceVariationCount: 1 },
+      comparison: { variations: { available: false, expectedCount: 1, actualCount: 0 } },
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("shows the saved WordPress product before processing without attempting a preflight", async () => {
+    const { service, request } = setup(321, "source_identity", { internalMissing: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      readiness: { ready: false, phase: "processing" },
+      current: { externalId: "321", product: { title: "Old title" } },
+      proposed: null,
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("builds a creation preview when WordPress returns ID zero", async () => {

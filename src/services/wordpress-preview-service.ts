@@ -1,8 +1,15 @@
 import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
-import { buildWordPressUpsertPayload, WordPressExporter } from "../integrations/index.js";
-import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository } from "../repositories/index.js";
+import { previewWordPressUpsertPayload, WordPressExporter } from "../integrations/index.js";
+import type {
+  InternalProductRepository,
+  SourceProductRepository,
+  SourceRepository,
+  TargetDictionaryRepository,
+  TargetDictionaryValueRecord,
+  TargetRepository,
+} from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
 
 function record(value: unknown): Record<string, unknown> {
@@ -37,7 +44,7 @@ function snapshotVariations(value: unknown): Map<string, Record<string, unknown>
   }));
 }
 
-function variationDiff(plan: readonly JsonObject[], snapshot: unknown) {
+function variationComparison(plan: readonly JsonObject[], snapshot: unknown) {
   const planned = new Map(plan.flatMap((item) => {
     const key = sizeKey(item.size);
     return key === "" ? [] : [[key, item] as const];
@@ -45,20 +52,31 @@ function variationDiff(plan: readonly JsonObject[], snapshot: unknown) {
   const actual = snapshotVariations(snapshot);
   const differences: Record<string, unknown>[] = [];
   const deactivated: string[] = [];
+  const rows: Record<string, unknown>[] = [];
   for (const key of [...new Set([...planned.keys(), ...actual.keys()])].sort()) {
     const expected = planned.get(key) ?? null;
     const current = actual.get(key) ?? null;
-    if (expected === null && current?.stock_status === "outofstock" && current.manage_stock === true && Number(current.stock_quantity) === 0) {
-      deactivated.push(key);
-      continue;
-    }
     const state = (item: Record<string, unknown> | JsonObject | null) => item === null ? null : ({
       regularPrice: String(item.regular_price ?? ""), stockStatus: String(item.stock_status ?? ""),
       manageStock: item.manage_stock === true, stockQuantity: item.stock_quantity === null ? null : Number(item.stock_quantity),
     });
-    if (different(state(expected), state(current))) differences.push({ size: key, expected: state(expected), actual: state(current) });
+    if (expected === null && current?.stock_status === "outofstock" && current.manage_stock === true && Number(current.stock_quantity) === 0) {
+      deactivated.push(key);
+      rows.push({ size: key, status: "unchanged", expected: null, actual: state(current), alreadyDeactivated: true });
+      continue;
+    }
+    const expectedState = state(expected);
+    const actualState = state(current);
+    const changed = different(expectedState, actualState);
+    if (changed) differences.push({ size: key, expected: expectedState, actual: actualState });
+    rows.push({
+      size: key,
+      status: expected === null ? "deactivate" : current === null ? "add" : changed ? "change" : "unchanged",
+      expected: expectedState,
+      actual: actualState,
+    });
   }
-  return { differences, deactivated };
+  return { differences, deactivated, rows };
 }
 
 function payloadTaxonomies(value: unknown): Record<string, number[]> {
@@ -68,6 +86,87 @@ function payloadTaxonomies(value: unknown): Record<string, number[]> {
 function snapshotTaxonomies(value: unknown): Record<string, number[]> {
   return Object.fromEntries(Object.entries(record(value)).map(([taxonomy, terms]) => [taxonomy, Array.isArray(terms) ? terms.map((term) => Number(record(term).term_id)).filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b) : []]));
 }
+
+interface PreviewTerm {
+  readonly termId: number;
+  readonly name: string;
+  readonly slug: string | null;
+}
+
+function snapshotTermMap(value: unknown): Map<string, PreviewTerm> {
+  const result = new Map<string, PreviewTerm>();
+  for (const [taxonomy, rawTerms] of Object.entries(record(value))) {
+    if (!Array.isArray(rawTerms)) continue;
+    for (const rawTerm of rawTerms) {
+      const term = record(rawTerm);
+      const termId = Number(term.term_id);
+      if (!Number.isSafeInteger(termId) || termId <= 0) continue;
+      result.set(`${taxonomy}:${termId}`, {
+        termId,
+        name: String(term.name ?? term.term_slug ?? `#${termId}`),
+        slug: typeof term.slug === "string" ? term.slug : typeof term.term_slug === "string" ? term.term_slug : null,
+      });
+    }
+  }
+  return result;
+}
+
+function dictionaryTermMap(values: readonly TargetDictionaryValueRecord[]): Map<string, PreviewTerm> {
+  return new Map(values.flatMap((value) => value.taxonomy === null ? [] : [[`${value.taxonomy}:${value.externalId}`, {
+    termId: Number(value.externalId), name: value.name, slug: value.slug,
+  }] as const]));
+}
+
+function termDetails(taxonomy: string, termId: number, snapshot: Map<string, PreviewTerm>, dictionary: Map<string, PreviewTerm>): PreviewTerm {
+  return snapshot.get(`${taxonomy}:${termId}`) ?? dictionary.get(`${taxonomy}:${termId}`) ?? { termId, name: `Термин #${termId}`, slug: null };
+}
+
+function taxonomyComparison(
+  expected: Readonly<Record<string, readonly number[]>>,
+  current: Readonly<Record<string, readonly number[]>>,
+  snapshotTerms: Map<string, PreviewTerm>,
+  dictionaryTerms: Map<string, PreviewTerm>,
+) {
+  return [...new Set([...Object.keys(expected), ...Object.keys(current)])].sort().map((taxonomy) => {
+    const managed = Object.hasOwn(expected, taxonomy);
+    const beforeIds = current[taxonomy] ?? [];
+    const afterIds = managed ? expected[taxonomy] ?? [] : beforeIds;
+    const before = new Set(beforeIds);
+    const after = new Set(afterIds);
+    const terms = (ids: readonly number[]) => ids.map((id) => termDetails(taxonomy, id, snapshotTerms, dictionaryTerms));
+    return {
+      taxonomy,
+      managed,
+      before: terms(beforeIds),
+      after: terms(afterIds),
+      added: terms(afterIds.filter((id) => !before.has(id))),
+      removed: managed ? terms(beforeIds.filter((id) => !after.has(id))) : [],
+      unchanged: terms(beforeIds.filter((id) => after.has(id))),
+      changed: managed && different(beforeIds, afterIds),
+    };
+  });
+}
+
+function fieldComparison(expected: Record<string, unknown>, current: Record<string, unknown>) {
+  return ["title", "slug", "sku", "description_html", "short_description_html"].map((field) => ({
+    field,
+    expected: expected[field] ?? null,
+    actual: current[field] ?? null,
+    changed: different(expected[field] ?? null, current[field] ?? null),
+  }));
+}
+
+const referenceLabels: Readonly<Record<string, string>> = {
+  brand: "Бренд",
+  model: "Модель",
+  category: "Категория",
+  tag: "Метка",
+  color: "Цвет",
+  material: "Материал",
+  activity: "Вид спорта",
+  shoe_height: "Высота обуви",
+  season: "Сезон",
+};
 
 function imageIdentity(value: unknown): string {
   const image = record(value);
@@ -87,18 +186,27 @@ function imageDiff(expected: unknown, actual: unknown) {
   const actualImages = Array.isArray(actual) ? actual : [];
   const max = Math.max(expectedImages.length, actualImages.length);
   const differences: Record<string, unknown>[] = [];
+  const rows: Record<string, unknown>[] = [];
   for (let index = 0; index < max; index++) {
     const expectedImage = expectedImages[index] ?? null;
     const actualImage = actualImages[index] ?? null;
-    if (imageIdentity(expectedImage) !== imageIdentity(actualImage)) {
+    const changed = imageIdentity(expectedImage) !== imageIdentity(actualImage);
+    if (changed) {
       differences.push({ position: index, expected: expectedImage, actual: actualImage });
     }
+    rows.push({
+      position: index,
+      status: expectedImage === null ? "remove" : actualImage === null ? "add" : changed ? "change" : "unchanged",
+      expected: expectedImage,
+      actual: actualImage,
+    });
   }
   return {
     expectedCount: expectedImages.length,
     actualCount: actualImages.length,
     changed: differences.length > 0,
     differences,
+    rows,
   };
 }
 
@@ -107,6 +215,7 @@ export class WordPressPreviewService {
     private readonly repositories: { readonly sources: SourceRepository; readonly sourceProducts: SourceProductRepository; readonly internalProducts: InternalProductRepository; readonly targets: TargetRepository },
     private readonly exporters: TargetExporterRegistry,
     private readonly mappings: TargetReferenceMappingService,
+    private readonly targetDictionaries?: TargetDictionaryRepository,
   ) {}
 
   async preview(sourceProductId: EntityId, targetId: EntityId) {
@@ -114,14 +223,34 @@ export class WordPressPreviewService {
     if (sourceProduct === null) throw new EntityNotFoundError("Source product", sourceProductId);
     const source = await this.repositories.sources.getById(sourceProduct.sourceId);
     if (source === null) throw new EntityNotFoundError("Source", sourceProduct.sourceId);
-    const internal = await this.repositories.internalProducts.findBySourceProductId(sourceProductId);
-    if (internal === null) throw new IntegrationContractError("Product has not been processed");
     const target = await this.repositories.targets.getById(targetId);
     if (target === null) throw new EntityNotFoundError("Target", targetId);
     const exporter = this.exporters.get(target.exporterCode);
     if (!(exporter instanceof WordPressExporter)) throw new IntegrationContractError("Target does not use the WordPress exporter");
-    const targetProduct = await this.repositories.targets.findTargetProduct(target.id, internal.id);
     const snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
+    const current = record(snapshot?.payload.product);
+    const targetSummary = { id: target.id, code: target.code, name: target.name, enabled: target.enabled };
+    const currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
+    const internal = await this.repositories.internalProducts.findBySourceProductId(sourceProductId);
+    if (internal === null) {
+      return {
+        target: targetSummary,
+        externalId: snapshot?.externalId ?? null,
+        willCreate: snapshot === null,
+        matchedBy: snapshot === null ? null : "saved_snapshot",
+        readiness: {
+          ready: false,
+          phase: "processing",
+          blockers: [{ code: "processing_required", message: "Товар собран, но ещё не прошёл обработку." }],
+        },
+        current: currentSummary,
+        proposed: null,
+        comparison: null,
+        payload: null,
+        diff: null,
+      };
+    }
+    const targetProduct = await this.repositories.targets.findTargetProduct(target.id, internal.id);
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {
       id: sourceProduct.id, sourceId: sourceProduct.sourceId, sourceKey: sourceProduct.sourceKey,
@@ -130,38 +259,117 @@ export class WordPressPreviewService {
       ...(sourceProduct.url === null ? {} : { url: sourceProduct.url }), metadata: sourceProduct.discoveryMetadata,
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
-    const payload = await buildWordPressUpsertPayload({
+    const context = {
       source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
       references: {
         resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
       },
       ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),
-    });
-    const preflight = await exporter.preflightPayload(payload);
+    } satisfies Parameters<typeof previewWordPressUpsertPayload>[0];
+    let draft;
+    try {
+      draft = await previewWordPressUpsertPayload(context);
+    } catch (error) {
+      if (!(error instanceof IntegrationContractError)) throw error;
+      return {
+        target: targetSummary,
+        externalId: snapshot?.externalId ?? targetProduct?.externalId ?? null,
+        willCreate: snapshot === null && targetProduct === null,
+        matchedBy: snapshot === null ? null : "saved_snapshot",
+        readiness: {
+          ready: false,
+          phase: "payload",
+          blockers: [{ code: "payload_contract", message: error.message }],
+        },
+        current: currentSummary,
+        proposed: null,
+        comparison: null,
+        payload: null,
+        diff: null,
+      };
+    }
+    const payload = draft.payload;
     const product = record(payload.product);
-    const current = record(snapshot?.payload.product);
     const variations = record(payload.variations);
     const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
-    const variationComparison = variationDiff(preflight.variationPlan, current.variations);
-    const fields = ["title", "slug", "sku", "description_html", "short_description_html"].flatMap((field) =>
-      different(product[field], current[field]) ? [{ field, expected: product[field] ?? null, actual: current[field] ?? null }] : []);
     const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
     const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
-    const taxonomyDifferences = Object.keys(expectedTaxonomies).sort().flatMap((taxonomy) => different(expectedTaxonomies[taxonomy], actualTaxonomies[taxonomy] ?? [])
-      ? [{ taxonomy, expected: expectedTaxonomies[taxonomy], actual: actualTaxonomies[taxonomy] ?? [] }] : []);
+    const preflight = draft.missingRequiredReferences.length === 0 ? await exporter.preflightPayload(payload) : null;
+    const variationResult = preflight === null
+      ? { differences: [] as Record<string, unknown>[], deactivated: [] as string[], rows: [] as Record<string, unknown>[] }
+      : variationComparison(preflight.variationPlan, current.variations);
+    const fieldRows = fieldComparison(product, current);
+    const imageResult = imageDiff(product.images, current.images);
+    const termIds = [...new Set([
+      ...Object.values(expectedTaxonomies).flat(),
+      ...Object.values(actualTaxonomies).flat(),
+      ...(preflight?.variationPlan ?? []).flatMap((item) => {
+        const key = sizeKey(item.size);
+        return key === "" ? [] : [key.split(":").at(-1)!];
+      }),
+    ].map(String))];
+    const dictionaryValues = this.targetDictionaries === undefined
+      ? []
+      : await this.targetDictionaries.listValuesByExternalIds(target.id, termIds);
+    const taxonomyRows = taxonomyComparison(
+      expectedTaxonomies,
+      actualTaxonomies,
+      snapshotTermMap(current.taxonomies),
+      dictionaryTermMap(dictionaryValues),
+    );
+    const fields = fieldRows.filter((row) => row.changed).map(({ field, expected, actual }) => ({ field, expected, actual }));
+    const taxonomyDifferences = taxonomyRows.filter((row) => row.changed).map((row) => ({
+      taxonomy: row.taxonomy,
+      expected: row.after.map((term) => term.termId),
+      actual: row.before.map((term) => term.termId),
+    }));
+    const ready = preflight !== null;
     return {
-      target: { id: target.id, code: target.code, name: target.name, enabled: target.enabled },
-      externalId: preflight.externalId, willCreate: preflight.willCreate,
-      matchedBy: preflight.matchedBy, payloadHash: preflight.payloadHash,
+      target: targetSummary,
+      externalId: preflight?.externalId ?? snapshot?.externalId ?? targetProduct?.externalId ?? null,
+      willCreate: preflight?.willCreate ?? (snapshot === null && targetProduct === null),
+      matchedBy: preflight?.matchedBy ?? (snapshot === null ? null : "saved_snapshot"),
+      ...(preflight === null ? {} : { payloadHash: preflight.payloadHash }),
+      readiness: {
+        ready,
+        phase: ready ? "ready" : "classification",
+        blockers: draft.missingRequiredReferences.map((referenceType) => ({
+          code: "required_reference_missing",
+          referenceType,
+          message: `Не заполнено обязательное поле WordPress «${referenceLabels[referenceType] ?? referenceType}».`,
+        })),
+      },
+      current: currentSummary,
+      proposed: {
+        complete: ready,
+        fields: Object.fromEntries(["title", "slug", "sku", "description_html", "short_description_html"].map((field) => [field, product[field] ?? null])),
+        taxonomies: taxonomyRows.map((row) => ({ taxonomy: row.taxonomy, terms: row.after, managed: row.managed })),
+        images: Array.isArray(product.images) ? product.images : [],
+        variations: preflight?.variationPlan ?? [],
+        sourceVariationCount: expectedVariations.length,
+      },
+      comparison: {
+        fields: fieldRows,
+        taxonomies: taxonomyRows,
+        images: imageResult,
+        variations: {
+          available: ready,
+          rows: variationResult.rows,
+          expectedCount: ready ? preflight.variationPlan.length : expectedVariations.length,
+          actualCount: Array.isArray(current.variations) ? current.variations.length : 0,
+          differences: variationResult.differences,
+          deactivated: variationResult.deactivated,
+        },
+      },
       payload: { fields: Object.fromEntries(["title", "slug", "sku", "description_html", "short_description_html"].map((field) => [field, product[field] ?? null])), taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations },
       diff: {
         snapshotFetchedAt: snapshot?.fetchedAt ?? null,
         fields,
         taxonomyDifferences,
-        images: imageDiff(product.images, current.images),
-        variationDifferences: variationComparison.differences,
-        deactivatedVariations: variationComparison.deactivated,
+        images: imageResult,
+        variationDifferences: variationResult.differences,
+        deactivatedVariations: variationResult.deactivated,
       },
     };
   }

@@ -530,12 +530,6 @@ function renderTargets(item) {
   }
 }
 
-function taxonomyList(taxonomies, key) {
-  const spec = taxonomies?.[key];
-  const ids = Array.isArray(spec?.term_ids) ? spec.term_ids : [];
-  return ids.length ? ids.join(", ") : "—";
-}
-
 function priceRange(variations) {
   const prices = variations
     .map((variation) => Number(variation.regular_price))
@@ -544,83 +538,285 @@ function priceRange(variations) {
   if (!prices.length) return "—";
   const first = prices[0];
   const last = prices[prices.length - 1];
-  return first === last ? String(first) : `${first}–${last}`;
+  const money = (value) => `${new Intl.NumberFormat("ru-RU").format(value)} ₽`;
+  return first === last ? money(first) : `${money(first)} – ${money(last)}`;
 }
 
-function visualPreviewSection(title, rows) {
-  const section = document.createElement("section");
-  section.className = "section preview-column";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  const list = document.createElement("dl");
-  list.className = "config-meta-grid";
-  for (const [name, value] of rows) addDefinition(list, name, value);
-  section.append(heading, list);
+const taxonomyLabels = {
+  product_cat: "Категории",
+  product_tag: "Метки",
+  pa_brand: "Бренд",
+  pa_model: "Модель",
+  pa_tsvet: "Цвет",
+  pa_material: "Материал",
+  pa_vid: "Вид спорта",
+  pa_shoe_height: "Высота обуви",
+  pa_season: "Сезон",
+  pa_razmer: "Размеры",
+  pa_size: "Размеры",
+};
+
+const changeLabels = {
+  add: "Добавится",
+  change: "Изменится",
+  remove: "Удалится",
+  deactivate: "Отключится",
+  unchanged: "Без изменений",
+};
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+
+function currentTerms(product, taxonomy) {
+  const values = product?.taxonomies?.[taxonomy];
+  if (!Array.isArray(values)) return [];
+  return values.map((term) => ({
+    termId: Number(term.term_id),
+    name: term.name || term.term_slug || `Термин #${term.term_id}`,
+    slug: term.slug || term.term_slug || null,
+  }));
+}
+
+function proposedTerms(item, taxonomy) {
+  return item.proposed?.taxonomies?.find((row) => row.taxonomy === taxonomy)?.terms ?? [];
+}
+
+function termChips(terms, tone = "unchanged") {
+  const box = element("div", "preview-term-list");
+  if (!terms?.length) {
+    box.append(element("span", "preview-empty", "Нет"));
+    return box;
+  }
+  for (const term of terms) {
+    const chip = element("span", `preview-term ${tone}`, term.name || `Термин #${term.termId}`);
+    chip.title = `${term.slug || "без slug"} · term #${term.termId}`;
+    box.append(chip);
+  }
+  return box;
+}
+
+function previewProductCard(title, product, options = {}) {
+  const card = element("article", `preview-product-card ${options.muted ? "muted-card" : ""}`);
+  const heading = element("div", "preview-card-heading");
+  heading.append(element("p", "eyebrow", title));
+  if (options.badge) heading.append(element("span", `preview-state-badge ${options.badgeTone || "neutral"}`, options.badge));
+  card.append(heading);
+  if (!product) {
+    card.append(element("p", "preview-card-empty", "Карточка появится после устранения блокеров."));
+    return card;
+  }
+  const visual = element("div", "preview-card-visual");
+  const imageUrl = product.images?.[0]?.url || product.images?.[0]?.source_url || "";
+  if (imageUrl) {
+    const image = element("img", "preview-card-image");
+    image.src = imageUrl;
+    image.alt = product.title || title;
+    visual.append(image);
+  } else {
+    visual.append(element("div", "preview-image-empty", "Нет изображения"));
+  }
+  const info = element("div", "preview-card-info");
+  info.append(element("h4", "", product.title || "Без названия"));
+  info.append(element("p", "preview-sku", `SKU ${product.sku || "—"}`));
+  info.append(element("p", "preview-price", priceRange(product.variations || [])));
+  const facts = element("div", "preview-card-facts");
+  facts.append(
+    element("span", "", `${product.images?.length || 0} фото`),
+    element("span", "", `${product.variations?.length ?? product.sourceVariationCount ?? 0} вариаций`),
+  );
+  info.append(facts);
+  visual.append(info);
+  card.append(visual);
+  const taxonomyBox = element("div", "preview-card-taxonomies");
+  for (const taxonomy of ["product_cat", "pa_brand", "pa_model", "pa_tsvet", "pa_material", "pa_vid", "pa_shoe_height", "pa_season", "product_tag"]) {
+    const terms = product.termGetter?.(taxonomy) ?? [];
+    if (!terms.length) continue;
+    const row = element("div", "preview-card-taxonomy");
+    row.append(element("span", "", taxonomyLabels[taxonomy] || taxonomy), termChips(terms));
+    taxonomyBox.append(row);
+  }
+  if (taxonomyBox.childElementCount) card.append(taxonomyBox);
+  return card;
+}
+
+function renderReadiness(item) {
+  const ready = item.readiness?.ready === true;
+  const box = element("section", `preview-readiness ${ready ? "ready" : "blocked"}`);
+  const icon = element("span", "preview-readiness-icon", ready ? "✓" : "!");
+  const body = element("div", "");
+  body.append(element("h3", "", ready ? "Payload готов к контролируемому экспорту" : "Экспорт этого товара пока заблокирован"));
+  body.append(element("p", "", ready
+    ? "WordPress preflight прошёл без записи. Ниже показан полный результат merge."
+    : "Карточка WordPress сохранена. Ниже показано всё, что уже можно определить, и конкретные причины блокировки."));
+  if (!ready && item.readiness?.blockers?.length) {
+    const list = element("ul", "preview-blockers");
+    for (const blocker of item.readiness.blockers) list.append(element("li", "", blocker.message));
+    body.append(list);
+  }
+  box.append(icon, body);
+  return box;
+}
+
+function renderChangeSummary(item) {
+  const comparison = item.comparison;
+  if (!comparison) return null;
+  const changedFields = comparison.fields?.filter((row) => row.changed).length || 0;
+  const changedTaxonomies = comparison.taxonomies?.filter((row) => row.changed).length || 0;
+  const changedImages = comparison.images?.differences?.length || 0;
+  const changedVariations = comparison.variations?.differences?.length || 0;
+  const section = element("section", "preview-change-summary");
+  section.append(
+    element("div", changedFields ? "changed" : "unchanged", `${changedFields} полей изменится`),
+    element("div", changedTaxonomies ? "changed" : "unchanged", `${changedTaxonomies} групп терминов изменится`),
+    element("div", changedImages ? "changed" : "unchanged", `${changedImages} позиций фото изменится`),
+    element("div", changedVariations ? "changed" : "unchanged", comparison.variations.available ? `${changedVariations} вариаций изменится` : "Вариации ждут preflight"),
+  );
+  return section;
+}
+
+function renderFieldChanges(rows) {
+  const section = element("section", "preview-diff-section");
+  section.append(element("h3", "", "Основные поля"));
+  const list = element("div", "preview-field-list");
+  const labels = { title: "Название", slug: "Slug", sku: "SKU", description_html: "Описание", short_description_html: "Короткое описание" };
+  for (const row of rows || []) {
+    const item = element("div", `preview-field-row ${row.changed ? "changed" : "unchanged"}`);
+    item.append(element("strong", "", labels[row.field] || row.field));
+    if (row.field.includes("description")) {
+      item.append(element("span", "preview-field-value", row.changed ? "HTML будет обновлён" : "Без изменений"));
+    } else {
+      const values = element("div", "preview-before-after");
+      values.append(element("span", "before", row.actual ?? "—"), element("span", "arrow", "→"), element("span", "after", row.expected ?? "—"));
+      item.append(values);
+    }
+    item.append(element("span", `preview-state-badge ${row.changed ? "change" : "unchanged"}`, row.changed ? "Изменится" : "Без изменений"));
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function renderTaxonomyChanges(rows) {
+  const section = element("section", "preview-diff-section");
+  section.append(element("h3", "", "Категории, метки и атрибуты"));
+  const list = element("div", "preview-taxonomy-list");
+  for (const row of (rows || []).filter((entry) => entry.taxonomy !== "pa_razmer" && entry.taxonomy !== "pa_size")) {
+    const item = element("article", `preview-taxonomy-row ${row.changed ? "changed" : "unchanged"}`);
+    const heading = element("div", "preview-taxonomy-heading");
+    heading.append(element("strong", "", taxonomyLabels[row.taxonomy] || row.taxonomy));
+    heading.append(element("span", `preview-state-badge ${row.changed ? "change" : "unchanged"}`, row.managed ? (row.changed ? "Изменится" : "Без изменений") : "Парсер не меняет"));
+    item.append(heading);
+    const groups = element("div", "preview-term-groups");
+    if (row.added?.length) {
+      const group = element("div", ""); group.append(element("span", "preview-group-label", "Добавятся"), termChips(row.added, "added")); groups.append(group);
+    }
+    if (row.removed?.length) {
+      const group = element("div", ""); group.append(element("span", "preview-group-label", "Снимутся"), termChips(row.removed, "removed")); groups.append(group);
+    }
+    if (row.unchanged?.length) {
+      const group = element("div", ""); group.append(element("span", "preview-group-label", "Останутся"), termChips(row.unchanged, "unchanged")); groups.append(group);
+    }
+    if (!groups.childElementCount) groups.append(element("span", "preview-empty", "Значений нет"));
+    item.append(groups);
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function sizeLabels(product) {
+  return new Map([...(currentTerms(product, "pa_razmer")), ...(currentTerms(product, "pa_size"))].map((term) => [term.termId, term.name]));
+}
+
+function variationStateText(value) {
+  if (!value) return "Нет";
+  const stock = value.stockStatus === "instock" ? "в наличии" : value.stockStatus === "outofstock" ? "нет в наличии" : value.stockStatus || "—";
+  const price = value.regularPrice ? `${new Intl.NumberFormat("ru-RU").format(Number(value.regularPrice))} ₽` : "без цены";
+  const quantity = value.stockQuantity === null || Number.isNaN(value.stockQuantity) ? "" : ` · остаток ${value.stockQuantity}`;
+  return `${price} · ${stock}${quantity}`;
+}
+
+function renderVariationChanges(comparison, currentProduct) {
+  const section = element("section", "preview-diff-section");
+  const heading = element("div", "preview-diff-heading");
+  heading.append(element("h3", "", "Вариации и размеры"), element("span", "count-pill", `${comparison?.expectedCount || 0} после merge / ${comparison?.actualCount || 0} сейчас`));
+  section.append(heading);
+  if (!comparison?.available) {
+    section.append(element("p", "inline-message", "Финальные цены, остатки и отключаемые размеры появятся после устранения блокеров и успешного WordPress preflight."));
+    return section;
+  }
+  const labels = sizeLabels(currentProduct);
+  const tableWrap = element("div", "table-wrap");
+  const table = element("table", "variants-table preview-variation-table");
+  table.innerHTML = "<thead><tr><th>Размер</th><th>Сейчас</th><th>После merge</th><th>Результат</th></tr></thead>";
+  const body = document.createElement("tbody");
+  for (const row of comparison.rows || []) {
+    const termId = Number(String(row.size).split(":").at(-1));
+    const tr = document.createElement("tr");
+    tr.append(element("td", "", labels.get(termId) || row.size), element("td", "", variationStateText(row.actual)), element("td", "", variationStateText(row.expected)));
+    const status = element("span", `preview-state-badge ${row.status}`, row.alreadyDeactivated ? "Уже отключена" : changeLabels[row.status] || row.status);
+    const statusCell = document.createElement("td"); statusCell.append(status); tr.append(statusCell); body.append(tr);
+  }
+  table.append(body); tableWrap.append(table); section.append(tableWrap);
+  return section;
+}
+
+function renderImageChanges(comparison) {
+  const section = element("section", "preview-diff-section");
+  section.append(element("h3", "", "Изображения"));
+  const grid = element("div", "preview-image-grid");
+  for (const row of comparison?.rows || []) {
+    const card = element("article", `preview-image-change ${row.status}`);
+    card.append(element("span", `preview-state-badge ${row.status}`, `${row.position + 1}. ${changeLabels[row.status] || row.status}`));
+    const pair = element("div", "preview-image-pair");
+    for (const [label, image] of [["Сейчас", row.actual], ["После", row.expected]]) {
+      const side = element("div", "");
+      side.append(element("span", "preview-group-label", label));
+      const url = image?.url || image?.source_url || "";
+      if (url) { const img = element("img", ""); img.src = url; img.alt = `${label} ${row.position + 1}`; side.append(img); }
+      else side.append(element("div", "preview-image-empty", "Нет"));
+      pair.append(side);
+    }
+    card.append(pair); grid.append(card);
+  }
+  section.append(grid);
   return section;
 }
 
 function renderVisualPreview(item) {
-  const fields = item.payload.fields || {};
-  const taxonomies = item.payload.taxonomies || {};
-  const images = item.payload.images || [];
-  const variations = item.payload.activeVariations || [];
-  const diff = item.diff || {};
-  const currentSnapshot = state.product?.wordpressSnapshots?.[0]?.payload?.product || {};
   const wrapper = document.createElement("div");
   wrapper.className = "wordpress-visual-preview";
-  const note = document.createElement("p");
-  note.className = "muted";
-  note.textContent = "Это административный read-only preview payload, а не пиксель-в-пиксель отображение темы WordPress.";
-  const hero = document.createElement("div");
-  hero.className = "preview-hero";
-  const image = document.createElement("img");
-  image.alt = fields.title || "WordPress preview";
-  image.src = images[0]?.url || images[0]?.source_url || "";
-  image.hidden = !image.src;
-  const title = document.createElement("div");
-  title.append(
-    visualPreviewSection("Так будет отправлено", [
-      ["Title", fields.title],
-      ["SKU", fields.sku],
-      ["Цена", priceRange(variations)],
-      ["Доступность", variations.some((variation) => variation.stock_status === "instock") ? "Есть активные вариации" : "Нет активных вариаций"],
-      ["Размеры", variations.map((variation) => variation.size?.term_id || variation.size?.label).filter(Boolean).join(", ") || "—"],
-      ["Категории", taxonomyList(taxonomies, "product_cat")],
-      ["Метки", taxonomyList(taxonomies, "product_tag")],
-      ["Бренд", taxonomyList(taxonomies, "pa_brand")],
-      ["Модель", taxonomyList(taxonomies, "pa_model")],
-      ["Цвет", taxonomyList(taxonomies, "pa_tsvet")],
-      ["Материалы", taxonomyList(taxonomies, "pa_material")],
-      ["Вид спорта", taxonomyList(taxonomies, "pa_vid")],
-      ["Высота / сезон", [taxonomyList(taxonomies, "pa_shoe_height"), taxonomyList(taxonomies, "pa_season")].filter((value) => value !== "—").join(" · ") || "—"],
-    ]),
+  wrapper.append(renderReadiness(item));
+  wrapper.append(element("p", "muted preview-note", "Это административное read-only представление реального payload и WordPress snapshot, а не копия темы сайта."));
+  const cards = element("div", "preview-product-grid");
+  const currentProduct = item.current?.product || {};
+  cards.append(
+    previewProductCard("Сейчас в WordPress", {
+      ...currentProduct,
+      termGetter: (taxonomy) => currentTerms(currentProduct, taxonomy),
+    }, { badge: item.current?.snapshotFetchedAt ? `Снимок ${formatDate(item.current.snapshotFetchedAt)}` : "Снимка нет", badgeTone: "neutral" }),
+    previewProductCard(item.readiness?.ready ? "После merge" : "Черновик после merge", item.proposed ? {
+      ...item.proposed.fields,
+      images: item.proposed.images,
+      variations: item.proposed.variations,
+      sourceVariationCount: item.proposed.sourceVariationCount,
+      termGetter: (taxonomy) => proposedTerms(item, taxonomy),
+    } : null, { badge: item.readiness?.ready ? "Полный payload" : "Неполный", badgeTone: item.readiness?.ready ? "ready" : "blocked", muted: !item.readiness?.ready }),
   );
-  hero.append(image, title);
-  const columns = document.createElement("div");
-  columns.className = "preview-columns";
-  columns.append(
-    visualPreviewSection("Сейчас в WordPress", [
-      ["Title", currentSnapshot.title],
-      ["SKU", currentSnapshot.sku],
-      ["Картинки", Array.isArray(currentSnapshot.images) ? currentSnapshot.images.length : 0],
-      ["Вариации", Array.isArray(currentSnapshot.variations) ? currentSnapshot.variations.length : 0],
-      ["Snapshot", formatDate(diff.snapshotFetchedAt)],
-    ]),
-    visualPreviewSection("Что изменится", [
-      ["Поля", diff.fields?.length ?? 0],
-      ["Таксономии", diff.taxonomyDifferences?.length ?? 0],
-      ["Изображения", diff.images?.changed ? `${diff.images.expectedCount} вместо ${diff.images.actualCount}` : "Без изменений"],
-      ["Вариации", diff.variationDifferences?.length ?? 0],
-      ["Будут деактивированы", diff.deactivatedVariations?.length ?? 0],
-    ]),
-  );
-  const descriptions = document.createElement("div");
-  descriptions.className = "preview-descriptions";
-  descriptions.append(
-    visualPreviewSection("Короткое описание", [["HTML", fields.short_description_html || "—"]]),
-    visualPreviewSection("Полное описание", [["HTML", fields.description_html || "—"]]),
-  );
-  wrapper.append(note, hero, columns, descriptions);
+  wrapper.append(cards);
+  const summary = renderChangeSummary(item); if (summary) wrapper.append(summary);
+  if (item.comparison) {
+    wrapper.append(
+      renderTaxonomyChanges(item.comparison.taxonomies),
+      renderFieldChanges(item.comparison.fields),
+      renderVariationChanges(item.comparison.variations, currentProduct),
+      renderImageChanges(item.comparison.images),
+    );
+  }
   return wrapper;
 }
 
@@ -642,17 +838,22 @@ async function loadPreview() {
   button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; box.classList.remove("error"); content.hidden = true;
   try {
     const { item } = await api(`/api/products/${productId}/wordpress-preview?targetId=${encodeURIComponent(target.id)}`);
-    box.textContent = item.willCreate
-      ? `Preflight выполнен без записи · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
-      : `Preflight выполнен без записи · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`;
-    content.replaceChildren(
-      renderVisualPreview(item),
-      jsonDetails("Технический payload: основные поля", item.payload.fields),
-      jsonDetails("Технический payload: таксономии", item.payload.taxonomies),
-      jsonDetails(`Технический payload: изображения (${item.payload.images.length})`, item.payload.images),
-      jsonDetails(`Технический payload: активные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
-      jsonDetails("Технический diff относительно сохранённого snapshot", item.diff),
-    ); content.hidden = false;
+    box.textContent = item.readiness?.ready
+      ? item.willCreate
+        ? `Preflight выполнен без записи · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
+        : `Preflight выполнен без записи · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`
+      : `Read-only проверка выполнена · найден товар WP ${item.externalId || "—"} · экспорт заблокирован`;
+    const blocks = [renderVisualPreview(item)];
+    if (item.payload) {
+      blocks.push(
+        jsonDetails("Технический payload: основные поля", item.payload.fields),
+        jsonDetails("Технический payload: таксономии", item.payload.taxonomies),
+        jsonDetails(`Технический payload: изображения (${item.payload.images.length})`, item.payload.images),
+        jsonDetails(`Технический payload: исходные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
+      );
+    }
+    blocks.push(jsonDetails("Технический результат сравнения", { readiness: item.readiness, comparison: item.comparison, diff: item.diff }));
+    content.replaceChildren(...blocks); content.hidden = false;
   } catch (error) { box.textContent = `Preview заблокирован: ${error.message}`; box.classList.add("error"); }
   finally { button.disabled = false; }
 }

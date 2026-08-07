@@ -77,6 +77,21 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
     });
   }
 
+  async listValuesByExternalIds(targetId: string, externalIds: readonly string[]): Promise<readonly TargetDictionaryValueRecord[]> {
+    const unique = [...new Set(externalIds.map((value) => value.trim()).filter(Boolean))];
+    if (unique.length === 0) return [];
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT *
+         FROM target_dictionary_values
+         WHERE target_id = $1 AND external_id = ANY($2::TEXT[]) AND active = TRUE
+         ORDER BY entity_type, name, external_id`,
+        [targetId, unique],
+      );
+      return result.rows.map(mapDictionaryValue);
+    });
+  }
+
   async listValues(query: TargetDictionaryQuery): Promise<readonly TargetDictionaryValueRecord[]> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(

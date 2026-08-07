@@ -66,6 +66,11 @@ export interface WordPressUpsertPreflightResult {
   readonly variationPlan: readonly JsonObject[];
 }
 
+export interface WordPressUpsertPayloadPreview {
+  readonly payload: JsonObject;
+  readonly missingRequiredReferences: readonly string[];
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new IntegrationContractError(`${label} must be an object`);
@@ -270,7 +275,11 @@ function variationPayload(variant: ProductVariantDTO, identityKey: string, mappi
   };
 }
 
-async function taxonomyPayload(context: ExportContext, required: readonly ReferenceType[]): Promise<JsonObject> {
+async function taxonomyPayload(
+  context: ExportContext,
+  required: readonly ReferenceType[],
+  allowMissingRequired: boolean,
+): Promise<{ readonly taxonomies: JsonObject; readonly missingRequired: readonly ReferenceType[] }> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
   const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
   const grouped = new Map<string, Set<number>>();
@@ -321,11 +330,19 @@ async function taxonomyPayload(context: ExportContext, required: readonly Refere
     throw new IntegrationContractError(`WordPress single-value references contain multiple terms: ${invalidSingleTypes.join(", ")}`);
   }
   const missing = required.filter((type) => !presentTypes.has(type));
-  if (missing.length > 0) throw new IntegrationContractError(`Required WordPress references are missing: ${missing.join(", ")}`);
-  return Object.fromEntries([...grouped.entries()].map(([taxonomy, termIds]) => [taxonomy, { mode: "replace", term_ids: [...termIds] }]));
+  if (!allowMissingRequired && missing.length > 0) {
+    throw new IntegrationContractError(`Required WordPress references are missing: ${missing.join(", ")}`);
+  }
+  return {
+    taxonomies: Object.fromEntries([...grouped.entries()].map(([taxonomy, termIds]) => [taxonomy, { mode: "replace", term_ids: [...termIds] }])),
+    missingRequired: missing,
+  };
 }
 
-export async function buildWordPressUpsertPayload(context: ExportContext): Promise<JsonObject> {
+async function buildWordPressPayload(
+  context: ExportContext,
+  allowMissingRequired: boolean,
+): Promise<WordPressUpsertPayloadPreview> {
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress export");
   if (context.product.images.length === 0) {
@@ -339,7 +356,7 @@ export async function buildWordPressUpsertPayload(context: ExportContext): Promi
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
-  const taxonomies = await taxonomyPayload(context, required);
+  const { taxonomies, missingRequired } = await taxonomyPayload(context, required, allowMissingRequired);
   const variations = context.product.variants.map((variant) => variationPayload(variant, externalKey, mappings));
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
@@ -372,7 +389,18 @@ export async function buildWordPressUpsertPayload(context: ExportContext): Promi
   };
   const idempotencyKey = `product-upsert:${hashStableJson(base)}`;
   const payload = { ...base, idempotency_key: idempotencyKey } satisfies JsonObject;
-  return { ...payload, payload_hash: hashStableJson(payload) };
+  return {
+    payload: { ...payload, payload_hash: hashStableJson(payload) },
+    missingRequiredReferences: missingRequired,
+  };
+}
+
+export async function previewWordPressUpsertPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
+  return buildWordPressPayload(context, true);
+}
+
+export async function buildWordPressUpsertPayload(context: ExportContext): Promise<JsonObject> {
+  return (await buildWordPressPayload(context, false)).payload;
 }
 
 function normalizeJob(value: unknown): WordPressJob {

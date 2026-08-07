@@ -27,6 +27,7 @@ function setup() {
       config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     }]),
     getValue: vi.fn(),
+    listValuesByExternalIds: vi.fn(),
     listValues: vi.fn(),
     replaceEntityValues: vi.fn().mockResolvedValue(2),
     upsertValue: vi.fn().mockResolvedValue({

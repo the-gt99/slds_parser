@@ -232,6 +232,7 @@ describe("ClassifierAdminService", () => {
     const targets: TargetDictionaryRepository = {
       listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
       getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "tags", externalId: "777", name: "Кроссовки для бега", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
+      listValuesByExternalIds: vi.fn(),
       listValues: vi.fn(),
       replaceEntityValues: vi.fn(),
       upsertValue: vi.fn(),
