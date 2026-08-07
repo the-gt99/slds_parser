@@ -461,6 +461,8 @@ h3 { font-size: 17px; line-height: 1.3; }
   .product-hero { grid-template-columns: 220px 1fr; }
   .product-layout { grid-template-columns: 1fr; }
   .sticky-section { position: static; }
+  .classification-row { grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr); }
+  .classification-actions { grid-column: 1 / -1; flex-direction: row; }
 }
 
 @media (max-width: 600px) {
@@ -490,5 +492,5 @@ h3 { font-size: 17px; line-height: 1.3; }
   .summary-grid, .data-grid { grid-template-columns: 1fr; }
   .classification-row { grid-template-columns: 1fr; align-items: flex-start; }
   .classification-result { text-align: left; }
-  .classification-actions { width: 100%; }
+  .classification-actions { width: 100%; flex-direction: column; }
 }

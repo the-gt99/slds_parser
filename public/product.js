@@ -336,7 +336,11 @@ function renderClassifications(item) {
     }
     const outputs = document.createElement("div");
     outputs.className = "classification-outputs";
-    const activeOutputs = (value.outputs ?? []).filter((output) => output.status === "active");
+    const activeOutputs = [...new Map(
+      (value.outputs ?? [])
+        .filter((output) => output.status === "active")
+        .map((output) => [[output.targetId, output.targetScope, output.targetExternalId].join(":"), output]),
+    ).values()];
     if (activeOutputs.length > 0) {
       const label = document.createElement("span");
       label.className = "classification-outputs-label";
