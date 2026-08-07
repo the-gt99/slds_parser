@@ -1,7 +1,12 @@
 import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
-import { previewWordPressUpsertPayload, WordPressExporter } from "../integrations/index.js";
+import {
+  applyWordPressTitlePolicy,
+  buildWordPressDescriptionHtml,
+  previewWordPressUpsertPayload,
+  WordPressExporter,
+} from "../integrations/index.js";
 import type {
   InternalProductRepository,
   SourceProductRepository,
@@ -147,13 +152,28 @@ function taxonomyComparison(
   });
 }
 
-function fieldComparison(expected: Record<string, unknown>, current: Record<string, unknown>) {
-  return ["title", "slug", "sku", "description_html", "short_description_html"].map((field) => ({
-    field,
-    expected: expected[field] ?? null,
-    actual: current[field] ?? null,
-    changed: different(expected[field] ?? null, current[field] ?? null),
-  }));
+const previewFields = ["title", "slug", "sku", "description_html", "short_description_html"] as const;
+const managedFieldForPreview = {
+  title: "title",
+  slug: "slug",
+  sku: "sku",
+  description_html: "description",
+  short_description_html: "short_description",
+} as const;
+
+function fieldComparison(expected: Record<string, unknown>, current: Record<string, unknown>, managedFields: ReadonlySet<string>) {
+  return previewFields.map((field) => {
+    const managed = managedFields.has(managedFieldForPreview[field]);
+    const actual = current[field] ?? null;
+    const expectedValue = managed ? expected[field] ?? null : actual;
+    return {
+      field,
+      expected: expectedValue,
+      actual,
+      managed,
+      changed: managed && different(expectedValue, actual),
+    };
+  });
 }
 
 const referenceLabels: Readonly<Record<string, string>> = {
@@ -299,7 +319,6 @@ export class WordPressPreviewService {
     const variationResult = preflight === null
       ? { differences: [] as Record<string, unknown>[], deactivated: [] as string[], rows: [] as Record<string, unknown>[] }
       : variationComparison(preflight.variationPlan, current.variations);
-    const fieldRows = fieldComparison(product, current);
     const imageResult = imageDiff(product.images, current.images);
     const termIds = [...new Set([
       ...Object.values(expectedTaxonomies).flat(),
@@ -318,6 +337,21 @@ export class WordPressPreviewService {
       snapshotTermMap(current.taxonomies),
       dictionaryTermMap(dictionaryValues),
     );
+    const effectiveCategory = taxonomyRows.find((row) => row.taxonomy === "product_cat");
+    const effectiveTaxonomies = {
+      ...record(product.taxonomies),
+      ...(effectiveCategory === undefined ? {} : {
+        product_cat: { mode: "replace", term_ids: effectiveCategory.after.map((term) => term.termId) },
+      }),
+    };
+    const effectiveTitle = applyWordPressTitlePolicy(String(product.title ?? ""), effectiveTaxonomies, target.config);
+    const effectiveProduct = {
+      ...product,
+      title: effectiveTitle,
+      description_html: buildWordPressDescriptionHtml({ ...internal.data, title: effectiveTitle }),
+    };
+    const managedFields = new Set(Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : []);
+    const fieldRows = fieldComparison(effectiveProduct, current, managedFields);
     const fields = fieldRows.filter((row) => row.changed).map(({ field, expected, actual }) => ({ field, expected, actual }));
     const taxonomyDifferences = taxonomyRows.filter((row) => row.changed).map((row) => ({
       taxonomy: row.taxonomy,
@@ -343,11 +377,12 @@ export class WordPressPreviewService {
       current: currentSummary,
       proposed: {
         complete: ready,
-        fields: Object.fromEntries(["title", "slug", "sku", "description_html", "short_description_html"].map((field) => [field, product[field] ?? null])),
+        fields: Object.fromEntries(fieldRows.map((row) => [row.field, row.expected])),
         taxonomies: taxonomyRows.map((row) => ({ taxonomy: row.taxonomy, terms: row.after, managed: row.managed })),
         images: Array.isArray(product.images) ? product.images : [],
-        variations: preflight?.variationPlan ?? [],
+        variations: preflight?.variationPlan ?? expectedVariations,
         sourceVariationCount: expectedVariations.length,
+        variationPricesReady: ready,
       },
       comparison: {
         fields: fieldRows,
@@ -362,7 +397,11 @@ export class WordPressPreviewService {
           deactivated: variationResult.deactivated,
         },
       },
-      payload: { fields: Object.fromEntries(["title", "slug", "sku", "description_html", "short_description_html"].map((field) => [field, product[field] ?? null])), taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations },
+      payload: {
+        fields: Object.fromEntries(previewFields.flatMap((field) => Object.hasOwn(product, field) ? [[field, product[field] ?? null]] : [])),
+        managedFields: [...managedFields],
+        taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations,
+      },
       diff: {
         snapshotFetchedAt: snapshot?.fetchedAt ?? null,
         fields,

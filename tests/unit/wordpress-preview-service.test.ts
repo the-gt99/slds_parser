@@ -42,7 +42,11 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     targets: {
       getById: vi.fn().mockResolvedValue({
         id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", enabled: false,
-        config: { requiredReferenceTypes: options.missingCategory ? ["brand", "category"] : ["brand"], sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }] },
+        config: {
+          requiredReferenceTypes: options.missingCategory ? ["brand", "category"] : ["brand"],
+          sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }],
+          ...(options.missingCategory ? { titlePrefixByCategoryTermId: { "75": "Кроссовки" } } : {}),
+        },
       }),
       findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 ? null : { externalId: String(targetId) }),
       findProductSnapshot: vi.fn().mockResolvedValue(targetId === 0 ? null : {
@@ -50,9 +54,9 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
         fetchedAt: "2026-08-06T00:00:00.000Z",
         payload: { product: {
           title: "Old title", slug: "test-shoe", sku: "SKU-2",
-          description_html: "<p>Old</p>", short_description_html: "",
+          description_html: "<p>Old</p>", short_description_html: "<p>Сохранить</p>",
           images: [{ attachment_id: 55, url: "https://shop.example/wp-content/uploads/old.webp", position: 0, featured: true }],
-          taxonomies: {}, variations: [],
+          taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}, variations: [],
         } },
       }),
     },
@@ -82,14 +86,16 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
 describe("WordPressPreviewService", () => {
   it("builds a read-only preview for an existing WordPress product", async () => {
     const { service, request } = setup(321, "source_identity");
+    const result = await service.preview("2", "10");
 
-    await expect(service.preview("2", "10")).resolves.toMatchObject({
+    expect(result).toMatchObject({
       externalId: "321",
       willCreate: false,
       matchedBy: "source_identity",
       target: { id: "10", enabled: false },
       readiness: { ready: true, blockers: [] },
       payload: { fields: { title: "Test shoe", sku: "SKU-2" } },
+      proposed: { fields: { short_description_html: "<p>Сохранить</p>" } },
       diff: {
         fields: expect.arrayContaining([
           expect.objectContaining({ field: "title" }),
@@ -98,6 +104,13 @@ describe("WordPressPreviewService", () => {
         images: { changed: true, differences: [expect.objectContaining({ position: 0 })] },
       },
     });
+    expect(result.comparison?.fields).toContainEqual(expect.objectContaining({
+      field: "short_description_html",
+      managed: false,
+      changed: false,
+      expected: "<p>Сохранить</p>",
+      actual: "<p>Сохранить</p>",
+    }));
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");
   });
@@ -117,7 +130,13 @@ describe("WordPressPreviewService", () => {
         }],
       },
       current: { externalId: "321", product: { title: "Old title" } },
-      proposed: { complete: false, sourceVariationCount: 1 },
+      proposed: {
+        complete: false,
+        sourceVariationCount: 1,
+        variationPricesReady: false,
+        variations: [expect.any(Object)],
+        fields: { title: "Кроссовки Test shoe", short_description_html: "<p>Сохранить</p>" },
+      },
       comparison: { variations: { available: false, expectedCount: 1, actualCount: 0 } },
     });
     expect(request).not.toHaveBeenCalled();

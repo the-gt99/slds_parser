@@ -156,7 +156,7 @@ function targetForScope(config: JsonObject, scope: string): (typeof REFERENCE_TA
   return matches[0] ?? null;
 }
 
-function productTitle(title: string, taxonomies: JsonObject, config: JsonObject): string {
+export function applyWordPressTitlePolicy(title: string, taxonomies: JsonObject, config: JsonObject): string {
   const rawPolicy = config.titlePrefixByCategoryTermId;
   if (rawPolicy === null || typeof rawPolicy !== "object" || Array.isArray(rawPolicy)) return title;
   const category = taxonomies.product_cat;
@@ -227,7 +227,7 @@ function releaseDate(value: string): string {
   return `${String(day).padStart(2, "0")} ${months[month - 1]!} ${year}г.`;
 }
 
-function descriptionHtml(product: UniversalProductDTO): string {
+export function buildWordPressDescriptionHtml(product: UniversalProductDTO): string {
   const translated = product.translatedContent;
   const story = translated?.story || translated?.description || product.description;
   const properties = [
@@ -364,7 +364,7 @@ async function buildWordPressPayload(
   }));
   if (targetSizes.size !== variations.length) throw new IntegrationContractError("More than one product variant resolves to the same WordPress size");
   const targetId = context.existingExternalId === undefined ? 0 : positiveInteger(context.existingExternalId, "existingExternalId");
-  const title = productTitle(context.product.title, taxonomies, context.target.config);
+  const title = applyWordPressTitlePolicy(context.product.title, taxonomies, context.target.config);
   const base: JsonObject = {
     contract_version: CONTRACT_VERSION,
     mode: "upsert",
@@ -374,13 +374,12 @@ async function buildWordPressPayload(
       external_key: externalKey,
       target_id: targetId,
     },
-    managed_fields: ["title", "slug", "sku", "description", "short_description", "images", "taxonomies", "variations"],
+    managed_fields: ["title", "slug", "sku", "description", "images", "taxonomies", "variations"],
     product: {
       title,
       slug: context.sourceProduct.slug ?? "",
       sku: context.product.sku,
-      description_html: descriptionHtml({ ...context.product, title }),
-      short_description_html: "",
+      description_html: buildWordPressDescriptionHtml({ ...context.product, title }),
       status: "publish",
       images: context.product.images.map((image) => imagePayload(image, sourceExternalId)),
       taxonomies,
@@ -413,7 +412,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.1.0";
+  readonly version = "1.2.0";
 
   constructor(
     private readonly config: WordPressTargetConfig,

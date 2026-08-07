@@ -70,6 +70,8 @@ describe("WordPressExporter", () => {
     expect(targetProduct.description_html).toContain("<li>Технология: Air</li>");
     expect(targetProduct.description_html).toContain("<li>Категория: sneakers</li>");
     expect(targetProduct.description_html).toContain("<li>Дата релиза: 02 января 2026г.</li>");
+    expect(payload.managed_fields).not.toContain("short_description");
+    expect(targetProduct).not.toHaveProperty("short_description_html");
     expect(item).toMatchObject({ variation_key: "goat:100|offer-7", sku: "ROOT-SKU-7", size: { taxonomy: "pa_razmer", term_id: 107 }, price: { source_currency: "USD", source_minor_amount: "12345" }, inventory: { availability: "available" } });
     expect((item.inventory as JsonObject).quantity).toBeUndefined();
     expect(String(payload.idempotency_key)).toMatch(/^product-upsert:[a-f0-9]{64}$/u);

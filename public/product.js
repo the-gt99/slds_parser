@@ -686,7 +686,11 @@ function previewProductCard(title, product, options = {}) {
   const info = element("div", "preview-card-info");
   info.append(element("h4", "", product.title || "Без названия"));
   info.append(element("p", "preview-sku", `SKU ${product.sku || "—"}`));
-  info.append(element("p", "preview-price", priceRange(product.variations || [])));
+  info.append(element(
+    "p",
+    `preview-price${options.pricePending ? " pending" : ""}`,
+    options.pricePending ? "Цена в ₽ появится после preflight" : priceRange(product.variations || []),
+  ));
   const facts = element("div", "preview-card-facts");
   facts.append(
     element("span", "", `${product.images?.length || 0} фото`),
@@ -751,17 +755,52 @@ function renderFieldChanges(rows) {
     const item = element("div", `preview-field-row ${row.changed ? "changed" : "unchanged"}`);
     item.append(element("strong", "", labels[row.field] || row.field));
     if (row.field.includes("description")) {
-      item.append(element("span", "preview-field-value", row.changed ? "HTML будет обновлён" : "Без изменений"));
+      const values = element("div", "preview-description-comparison");
+      for (const [label, html] of [["Сейчас", row.actual], ["После merge", row.expected]]) {
+        const side = element("div", "preview-description-side");
+        side.append(element("span", "preview-group-label", label), safeDescriptionPreview(html));
+        values.append(side);
+      }
+      item.append(values);
     } else {
       const values = element("div", "preview-before-after");
       values.append(element("span", "before", row.actual ?? "—"), element("span", "arrow", "→"), element("span", "after", row.expected ?? "—"));
       item.append(values);
     }
-    item.append(element("span", `preview-state-badge ${row.changed ? "change" : "unchanged"}`, row.changed ? "Изменится" : "Без изменений"));
+    item.append(element(
+      "span",
+      `preview-state-badge ${row.changed ? "change" : "unchanged"}`,
+      row.managed === false ? "Парсер не меняет" : row.changed ? "Изменится" : "Без изменений",
+    ));
     list.append(item);
   }
   section.append(list);
   return section;
+}
+
+function safeDescriptionPreview(value) {
+  const preview = element("div", "preview-description-content");
+  const html = typeof value === "string" ? value.trim() : "";
+  if (!html) {
+    preview.append(element("span", "preview-empty", "Пусто"));
+    return preview;
+  }
+  const documentValue = new DOMParser().parseFromString(html, "text/html");
+  const allowed = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "UL", "OL", "LI", "STRONG", "EM", "B", "I", "BR", "BLOCKQUOTE"]);
+  const dropped = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH"]);
+  const appendSafe = (source, target) => {
+    if (source.nodeType === Node.TEXT_NODE) {
+      target.append(document.createTextNode(source.textContent || ""));
+      return;
+    }
+    if (source.nodeType !== Node.ELEMENT_NODE || dropped.has(source.nodeName)) return;
+    const destination = allowed.has(source.nodeName) ? document.createElement(source.nodeName.toLowerCase()) : target;
+    for (const child of source.childNodes) appendSafe(child, destination);
+    if (destination !== target) target.append(destination);
+  };
+  for (const child of documentValue.body.childNodes) appendSafe(child, preview);
+  if (!preview.childNodes.length) preview.append(element("span", "preview-empty", "Пусто"));
+  return preview;
 }
 
 function renderTaxonomyChanges(rows) {
@@ -869,7 +908,12 @@ function renderVisualPreview(item) {
       variations: item.proposed.variations,
       sourceVariationCount: item.proposed.sourceVariationCount,
       termGetter: (taxonomy) => proposedTerms(item, taxonomy),
-    } : null, { badge: item.readiness?.ready ? "Полный payload" : "Неполный", badgeTone: item.readiness?.ready ? "ready" : "blocked", muted: !item.readiness?.ready }),
+    } : null, {
+      badge: item.readiness?.ready ? "Полный payload" : "Неполный",
+      badgeTone: item.readiness?.ready ? "ready" : "blocked",
+      muted: !item.readiness?.ready,
+      pricePending: item.proposed?.variationPricesReady === false,
+    }),
   );
   wrapper.append(cards);
   const summary = renderChangeSummary(item); if (summary) wrapper.append(summary);
