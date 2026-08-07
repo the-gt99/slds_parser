@@ -10,6 +10,10 @@ const mode = location.pathname.includes("operations")
         : location.pathname.includes("classifier-config")
           ? "classifierConfig"
           : "products";
+const initialParams = new URLSearchParams(location.search);
+const initialConfigKind = ["mapping", "rule", "target_mapping", "projection"].includes(initialParams.get("kind"))
+  ? initialParams.get("kind")
+  : "mapping";
 
 const state = {
   session: null,
@@ -17,7 +21,16 @@ const state = {
   limit: 50,
   total: 0,
   configItems: [],
-  configKind: "mapping",
+  configKind: initialConfigKind,
+  configDeepLink: mode === "classifierConfig" && initialParams.get("configId")
+    ? {
+        id: initialParams.get("configId"),
+        action: initialParams.get("action") || "details",
+        targetScope: initialParams.get("targetScope") || "",
+        search: initialParams.get("search") || "",
+        opened: false,
+      }
+    : null,
   targets: [],
   pageProductIds: [],
   selectedProductIds: new Set(),
@@ -486,6 +499,7 @@ async function openConfigDetails(item) {
   if (item.sourceValue) detailRow(meta, "Исходное значение", item.sourceValue);
   if (item.referenceName) detailRow(meta, "Внутреннее значение", item.referenceName);
   if (item.targetLabel) detailRow(meta, "WordPress", `${item.targetLabel}${item.targetTaxonomy ? ` · ${item.targetTaxonomy}` : ""}`);
+  if (item.outputs?.length) detailRow(meta, "Назначения WordPress", item.outputs.map((output) => `${output.kind === "projection" ? "+ " : ""}${output.targetLabel} · ${output.targetTaxonomy || output.targetScope}${output.status === "inactive" ? " (отключено)" : ""}`).join("; "));
   if (item.conditions?.length) detailRow(meta, "Условия", conditionText(item.conditions));
   detailRow(meta, "Затронуто", `${item.affectedProductCount || 0} товаров`);
   detailRow(meta, "Обновлено", date(item.updatedAt));
@@ -918,7 +932,7 @@ function ruleFieldLabel(value) {
   })[value] || value;
 }
 
-async function openProjectionDialog(item, editing = false) {
+async function openProjectionDialog(item, editing = false, defaults = {}) {
   await loadTargets();
   const target = editing ? state.targets.find((entry) => entry.id === item.targetId) : activeTarget();
   if (!target) {
@@ -941,7 +955,8 @@ async function openProjectionDialog(item, editing = false) {
     scope.append(new Option(`${targetScopeLabel(capability.targetScope)} · ${capability.targetScope}`, capability.targetScope));
   }
   if (editing && item.targetScope) scope.value = item.targetScope;
-  const search = input(editing ? item.targetLabel || "" : item.referenceName || item.sourceValue || "");
+  else if (defaults.targetScope && [...scope.options].some((option) => option.value === defaults.targetScope)) scope.value = defaults.targetScope;
+  const search = input(defaults.search || (editing ? item.targetLabel || "" : item.referenceName || item.sourceValue || ""));
   const results = document.createElement("div");
   results.className = "mapping-results";
   const previewBox = document.createElement("div");
@@ -1276,6 +1291,7 @@ function configure() {
     for (const [kind, label] of Object.entries(labels)) {
       const tab = button(label, `config-tab${kind === state.configKind ? " active" : ""}`);
       tab.addEventListener("click", () => {
+        state.configDeepLink = null;
         state.configKind = kind;
         state.offset = 0;
         if (kind === "target_mapping") byId("source").value = "";
@@ -1362,6 +1378,7 @@ async function load() {
         if (byId("source").options.length === 1) for (const source of data.sources) byId("source").append(new Option(source.name, source.code));
       } else if (mode === "classifierConfig") {
         params.set("kind", state.configKind);
+        if (state.configDeepLink && !state.configDeepLink.opened) params.set("configId", state.configDeepLink.id);
         for (const [id, key] of [["source", "sourceId"], ["classification", "typeCode"], ["target-status", "status"]]) {
           const value = byId(id).value;
           if (value) params.set(key, value);
@@ -1387,7 +1404,23 @@ async function load() {
     if (mode === "products") renderProducts(items);
     else if (mode === "operations") renderOperations(items);
     else if (mode === "jobs") renderJobs(data);
-    else if (mode === "classifierConfig") renderConfig(items);
+    else if (mode === "classifierConfig") {
+      renderConfig(items);
+      if (state.configDeepLink && !state.configDeepLink.opened) {
+        const linked = items.find((item) => item.kind === state.configKind && item.id === state.configDeepLink.id);
+        if (linked) {
+          state.configDeepLink.opened = true;
+          if (state.configDeepLink.action === "projection") {
+            void openProjectionDialog(linked, false, {
+              targetScope: state.configDeepLink.targetScope,
+              search: state.configDeepLink.search,
+            });
+          } else {
+            void openConfigDetails(linked);
+          }
+        }
+      }
+    }
     else renderSnapshots(items);
     byId("empty").hidden = items.length !== 0;
     byId("table-section").hidden = items.length === 0;
@@ -1423,6 +1456,7 @@ byId("logout-button").addEventListener("click", async () => {
 });
 byId("filters").addEventListener("submit", (event) => {
   event.preventDefault();
+  state.configDeepLink = null;
   state.offset = 0;
   load();
 });

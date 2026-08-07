@@ -18,7 +18,36 @@ const state = {
   selectedProjectionTerm: null,
   projectionPreview: null,
   typeNames: new Map(),
+  queueSourceId: null,
+  queueContextKey: null,
+  pendingQueueSelection: null,
 };
+
+function applyQueueDeepLink() {
+  const params = new URLSearchParams(location.search);
+  const typeCode = params.get("typeCode") || "";
+  const status = params.get("status") || "";
+  const search = params.get("search") || "";
+  const contextKey = params.get("contextKey") || "";
+  const sourceId = params.get("sourceId") || "";
+  if (!typeCode && !search && !contextKey) return;
+  byId("queue-search").value = search;
+  if (typeCode) {
+    const select = byId("type-filter");
+    if (![...select.options].some((option) => option.value === typeCode)) select.append(new Option(typeCode, typeCode));
+    select.value = typeCode;
+  }
+  if (status === "unresolved" || status === "ambiguous") byId("status-filter").value = status;
+  state.queueSourceId = sourceId || null;
+  state.queueContextKey = contextKey || null;
+  state.pendingQueueSelection = { typeCode, status, search, contextKey };
+}
+
+function clearQueueDeepLink() {
+  state.queueSourceId = null;
+  state.queueContextKey = null;
+  state.pendingQueueSelection = null;
+}
 
 function typeName(itemOrCode) {
   if (typeof itemOrCode === "object" && itemOrCode !== null) {
@@ -147,6 +176,15 @@ async function logout() {
 async function loadDashboard() {
   byId("queue-list").replaceChildren(loading("Загружаем очередь…"));
   const [targets] = await Promise.all([loadTargets(), loadQueue()]);
+  if (state.pendingQueueSelection) {
+    const requested = state.pendingQueueSelection;
+    const item = state.queue.find((entry) =>
+      (!requested.typeCode || entry.typeCode === requested.typeCode)
+      && (!requested.status || entry.status === requested.status)
+      && (!requested.contextKey || entry.contextKey === requested.contextKey));
+    state.pendingQueueSelection = null;
+    if (item) selectQueueItem(item);
+  }
   return targets;
 }
 
@@ -166,6 +204,8 @@ function queueUrl() {
   if (search) parameters.set("search", search);
   if (type) parameters.set("typeCode", type);
   if (status) parameters.set("status", status);
+  if (state.queueSourceId) parameters.set("sourceId", state.queueSourceId);
+  if (state.queueContextKey) parameters.set("contextKey", state.queueContextKey);
   return `/api/classifier/queue?${parameters}`;
 }
 
@@ -1044,11 +1084,12 @@ byId("logout-button").addEventListener("click", logout);
 byId("refresh-button").addEventListener("click", () => loadQueue({ preserveSelection: true }));
 byId("sync-button").addEventListener("click", syncWordPress);
 byId("queue-search").addEventListener("input", () => {
+  clearQueueDeepLink();
   clearTimeout(queueSearchTimer);
   queueSearchTimer = setTimeout(() => loadQueue(), 280);
 });
-byId("type-filter").addEventListener("change", () => loadQueue());
-byId("status-filter").addEventListener("change", () => loadQueue());
+byId("type-filter").addEventListener("change", () => { clearQueueDeepLink(); loadQueue(); });
+byId("status-filter").addEventListener("change", () => { clearQueueDeepLink(); loadQueue(); });
 byId("mapping-search").addEventListener("input", () => {
   resetDecisionPreview();
   clearTimeout(mappingSearchTimer);
@@ -1088,6 +1129,8 @@ byId("rule-form").addEventListener("submit", createRule);
 byId("rule-name").addEventListener("input", resetRulePreview);
 closeDialog(".close-dialog");
 closeDialog(".close-rule");
+
+applyQueueDeepLink();
 
 restoreSession().catch((error) => {
   showLogin();

@@ -232,12 +232,22 @@ function renderHero(item) {
 
   const image = product?.images?.[0];
   const imageWrap = byId("product-image-wrap");
+  const imageError = byId("product-image-error");
   imageWrap.hidden = !image;
+  imageError.hidden = true;
   if (image) {
     const element = byId("product-image");
+    element.hidden = false;
     element.src = image.url;
     element.alt = image.alt || title;
-    element.onerror = () => { imageWrap.hidden = true; };
+    element.onload = () => {
+      element.hidden = false;
+      imageError.hidden = true;
+    };
+    element.onerror = () => {
+      element.hidden = true;
+      imageError.hidden = false;
+    };
   }
 
   const summary = byId("product-summary");
@@ -324,7 +334,57 @@ function renderClassifications(item) {
       target.textContent = `→ ${value.resolvedReferenceName}`;
       result.append(target);
     }
+    const outputs = document.createElement("div");
+    outputs.className = "classification-outputs";
+    const activeOutputs = (value.outputs ?? []).filter((output) => output.status === "active");
+    if (activeOutputs.length > 0) {
+      const label = document.createElement("span");
+      label.className = "classification-outputs-label";
+      label.textContent = "Будет назначено в WordPress";
+      outputs.append(label);
+      for (const output of activeOutputs) {
+        const chip = document.createElement("a");
+        chip.className = `classification-output ${output.kind}`;
+        chip.href = `/classifier-config?${new URLSearchParams({ kind: output.kind, configId: output.id })}`;
+        chip.textContent = `${output.kind === "projection" ? "+ " : ""}${output.targetLabel} · ${output.targetTaxonomy || output.targetScope}`;
+        outputs.append(chip);
+      }
+    }
+    const actions = document.createElement("div");
+    actions.className = "classification-actions";
+    if (value.status === "unresolved" || value.status === "ambiguous") {
+      const params = new URLSearchParams({
+        sourceId: item.source.id,
+        typeCode: value.typeCode,
+        status: value.status,
+        search: value.sourceValue,
+        contextKey: value.contextKey,
+      });
+      const classify = document.createElement("a");
+      classify.className = "button primary small-button";
+      classify.href = `/classifier?${params}`;
+      classify.textContent = value.status === "ambiguous" ? "Разобрать конфликт" : "Сопоставить";
+      actions.append(classify);
+    } else if (value.resolutionKind && value.resolutionId) {
+      const details = document.createElement("a");
+      details.className = "button quiet small-button";
+      details.href = `/classifier-config?${new URLSearchParams({ kind: value.resolutionKind, configId: value.resolutionId })}`;
+      details.textContent = "Изменить решение";
+      const projection = document.createElement("a");
+      projection.className = "button quiet small-button";
+      projection.href = `/classifier-config?${new URLSearchParams({
+        kind: value.resolutionKind,
+        configId: value.resolutionId,
+        action: "projection",
+        targetScope: "product.tag",
+        search: value.resolvedReferenceName || value.sourceValue,
+      })}`;
+      projection.textContent = "+ Назначение WordPress";
+      actions.append(details, projection);
+    }
     row.append(content, result);
+    row.append(outputs);
+    row.append(actions);
     list.append(row);
   }
 }

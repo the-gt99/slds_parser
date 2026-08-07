@@ -148,6 +148,7 @@ GOAT сейчас выдаёт в классификатор только реа
 - список WordPress-возможностей приходит от target provider;
 - примеры товаров в классификаторе ведут на `/products/:sourceProductId`;
 - карточка показывает identity, raw/parsed parts, DTO процессора, выход каждой операции, итоговый classified DTO, WordPress snapshot, target attempts, donor URL и WordPress edit URL;
+- строки классификации в карточке показывают активные основные и дополнительные назначения WordPress; нерешённое значение открывается в точной группе очереди по `context_key`, а принятое решение и его projections — в соответствующей записи настроек;
 - processing attempt, DTO процессора и выходы операций записываются транзакционно; старые обработки до миграции `013` не реконструируются;
 - WordPress preview использует общий `buildWordPressUpsertPayload` и реальный read-only preflight, записывающие endpoints для preview не вызываются;
 - API карточки не отдаёт локальные пути изображений.
@@ -155,6 +156,8 @@ GOAT сейчас выдаёт в классификатор только реа
 Наблюдаемость реализована в parser commit `2116833` и исправлена commit `343fe13`. Проверены `/classifier`, `/products`, `/operations`, `/wordpress-snapshots` и `/products/:id`.
 
 Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Это покрывает известный недостаток старого preview, но перед write всё равно нужно просматривать полный diff.
+
+Точечную ручную обработку на production нельзя запускать от `root`: каталог media тогда получает владельца `root`, и Nginx отвечает `403`, хотя файл существует. Разовые processing-команды должны работать от пользователя `slds-parser`, как штатный worker.
 
 ## WordPress/WooCommerce target
 

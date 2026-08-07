@@ -48,6 +48,7 @@ interface QueueQuery {
   readonly typeCode?: string;
   readonly status?: ClassificationReviewStatus;
   readonly search?: string;
+  readonly contextKey?: string;
   readonly limit?: string;
   readonly offset?: string;
 }
@@ -79,7 +80,7 @@ interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
 interface ConfigParams { readonly kind: string; readonly configId: string }
 interface TargetMappingParams { readonly mappingId: string }
-interface ConfigQuery { readonly kind?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface ConfigQuery { readonly kind?: string; readonly configId?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface RuleParams { readonly ruleId: string }
 interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
@@ -436,6 +437,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       ...(request.query.typeCode === undefined ? {} : { typeCode: request.query.typeCode }),
       ...(request.query.status === undefined ? {} : { status: request.query.status }),
       ...(request.query.search === undefined ? {} : { search: request.query.search }),
+      ...(request.query.contextKey === undefined ? {} : { contextKey: request.query.contextKey }),
       limit,
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
     });
@@ -461,6 +463,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
     return dependencies.classifier.listConfiguration({
       ...(configKind(request.query.kind) === undefined ? {} : { kind: configKind(request.query.kind)! }),
+      ...(request.query.configId === undefined || request.query.configId === "" ? {} : { configId: entityId(request.query.configId, "configId") }),
       ...(request.query.sourceId === undefined || request.query.sourceId === "" ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
       ...(request.query.targetId === undefined || request.query.targetId === "" ? {} : { targetId: entityId(request.query.targetId, "targetId") }),
       ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),

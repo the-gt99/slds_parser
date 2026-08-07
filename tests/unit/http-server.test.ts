@@ -58,13 +58,20 @@ describe("HTTP server", () => {
     const unauthorized = await server.inject({ method: "GET", url: "/api/classifier/queue" });
     const authorized = await server.inject({
       method: "GET",
-      url: "/api/classifier/queue",
+      url: "/api/classifier/queue?sourceId=1&typeCode=category&status=unresolved&search=sneakers&contextKey=context-women",
       headers: { authorization: `Bearer ${adminToken}` },
     });
 
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json()).toEqual({ items: [] });
+    expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "1",
+      typeCode: "category",
+      status: "unresolved",
+      search: "sneakers",
+      contextKey: "context-women",
+    }));
     await server.close();
   });
 
@@ -77,13 +84,14 @@ describe("HTTP server", () => {
 
     const response = await server.inject({
       method: "GET",
-      url: "/api/classifier/configuration?kind=rule&status=active&limit=25&offset=50",
+      url: "/api/classifier/configuration?kind=rule&configId=8&status=active&limit=25&offset=50",
       headers: { authorization: `Bearer ${adminToken}` },
     });
 
     expect(response.statusCode).toBe(200);
     expect(classifier.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({
       kind: "rule",
+      configId: "8",
       status: "active",
       limit: 25,
       offset: 50,

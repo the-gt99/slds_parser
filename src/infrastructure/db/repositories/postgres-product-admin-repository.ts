@@ -11,6 +11,7 @@ import type {
   ProductBatchCandidate,
   ProductBatchFilter,
   ProductClassificationObservationRecord,
+  ClassificationConfigOutput,
   ProductOperationExecutionRecord,
   ProductPartSummaryRecord,
   ProductProcessingAttemptRecord,
@@ -178,6 +179,29 @@ function mapSnapshot(row: DatabaseRow): ProductSnapshotListItem {
 }
 
 function mapClassification(row: DatabaseRow): ProductClassificationObservationRecord {
+  const outputs = Array.isArray(row.outputs)
+    ? row.outputs.flatMap((entry): ClassificationConfigOutput[] => {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+        const output = entry as DatabaseRow;
+        if (output.kind !== "target_mapping" && output.kind !== "projection") return [];
+        return [{
+          kind: output.kind,
+          id: String(output.id),
+          targetId: String(output.target_id),
+          targetCode: String(output.target_code),
+          targetScope: String(output.target_scope),
+          targetExternalId: String(output.target_external_id),
+          targetLabel: String(output.target_label),
+          targetTaxonomy: nullableText(output, "target_taxonomy"),
+          status: output.status === "active" ? "active" : "inactive",
+        }];
+      })
+    : [];
+  const resolutionKind = row.mapping_id !== null && row.mapping_id !== undefined
+    ? "mapping"
+    : row.rule_id !== null && row.rule_id !== undefined
+      ? "rule"
+      : null;
   return {
     id: text(row, "id"),
     candidateKey: text(row, "candidate_key"),
@@ -185,12 +209,17 @@ function mapClassification(row: DatabaseRow): ProductClassificationObservationRe
     typeName: text(row, "type_name"),
     scope: text(row, "scope"),
     sourceValue: text(row, "source_value"),
+    normalizedSourceValue: text(row, "normalized_source_value"),
+    contextKey: text(row, "context_key"),
     context: row.context as JsonObject,
     evidence: row.evidence as JsonObject,
     status: row.status as ProductClassificationObservationRecord["status"],
     issueReason: nullableText(row, "issue_reason") as ProductClassificationObservationRecord["issueReason"],
     resolvedReferenceValueId: nullableText(row, "resolved_reference_value_id"),
     resolvedReferenceName: nullableText(row, "resolved_reference_name"),
+    resolutionKind,
+    resolutionId: resolutionKind === "mapping" ? nullableText(row, "mapping_id") : resolutionKind === "rule" ? nullableText(row, "rule_id") : null,
+    outputs,
     firstSeenAt: timestamp(row, "first_seen_at"),
     lastSeenAt: timestamp(row, "last_seen_at"),
   };
@@ -294,7 +323,33 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
       );
       const classificationsResult = await client.query<DatabaseRow>(
         `SELECT observation.*, type.code AS type_code, type.name AS type_name,
-                value.name AS resolved_reference_name
+                value.name AS resolved_reference_name,
+                COALESCE((
+                  SELECT JSONB_AGG(TO_JSONB(output) ORDER BY output.kind, output.target_scope, output.target_label)
+                  FROM (
+                    SELECT 'target_mapping'::TEXT AS kind, target_mapping.id,
+                           target_mapping.target_id, target.code AS target_code,
+                           target_mapping.target_scope, target_mapping.external_value AS target_external_id,
+                           target_mapping.external_label AS target_label,
+                           dictionary.taxonomy AS target_taxonomy,
+                           CASE WHEN target_mapping.active THEN 'active' ELSE 'inactive' END AS status
+                    FROM target_value_mappings target_mapping
+                    JOIN targets target ON target.id = target_mapping.target_id
+                    LEFT JOIN target_dictionary_values dictionary ON dictionary.id = target_mapping.dictionary_value_id
+                    WHERE target_mapping.reference_value_id = observation.resolved_reference_value_id
+                    UNION ALL
+                    SELECT 'projection'::TEXT AS kind, projection.id,
+                           projection.target_id, target.code AS target_code,
+                           projection.target_scope, dictionary.external_id AS target_external_id,
+                           dictionary.name AS target_label, dictionary.taxonomy AS target_taxonomy,
+                           CASE WHEN projection.active THEN 'active' ELSE 'inactive' END AS status
+                    FROM target_classification_projections projection
+                    JOIN targets target ON target.id = projection.target_id
+                    JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+                    WHERE (observation.mapping_id IS NOT NULL AND projection.mapping_id = observation.mapping_id)
+                       OR (observation.rule_id IS NOT NULL AND projection.rule_id = observation.rule_id)
+                  ) output
+                ), '[]'::JSONB) AS outputs
          FROM source_reference_observations observation
          JOIN reference_types type ON type.id = observation.reference_type_id
          LEFT JOIN reference_values value ON value.id = observation.resolved_reference_value_id

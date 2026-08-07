@@ -585,12 +585,17 @@ export interface ProductClassificationObservationRecord {
   readonly typeName: string;
   readonly scope: string;
   readonly sourceValue: string;
+  readonly normalizedSourceValue: string;
+  readonly contextKey: string;
   readonly context: JsonObject;
   readonly evidence: JsonObject;
   readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
   readonly issueReason: ClassificationIssueReason | null;
   readonly resolvedReferenceValueId: EntityId | null;
   readonly resolvedReferenceName: string | null;
+  readonly resolutionKind: "mapping" | "rule" | null;
+  readonly resolutionId: EntityId | null;
+  readonly outputs: readonly ClassificationConfigOutput[];
   readonly firstSeenAt: Timestamp;
   readonly lastSeenAt: Timestamp;
 }
@@ -718,6 +723,7 @@ export interface ClassificationReviewQuery {
   readonly typeCode?: string;
   readonly status?: ClassificationReviewStatus;
   readonly search?: string;
+  readonly contextKey?: string;
   readonly limit: number;
   readonly offset: number;
   readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
@@ -795,6 +801,7 @@ export type ClassificationConfigStatus = "active" | "inactive" | "ignored";
 
 export interface ClassificationConfigListQuery {
   readonly kind?: ClassificationConfigKind;
+  readonly configId?: EntityId;
   readonly sourceId?: EntityId;
   readonly targetId?: EntityId;
   readonly typeCode?: string;

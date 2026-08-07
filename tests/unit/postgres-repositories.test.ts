@@ -199,6 +199,35 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(statsSql).toContain("observation.mapping_id = $2");
   });
 
+  it("narrows the review queue to the exact product context", async () => {
+    const executor = new FakeExecutor([[]]);
+    await new PostgresClassificationAdminRepository(pool(executor)).listReviewQueue({
+      sourceId: "1",
+      typeCode: "category",
+      status: "unresolved",
+      search: "sneakers",
+      contextKey: "context-women",
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(executor.calls[0]?.text).toContain("observation.context_key = $8");
+    expect(executor.calls[0]?.values[7]).toBe("context-women");
+  });
+
+  it("loads one classifier configuration record by kind and id", async () => {
+    const executor = new FakeExecutor([[{ total: "0" }], [], [], [], []]);
+    await new PostgresClassificationAdminRepository(pool(executor)).listConfiguration({
+      kind: "rule",
+      configId: "8",
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(executor.calls[0]?.text).toContain("item.id = $2");
+    expect(executor.calls[0]?.values.slice(0, 2)).toEqual(["rule", "8"]);
+  });
+
   it("saves a target snapshot and links the observed target product atomically", async () => {
     const executor = new FakeExecutor([[targetSnapshotRow]]);
     const snapshot = await new PostgresTargetRepository(executor).saveProductSnapshot({ targetId: "1", sourceProductId: "2", externalId: "321", sourceExternalId: "100", payload: { product: { target_id: 321 } }, contentHash: "snapshot-hash", fetchedAt: "2026-04-02T00:00:00.000Z" });

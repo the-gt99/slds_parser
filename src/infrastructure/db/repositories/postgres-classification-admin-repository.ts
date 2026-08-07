@@ -170,6 +170,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       };
       const filters = {
         kind: query.kind ?? "",
+        configId: query.configId ?? null,
         sourceId: query.sourceId ?? null,
         targetId: query.targetId ?? null,
         typeCode: query.typeCode ?? "",
@@ -177,6 +178,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         search: query.search?.trim() ?? "",
       };
       const kind = add(filters.kind);
+      const configId = add(filters.configId);
       const sourceId = add(filters.sourceId);
       const targetId = add(filters.targetId);
       const typeCode = add(filters.typeCode);
@@ -249,6 +251,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id`;
       const filtered = `FROM (${union}) item
         WHERE (${kind}::TEXT = '' OR item.kind = ${kind})
+          AND (${configId}::BIGINT IS NULL OR item.id = ${configId})
           AND (${sourceId}::BIGINT IS NULL OR item.source_id = ${sourceId})
           AND (${targetId}::BIGINT IS NULL OR item.target_id = ${targetId})
           AND (${typeCode}::TEXT = '' OR item.type_code = ${typeCode})
@@ -429,6 +432,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             AND ($2::TEXT = '' OR type.code = $2)
             AND ($3::TEXT = '' OR observation.status = $3)
             AND ($4::TEXT = '' OR observation.source_value ILIKE '%' || $4 || '%')
+            AND ($8::TEXT = '' OR observation.context_key = $8)
           GROUP BY
             observation.source_id, source.code, source.name, type.code, type.name,
             observation.scope, observation.normalized_source_value,
@@ -498,6 +502,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           processorVersions(query.currentProcessorVersions),
           query.limit,
           query.offset,
+          query.contextKey ?? "",
         ],
       );
 
