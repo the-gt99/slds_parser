@@ -215,6 +215,44 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values[7]).toBe("context-women");
   });
 
+  it("resolves an existing internal value for a rule selected from a target term", async () => {
+    const executor = new FakeExecutor([[{ reference_value_id: "23" }]]);
+    const referenceValueId = await new PostgresClassificationAdminRepository(pool(executor)).findRuleTargetReference({
+      typeCode: "category", targetId: "1", targetScope: "product.category", dictionaryValueId: "88",
+    });
+
+    expect(referenceValueId).toBe("23");
+    expect(executor.calls[0]?.text).toContain("mapping.dictionary_value_id = $3");
+    expect(executor.calls[0]?.values).toEqual(["1", "product.category", "88", "category"]);
+  });
+
+  it("creates a rule from an already linked target term without creating an exact source mapping", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{ type_id: "5" }],
+      [{ id: "88", target_id: "1", entity_type: "product_categories", external_id: "74", name: "Кроссовки женские", slug: "krossovki-zhenskie", taxonomy: "product_cat", attribute_code: null }],
+      [{ reference_value_id: "23" }],
+      [{ dictionary_value_id: "88", active: true }],
+      [{ id: "31", dictionary_value_id: "88", active: true }],
+      [{ id: "23" }],
+      [{ id: "22", revision: "1" }],
+      [],
+      [],
+    ]);
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).createRule({
+      sourceId: "1", typeCode: "category", name: "Женские кроссовки", priority: 100,
+      conditions: [{ field: "context.audience", operator: "equals", value: "women" }],
+      referenceValueId: "23",
+      targetLink: { targetId: "1", targetScope: "product.category", dictionaryValueId: "88" },
+      actor: "admin", affectedSourceProductIds: [],
+    });
+
+    expect(result).toMatchObject({ ruleId: "22", referenceValueId: "23", affectedProductCount: 0 });
+    const sql = executor.calls.map((call) => call.text).join("\n");
+    expect(sql).toContain("INSERT INTO source_reference_rules");
+    expect(sql).not.toContain("INSERT INTO source_reference_mappings");
+  });
+
   it("loads one classifier configuration record by kind and id", async () => {
     const executor = new FakeExecutor([[{ total: "0" }], [], [], [], []]);
     await new PostgresClassificationAdminRepository(pool(executor)).listConfiguration({

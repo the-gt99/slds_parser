@@ -128,13 +128,13 @@
 
             <div id="decision-preview" class="rule-preview" hidden></div>
             <div id="decision-actions" class="decision-actions">
-              <button id="advanced-rule-button" class="button quiet" type="button">Расширенное правило</button>
-              <button id="confirm-button" class="button primary" type="button" disabled>Проверить связь</button>
+              <button id="advanced-rule-button" class="button quiet" type="button">Создать правило из выбранного</button>
+              <button id="confirm-button" class="button primary" type="button" disabled>Проверить точное сопоставление</button>
             </div>
             <div id="decision-success" class="success-panel" hidden>
               <div><strong>Готово.</strong> Затронутые товары поставлены на повторную обработку.</div>
               <div class="success-actions">
-                <button id="success-rule-button" class="button quiet" type="button">Добавить правило</button>
+                <button id="success-rule-button" class="button quiet" type="button">Добавить более общее правило</button>
                 <button id="next-button" class="button primary" type="button">Следующее значение</button>
               </div>
             </div>
@@ -227,7 +227,8 @@
         </div>
         <button class="icon-button close-rule" type="button" aria-label="Закрыть">×</button>
       </div>
-      <p class="dialog-intro">Все условия должны выполниться одновременно. Сначала посмотрите результат — правило ничего не изменит без подтверждения.</p>
+      <p class="dialog-intro">Все условия должны выполниться одновременно. Правило можно создать прямо из выбранного результата: точное сопоставление для текущего контекста при этом не сохраняется. Проверка только показывает влияние, а отдельная кнопка создаёт правило.</p>
+      <div id="rule-result" class="rule-result"></div>
       <label class="field">
         <span>Название правила</span>
         <input id="rule-name" required maxlength="200">

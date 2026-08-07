@@ -24,6 +24,7 @@ function candidate(
     title,
     sku: `SKU-${sourceProductId}`,
     mappingId: null,
+    mappingReferenceValueId: null,
     candidate: {
       key: "product:model",
       typeCode: "model",
@@ -51,7 +52,8 @@ function repositories(
     previewDecision: vi.fn(),
     getDecisionContext: vi.fn(),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "1", referenceValueId: "2", revision: "1", affectedProductCount: 1, affectedExportCount: 0 }),
-    createRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "1", affectedProductCount: 1 }),
+    findRuleTargetReference: vi.fn().mockResolvedValue(null),
+    createRule: vi.fn().mockResolvedValue({ ruleId: "10", referenceValueId: "500", revision: "1", affectedProductCount: 1 }),
     updateRule: vi.fn().mockResolvedValue({ ruleId: "10", revision: "2", affectedProductCount: 1 }),
     setRuleEnabled: vi.fn().mockResolvedValue({ revision: "2", affectedProductCount: 1 }),
     getTargetValueMapping: vi.fn(),
@@ -128,7 +130,7 @@ describe("ClassifierAdminService", () => {
   });
 
   it("shows exact mappings as shadowed instead of letting a rule override them", async () => {
-    const exact = { ...candidate("1", "101", "Nike ACG Pegasus Trail", "Nike"), mappingId: "77" };
+    const exact = { ...candidate("1", "101", "Nike ACG Pegasus Trail", "Nike"), mappingId: "77", mappingReferenceValueId: "500" };
     const deps = repositories([exact]);
     const service = new ClassifierAdminService(deps.admin, deps.classification);
 
@@ -136,6 +138,7 @@ describe("ClassifierAdminService", () => {
 
     expect(preview).toMatchObject({ matchedProducts: 1, affectedProducts: 0, shadowedObservations: 1 });
     expect(preview.examples[0]?.outcome).toBe("shadowed");
+    expect(preview.examples[0]?.reason).toContain("результат тот же");
   });
 
   it("does not compare an edited rule with its previous revision", async () => {
@@ -211,6 +214,60 @@ describe("ClassifierAdminService", () => {
     expect(deps.admin.saveDecision).toHaveBeenCalledWith(expect.objectContaining({
       generatedReferenceCode: expect.stringMatching(/^ref-[0-9a-f-]+$/u),
       actor: "admin-api",
+    }));
+  });
+
+  it("creates a contextual rule from a WordPress term without saving an exact source mapping", async () => {
+    const categoryCandidate: ClassificationRuleCandidateRecord = {
+      ...candidate("1", "101", "Test shoe", "Nike"),
+      candidate: {
+        key: "product:category",
+        typeCode: "category",
+        scope: "product.category",
+        subjectKind: "product",
+        sourceValue: "sneakers",
+        context: { audience: "women", productType: "sneakers" },
+        evidence: {},
+      },
+    };
+    const deps = repositories([categoryCandidate]);
+    deps.admin.findRuleTargetReference.mockResolvedValue("500");
+    const provider: TargetDictionaryProvider = {
+      code: "wordpress",
+      supportedEntityTypes: ["product_categories"],
+      creatableEntityTypes: ["product_categories"],
+      classificationCapabilities: [
+        { typeCode: "category", entityType: "product_categories", targetScope: "product.category", cardinality: "multiple" },
+      ],
+      fetchPage: vi.fn(),
+      createTerm: vi.fn(),
+    };
+    const providers = new TargetDictionaryProviderRegistry();
+    providers.register(provider);
+    const targets: TargetDictionaryRepository = {
+      listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
+      getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "product_categories", externalId: "74", name: "Кроссовки женские", slug: null, parentExternalId: null, taxonomy: "product_cat", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
+      listValuesByExternalIds: vi.fn(), listValues: vi.fn(), replaceEntityValues: vi.fn(), upsertValue: vi.fn(),
+      startTermCreation: vi.fn(), completeTermCreation: vi.fn(), failTermCreation: vi.fn(),
+    };
+    const service = new ClassifierAdminService(deps.admin, deps.classification, targets, providers);
+    const targetDraft = {
+      sourceId: "1", typeCode: "category", name: "Женские кроссовки", priority: 100,
+      conditions: [
+        { field: "sourceValue", operator: "equals" as const, value: "sneakers" },
+        { field: "context.audience", operator: "equals" as const, value: "women" },
+      ],
+      targetLink: { targetId: "10", targetScope: "product.category", dictionaryValueId: "88" },
+    };
+
+    const result = await service.createRule(targetDraft);
+
+    expect(result.preview.affectedProducts).toBe(1);
+    expect(deps.admin.saveDecision).not.toHaveBeenCalled();
+    expect(deps.admin.createRule).toHaveBeenCalledWith(expect.objectContaining({
+      referenceValueId: "500",
+      targetLink: targetDraft.targetLink,
+      affectedSourceProductIds: ["101"],
     }));
   });
 

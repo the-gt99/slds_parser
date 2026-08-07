@@ -173,13 +173,27 @@ function ruleBody(value: unknown): ClassificationRuleDraft {
       value: requiredString(item.value, "condition.value"),
     };
   });
+  let targetLink: ClassificationRuleDraft["targetLink"];
+  if (body.targetLink !== undefined) {
+    if (body.targetLink === null || typeof body.targetLink !== "object" || Array.isArray(body.targetLink)) {
+      throw new HttpInputError("targetLink must be an object");
+    }
+    const link = body.targetLink as Record<string, unknown>;
+    targetLink = {
+      targetId: entityId(link.targetId, "targetLink.targetId"),
+      targetScope: requiredString(link.targetScope, "targetLink.targetScope"),
+      dictionaryValueId: entityId(link.dictionaryValueId, "targetLink.dictionaryValueId"),
+    };
+  }
+  const referenceValueId = optionalString(body.referenceValueId);
   return {
     sourceId: entityId(body.sourceId, "sourceId"),
     typeCode: requiredString(body.typeCode, "typeCode"),
     name: requiredString(body.name, "name"),
     priority: Number(body.priority ?? 0),
     conditions,
-    referenceValueId: entityId(body.referenceValueId, "referenceValueId"),
+    ...(referenceValueId === undefined ? {} : { referenceValueId: entityId(referenceValueId, "referenceValueId") }),
+    ...(targetLink === undefined ? {} : { targetLink }),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
 }

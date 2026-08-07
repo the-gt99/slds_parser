@@ -315,7 +315,7 @@ function renderDetail() {
   byId("ignore-button").disabled = state.resolved;
   if (!state.resolved && !state.decisionPreview) {
     byId("decision-preview").hidden = true;
-    byId("confirm-button").textContent = "Проверить связь";
+    byId("confirm-button").textContent = "Проверить точное сопоставление";
   }
   updateMappingModeAvailability();
   renderProjectionSection();
@@ -511,9 +511,9 @@ async function confirmDecision(action = "confirm") {
       const preview = byId("decision-preview");
       preview.textContent = response.preview.unchanged
         ? `Эта связь уже настроена. Затронуто товаров: ${response.preview.productCount}.`
-        : `Будет переобработано товаров: ${response.preview.productCount}. WordPress сейчас не изменяется.`;
+        : `Будет сохранено сопоставление только для текущего контекста (${contextSummary(item.context)}). На обработку будет поставлено товаров: ${response.preview.productCount}. WordPress сейчас не изменяется.`;
       preview.hidden = false;
-      button.textContent = "Сохранить связь";
+      button.textContent = "Сохранить точное сопоставление";
       button.disabled = false;
       return;
     }
@@ -536,7 +536,7 @@ async function confirmDecision(action = "confirm") {
 function resetDecisionPreview() {
   state.decisionPreview = null;
   byId("decision-preview").hidden = true;
-  byId("confirm-button").textContent = "Проверить связь";
+  byId("confirm-button").textContent = "Проверить точное сопоставление";
 }
 
 function decisionBodyFor(item) {
@@ -661,8 +661,10 @@ function slugify(value) {
 function openRuleDialog() {
   const item = state.selected;
   if (!item) return;
-  if (!state.currentReferenceId) {
-    showToast("Сначала выберите внутреннее значение или сохраните сопоставление с WordPress.");
+  const selectedTargetScope = targetScope(item);
+  const canUseSelectedTarget = Boolean(state.mappingMode === "wordpress" && state.selectedMapping !== null && activeTarget() !== null && selectedTargetScope);
+  if (!state.currentReferenceId && !canUseSelectedTarget) {
+    showToast("Сначала выберите результат правила во внутреннем справочнике или WordPress.");
     return;
   }
   state.rulePreview = null;
@@ -670,6 +672,11 @@ function openRuleDialog() {
   byId("rule-preview").hidden = true;
   byId("create-rule").disabled = true;
   clearError(byId("rule-error"));
+  const result = byId("rule-result");
+  const selectedName = state.selectedMapping?.name;
+  result.textContent = canUseSelectedTarget
+    ? `Результат правила: ${selectedName} · ${selectedTargetScope}. Точное сопоставление «${item.sourceValue}» создано не будет.`
+    : `Результат правила: ${selectedName ?? `внутреннее значение #${state.currentReferenceId}`}.`;
   const conditions = suggestedConditions(item);
   renderConditions(conditions.length ? conditions : [{ field: "sourceValue", operator: "equals", value: item.sourceValue }]);
   byId("rule-dialog").showModal();
@@ -677,6 +684,15 @@ function openRuleDialog() {
 
 function suggestedConditions(item) {
   const conditions = [];
+  if (item.typeCode === "category") {
+    conditions.push({ field: "sourceValue", operator: "equals", value: item.sourceValue });
+    for (const key of ["productType", "productCategory", "audience"]) {
+      if (typeof item.context?.[key] === "string" && item.context[key]) {
+        conditions.push({ field: `context.${key}`, operator: "equals", value: item.context[key] });
+      }
+    }
+    return conditions;
+  }
   if (typeof item.context?.brand === "string" && item.context.brand) {
     conditions.push({ field: "context.brand", operator: "equals", value: item.context.brand });
   }
@@ -740,14 +756,23 @@ function ruleDraft() {
     operator: row.querySelector(".condition-operator").value,
     value: row.querySelector(".condition-value").value,
   }));
-  return {
+  const result = {
     sourceId: item.sourceId,
     typeCode: item.typeCode,
     name: byId("rule-name").value.trim(),
     priority: 100,
     conditions,
-    referenceValueId: state.currentReferenceId,
   };
+  if (state.currentReferenceId) result.referenceValueId = state.currentReferenceId;
+  else {
+    const target = activeTarget();
+    result.targetLink = {
+      targetId: target.id,
+      targetScope: targetScope(item),
+      dictionaryValueId: state.selectedMapping.id,
+    };
+  }
+  return result;
 }
 
 async function previewRule() {
@@ -791,12 +816,14 @@ function renderRulePreview(preview) {
     const examples = document.createElement("div");
     examples.className = "preview-examples";
     for (const item of preview.examples.slice(0, 5)) {
-      const row = document.createElement("div");
+      const row = document.createElement("a");
       row.className = "preview-example";
+      row.href = `/products/${encodeURIComponent(item.sourceProductId)}`;
+      row.title = "Открыть карточку товара";
       const title = document.createElement("span");
       title.textContent = item.title || item.sourceKey;
       const outcome = document.createElement("span");
-      outcome.textContent = item.outcome === "ambiguous" ? "конфликт" : item.outcome === "shadowed" ? "не сработает" : "подходит";
+      outcome.textContent = item.reason || (item.outcome === "ambiguous" ? "Конфликт правил" : item.outcome === "shadowed" ? "Уже покрыто" : "Новое правило применится");
       row.append(title, outcome);
       examples.append(row);
     }
@@ -812,11 +839,12 @@ async function createRule(event) {
   button.disabled = true;
   try {
     const response = await api("/api/classifier/rules", { method: "POST", body: ruleDraft() });
+    state.currentReferenceId = response.rule.referenceValueId;
     state.currentResolution = { kind: "rule", id: response.rule.ruleId };
     byId("rule-dialog").close();
     renderProjectionSection();
     await loadProjections();
-    showToast(`Правило создано. На обработку поставлено товаров: ${response.rule.affectedProductCount}.`);
+    showToast(`Правило создано без точного сопоставления. На обработку поставлено товаров: ${response.rule.affectedProductCount}. Счётчик «применено» обновится после обработки очереди.`);
   } catch (error) {
     showError(byId("rule-error"), error.message);
     button.disabled = false;

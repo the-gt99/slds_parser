@@ -47,6 +47,12 @@ export interface ClassificationAdminRepository {
   getDecisionContext(key: ClassificationDecisionKey): Promise<ClassificationDecisionContext | null>;
   previewDecision(input: SaveClassificationDecisionInput): Promise<ClassificationDecisionPreview>;
   saveDecision(input: SaveClassificationDecisionInput): Promise<SaveClassificationDecisionResult>;
+  findRuleTargetReference(input: {
+    readonly typeCode: string;
+    readonly targetId: string;
+    readonly targetScope: string;
+    readonly dictionaryValueId: string;
+  }): Promise<string | null>;
   createRule(input: CreateClassificationRuleInput): Promise<CreateClassificationRuleResult>;
   updateRule(input: UpdateClassificationRuleInput): Promise<UpdateClassificationRuleResult>;
   setRuleEnabled(input: {

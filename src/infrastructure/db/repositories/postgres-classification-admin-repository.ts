@@ -573,6 +573,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            internal.data->>'title' AS title,
            internal.data->>'sku' AS sku,
            observation.mapping_id,
+           CASE WHEN observation.mapping_id IS NULL THEN NULL ELSE observation.resolved_reference_value_id END AS mapping_reference_value_id,
            observation.candidate_key,
            type.code AS type_code,
            observation.scope,
@@ -604,6 +605,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           title: nullableText(row.title),
           sku: nullableText(row.sku),
           mappingId: nullableText(row.mapping_id),
+          mappingReferenceValueId: nullableText(row.mapping_reference_value_id),
           candidate: {
             key: String(row.candidate_key),
             typeCode: String(row.type_code),
@@ -1377,20 +1379,100 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
+  async findRuleTargetReference(input: {
+    readonly typeCode: string;
+    readonly targetId: string;
+    readonly targetScope: string;
+    readonly dictionaryValueId: string;
+  }): Promise<string | null> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT mapping.reference_value_id
+         FROM target_value_mappings mapping
+         JOIN reference_values value ON value.id = mapping.reference_value_id AND value.enabled = TRUE
+         JOIN reference_types type ON type.id = value.type_id AND type.enabled = TRUE
+         WHERE mapping.target_id = $1
+           AND mapping.target_scope = $2
+           AND mapping.dictionary_value_id = $3
+           AND mapping.active = TRUE
+           AND type.code = $4
+         ORDER BY mapping.id`,
+        [input.targetId, input.targetScope, input.dictionaryValueId, input.typeCode],
+      );
+      if (result.rows.length > 1) {
+        throw new IntegrationContractError("The target dictionary term is linked to more than one internal value");
+      }
+      return result.rows[0] === undefined ? null : String(result.rows[0].reference_value_id);
+    });
+  }
+
   async createRule(input: CreateClassificationRuleInput): Promise<CreateClassificationRuleResult> {
     return withClient(this.pool, async (client) => {
       await client.query("BEGIN");
       try {
-        const referenceResult = await client.query<DatabaseRow>(
-          `SELECT type.id AS type_id
-           FROM reference_types type
-           JOIN reference_values value ON value.type_id = type.id
-           WHERE type.code = $1 AND type.enabled = TRUE
-             AND value.id = $2 AND value.enabled = TRUE`,
-          [input.typeCode, input.referenceValueId],
+        const typeResult = await client.query<DatabaseRow>(
+          `SELECT id AS type_id FROM reference_types WHERE code = $1 AND enabled = TRUE`,
+          [input.typeCode],
         );
-        const reference = referenceResult.rows[0];
-        if (reference === undefined) throw new EntityNotFoundError("Reference value", input.referenceValueId);
+        const type = typeResult.rows[0];
+        if (type === undefined) throw new EntityNotFoundError("Reference type", input.typeCode);
+        let referenceValueId = input.referenceValueId ?? null;
+        let dictionary: DatabaseRow | undefined;
+        if (input.targetLink !== undefined) {
+          const dictionaryResult = await client.query<DatabaseRow>(
+            `SELECT * FROM target_dictionary_values
+             WHERE id = $1 AND target_id = $2 AND active = TRUE
+             FOR UPDATE`,
+            [input.targetLink.dictionaryValueId, input.targetLink.targetId],
+          );
+          dictionary = dictionaryResult.rows[0];
+          if (dictionary === undefined) throw new EntityNotFoundError("Target dictionary value", input.targetLink.dictionaryValueId);
+          const linked = await client.query<DatabaseRow>(
+            `SELECT mapping.reference_value_id
+             FROM target_value_mappings mapping
+             JOIN reference_values value
+               ON value.id = mapping.reference_value_id
+              AND value.type_id = $4
+              AND value.enabled = TRUE
+             WHERE mapping.target_id = $1
+               AND mapping.target_scope = $2
+               AND mapping.dictionary_value_id = $3
+               AND mapping.active = TRUE
+             FOR SHARE OF mapping`,
+            [input.targetLink.targetId, input.targetLink.targetScope, input.targetLink.dictionaryValueId, type.type_id],
+          );
+          if (linked.rows.length > 1) {
+            throw new IntegrationContractError("The target dictionary term is linked to more than one internal value");
+          }
+          const linkedReferenceValueId = linked.rows[0] === undefined ? null : String(linked.rows[0].reference_value_id);
+          if (referenceValueId !== null && linkedReferenceValueId !== null && referenceValueId !== linkedReferenceValueId) {
+            throw new IntegrationContractError("The target dictionary term is linked to another internal value");
+          }
+          referenceValueId = referenceValueId ?? linkedReferenceValueId;
+          if (referenceValueId === null) {
+            if (input.generatedReferenceCode === undefined) {
+              throw new IntegrationContractError("A generated reference code is required for a new internal value");
+            }
+            const created = await client.query<DatabaseRow>(
+              `INSERT INTO reference_values (type_id, code, name, metadata)
+               VALUES ($1, $2, $3, $4::JSONB)
+               RETURNING id`,
+              [type.type_id, input.generatedReferenceCode, dictionary.name, JSON.stringify({
+                origin: "target_dictionary",
+                targetId: input.targetLink.targetId,
+                dictionaryValueId: input.targetLink.dictionaryValueId,
+              })],
+            );
+            referenceValueId = String(created.rows[0]!.id);
+          }
+          await this.saveTargetLink(client, input, referenceValueId, dictionary);
+        }
+        if (referenceValueId === null) throw new IntegrationContractError("A classification rule requires a result value");
+        const referenceResult = await client.query<DatabaseRow>(
+          `SELECT id FROM reference_values WHERE id = $1 AND type_id = $2 AND enabled = TRUE`,
+          [referenceValueId, type.type_id],
+        );
+        if (referenceResult.rows[0] === undefined) throw new EntityNotFoundError("Reference value", referenceValueId);
 
         const ruleResult = await client.query<DatabaseRow>(
           `INSERT INTO source_reference_rules (
@@ -1398,7 +1480,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              reference_value_id, enabled, revision, created_by, updated_by
            ) VALUES ($1, $2, $3, $4, $5::JSONB, $6, TRUE, 1, $7, $7)
            RETURNING *`,
-          [input.sourceId, reference.type_id, input.name, input.priority, JSON.stringify(input.conditions), input.referenceValueId, input.actor],
+          [input.sourceId, type.type_id, input.name, input.priority, JSON.stringify(input.conditions), referenceValueId, input.actor],
         );
         const rule = ruleResult.rows[0]!;
         await client.query(
@@ -1411,6 +1493,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         await client.query("COMMIT");
         return {
           ruleId: String(rule.id),
+          referenceValueId,
           revision: String(rule.revision),
           affectedProductCount,
         };
@@ -1538,7 +1621,11 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
 
   private async saveTargetLink(
     client: SqlClient,
-    input: SaveClassificationDecisionInput,
+    input: {
+      readonly targetLink?: SaveClassificationDecisionInput["targetLink"];
+      readonly actor: string;
+      readonly reason?: string;
+    },
     referenceValueId: string,
     dictionary: DatabaseRow,
   ): Promise<boolean> {

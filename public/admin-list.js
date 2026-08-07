@@ -411,10 +411,10 @@ function conditionText(conditions) {
 
 function renderConfig(items) {
   const headers = {
-    mapping: ["Исходное значение", "Внутреннее значение", "WordPress назначения", "Статус", "Товаров", "Обновлено"],
-    rule: ["Правило", "Внутреннее значение", "Условия", "WordPress назначения", "Статус", "Товаров", "Обновлено"],
-    target_mapping: ["Внутреннее значение", "Основное поле WordPress", "Статус", "Товаров", "Обновлено"],
-    projection: ["Решение классификатора", "Дополнительное поле WordPress", "Статус", "Товаров", "Обновлено"],
+    mapping: ["Исходное значение", "Внутреннее значение", "WordPress назначения", "Статус", "Применено", "Обновлено"],
+    rule: ["Правило", "Внутреннее значение", "Условия", "WordPress назначения", "Статус", "Применено", "Обновлено"],
+    target_mapping: ["Внутреннее значение", "Основное поле WordPress", "Статус", "Применено", "Обновлено"],
+    projection: ["Решение классификатора", "Дополнительное поле WordPress", "Статус", "Применено", "Обновлено"],
   };
   headings(headers[state.configKind]);
   state.configItems = items;
@@ -501,7 +501,7 @@ async function openConfigDetails(item) {
   if (item.targetLabel) detailRow(meta, "WordPress", `${item.targetLabel}${item.targetTaxonomy ? ` · ${item.targetTaxonomy}` : ""}`);
   if (item.outputs?.length) detailRow(meta, "Назначения WordPress", item.outputs.map((output) => `${output.kind === "projection" ? "+ " : ""}${output.targetLabel} · ${output.targetTaxonomy || output.targetScope}${output.status === "inactive" ? " (отключено)" : ""}`).join("; "));
   if (item.conditions?.length) detailRow(meta, "Условия", conditionText(item.conditions));
-  detailRow(meta, "Затронуто", `${item.affectedProductCount || 0} товаров`);
+  detailRow(meta, "Уже применено", `${item.affectedProductCount || 0} товаров`);
   detailRow(meta, "Обновлено", date(item.updatedAt));
 
   const examples = document.createElement("div");
@@ -512,7 +512,7 @@ async function openConfigDetails(item) {
   for (const example of item.examples || []) {
     examples.append(link(example.title || example.sourceKey, `/products/${example.sourceProductId}`));
   }
-  if (!(item.examples || []).length) examples.append(document.createTextNode("Нет актуальных товаров для текущей версии процессора."));
+  if (!(item.examples || []).length) examples.append(document.createTextNode("Пока не применено ни к одному пересчитанному товару. После выполнения process_product счётчик и примеры обновятся."));
 
   const history = document.createElement("div");
   history.className = "config-history";
@@ -1302,7 +1302,10 @@ function configure() {
       });
       tabs.append(tab);
     }
-    intro.append(copy, tabs);
+    const counterNote = document.createElement("p");
+    counterNote.className = "config-counter-note";
+    counterNote.textContent = "«Применено» — это уже пересчитанные товары, а не прогноз правила. Новая запись показывает 0, пока её process_product jobs стоят в очереди.";
+    intro.append(copy, tabs, counterNote);
     byId("filters").before(intro);
     updateConfigDescription();
     updateConfigFilters();

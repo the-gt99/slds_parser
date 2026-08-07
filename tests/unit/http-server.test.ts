@@ -382,6 +382,32 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("accepts a classifier rule whose result is selected directly in WordPress", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      previewRule: vi.fn().mockResolvedValue({ matchedProducts: 1, affectedProducts: 1, ambiguousObservations: 0, shadowedObservations: 0, examples: [] }),
+      createRule: vi.fn().mockResolvedValue({ ruleId: "22", referenceValueId: "23", revision: "1", affectedProductCount: 1 }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const headers = { cookie, "x-csrf-token": login.json().csrfToken };
+    const payload = {
+      sourceId: "1", typeCode: "category", name: "Женские кроссовки", priority: 100,
+      conditions: [{ field: "context.audience", operator: "equals", value: "women" }],
+      targetLink: { targetId: "10", targetScope: "product.category", dictionaryValueId: "88" },
+    };
+
+    const preview = await server.inject({ method: "POST", url: "/api/classifier/rules/preview", headers, payload });
+    const created = await server.inject({ method: "POST", url: "/api/classifier/rules", headers, payload });
+
+    expect(preview.statusCode).toBe(200);
+    expect(created.statusCode).toBe(201);
+    expect(classifier.previewRule).toHaveBeenCalledWith(payload);
+    expect(classifier.createRule).toHaveBeenCalledWith(payload, "admin");
+    await server.close();
+  });
+
   it("protects proxy management with admin auth and CSRF without exposing credentials", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const proxies = {

@@ -44,7 +44,12 @@ export interface ClassificationRuleDraft {
   readonly name: string;
   readonly priority: number;
   readonly conditions: readonly ClassificationRuleConditionRecord[];
-  readonly referenceValueId: EntityId;
+  readonly referenceValueId?: EntityId;
+  readonly targetLink?: {
+    readonly targetId: EntityId;
+    readonly targetScope: string;
+    readonly dictionaryValueId: EntityId;
+  };
   readonly reason?: string;
 }
 
@@ -56,6 +61,13 @@ export interface ClassificationRulePreviewExample {
   readonly sku: string | null;
   readonly sourceValue: string;
   readonly outcome: "applicable" | "ambiguous" | "shadowed";
+  readonly reason: string;
+  readonly winningResolution?: {
+    readonly kind: "mapping" | "rule";
+    readonly id: EntityId;
+    readonly name: string | null;
+    readonly sameResult: boolean;
+  };
 }
 
 export interface ClassificationRulePreview {
@@ -97,6 +109,10 @@ function validateRuleDraft(draft: ClassificationRuleDraft): void {
   if (draft.conditions.length === 0 || draft.conditions.length > 10) {
     throw new IntegrationContractError("A rule must contain from 1 to 10 conditions");
   }
+  if ((draft.referenceValueId === undefined) === (draft.targetLink === undefined)) {
+    throw new IntegrationContractError("A rule requires exactly one result: an internal value or a target term");
+  }
+  if (draft.referenceValueId !== undefined) validateText(draft.referenceValueId, "referenceValueId", 64);
 
   const emptyCandidate: ReferenceCandidateDTO = {
     key: "preview",
@@ -208,7 +224,8 @@ export class ClassifierAdminService {
 
   async previewRule(draft: ClassificationRuleDraft, excludeRuleId?: EntityId): Promise<ClassificationRulePreview> {
     validateRuleDraft(draft);
-    const [candidates, existingRules] = await Promise.all([
+    const [resolution, candidates, existingRules] = await Promise.all([
+      this.resolveRuleResult(draft),
       this.adminRepository.listRuleCandidates(draft.sourceId, draft.typeCode, this.currentProcessorVersions[draft.sourceId]),
       this.classificationRepository.listActiveRules(draft.sourceId, [draft.typeCode])
         .then((rules) => rules.filter((rule) => rule.id !== excludeRuleId)),
@@ -220,7 +237,7 @@ export class ClassifierAdminService {
       name: draft.name.trim(),
       priority: draft.priority,
       conditions: draft.conditions,
-      referenceValueId: draft.referenceValueId,
+      referenceValueId: resolution.previewReferenceValueId,
       revision: "preview",
     };
     const proposedScore = classificationRuleScore(draft.sourceId, proposed);
@@ -238,6 +255,7 @@ export class ClassifierAdminService {
       if (item.mappingId !== null) {
         shadowedObservations += 1;
         if (examples.length < 10) {
+          const sameResult = item.mappingReferenceValueId === resolution.previewReferenceValueId;
           examples.push({
             observationId: item.observationId,
             sourceProductId: item.sourceProductId,
@@ -246,6 +264,10 @@ export class ClassifierAdminService {
             sku: item.sku,
             sourceValue: item.candidate.sourceValue,
             outcome: "shadowed",
+            reason: sameResult
+              ? `Уже покрыто более точным сопоставлением #${item.mappingId}; результат тот же.`
+              : `Более точное сопоставление #${item.mappingId} имеет приоритет и ведёт к другому результату.`,
+            winningResolution: { kind: "mapping", id: item.mappingId, name: null, sameResult },
           });
         }
         continue;
@@ -259,22 +281,39 @@ export class ClassifierAdminService {
         ? 1
         : compareClassificationRuleScore(proposedScore, existingBestScore);
       let outcome: ClassificationRulePreviewExample["outcome"];
+      let reason = "Новое правило будет применено.";
+      let winningResolution: ClassificationRulePreviewExample["winningResolution"];
       if (comparison < 0) {
         shadowedObservations += 1;
         outcome = "shadowed";
+        const winner = existingMatches[0]!.rule;
+        const sameResult = winner.referenceValueId === resolution.previewReferenceValueId;
+        reason = sameResult
+          ? `Уже покрыто более точным правилом «${winner.name}» (#${winner.id}); результат тот же.`
+          : `Более точное правило «${winner.name}» (#${winner.id}) имеет приоритет и ведёт к другому результату.`;
+        winningResolution = { kind: "rule", id: winner.id, name: winner.name, sameResult };
       } else if (comparison === 0) {
+        const bestRules = existingMatches.filter(({ score }) => compareClassificationRuleScore(score, existingBestScore!) === 0);
         const bestReferenceIds = new Set(
-          existingMatches
-            .filter(({ score }) => compareClassificationRuleScore(score, existingBestScore!) === 0)
-            .map(({ rule }) => rule.referenceValueId),
+          bestRules.map(({ rule }) => rule.referenceValueId),
         );
-        if ([...bestReferenceIds].some((referenceId) => referenceId !== draft.referenceValueId)) {
+        const differentWinner = bestRules.find(({ rule }) => rule.referenceValueId !== resolution.previewReferenceValueId)?.rule;
+        if (differentWinner !== undefined) {
           ambiguousObservations += 1;
           outcome = "ambiguous";
+          reason = `Равноценное правило «${differentWinner.name}» (#${differentWinner.id}) ведёт к другому результату.`;
+          winningResolution = { kind: "rule", id: differentWinner.id, name: differentWinner.name, sameResult: false };
+          affectedProductIds.add(item.sourceProductId);
+        } else if (bestReferenceIds.has(resolution.previewReferenceValueId)) {
+          const winner = bestRules[0]!.rule;
+          shadowedObservations += 1;
+          outcome = "shadowed";
+          reason = `Уже покрыто равноценным правилом «${winner.name}» (#${winner.id}) с тем же результатом.`;
+          winningResolution = { kind: "rule", id: winner.id, name: winner.name, sameResult: true };
         } else {
           outcome = "applicable";
+          affectedProductIds.add(item.sourceProductId);
         }
-        affectedProductIds.add(item.sourceProductId);
       } else {
         outcome = "applicable";
         affectedProductIds.add(item.sourceProductId);
@@ -289,6 +328,8 @@ export class ClassifierAdminService {
           sku: item.sku,
           sourceValue: item.candidate.sourceValue,
           outcome,
+          reason,
+          ...(winningResolution === undefined ? {} : { winningResolution }),
         });
       }
     }
@@ -306,9 +347,13 @@ export class ClassifierAdminService {
 
   async createRule(draft: ClassificationRuleDraft, actor = this.actor) {
     const preview = await this.previewRule(draft);
+    const resolution = await this.resolveRuleResult(draft);
     const result = await this.adminRepository.createRule({
       ...draft,
       name: draft.name.trim(),
+      ...(resolution.referenceValueId === null ? {} : { referenceValueId: resolution.referenceValueId }),
+      ...(resolution.targetLink === undefined ? {} : { targetLink: resolution.targetLink }),
+      ...(resolution.referenceValueId === null ? { generatedReferenceCode: `ref-${randomUUID()}` } : {}),
       actor,
       affectedSourceProductIds: preview.affectedSourceProductIds,
     });
@@ -322,10 +367,15 @@ export class ClassifierAdminService {
     if (existing.sourceId !== draft.sourceId || existing.typeCode !== draft.typeCode) {
       throw new IntegrationContractError("Rule source and classification type cannot be changed");
     }
-    const preview = await this.previewRule({ ...draft, sourceId: existing.sourceId, typeCode: existing.typeCode }, ruleId);
+    const normalizedDraft = { ...draft, sourceId: existing.sourceId, typeCode: existing.typeCode };
+    const resolution = await this.resolveRuleResult(normalizedDraft);
+    if (resolution.referenceValueId === null) {
+      throw new IntegrationContractError("A new target-linked internal value can only be created with a new rule");
+    }
+    const preview = await this.previewRule(normalizedDraft, ruleId);
     const result = await this.adminRepository.updateRule({
-      ruleId,
-      ...draft,
+      ruleId, ...normalizedDraft,
+      referenceValueId: resolution.referenceValueId,
       name: draft.name.trim(),
       actor,
       affectedSourceProductIds: preview.affectedSourceProductIds,
@@ -437,6 +487,43 @@ export class ClassifierAdminService {
     return [...new Set(candidates
       .filter((item) => item.mappingId === null && matchesClassificationRule(item.candidate, rule.conditions))
       .map((item) => item.sourceProductId))];
+  }
+
+  private async resolveRuleResult(draft: ClassificationRuleDraft): Promise<{
+    readonly previewReferenceValueId: EntityId;
+    readonly referenceValueId: EntityId | null;
+    readonly targetLink?: NonNullable<ClassificationRuleDraft["targetLink"]>;
+  }> {
+    if (draft.referenceValueId !== undefined) {
+      return { previewReferenceValueId: draft.referenceValueId, referenceValueId: draft.referenceValueId };
+    }
+    const targetLink = await this.validatedRuleTargetLink(draft);
+    const existing = await this.adminRepository.findRuleTargetReference({ typeCode: draft.typeCode, ...targetLink });
+    return {
+      previewReferenceValueId: existing ?? `target:${targetLink.targetId}:${targetLink.targetScope}:${targetLink.dictionaryValueId}`,
+      referenceValueId: existing,
+      targetLink,
+    };
+  }
+
+  private async validatedRuleTargetLink(draft: ClassificationRuleDraft): Promise<NonNullable<ClassificationRuleDraft["targetLink"]>> {
+    this.requireProjectionDependencies();
+    const targetLink = draft.targetLink!;
+    validateText(targetLink.targetId, "targetLink.targetId", 64);
+    validateText(targetLink.targetScope, "targetLink.targetScope", 200);
+    validateText(targetLink.dictionaryValueId, "targetLink.dictionaryValueId", 64);
+    const target = await this.target(targetLink.targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const capability = capabilitiesForTarget(target, provider.classificationCapabilities)
+      .find((item) => item.typeCode === draft.typeCode && item.targetScope === targetLink.targetScope);
+    if (capability === undefined) {
+      throw new IntegrationContractError(`Target scope ${targetLink.targetScope} is not valid for ${draft.typeCode}`);
+    }
+    const dictionary = await this.targetDictionaries!.getValue(targetLink.targetId, targetLink.dictionaryValueId);
+    if (dictionary === null || dictionary.entityType !== capability.entityType) {
+      throw new IntegrationContractError(`Dictionary value cannot be used for ${targetLink.targetScope}`);
+    }
+    return targetLink;
   }
 
   private async validatedProjectionCommand(command: ProjectionCommand, actor: string): Promise<TargetClassificationProjectionCommand> {

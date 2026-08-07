@@ -769,6 +769,7 @@ export interface ClassificationRuleCandidateRecord {
   readonly title: string | null;
   readonly sku: string | null;
   readonly mappingId: EntityId | null;
+  readonly mappingReferenceValueId: EntityId | null;
   readonly candidate: ReferenceCandidateDTO;
 }
 
@@ -778,7 +779,9 @@ export interface CreateClassificationRuleInput {
   readonly name: string;
   readonly priority: number;
   readonly conditions: readonly ClassificationRuleConditionRecord[];
-  readonly referenceValueId: EntityId;
+  readonly referenceValueId?: EntityId;
+  readonly targetLink?: ClassificationDecisionTargetLink;
+  readonly generatedReferenceCode?: string;
   readonly actor: string;
   readonly reason?: string;
   readonly affectedSourceProductIds: readonly EntityId[];
@@ -786,6 +789,7 @@ export interface CreateClassificationRuleInput {
 
 export interface CreateClassificationRuleResult {
   readonly ruleId: EntityId;
+  readonly referenceValueId: EntityId;
   readonly revision: string;
   readonly affectedProductCount: number;
 }
