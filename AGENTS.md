@@ -711,6 +711,16 @@ Parser commit `5182b83` развёрнут на production с миграцией
 
 Карточка товара больше не выдаёт устаревшее «Не сопоставлено» как текущее состояние, если решение уже сохранено, а `process_product` ждёт выполнения. API read-only пересчитывает текущие mappings/rules без записи и возвращает `pendingResolution`; интерфейс показывает «Решение уже сохранено и будет применено после запуска обработки». Live проверка `sourceProductId=76399` подтвердила старое observation `unresolved`, актуальное pending mapping `#147` и pending job `350520`. Worker оставлен inactive, target `slamdunk=false`, active export jobs `0`, WordPress writes не выполнялись. Проверки: `typecheck`, `234` теста, `build`, migration applied, health `200`.
 
+## Единый production worker и точечный запуск jobs 7 августа 2026
+
+Parser commit `7ce9505` развёрнут на production. Ошибочная схема с двумя полными workers удалена: API больше не создаёт и не держит собственный фоновый worker, а `/runtime` показывает и управляет только штатной службой `slds-parser-worker.service`. Временные настройки processing/collection lanes из API удалены, поскольку они не меняли конфигурацию systemd-службы и вводили в заблуждение.
+
+API-пользователю `slds-parser` выдано узкое polkit-разрешение только на start/stop этой конкретной службы. Кнопка запуска предупреждает, что worker начнёт разбирать всю доступную очередь. Кнопка остановки проверена через живой API на уже остановленной службе; worker остался `inactive`, все queued jobs сохранены.
+
+На `/jobs` для `pending` и `retry` `process_product` появилась команда `Выполнить сейчас`. Repository атомарно забирает ровно указанный job ID и дополнительно ограничивает его типом `process_product`; завершённый, выполняющийся, failed, collection или export job через этот путь не запускается. Обработка выполняется one-shot приложением, после чего его PostgreSQL pool закрывается. Общий worker и остальная очередь не запускаются. API systemd override разрешает one-shot обработке писать media только в `/srv/slds-parser/state`.
+
+Production smoke выполнен без обработки ожидающего товара: completed job `350450` корректно отклонён новым endpoint, а job `350520` для `sourceProductId=76399` остался `pending`, attempts `0`. Target `slamdunk=false`, активных export jobs `0`, WordPress writes не выполнялись. API active, worker inactive, internal и external health `200`. Локально и на production прошли typecheck, `241` тест, build; миграций pending нет.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
