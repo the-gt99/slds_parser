@@ -695,6 +695,16 @@ Parser commit `b0ca7c7` (`Добавить наглядное сравнение
 
 Краткое описание исключено из `managed_fields` WordPress exporter и не передаётся пустой строкой. WordPress product-upsert сохраняет возможность явно управлять этим полем для других клиентов, но больше не требует его для создания полного parser snapshot. Parser commit `5772809` и WordPress commit `c422e93` развёрнуты. На production прошли `typecheck`, `227` тестов, `build`, миграции без pending и PHP contract test. Live preview `76399` подтвердил: title с префиксом, `22/22` вариации, `short_description managed=false/changed=false`. Target `slamdunk=false`, API active, worker inactive, WordPress writes не выполнялись.
 
+## Исправление создания contextual rules 7 августа 2026
+
+Проверен спорный случай `category=sneakers`, `audience=women`. Сохранённое через старый экран точное сопоставление `#147` не является глобальным: его context содержит `route=sneakers`, `audience=women`, `productType=sneakers`, `productCategory=shoes`. Правило `#22` также было успешно создано. Нулевой счётчик в настройках означал не отсутствие записи, а отсутствие уже пересчитанных товаров: `302` затронутых `process_product` jobs остаются pending, потому что worker намеренно остановлен.
+
+Пример New Balance Wmns 680v7 действительно соответствует женским кроссовкам. Его результат не меняло новое правило, потому что товар уже покрыт более специфичным правилом `#14` для `Running women`, ведущим к той же категории WordPress `#74`. Старое сообщение «не сработает» было недостаточным и вводило в заблуждение.
+
+Parser commit `ff87513` развёрнут на production. Теперь правило можно создать непосредственно из выбранного WordPress-термина без предварительного сохранения exact mapping. Создание внутреннего значения и target link при необходимости выполняется в одной транзакции с правилом и аудитом. Preview показывает причину перекрытия, победившее mapping/rule и совпадает ли результат; примеры являются ссылками на карточки товаров. Для категорий предлагаются точные условия по source value, product type/category и audience. В списке конфигурации счётчик переименован в «Применено» и объяснено, что он обновляется после `process_product`.
+
+После deployment прошли `typecheck`, `231` тест, `build`, миграции без pending. Live read-only preview через новый target-linked API: `302` matched, `197` affected, `105` shadowed, `0` ambiguous; для перекрытого примера API вернул правило `#14` и пояснение, что результат тот же. Target `slamdunk=false`, export jobs отсутствуют, API active, worker inactive. WordPress writes не выполнялись.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
