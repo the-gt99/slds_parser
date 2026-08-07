@@ -1,7 +1,15 @@
-import type { JsonObject } from "../../../contracts/index.js";
+import type { EntityId, JsonObject, JsonValue } from "../../../contracts/index.js";
 import type {
+  FailedJobRetryPreview,
+  JobAdminListItem,
+  JobAdminListQuery,
+  JobAdminListResult,
+  JobType,
   ProductAdminReadModel,
   ProductAdminRepository,
+  ProductBatchAuditInput,
+  ProductBatchCandidate,
+  ProductBatchFilter,
   ProductClassificationObservationRecord,
   ProductOperationExecutionRecord,
   ProductPartSummaryRecord,
@@ -45,6 +53,75 @@ function nullableTimestamp(row: DatabaseRow, key: string): string | null {
   return value === null || value === undefined
     ? null
     : value instanceof Date ? value.toISOString() : String(value);
+}
+
+function nullableNumber(row: DatabaseRow, key: string): number | null {
+  const value = row[key];
+  return value === null || value === undefined ? null : Number(value);
+}
+
+function buildProductListFilter(query: ProductBatchFilter | ProductListQuery) {
+  const parameters: unknown[] = [];
+  const where: string[] = [];
+  const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+  const hasPartsSql = "EXISTS (SELECT 1 FROM source_product_parts part WHERE part.source_product_id = product.id)";
+  const stageSql = `CASE WHEN NOT ${hasPartsSql} THEN 'discovered' WHEN internal.id IS NULL THEN 'collected' WHEN internal.status = 'classification_pending' THEN 'classification_pending' WHEN internal.status = 'classified' THEN 'classified' ELSE internal.status END`;
+  const classificationSql = `CASE WHEN internal.id IS NULL THEN 'not_processed' WHEN internal.status = 'classification_pending' THEN 'pending' WHEN internal.data->'classification'->>'status' = 'complete' THEN 'complete' ELSE 'pending' END`;
+  const activeExportProductsSql = `SELECT job.payload->>'internalProductId'
+        FROM jobs job
+        JOIN targets export_target ON export_target.id::TEXT = job.payload->>'targetId'
+        WHERE job.job_type = 'export_product'
+          AND job.status IN ('pending', 'running', 'retry')
+          AND job.payload->>'internalProductId' IS NOT NULL
+          AND export_target.code = 'slamdunk'`;
+  const mappedTargetProductsSql = `SELECT target_product.internal_product_id::TEXT
+        FROM target_products target_product
+        JOIN targets product_target ON product_target.id = target_product.target_id
+        WHERE product_target.code = 'slamdunk'`;
+  if (query.search) {
+    const search = query.search.trim();
+    if (/^\d+$/u.test(search)) {
+      const id = add(search);
+      const externalId = add(search);
+      where.push(`(product.id = ${id}::BIGINT OR product.external_id = ${externalId})`);
+    } else {
+      const pattern = add(`%${search}%`);
+      where.push(`(product.source_key ILIKE ${pattern} OR product.external_id ILIKE ${pattern} OR COALESCE(internal.data->>'title', '') ILIKE ${pattern} OR COALESCE(product.discovery_metadata->>'title', '') ILIKE ${pattern})`);
+    }
+  }
+  if (query.sourceCode) where.push(`source.code = ${add(query.sourceCode)}`);
+  if (query.stage === "discovered") where.push(`NOT ${hasPartsSql}`);
+  else if (query.stage === "collected") where.push(`${hasPartsSql} AND internal.id IS NULL`);
+  else if (query.stage === "classification_pending" || query.stage === "classified") where.push(`internal.status = ${add(query.stage)}`);
+  else if (query.stage) where.push(`${stageSql} = ${add(query.stage)}`);
+  if (query.classificationStatus === "not_processed") where.push("internal.id IS NULL");
+  else if (query.classificationStatus === "complete") where.push("internal.data->'classification'->>'status' = 'complete'");
+  else if (query.classificationStatus === "pending") where.push("internal.id IS NOT NULL AND (internal.status = 'classification_pending' OR COALESCE(internal.data->'classification'->>'status', '') <> 'complete')");
+  else if (query.classificationStatus) where.push(`${classificationSql} = ${add(query.classificationStatus)}`);
+  if (query.targetStatus === "pending") where.push(`internal.id::TEXT IN (${activeExportProductsSql})`);
+  else if (query.targetStatus === "not_exported") where.push(`(internal.id IS NULL OR internal.id::TEXT NOT IN (
+        ${mappedTargetProductsSql}
+        UNION
+        ${activeExportProductsSql}
+      ))`);
+  else if (query.targetStatus) where.push(`internal.id::TEXT NOT IN (${activeExportProductsSql}) AND internal.id::TEXT IN (
+        SELECT target_product.internal_product_id::TEXT
+        FROM target_products target_product
+        JOIN targets product_target ON product_target.id = target_product.target_id
+        WHERE product_target.code = 'slamdunk' AND target_product.status = ${add(query.targetStatus)}
+      )`);
+  if ("selectedIds" in query && query.selectedIds !== undefined) {
+    where.push(`product.id = ANY(${add(query.selectedIds)}::BIGINT[])`);
+  }
+  return {
+    parameters,
+    filter: where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`,
+    baseFrom: `FROM source_products product
+        JOIN sources source ON source.id = product.source_id
+        LEFT JOIN internal_products internal ON internal.source_product_id = product.id`,
+    stageSql,
+    classificationSql,
+  };
 }
 
 function mapPart(row: DatabaseRow): ProductPartSummaryRecord {
@@ -125,6 +202,37 @@ function mapTargetSnapshot(row: DatabaseRow): ProductTargetSnapshotRecord {
   return {
     target: mapTarget(target),
     product: product === null ? null : mapTargetProduct(product),
+  };
+}
+
+function mapBatchCandidate(row: DatabaseRow): ProductBatchCandidate {
+  return {
+    sourceProductId: text(row, "source_product_id"),
+    internalProductId: nullableText(row, "internal_product_id"),
+    stage: text(row, "stage"),
+    imageCount: Number(row.image_count ?? 0),
+    activeCollectJobId: nullableText(row, "active_collect_job_id"),
+    activeProcessJobId: nullableText(row, "active_process_job_id"),
+    failedProcessJobId: nullableText(row, "failed_process_job_id"),
+  };
+}
+
+function mapJobAdmin(row: DatabaseRow): JobAdminListItem {
+  return {
+    id: text(row, "id"),
+    jobType: row.job_type as JobAdminListItem["jobType"],
+    status: row.status as JobAdminListItem["status"],
+    attempts: Number(row.attempts),
+    createdAt: timestamp(row, "created_at"),
+    availableAt: timestamp(row, "available_at"),
+    lockedAt: nullableTimestamp(row, "locked_at"),
+    lockedBy: nullableText(row, "locked_by"),
+    updatedAt: timestamp(row, "updated_at"),
+    finishedAt: nullableTimestamp(row, "finished_at"),
+    durationMs: nullableNumber(row, "duration_ms"),
+    sourceProductId: nullableText(row, "source_product_id"),
+    lastError: nullableText(row, "last_error"),
+    payload: row.payload as JsonValue,
   };
 }
 
@@ -366,6 +474,216 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
           targetExternalId: nullableText(row, "target_external_id"), hasTargetSnapshot: row.has_target_snapshot === true,
         })),
       };
+    } finally { client.release(); }
+  }
+
+  async listBatchCandidates(query: ProductBatchFilter): Promise<{ readonly total: number; readonly items: readonly ProductBatchCandidate[] }> {
+    const client = await this.pool.connect();
+    try {
+      const built = buildProductListFilter(query);
+      const parameters = [...built.parameters];
+      const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+      const limit = add(query.limit);
+      const failedProcessJoin = query.includeFailedProcessing === true
+        ? `LEFT JOIN LATERAL (
+           SELECT id FROM jobs job
+           WHERE job.job_type = 'process_product'
+             AND job.status = 'failed'
+             AND job.unique_key = 'source-product:' || product.id::TEXT || ':process'
+           ORDER BY job.updated_at DESC, job.id DESC LIMIT 1
+         ) failed_process_job ON TRUE`
+        : "LEFT JOIN LATERAL (SELECT NULL::BIGINT AS id) failed_process_job ON TRUE";
+      const rows = await client.query<DatabaseRow>(
+        `WITH selected AS MATERIALIZED (
+           SELECT product.id
+           ${built.baseFrom} ${built.filter}
+           ORDER BY product.updated_at DESC, product.id DESC
+           LIMIT ${limit}
+         )
+         SELECT product.id AS source_product_id,
+                internal.id AS internal_product_id,
+                ${built.stageSql} AS stage,
+                COALESCE(JSONB_ARRAY_LENGTH(internal.data->'images'), 0) AS image_count,
+                collect_job.id AS active_collect_job_id,
+                process_job.id AS active_process_job_id,
+                failed_process_job.id AS failed_process_job_id
+         FROM selected
+         JOIN source_products product ON product.id = selected.id
+         LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+         LEFT JOIN LATERAL (
+           SELECT id FROM jobs job
+           WHERE job.job_type = 'collect_product'
+             AND job.status IN ('pending', 'running', 'retry')
+             AND job.unique_key = 'source-product:' || product.id::TEXT || ':collect'
+           ORDER BY job.updated_at DESC, job.id DESC LIMIT 1
+         ) collect_job ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT id FROM jobs job
+           WHERE job.job_type = 'process_product'
+             AND job.status IN ('pending', 'running', 'retry')
+             AND job.unique_key = 'source-product:' || product.id::TEXT || ':process'
+           ORDER BY job.updated_at DESC, job.id DESC LIMIT 1
+         ) process_job ON TRUE
+         ${failedProcessJoin}
+         ORDER BY product.updated_at DESC, product.id DESC`,
+        parameters,
+      );
+      return { total: rows.rows.length, items: rows.rows.map(mapBatchCandidate) };
+    } finally { client.release(); }
+  }
+
+  async saveBatchAudit(input: ProductBatchAuditInput): Promise<EntityId> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<DatabaseRow>(
+        `INSERT INTO product_admin_batch_actions (action, filter, dry_run, created_job_ids, actor, reason)
+         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6)
+         RETURNING id`,
+        [input.action, input.filter, input.dryRun, input.createdJobIds, input.actor, input.reason ?? null],
+      );
+      return text(result.rows[0]!, "id");
+    } finally { client.release(); }
+  }
+
+  async listJobs(query: JobAdminListQuery): Promise<JobAdminListResult> {
+    const client = await this.pool.connect();
+    try {
+      const parameters: unknown[] = [];
+      const where: string[] = [];
+      const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+      if (query.jobType) where.push(`job.job_type = ${add(query.jobType)}`);
+      if (query.status) where.push(`job.status = ${add(query.status)}`);
+      if (query.search) {
+        const search = query.search.trim();
+        if (/^\d+$/u.test(search)) {
+          where.push(`(job.id = ${add(search)}::BIGINT OR job.payload->>'sourceProductId' = ${add(search)} OR internal.source_product_id::TEXT = ${add(search)})`);
+        } else {
+          where.push(`job.last_error ILIKE ${add(`%${search}%`)}`);
+        }
+      }
+      const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
+      const from = `FROM jobs job LEFT JOIN internal_products internal ON internal.id::TEXT = job.payload->>'internalProductId'`;
+      const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
+      const limit = add(query.limit);
+      const offset = add(query.offset);
+      const rows = await client.query<DatabaseRow>(
+        `SELECT job.*,
+                COALESCE(job.payload->>'sourceProductId', internal.source_product_id::TEXT) AS source_product_id,
+                CASE
+                  WHEN job.locked_at IS NOT NULL AND job.finished_at IS NULL THEN EXTRACT(EPOCH FROM (NOW() - job.locked_at)) * 1000
+                  WHEN job.finished_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.finished_at - job.created_at)) * 1000
+                  ELSE NULL
+                END AS duration_ms
+         ${from} ${filter}
+         ORDER BY job.created_at DESC, job.id DESC
+         LIMIT ${limit} OFFSET ${offset}`,
+        parameters,
+      );
+      const [byStatus, byTypeStatus, errorGroups, completion, eta] = await Promise.all([
+        client.query<DatabaseRow>("SELECT status, COUNT(*)::INT AS count FROM jobs GROUP BY status ORDER BY status"),
+        client.query<DatabaseRow>("SELECT job_type, status, COUNT(*)::INT AS count FROM jobs GROUP BY job_type, status ORDER BY job_type, status"),
+        client.query<DatabaseRow>(
+          `SELECT job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240) AS message,
+                  COUNT(*)::INT AS count, MAX(updated_at) AS latest_at
+           FROM jobs
+           WHERE status = 'failed'
+           GROUP BY job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240)
+           ORDER BY count DESC, latest_at DESC
+           LIMIT 25`,
+        ),
+        client.query<DatabaseRow>(
+          `SELECT
+             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
+             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
+             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h
+           FROM jobs`,
+        ),
+        client.query<DatabaseRow>(
+          `WITH active AS (
+             SELECT COUNT(*)::FLOAT AS remaining FROM jobs WHERE status IN ('pending', 'running', 'retry')
+           ), speed AS (
+             SELECT COUNT(*)::FLOAT / 60 AS per_minute FROM jobs WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour'
+           )
+           SELECT CASE WHEN speed.per_minute > 0 THEN CEIL(active.remaining / speed.per_minute)::INT ELSE NULL END AS eta_minutes
+           FROM active, speed`,
+        ),
+      ]);
+      const completionRow = completion.rows[0];
+      return {
+        total: Number(count.rows[0]?.total ?? 0),
+        items: rows.rows.map(mapJobAdmin),
+        summary: {
+          byStatus: byStatus.rows.map((row) => ({ status: row.status as JobAdminListItem["status"], count: Number(row.count) })),
+          byTypeStatus: byTypeStatus.rows.map((row) => ({ jobType: row.job_type as JobType, status: row.status as JobAdminListItem["status"], count: Number(row.count) })),
+          errorGroups: errorGroups.rows.map((row) => ({
+            jobType: row.job_type as JobType,
+            message: text(row, "message"),
+            count: Number(row.count),
+            latestAt: timestamp(row, "latest_at"),
+          })),
+          completion: {
+            last15m: Number(completionRow?.last15m ?? 0),
+            last1h: Number(completionRow?.last1h ?? 0),
+            last24h: Number(completionRow?.last24h ?? 0),
+          },
+          etaMinutes: eta.rows[0]?.eta_minutes === null || eta.rows[0]?.eta_minutes === undefined ? null : Number(eta.rows[0].eta_minutes),
+        },
+      };
+    } finally { client.release(); }
+  }
+
+  async previewFailedJobRetry(jobType: JobType, limit: number): Promise<FailedJobRetryPreview> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<DatabaseRow>(
+        `WITH failed AS MATERIALIZED (
+         SELECT * FROM jobs WHERE job_type = $1 AND status = 'failed' ORDER BY updated_at DESC, id DESC LIMIT $2
+       ), active AS (
+         SELECT failed.id
+         FROM failed
+         JOIN jobs active ON active.job_type = failed.job_type
+          AND active.unique_key = failed.unique_key
+          AND active.status IN ('pending', 'running', 'retry')
+       )
+       SELECT
+         (SELECT COUNT(*)::INT FROM jobs WHERE job_type = $1 AND status = 'failed') AS failed_count,
+         (SELECT COUNT(*)::INT FROM failed) AS limited_count,
+         (SELECT COUNT(*)::INT FROM active) AS active_duplicate_count,
+         (SELECT COUNT(*)::INT FROM failed WHERE id NOT IN (SELECT id FROM active)) AS retry_count,
+         COALESCE((SELECT JSONB_AGG(id::TEXT ORDER BY id) FROM (SELECT id FROM failed WHERE id NOT IN (SELECT id FROM active) LIMIT 10) sample), '[]'::jsonb) AS sample_job_ids`,
+        [jobType, limit],
+      );
+      const row = result.rows[0]!;
+      return {
+        jobType,
+        failedCount: Number(row.failed_count),
+        limitedCount: Number(row.limited_count),
+        activeDuplicateCount: Number(row.active_duplicate_count),
+        retryCount: Number(row.retry_count),
+        sampleJobIds: row.sample_job_ids as readonly EntityId[],
+      };
+    } finally { client.release(); }
+  }
+
+  async listFailedJobRetryIds(jobType: JobType, limit: number): Promise<readonly EntityId[]> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<DatabaseRow>(
+        `WITH failed AS MATERIALIZED (
+         SELECT * FROM jobs WHERE job_type = $1 AND status = 'failed' ORDER BY updated_at DESC, id DESC LIMIT $2
+       )
+       SELECT failed.id
+       FROM failed
+       WHERE NOT EXISTS (
+         SELECT 1 FROM jobs active
+         WHERE active.job_type = failed.job_type
+           AND active.unique_key = failed.unique_key
+           AND active.status IN ('pending', 'running', 'retry')
+       )
+       ORDER BY failed.updated_at DESC, failed.id DESC`,
+        [jobType, limit],
+      );
+      return result.rows.map((row) => text(row, "id"));
     } finally { client.release(); }
   }
 

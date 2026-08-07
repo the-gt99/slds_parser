@@ -5,9 +5,11 @@ const mode = location.pathname.includes("operations")
     ? "snapshots"
     : location.pathname.includes("runtime")
       ? "runtime"
-      : location.pathname.includes("classifier-config")
-        ? "classifierConfig"
-        : "products";
+      : location.pathname.includes("jobs")
+        ? "jobs"
+        : location.pathname.includes("classifier-config")
+          ? "classifierConfig"
+          : "products";
 
 const state = {
   session: null,
@@ -17,6 +19,8 @@ const state = {
   configItems: [],
   configKind: "mapping",
   targets: [],
+  pageProductIds: [],
+  selectedProductIds: new Set(),
 };
 
 function date(value) {
@@ -108,11 +112,21 @@ function status(value, context = "general") {
 }
 
 function renderProducts(items) {
-  headings(["Источник / ID", "External ID", "Название", "Стадия", "Классификация", "Сбор", "Обработка", "WordPress"]);
+  state.pageProductIds = items.map((item) => item.sourceProductId);
+  headings(["", "Источник / ID", "External ID", "Название", "Стадия", "Классификация", "Сбор", "Обработка", "WordPress"]);
   const body = byId("table-body");
   body.replaceChildren();
   for (const item of items) {
     const tr = document.createElement("tr");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.selectedProductIds.has(item.sourceProductId);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedProductIds.add(item.sourceProductId);
+      else state.selectedProductIds.delete(item.sourceProductId);
+      updateBulkState();
+    });
+    cell(tr, checkbox);
     cell(tr, link(`${item.sourceCode} · ${item.sourceProductId}`, `/products/${item.sourceProductId}`));
     cell(tr, item.externalId);
     cell(tr, item.title || item.sourceKey, "admin-title-cell");
@@ -124,6 +138,7 @@ function renderProducts(items) {
     cell(tr, `${status(item.targetStatus)}${activeJob}${item.targetExternalId ? ` · ${item.targetExternalId}` : ""}${item.hasTargetSnapshot ? " · снимок" : ""}`);
     body.append(tr);
   }
+  updateBulkState();
 }
 
 function renderOperations(items) {
@@ -159,6 +174,117 @@ function renderSnapshots(items) {
     cell(tr, links);
     body.append(tr);
   }
+}
+
+function renderJobs(data) {
+  const summary = data.summary || {};
+  headings(["Job", "Статус", "Товар", "Создан", "Длительность", "Попытки", "Worker/lane", "Ошибка"]);
+  const body = byId("table-body");
+  body.replaceChildren();
+  for (const item of data.items || []) {
+    const tr = document.createElement("tr");
+    cell(tr, `#${item.id} · ${queueLabel(item.jobType)}`);
+    cell(tr, status(item.status));
+    cell(tr, item.sourceProductId ? link(`#${item.sourceProductId}`, `/products/${item.sourceProductId}`) : "-");
+    cell(tr, date(item.createdAt));
+    cell(tr, item.durationMs ? `${Math.round(item.durationMs / 1000)} сек.` : "-");
+    cell(tr, item.attempts);
+    cell(tr, item.lockedBy || "-");
+    const error = document.createElement("span");
+    error.textContent = item.lastError || "-";
+    if (item.payload) error.append(jsonMini("payload", item.payload));
+    cell(tr, error, "admin-title-cell");
+    body.append(tr);
+  }
+  let dashboard = byId("jobs-dashboard");
+  if (!dashboard) {
+    dashboard = document.createElement("section");
+    dashboard.id = "jobs-dashboard";
+    dashboard.className = "section runtime-card runtime-wide";
+    byId("filters").after(dashboard);
+  }
+  const statusText = (summary.byStatus || []).map((item) => `${status(item.status)}: ${item.count}`).join(" · ") || "Нет данных";
+  const speed = summary.completion || {};
+  dashboard.innerHTML = `
+    <div class="section-title"><div><p class="eyebrow">Очередь и ошибки</p><h2>Сводка jobs</h2></div></div>
+    <div class="runtime-list">
+      <div class="runtime-row"><span>${statusText}</span><strong>ETA ${summary.etaMinutes === null || summary.etaMinutes === undefined ? "—" : `${summary.etaMinutes} мин.`}</strong></div>
+      <div class="runtime-row"><span>Completion за 15 мин / час / сутки</span><strong>${speed.last15m ?? 0} / ${speed.last1h ?? 0} / ${speed.last24h ?? 0}</strong></div>
+    </div>
+    <details class="data-details"><summary>Группы ошибок</summary><pre>${JSON.stringify(summary.errorGroups || [], null, 2)}</pre></details>
+    <div class="runtime-actions"><button id="retry-process-failed" class="button secondary" type="button">Preview retry failed processing</button></div>
+  `;
+  byId("retry-process-failed").addEventListener("click", retryFailedProcessing);
+}
+
+function jsonMini(title, value) {
+  const details = document.createElement("details");
+  details.className = "data-details compact-json";
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(value, null, 2);
+  details.append(summary, pre);
+  return details;
+}
+
+function productFilters() {
+  return {
+    search: byId("search").value.trim(),
+    source: byId("source").value,
+    stage: byId("stage").value,
+    classification: byId("classification").value,
+    targetStatus: byId("target-status").value,
+  };
+}
+
+function updateBulkState() {
+  const panel = byId("bulk-panel");
+  if (!panel) return;
+  panel.hidden = mode !== "products";
+  byId("bulk-count").textContent = String(state.selectedProductIds.size);
+}
+
+async function previewBulk() {
+  const action = byId("bulk-action").value;
+  if (action === "export") return;
+  const selectedIds = [...state.selectedProductIds];
+  const body = {
+    action,
+    filter: productFilters(),
+    selectedIds: selectedIds.length ? selectedIds : undefined,
+    limit: byId("bulk-limit").value,
+    force: action === "reprocess",
+  };
+  const response = await api("/api/products/batch/preview", { method: "POST", body });
+  const preview = response.preview;
+  const message = [
+    `Выбрано по фильтру: ${preview.selectedCount}`,
+    `подходит: ${preview.eligibleCount}`,
+    `пропущено: ${preview.skippedCount}`,
+    `активных дублей: ${preview.activeDuplicateCount}`,
+    `будет создано jobs: ${preview.jobsToCreate}`,
+    `force: ${preview.force ? "да" : "нет"}`,
+    preview.enqueueProcessing === null ? "" : `enqueueProcessing: ${preview.enqueueProcessing ? "true" : "false"}`,
+    `изображений примерно: ${preview.estimatedImages}`,
+    preview.disk?.warning || "",
+  ].filter(Boolean).join("\n");
+  byId("bulk-result").hidden = false;
+  byId("bulk-result").textContent = `${message}\nПричины пропуска: ${JSON.stringify(preview.skipReasons)}`;
+  if (!confirm(`${message}\n\nСоздать jobs?`)) return;
+  const apply = await api("/api/products/batch/apply", { method: "POST", body });
+  byId("bulk-result").textContent = `Готово. Audit #${apply.result.auditId}. Jobs: ${apply.result.createdJobIds.length}.`;
+  await load();
+}
+
+async function retryFailedProcessing() {
+  const limit = prompt("Сколько failed process_product jobs повторить? Максимум 5000.", "100");
+  if (!limit) return;
+  const preview = await api("/api/jobs/failed/preview-retry", { method: "POST", body: { jobType: "process_product", limit } });
+  const text = `Failed: ${preview.preview.failedCount}\nБудет повторено: ${preview.preview.retryCount}\nАктивных дублей: ${preview.preview.activeDuplicateCount}`;
+  if (!confirm(`${text}\n\nПовторить terminal failed processing jobs?`)) return;
+  await api("/api/jobs/failed/retry", { method: "POST", body: { jobType: "process_product", limit } });
+  await load();
 }
 
 function runtimeStatusLabel(value) {
@@ -1027,6 +1153,7 @@ function configure() {
     products: "Товары",
     operations: "Реестр операций",
     runtime: "Парсер",
+    jobs: "Очередь и ошибки",
     snapshots: "Снимки WordPress",
     classifierConfig: "Настройки классификации",
   };
@@ -1040,6 +1167,15 @@ function configure() {
     }
   }
   if (mode === "operations" || mode === "runtime") byId("filters").hidden = true;
+  if (mode === "jobs") {
+    byId("source-filter").querySelector("span").textContent = "Job type";
+    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Экспорт", "export_product"));
+    byId("stage-filter").querySelector("span").textContent = "Статус";
+    byId("stage").replaceChildren(new Option("Все", ""), new Option("В очереди", "pending"), new Option("Выполняется", "running"), new Option("Повтор", "retry"), new Option("Ошибка", "failed"), new Option("Выполнено", "completed"));
+    byId("classification-filter").hidden = true;
+    byId("target-filter").hidden = true;
+    byId("search").placeholder = "Job ID, sourceProductId или текст ошибки";
+  }
   if (mode === "runtime") {
     const runtime = document.createElement("section");
     runtime.id = "runtime-panel";
@@ -1155,6 +1291,23 @@ function configure() {
     updateConfigDescription();
     updateConfigFilters();
   }
+  if (mode === "products") {
+    byId("bulk-panel").hidden = false;
+    byId("bulk-page").addEventListener("click", () => {
+      for (const id of state.pageProductIds) state.selectedProductIds.add(id);
+      renderProducts((state.lastItems || []));
+    });
+    byId("bulk-clear").addEventListener("click", () => {
+      state.selectedProductIds.clear();
+      renderProducts((state.lastItems || []));
+    });
+    byId("bulk-preview").addEventListener("click", () => {
+      previewBulk().catch((error) => {
+        byId("bulk-result").hidden = false;
+        byId("bulk-result").textContent = error.message;
+      });
+    });
+  }
 }
 
 function updateConfigDescription() {
@@ -1188,6 +1341,13 @@ async function load() {
       data = await api("/api/operations");
     } else if (mode === "runtime") {
       data = await api("/api/runtime");
+    } else if (mode === "jobs") {
+      const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) });
+      const search = byId("search").value.trim();
+      if (search) params.set("search", search);
+      if (byId("source").value) params.set("jobType", byId("source").value);
+      if (byId("stage").value) params.set("status", byId("stage").value);
+      data = await api(`/api/jobs?${params}`);
     } else {
       const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) });
       const search = byId("search").value.trim();
@@ -1198,6 +1358,7 @@ async function load() {
           if (value) params.set(key, value);
         }
         data = await api(`/api/products?${params}`);
+        state.lastItems = data.items || [];
         if (byId("source").options.length === 1) for (const source of data.sources) byId("source").append(new Option(source.name, source.code));
       } else if (mode === "classifierConfig") {
         params.set("kind", state.configKind);
@@ -1225,6 +1386,7 @@ async function load() {
     }
     if (mode === "products") renderProducts(items);
     else if (mode === "operations") renderOperations(items);
+    else if (mode === "jobs") renderJobs(data);
     else if (mode === "classifierConfig") renderConfig(items);
     else renderSnapshots(items);
     byId("empty").hidden = items.length !== 0;

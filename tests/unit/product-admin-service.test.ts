@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TargetDictionaryProvider } from "../../src/integrations/index.js";
 import { TargetDictionaryProviderRegistry } from "../../src/integrations/index.js";
-import type { ProductAdminReadModel, ProductAdminRepository } from "../../src/repositories/index.js";
+import type { JobRecord, JobRepository, ProductAdminReadModel, ProductAdminRepository } from "../../src/repositories/index.js";
 import { ProductAdminService } from "../../src/services/index.js";
 
 function snapshot(): ProductAdminReadModel {
@@ -114,5 +114,103 @@ describe("ProductAdminService", () => {
 
     expect(result.processing.currentOutput?.title).toBe("Test shoe");
     expect(result.processing.attempts[0]?.classifiedOutput?.title).toBe("Old classified title");
+  });
+
+  it("previews product batch actions with deduplication and a server limit", async () => {
+    const repository: ProductAdminRepository = {
+      getById: vi.fn(),
+      listBatchCandidates: vi.fn().mockResolvedValue({
+        total: 2,
+        items: [
+          { sourceProductId: "1", internalProductId: null, stage: "discovered", imageCount: 0, activeCollectJobId: null, activeProcessJobId: null, failedProcessJobId: null },
+          { sourceProductId: "2", internalProductId: null, stage: "discovered", imageCount: 0, activeCollectJobId: "9", activeProcessJobId: null, failedProcessJobId: null },
+        ],
+      }),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).previewBatch({
+      action: "collect",
+      filter: { limit: 2 },
+    });
+
+    expect(result.selectedCount).toBe(2);
+    expect(result.eligibleCount).toBe(1);
+    expect(result.activeDuplicateCount).toBe(1);
+    expect(result.jobsToCreate).toBe(1);
+    expect(result.skipReasons).toEqual([{ reason: "Уже есть активная задача сбора", count: 1 }]);
+  });
+
+  it("applies batch actions through JobRepository and stores audit", async () => {
+    const now = "2026-08-07T00:00:00.000Z";
+    const repository: ProductAdminRepository = {
+      getById: vi.fn(),
+      listBatchCandidates: vi.fn().mockResolvedValue({
+        total: 1,
+        items: [{ sourceProductId: "5", internalProductId: "7", stage: "classified", imageCount: 2, activeCollectJobId: null, activeProcessJobId: null, failedProcessJobId: null }],
+      }),
+      saveBatchAudit: vi.fn().mockResolvedValue("11"),
+    };
+    const jobs: JobRepository = {
+      enqueue: vi.fn().mockResolvedValue({
+        id: "10", jobType: "process_product", payload: { sourceProductId: "5", force: true }, status: "pending",
+        attempts: 0, availableAt: now, lockedAt: null, lockedBy: null, uniqueKey: "source-product:5:process",
+        lastError: null, createdAt: now, updatedAt: now, finishedAt: null,
+      } satisfies JobRecord),
+      claimNext: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn(),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).applyBatch({
+      action: "reprocess",
+      filter: { selectedIds: ["5"], limit: 100 },
+    }, "admin");
+
+    expect(jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobType: "process_product",
+      payload: { sourceProductId: "5", force: true },
+      uniqueKey: "source-product:5:process",
+    }));
+    expect(repository.saveBatchAudit).toHaveBeenCalledWith(expect.objectContaining({ actor: "admin", createdJobIds: ["10"] }));
+    expect(result.auditId).toBe("11");
+  });
+
+  it("blocks mass export actions", async () => {
+    const repository: ProductAdminRepository = { getById: vi.fn() };
+    await expect(new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).previewBatch({
+      action: "export",
+      filter: { limit: 1 },
+    })).rejects.toThrow("Mass export is intentionally disabled");
+  });
+
+  it("retries only non-export failed jobs and records audit", async () => {
+    const repository: ProductAdminRepository = {
+      getById: vi.fn(),
+      previewFailedJobRetry: vi.fn().mockResolvedValue({ jobType: "process_product", failedCount: 2, limitedCount: 2, activeDuplicateCount: 0, retryCount: 2, sampleJobIds: ["1", "2"] }),
+      listFailedJobRetryIds: vi.fn().mockResolvedValue(["1", "2"]),
+      saveBatchAudit: vi.fn().mockResolvedValue("20"),
+    };
+    const jobs: JobRepository = { enqueue: vi.fn(), claimNext: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn() };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).retryFailedJobs("process_product", 100, "admin", "retry");
+
+    expect(jobs.retry).toHaveBeenCalledTimes(2);
+    expect(repository.saveBatchAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "retry_failed_processing", actor: "admin", reason: "retry" }));
+    expect(result.auditId).toBe("20");
+    await expect(new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).retryFailedJobs("export_product", 1, "admin")).rejects.toThrow("Export retry is disabled");
+  });
+
+  it("redacts secrets from job payloads", async () => {
+    const repository: ProductAdminRepository = {
+      getById: vi.fn(),
+      listJobs: vi.fn().mockResolvedValue({
+        total: 1,
+        items: [{ id: "1", jobType: "collect_product", status: "failed", attempts: 1, createdAt: "now", availableAt: "now", lockedAt: null, lockedBy: null, updatedAt: "now", finishedAt: null, durationMs: null, sourceProductId: "2", lastError: "x", payload: { token: "secret", nested: { password: "secret" }, sourceProductId: "2" } }],
+        summary: { byStatus: [], byTypeStatus: [], errorGroups: [], completion: { last15m: 0, last1h: 0, last24h: 0 }, etaMinutes: null },
+      }),
+    };
+
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).listJobs({ limit: 50, offset: 0 });
+
+    expect(JSON.stringify(result.items[0]?.payload)).not.toContain("secret");
+    expect(result.items[0]?.payload).toEqual({ token: "[hidden]", nested: { password: "[hidden]" }, sourceProductId: "2" });
   });
 });

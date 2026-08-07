@@ -9,6 +9,10 @@ import { AppError } from "../core/errors/index.js";
 import type {
   ClassificationRuleConditionRecord,
   ClassificationReviewStatus,
+  JobStatus,
+  JobType,
+  ProductBatchAction,
+  ProductBatchFilter,
 } from "../repositories/index.js";
 import type {
   ClassificationDecisionCommand,
@@ -58,7 +62,17 @@ interface RuleFieldsQuery { readonly sourceId?: string; readonly typeCode?: stri
 interface TargetParams { readonly targetId: string }
 interface ProductParams { readonly productId: string }
 interface ProductListQuery { readonly search?: string; readonly source?: string; readonly stage?: string; readonly classification?: string; readonly targetStatus?: string; readonly limit?: string; readonly offset?: string }
+interface ProductBatchBody {
+  readonly action?: unknown;
+  readonly filter?: unknown;
+  readonly selectedIds?: unknown;
+  readonly limit?: unknown;
+  readonly force?: unknown;
+  readonly reason?: unknown;
+}
 interface SnapshotListQuery { readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface JobsQuery { readonly jobType?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface RetryFailedBody { readonly jobType?: unknown; readonly limit?: unknown; readonly reason?: unknown }
 interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
@@ -223,6 +237,64 @@ function configStatus(value: string | undefined) {
     throw new HttpInputError("status must be active, inactive or ignored");
   }
   return value;
+}
+
+function jobType(value: unknown): JobType {
+  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "export_product") {
+    throw new HttpInputError("jobType must be discover_source, collect_product, process_product or export_product");
+  }
+  return value;
+}
+
+function optionalJobType(value: string | undefined): JobType | undefined {
+  return value === undefined || value === "" ? undefined : jobType(value);
+}
+
+function optionalJobStatus(value: string | undefined): JobStatus | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "pending" && value !== "running" && value !== "retry" && value !== "completed" && value !== "failed") {
+    throw new HttpInputError("status must be pending, running, retry, completed or failed");
+  }
+  return value;
+}
+
+function batchAction(value: unknown): ProductBatchAction {
+  if (value !== "collect" && value !== "collect_and_process" && value !== "process" && value !== "reprocess" && value !== "retry_failed_processing" && value !== "export") {
+    throw new HttpInputError("Unknown product batch action");
+  }
+  return value;
+}
+
+function batchFilter(value: unknown, selectedIds: unknown, limitValue: unknown): ProductBatchFilter {
+  const filter = value === null || typeof value !== "object" || Array.isArray(value) ? {} : value as Record<string, unknown>;
+  let parsedIds: readonly string[] | undefined;
+  if (selectedIds !== undefined) {
+    if (!Array.isArray(selectedIds) || selectedIds.length > 1_000) throw new HttpInputError("selectedIds must contain at most 1000 IDs");
+    parsedIds = selectedIds.map((id) => entityId(id, "selectedIds"));
+  }
+  const limit = limitValue === undefined
+    ? 100
+    : positiveInteger(String(limitValue), 100, 5_000);
+  if (limit === 0) throw new HttpInputError("Batch limit must be from 1 to 5000");
+  return {
+    ...(optionalString(filter.search) === undefined ? {} : { search: optionalString(filter.search)! }),
+    ...(optionalString(filter.source) === undefined ? {} : { sourceCode: optionalString(filter.source)! }),
+    ...(optionalString(filter.stage) === undefined ? {} : { stage: optionalString(filter.stage)! }),
+    ...(optionalString(filter.classification) === undefined ? {} : { classificationStatus: optionalString(filter.classification)! }),
+    ...(optionalString(filter.targetStatus) === undefined ? {} : { targetStatus: optionalString(filter.targetStatus)! }),
+    ...(parsedIds === undefined ? {} : { selectedIds: parsedIds }),
+    limit,
+  };
+}
+
+function productBatchBody(value: ProductBatchBody | undefined) {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  return {
+    action: batchAction(value.action),
+    filter: batchFilter(value.filter, value.selectedIds, value.limit),
+    force: value.force === true,
+    ...(optionalString(value.reason) === undefined ? {} : { reason: optionalString(value.reason)! }),
+  };
 }
 
 function targetTermBody(targetId: string, value: unknown): CreateTargetTermCommand {
@@ -553,9 +625,57 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     });
   });
 
+  server.post<{ Body: ProductBatchBody }>(
+    "/api/products/batch/preview",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ preview: await dependencies.productAdmin.previewBatch(productBatchBody(request.body)) }),
+  );
+
+  server.post<{ Body: ProductBatchBody }>(
+    "/api/products/batch/apply",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await dependencies.productAdmin.applyBatch(productBatchBody(request.body), actor(request)) }),
+  );
+
   server.get("/api/operations", { preHandler: requireAdmin }, async () => ({ items: dependencies.productAdmin.listOperations() }));
 
   server.get("/api/runtime", { preHandler: requireAdmin }, async () => runtimeService().status());
+
+  server.get<{ Querystring: JobsQuery }>("/api/jobs", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 200);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+    return dependencies.productAdmin.listJobs({
+      ...(optionalJobType(request.query.jobType) === undefined ? {} : { jobType: optionalJobType(request.query.jobType)! }),
+      ...(optionalJobStatus(request.query.status) === undefined ? {} : { status: optionalJobStatus(request.query.status)! }),
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      limit,
+      offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
+  });
+
+  server.post<{ Body: RetryFailedBody }>(
+    "/api/jobs/failed/preview-retry",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      preview: await dependencies.productAdmin.previewFailedJobRetry(
+        jobType(request.body?.jobType),
+        positiveInteger(String(request.body?.limit ?? "100"), 100, 5_000),
+      ),
+    }),
+  );
+
+  server.post<{ Body: RetryFailedBody }>(
+    "/api/jobs/failed/retry",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      result: await dependencies.productAdmin.retryFailedJobs(
+        jobType(request.body?.jobType),
+        positiveInteger(String(request.body?.limit ?? "100"), 100, 5_000),
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
 
   server.patch<{ Body: RuntimeSettingsBody }>(
     "/api/runtime/settings",

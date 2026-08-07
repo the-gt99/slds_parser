@@ -530,6 +530,100 @@ function renderTargets(item) {
   }
 }
 
+function taxonomyList(taxonomies, key) {
+  const spec = taxonomies?.[key];
+  const ids = Array.isArray(spec?.term_ids) ? spec.term_ids : [];
+  return ids.length ? ids.join(", ") : "—";
+}
+
+function priceRange(variations) {
+  const prices = variations
+    .map((variation) => Number(variation.regular_price))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
+  if (!prices.length) return "—";
+  const first = prices[0];
+  const last = prices[prices.length - 1];
+  return first === last ? String(first) : `${first}–${last}`;
+}
+
+function visualPreviewSection(title, rows) {
+  const section = document.createElement("section");
+  section.className = "section preview-column";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("dl");
+  list.className = "config-meta-grid";
+  for (const [name, value] of rows) addDefinition(list, name, value);
+  section.append(heading, list);
+  return section;
+}
+
+function renderVisualPreview(item) {
+  const fields = item.payload.fields || {};
+  const taxonomies = item.payload.taxonomies || {};
+  const images = item.payload.images || [];
+  const variations = item.payload.activeVariations || [];
+  const diff = item.diff || {};
+  const currentSnapshot = state.product?.wordpressSnapshots?.[0]?.payload?.product || {};
+  const wrapper = document.createElement("div");
+  wrapper.className = "wordpress-visual-preview";
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent = "Это административный read-only preview payload, а не пиксель-в-пиксель отображение темы WordPress.";
+  const hero = document.createElement("div");
+  hero.className = "preview-hero";
+  const image = document.createElement("img");
+  image.alt = fields.title || "WordPress preview";
+  image.src = images[0]?.url || images[0]?.source_url || "";
+  image.hidden = !image.src;
+  const title = document.createElement("div");
+  title.append(
+    visualPreviewSection("Так будет отправлено", [
+      ["Title", fields.title],
+      ["SKU", fields.sku],
+      ["Цена", priceRange(variations)],
+      ["Доступность", variations.some((variation) => variation.stock_status === "instock") ? "Есть активные вариации" : "Нет активных вариаций"],
+      ["Размеры", variations.map((variation) => variation.size?.term_id || variation.size?.label).filter(Boolean).join(", ") || "—"],
+      ["Категории", taxonomyList(taxonomies, "product_cat")],
+      ["Метки", taxonomyList(taxonomies, "product_tag")],
+      ["Бренд", taxonomyList(taxonomies, "pa_brand")],
+      ["Модель", taxonomyList(taxonomies, "pa_model")],
+      ["Цвет", taxonomyList(taxonomies, "pa_tsvet")],
+      ["Материалы", taxonomyList(taxonomies, "pa_material")],
+      ["Вид спорта", taxonomyList(taxonomies, "pa_vid")],
+      ["Высота / сезон", [taxonomyList(taxonomies, "pa_shoe_height"), taxonomyList(taxonomies, "pa_season")].filter((value) => value !== "—").join(" · ") || "—"],
+    ]),
+  );
+  hero.append(image, title);
+  const columns = document.createElement("div");
+  columns.className = "preview-columns";
+  columns.append(
+    visualPreviewSection("Сейчас в WordPress", [
+      ["Title", currentSnapshot.title],
+      ["SKU", currentSnapshot.sku],
+      ["Картинки", Array.isArray(currentSnapshot.images) ? currentSnapshot.images.length : 0],
+      ["Вариации", Array.isArray(currentSnapshot.variations) ? currentSnapshot.variations.length : 0],
+      ["Snapshot", formatDate(diff.snapshotFetchedAt)],
+    ]),
+    visualPreviewSection("Что изменится", [
+      ["Поля", diff.fields?.length ?? 0],
+      ["Таксономии", diff.taxonomyDifferences?.length ?? 0],
+      ["Изображения", diff.images?.changed ? `${diff.images.expectedCount} вместо ${diff.images.actualCount}` : "Без изменений"],
+      ["Вариации", diff.variationDifferences?.length ?? 0],
+      ["Будут деактивированы", diff.deactivatedVariations?.length ?? 0],
+    ]),
+  );
+  const descriptions = document.createElement("div");
+  descriptions.className = "preview-descriptions";
+  descriptions.append(
+    visualPreviewSection("Короткое описание", [["HTML", fields.short_description_html || "—"]]),
+    visualPreviewSection("Полное описание", [["HTML", fields.description_html || "—"]]),
+  );
+  wrapper.append(note, hero, columns, descriptions);
+  return wrapper;
+}
+
 function renderProduct(item) {
   renderHero(item);
   renderData(item);
@@ -552,11 +646,12 @@ async function loadPreview() {
       ? `Preflight выполнен без записи · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
       : `Preflight выполнен без записи · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`;
     content.replaceChildren(
-      jsonDetails("Основные поля", item.payload.fields, true),
-      jsonDetails("Таксономии", item.payload.taxonomies),
-      jsonDetails(`Изображения (${item.payload.images.length})`, item.payload.images),
-      jsonDetails(`Активные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
-      jsonDetails("Diff относительно сохранённого snapshot", item.diff, true),
+      renderVisualPreview(item),
+      jsonDetails("Технический payload: основные поля", item.payload.fields),
+      jsonDetails("Технический payload: таксономии", item.payload.taxonomies),
+      jsonDetails(`Технический payload: изображения (${item.payload.images.length})`, item.payload.images),
+      jsonDetails(`Технический payload: активные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
+      jsonDetails("Технический diff относительно сохранённого snapshot", item.diff),
     ); content.hidden = false;
   } catch (error) { box.textContent = `Preview заблокирован: ${error.message}`; box.classList.add("error"); }
   finally { button.disabled = false; }

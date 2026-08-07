@@ -16,6 +16,7 @@ const assets = new Map([
   ["/operations", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/wordpress-snapshots", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/runtime", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
+  ["/jobs", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/proxies", { file: "proxies.html", type: "text/html; charset=utf-8" }],
 ] as const);
 

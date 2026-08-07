@@ -631,6 +631,44 @@ Production parser обновлён до `55a8b83`, применена мигра
 
 Не ставить этот route повторно. При следующей проверке использовать jobs `10078–350449`, контролировать completed/pending/running/retry/failed, прирост proxy failure counters, свободный диск и отсутствие process/export jobs. После полного завершения отдельно проверить `1000 product + offers` на одной proxy-сессии по выборке и итоговую полноту parts для всех успешно завершённых товаров.
 
+## Локальная доработка админки без deployment 7 августа 2026
+
+Код локально доведён до нового административного слоя, но production deployment намеренно не выполнялся: полный collection `sneakers` всё ещё активен, а выкладка требует миграцию `019_product_admin_batch_actions.sql` и restart API. Worker/systemd не перезапускались, processing/export jobs не создавались, WordPress writes не выполнялись.
+
+Реализовано локально:
+
+- `/jobs` и `/api/jobs`: PostgreSQL dashboard очереди с фильтрами по type/status/search, pagination, duration, worker/lane, очищенным payload, группами ошибок, скоростью completion и ETA.
+- Безопасный retry terminal failed jobs через service/repository path; export retry заблокирован.
+- Массовые действия на `/products`: checkbox выбор, выбор текущей страницы, server-side batch по текущим фильтрам с limit, dry-run-first, active-job deduplication, оценка media/disk, аудит в `product_admin_batch_actions`. Export action показан отключённым и API-сервисно заблокирован.
+- WordPress preview карточки товара стал визуальным read-only представлением «Так будет отправлено / Сейчас в WordPress / Что изменится» поверх существующего `WordPressPreviewService` и общего `buildWordPressUpsertPayload`; технический JSON оставлен в collapsible blocks.
+- Общая навигация дополнена разделами `Парсер` и `Очередь и ошибки` на административных страницах.
+
+Проверки локально:
+
+- `npm run typecheck` — успешно;
+- `npm test` — `223` теста успешно;
+- `npm run build` — успешно;
+- `node --check public/admin-list.js public/product.js public/app.js public/proxies.js` — успешно;
+- `git diff --check` — успешно, только штатные CRLF warnings.
+
+Production read-only timings без deployment:
+
+- `/api/jobs`-аналог `process_product failed` page: около `174.6 ms`;
+- jobs summary: около `298.3 ms`;
+- error groups: около `145.7 ms`;
+- batch candidates limit `100` после исправления lookup по `unique_key`: около `94.3 ms`;
+- полный count по фильтру `goat` занял около `964 ms`, поэтому batch dry-run считает ограниченную server-side пачку, а не весь каталог.
+
+Production snapshot после проверки:
+
+- collection batch `10078–350449`: completed `44067`, pending `296214`, retry `76`, running `15`;
+- `payload_bad=0`;
+- process/export jobs после старта batch: `0/0`;
+- active process/export: `0/0`;
+- target `slamdunk.enabled=false`;
+- API и worker active;
+- свободно около `71 GB`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:

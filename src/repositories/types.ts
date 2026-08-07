@@ -497,6 +497,70 @@ export interface ProductListQuery {
   readonly offset: number;
 }
 
+export type ProductBatchAction =
+  | "collect"
+  | "collect_and_process"
+  | "process"
+  | "reprocess"
+  | "retry_failed_processing"
+  | "export";
+
+export interface ProductBatchFilter extends Omit<ProductListQuery, "limit" | "offset"> {
+  readonly selectedIds?: readonly EntityId[];
+  readonly limit: number;
+  readonly includeFailedProcessing?: boolean;
+}
+
+export interface ProductBatchCandidate {
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId | null;
+  readonly stage: string;
+  readonly imageCount: number;
+  readonly activeCollectJobId: EntityId | null;
+  readonly activeProcessJobId: EntityId | null;
+  readonly failedProcessJobId: EntityId | null;
+}
+
+export interface ProductBatchDryRunInput {
+  readonly action: ProductBatchAction;
+  readonly filter: ProductBatchFilter;
+  readonly force: boolean;
+}
+
+export interface ProductBatchSkipReason {
+  readonly reason: string;
+  readonly count: number;
+}
+
+export interface ProductBatchDryRun {
+  readonly action: ProductBatchAction;
+  readonly selectedCount: number;
+  readonly eligibleCount: number;
+  readonly skippedCount: number;
+  readonly activeDuplicateCount: number;
+  readonly jobsToCreate: number;
+  readonly force: boolean;
+  readonly enqueueProcessing: boolean | null;
+  readonly skipReasons: readonly ProductBatchSkipReason[];
+  readonly sampleProductIds: readonly EntityId[];
+  readonly estimatedImages: number;
+  readonly disk: { readonly availableBytes: number | null; readonly warning: string | null };
+}
+
+export interface ProductBatchApplyResult extends ProductBatchDryRun {
+  readonly auditId: EntityId | null;
+  readonly createdJobIds: readonly EntityId[];
+}
+
+export interface ProductBatchAuditInput {
+  readonly action: ProductBatchAction;
+  readonly filter: ProductBatchFilter;
+  readonly dryRun: ProductBatchDryRun;
+  readonly createdJobIds: readonly EntityId[];
+  readonly actor: string;
+  readonly reason?: string;
+}
+
 export interface ProductListResult {
   readonly items: readonly ProductListItem[];
   readonly total: number;
@@ -548,6 +612,54 @@ export interface ProductAdminReadModel {
   readonly jobs: readonly JobRecord[];
   readonly targets: readonly ProductTargetSnapshotRecord[];
   readonly snapshots?: readonly ProductSnapshotListItem[];
+}
+
+export interface JobAdminListQuery {
+  readonly jobType?: JobType;
+  readonly status?: JobStatus;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface JobAdminListItem {
+  readonly id: EntityId;
+  readonly jobType: JobType;
+  readonly status: JobStatus;
+  readonly attempts: number;
+  readonly createdAt: Timestamp;
+  readonly availableAt: Timestamp;
+  readonly lockedAt: Timestamp | null;
+  readonly lockedBy: string | null;
+  readonly updatedAt: Timestamp;
+  readonly finishedAt: Timestamp | null;
+  readonly durationMs: number | null;
+  readonly sourceProductId: EntityId | null;
+  readonly lastError: string | null;
+  readonly payload: JsonValue;
+}
+
+export interface JobAdminSummary {
+  readonly byStatus: readonly { readonly status: JobStatus; readonly count: number }[];
+  readonly byTypeStatus: readonly { readonly jobType: JobType; readonly status: JobStatus; readonly count: number }[];
+  readonly errorGroups: readonly { readonly jobType: JobType; readonly message: string; readonly count: number; readonly latestAt: Timestamp }[];
+  readonly completion: { readonly last15m: number; readonly last1h: number; readonly last24h: number };
+  readonly etaMinutes: number | null;
+}
+
+export interface JobAdminListResult {
+  readonly total: number;
+  readonly items: readonly JobAdminListItem[];
+  readonly summary: JobAdminSummary;
+}
+
+export interface FailedJobRetryPreview {
+  readonly jobType: JobType;
+  readonly failedCount: number;
+  readonly limitedCount: number;
+  readonly activeDuplicateCount: number;
+  readonly retryCount: number;
+  readonly sampleJobIds: readonly EntityId[];
 }
 
 export interface EnqueueJobInput {

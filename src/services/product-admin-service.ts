@@ -1,7 +1,19 @@
-import type { EntityId, ProductImageDTO, ProductVariantDTO } from "../contracts/index.js";
-import { EntityNotFoundError } from "../core/errors/index.js";
+import { statfs } from "node:fs/promises";
+
+import type { EntityId, JsonValue, ProductImageDTO, ProductVariantDTO } from "../contracts/index.js";
+import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetDictionaryProviderRegistry } from "../integrations/index.js";
-import type { InternalProductRecord, ProductAdminRepository, TargetRecord } from "../repositories/index.js";
+import type {
+  InternalProductRecord,
+  JobRepository,
+  JobType,
+  ProductAdminRepository,
+  ProductBatchAction,
+  ProductBatchCandidate,
+  ProductBatchDryRun,
+  ProductBatchFilter,
+  TargetRecord,
+} from "../repositories/index.js";
 import type { ProductOperationRegistry } from "../core/registry/index.js";
 
 function providerCode(target: TargetRecord): string {
@@ -73,12 +85,85 @@ function statusCounts(values: readonly { readonly status: string }[]): Record<st
 }
 
 const activeExportStatuses = ["running", "retry", "pending"] as const;
+const activeJobStatuses = new Set(["running", "retry", "pending"]);
+const defaultMediaBytesPerImage = 2_500_000;
+
+function assertBatchAction(value: ProductBatchAction): void {
+  if (!["collect", "collect_and_process", "process", "reprocess", "retry_failed_processing", "export"].includes(value)) {
+    throw new IntegrationContractError(`Unsupported batch action: ${value}`);
+  }
+  if (value === "export") {
+    throw new IntegrationContractError("Mass export is intentionally disabled while the target is off and business blockers are unresolved");
+  }
+}
+
+function jobPayload(sourceProductId: EntityId, action: ProductBatchAction) {
+  if (action === "collect") return { sourceProductId, enqueueProcessing: false };
+  if (action === "collect_and_process") return { sourceProductId, enqueueProcessing: true };
+  if (action === "process") return { sourceProductId, force: false };
+  return { sourceProductId, force: true };
+}
+
+function jobTypeForAction(action: ProductBatchAction): JobType {
+  return action === "collect" || action === "collect_and_process" ? "collect_product" : "process_product";
+}
+
+function skipReason(action: ProductBatchAction, item: ProductBatchCandidate): string | null {
+  if ((action === "collect" || action === "collect_and_process") && item.activeCollectJobId !== null) return "Уже есть активная задача сбора";
+  if (action === "process" && item.activeProcessJobId !== null) return "Уже есть активная задача обработки";
+  if (action === "process" && item.stage === "discovered") return "Товар ещё не собран";
+  if (action === "reprocess" && item.activeProcessJobId !== null) return "Уже есть активная задача обработки";
+  if (action === "reprocess" && item.internalProductId === null && item.stage === "discovered") return "Товар ещё не собран";
+  if (action === "retry_failed_processing" && item.activeProcessJobId !== null) return "Уже есть активная задача обработки";
+  if (action === "retry_failed_processing" && item.failedProcessJobId === null) return "Нет terminal failed processing job";
+  return null;
+}
+
+function countReasons(reasons: readonly string[]) {
+  const counts = new Map<string, number>();
+  for (const reason of reasons) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return [...counts.entries()].map(([reason, count]) => ({ reason, count }));
+}
+
+async function diskInfo(estimatedImages: number) {
+  try {
+    const stats = await statfs(process.cwd());
+    const availableBytes = Number(stats.bavail) * Number(stats.bsize);
+    const estimatedBytes = estimatedImages * defaultMediaBytesPerImage;
+    return {
+      availableBytes,
+      warning: estimatedBytes > availableBytes * 0.8
+        ? "Пачка может не поместиться по грубой оценке media; уменьшите limit или освободите диск."
+        : null,
+    };
+  } catch {
+    return { availableBytes: null, warning: "Не удалось проверить свободное место на диске." };
+  }
+}
+
+function redactJson(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(redactJson);
+  if (value !== null && typeof value === "object") {
+    const output: Record<string, JsonValue> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      output[key] = /(token|secret|password|cookie|credential|authorization|bearer)/iu.test(key)
+        ? "[hidden]"
+        : redactJson(entry as JsonValue);
+    }
+    return output;
+  }
+  if (typeof value === "string" && /(Bearer\s+[A-Za-z0-9._-]+|wordpress[_-]?import[_-]?token|cf_clearance=)/iu.test(value)) {
+    return "[hidden]";
+  }
+  return value;
+}
 
 export class ProductAdminService {
   constructor(
     private readonly repository: ProductAdminRepository,
     private readonly providers: TargetDictionaryProviderRegistry,
     private readonly operations?: ProductOperationRegistry,
+    private readonly jobs?: JobRepository,
   ) {}
 
   listProducts(query: Parameters<NonNullable<ProductAdminRepository["listProducts"]>>[0]) {
@@ -110,6 +195,122 @@ export class ProductAdminService {
       dependsOn: operation.dependsOn ?? [],
       sourceCodes: operation.sourceCodes ?? null,
     }));
+  }
+
+  async previewBatch(input: { readonly action: ProductBatchAction; readonly filter: ProductBatchFilter; readonly force?: boolean }): Promise<ProductBatchDryRun> {
+    assertBatchAction(input.action);
+    if (this.repository.listBatchCandidates === undefined) throw new Error("Product batch actions are not configured");
+    const force = input.action === "reprocess" || input.force === true;
+    const filter = { ...input.filter, includeFailedProcessing: input.action === "retry_failed_processing" };
+    const selected = await this.repository.listBatchCandidates(filter);
+    const skipped: string[] = [];
+    const eligible: ProductBatchCandidate[] = [];
+    let activeDuplicateCount = 0;
+    for (const item of selected.items) {
+      const reason = skipReason(input.action, item);
+      if (reason !== null) {
+        skipped.push(reason);
+        if (reason.startsWith("Уже есть активная")) activeDuplicateCount += 1;
+      } else {
+        eligible.push(item);
+      }
+    }
+    const estimatedImages = eligible.reduce((sum, item) => sum + item.imageCount, 0);
+    return {
+      action: input.action,
+      selectedCount: selected.total,
+      eligibleCount: eligible.length,
+      skippedCount: skipped.length + Math.max(0, selected.total - selected.items.length),
+      activeDuplicateCount,
+      jobsToCreate: eligible.length,
+      force,
+      enqueueProcessing: input.action === "collect" ? false : input.action === "collect_and_process" ? true : null,
+      skipReasons: [
+        ...countReasons(skipped),
+        ...(selected.total > selected.items.length ? [{ reason: "Сверх выбранного server-side limit", count: selected.total - selected.items.length }] : []),
+      ],
+      sampleProductIds: eligible.slice(0, 10).map((item) => item.sourceProductId),
+      estimatedImages,
+      disk: await diskInfo(estimatedImages),
+    };
+  }
+
+  async applyBatch(input: { readonly action: ProductBatchAction; readonly filter: ProductBatchFilter; readonly force?: boolean; readonly reason?: string }, actor: string) {
+    assertBatchAction(input.action);
+    if (this.repository.listBatchCandidates === undefined || this.repository.saveBatchAudit === undefined || this.jobs === undefined) {
+      throw new Error("Product batch actions are not configured");
+    }
+    const dryRun = await this.previewBatch(input);
+    const selected = await this.repository.listBatchCandidates({ ...input.filter, includeFailedProcessing: input.action === "retry_failed_processing" });
+    const eligible = selected.items.filter((item) => skipReason(input.action, item) === null);
+    const createdJobIds: EntityId[] = [];
+    const jobType = jobTypeForAction(input.action);
+    for (const item of eligible) {
+      const job = await this.jobs.enqueue({
+        jobType,
+        payload: jobPayload(item.sourceProductId, input.action),
+        uniqueKey: `source-product:${item.sourceProductId}:${jobType === "collect_product" ? "collect" : "process"}`,
+      });
+      if (activeJobStatuses.has(job.status)) createdJobIds.push(job.id);
+    }
+    const auditId = await this.repository.saveBatchAudit({
+      action: input.action,
+      filter: input.filter,
+      dryRun,
+      createdJobIds,
+      actor,
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+    });
+    return { ...dryRun, auditId, createdJobIds };
+  }
+
+  async listJobs(query: Parameters<NonNullable<ProductAdminRepository["listJobs"]>>[0]) {
+    if (this.repository.listJobs === undefined) throw new Error("Job admin list is not configured");
+    const result = await this.repository.listJobs(query);
+    return {
+      ...result,
+      items: result.items.map((item) => ({ ...item, payload: redactJson(item.payload) })),
+    };
+  }
+
+  async previewFailedJobRetry(jobType: JobType, limit: number) {
+    if (jobType === "export_product") throw new IntegrationContractError("Export retry is disabled from this administrative action");
+    if (this.repository.previewFailedJobRetry === undefined) throw new Error("Failed job retry is not configured");
+    return this.repository.previewFailedJobRetry(jobType, limit);
+  }
+
+  async retryFailedJobs(jobType: JobType, limit: number, actor: string, reason?: string) {
+    if (jobType === "export_product") throw new IntegrationContractError("Export retry is disabled from this administrative action");
+    if (this.repository.previewFailedJobRetry === undefined || this.repository.listFailedJobRetryIds === undefined || this.repository.saveBatchAudit === undefined || this.jobs === undefined) {
+      throw new Error("Failed job retry is not configured");
+    }
+    const preview = await this.repository.previewFailedJobRetry(jobType, limit);
+    const ids = await this.repository.listFailedJobRetryIds(jobType, limit);
+    for (const id of ids) {
+      await this.jobs.retry(id, { availableAt: new Date().toISOString(), error: `Повтор запрошен администратором ${actor}` });
+    }
+    const auditId = await this.repository.saveBatchAudit({
+      action: "retry_failed_processing",
+      filter: { limit },
+      dryRun: {
+        action: "retry_failed_processing",
+        selectedCount: preview.failedCount,
+        eligibleCount: ids.length,
+        skippedCount: preview.failedCount - ids.length,
+        activeDuplicateCount: preview.activeDuplicateCount,
+        jobsToCreate: 0,
+        force: false,
+        enqueueProcessing: null,
+        skipReasons: preview.activeDuplicateCount > 0 ? [{ reason: "Уже есть активный дубль", count: preview.activeDuplicateCount }] : [],
+        sampleProductIds: [],
+        estimatedImages: 0,
+        disk: { availableBytes: null, warning: null },
+      },
+      createdJobIds: ids,
+      actor,
+      ...(reason === undefined ? {} : { reason }),
+    });
+    return { ...preview, retriedJobIds: ids, auditId };
   }
 
   async getProduct(sourceProductId: EntityId) {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
 import type { ClassifierAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
@@ -234,6 +235,54 @@ describe("HTTP server", () => {
     expect(snapshots.statusCode).toBe(200);
     expect(productAdmin.listProducts).toHaveBeenCalledWith(expect.objectContaining({ limit: 25, offset: 0 }));
     expect(productAdmin.listSnapshots).toHaveBeenCalledWith(expect.objectContaining({ search: "2916861" }));
+    await server.close();
+  });
+
+  it("protects product batch preview and apply with CSRF", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const productAdmin = {
+      previewBatch: vi.fn().mockResolvedValue({ selectedCount: 1, eligibleCount: 1, jobsToCreate: 1 }),
+      applyBatch: vi.fn().mockResolvedValue({ auditId: "1", createdJobIds: ["10"] }),
+    } as unknown as ProductAdminService;
+    const server = createHttpServer({ ...dependencies(database), productAdmin });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const payload = { action: "collect", filter: { source: "goat" }, selectedIds: ["3"], limit: 100 };
+
+    const forbidden = await server.inject({ method: "POST", url: "/api/products/batch/preview", headers: { cookie }, payload });
+    const preview = await server.inject({ method: "POST", url: "/api/products/batch/preview", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
+    const applied = await server.inject({ method: "POST", url: "/api/products/batch/apply", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload });
+
+    expect(forbidden.statusCode).toBe(403);
+    expect(preview.statusCode).toBe(200);
+    expect(applied.statusCode).toBe(200);
+    expect(productAdmin.previewBatch).toHaveBeenCalledWith(expect.objectContaining({ action: "collect", filter: expect.objectContaining({ sourceCode: "goat", selectedIds: ["3"], limit: 100 }) }));
+    expect(productAdmin.applyBatch).toHaveBeenCalledWith(expect.anything(), "admin");
+    await server.close();
+  });
+
+  it("serves jobs dashboard and failed retry endpoints without allowing export retry", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const productAdmin = {
+      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0, summary: { byStatus: [], byTypeStatus: [], errorGroups: [], completion: { last15m: 0, last1h: 0, last24h: 0 }, etaMinutes: null } }),
+      previewFailedJobRetry: vi.fn((type) => type === "export_product"
+        ? Promise.reject(new IntegrationContractError("Export retry is disabled from this administrative action"))
+        : Promise.resolve({ retryCount: 2 })),
+      retryFailedJobs: vi.fn().mockResolvedValue({ retriedJobIds: ["1", "2"] }),
+    } as unknown as ProductAdminService;
+    const server = createHttpServer({ ...dependencies(database), productAdmin });
+    const headers = { authorization: `Bearer ${adminToken}` };
+
+    const page = await server.inject({ method: "GET", url: "/jobs" });
+    const jobs = await server.inject({ method: "GET", url: "/api/jobs?jobType=process_product&status=failed", headers });
+    const retry = await server.inject({ method: "POST", url: "/api/jobs/failed/preview-retry", headers, payload: { jobType: "process_product", limit: 10 } });
+    const exportRetry = await server.inject({ method: "POST", url: "/api/jobs/failed/preview-retry", headers, payload: { jobType: "export_product", limit: 10 } });
+
+    expect(page.statusCode).toBe(200);
+    expect(jobs.statusCode).toBe(200);
+    expect(retry.statusCode).toBe(200);
+    expect(exportRetry.statusCode).toBe(422);
+    expect(productAdmin.listJobs).toHaveBeenCalledWith(expect.objectContaining({ jobType: "process_product", status: "failed" }));
     await server.close();
   });
 

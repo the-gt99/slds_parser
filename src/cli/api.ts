@@ -78,6 +78,7 @@ async function main(): Promise<void> {
       new PostgresProductAdminRepository(pool),
       providers,
       operations,
+      repositories.jobs,
     );
     const targetMappings = new TargetReferenceMappingService(repositories.references);
     const wordpressPreview = wordpress === null ? undefined : new WordPressPreviewService(repositories, exporters, targetMappings);
