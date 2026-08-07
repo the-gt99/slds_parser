@@ -669,6 +669,23 @@ Production snapshot после проверки:
 - API и worker active;
 - свободно около `71 GB`.
 
+## Пауза collection и визуальный WordPress merge preview 7 августа 2026
+
+По явной просьбе владельца полный collection `sneakers` штатно приостановлен graceful stop сервиса `slds-parser-worker.service`. Сервис остаётся `inactive`; API активен. После остановки активных `running` jobs не осталось, в PostgreSQL сохранено `263818 pending` и `80 retry` `collect_product`. Повторно ставить route нельзя: обычный запуск того же systemd worker продолжит существующую очередь. Target `slamdunk` остаётся `enabled=false`, активных и новых `export_product` jobs нет.
+
+Для сквозной проверки выбран ровно один опубликованный WordPress-товар, который уже имел обе GOAT parts, но ещё не имел `internal_product`:
+
+- parser `sourceProductId=76399`, GOAT `external_id=1241656`, slug `wmns-dunk-low-cyber-fz3781-060`;
+- WordPress `product ID=772888`, «Кроссовки Nike Wmns Dunk Low 'Cyber'»;
+- свежий WordPress snapshot сохранён read-only bootstrap-командой; WordPress не изменялся;
+- отдельно, без запуска общего worker, выполнен один `process_product` job `350450`; он завершён с первой попытки, создал `internalProductId=6023`, 8 изображений и 22 вариации;
+- классификация `partial`: brand/model/color/material/merchandising category resolved, обязательная structural category `sneakers` unresolved;
+- exporter readiness корректно блокирует товар: отсутствует обязательная WordPress-категория. По уже определённой части merge добавил бы `pa_material=Синтетика`; финальный variation preflight намеренно не выполняется до устранения блокера.
+
+Parser commit `b0ca7c7` (`Добавить наглядное сравнение товара с WordPress`) развёрнут на production. `/products/:id` показывает две административные карточки «Сейчас в WordPress / После merge», readiness и конкретные блокеры, а также изменения полей, категорий, меток, атрибутов, изображений и вариаций со статусами «добавится / снимется / останется / изменится». Для неполной классификации возвращается честный черновик на общем WordPress payload path; записывающий endpoint не вызывается. Финальный preflight выполняется только для полностью собранного payload.
+
+Проверки локально и на production: `typecheck`, `225` тестов, `build`, миграции без pending, внутренний health `200`. Live API preview для `76399` вернул `200`, WordPress snapshot `772888`, target disabled и blocker `Категория`. Production HEAD `b0ca7c7`, API active, worker inactive. WordPress writes не выполнялись.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
