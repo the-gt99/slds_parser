@@ -611,13 +611,22 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
       if (query.search) {
         const search = query.search.trim();
         if (/^\d+$/u.test(search)) {
-          where.push(`(job.id = ${add(search)}::BIGINT OR job.payload->>'sourceProductId' = ${add(search)} OR internal.source_product_id::TEXT = ${add(search)})`);
+          const numericSearch = add(search);
+          where.push(`(
+            job.id = ${numericSearch}::BIGINT
+            OR job.payload->>'sourceProductId' = ${numericSearch}::TEXT
+            OR job.payload->>'internalProductId' = (
+              SELECT searched_internal.id::TEXT
+              FROM internal_products searched_internal
+              WHERE searched_internal.source_product_id = ${numericSearch}::BIGINT
+            )
+          )`);
         } else {
           where.push(`job.last_error ILIKE ${add(`%${search}%`)}`);
         }
       }
       const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
-      const from = `FROM jobs job LEFT JOIN internal_products internal ON internal.id::TEXT = job.payload->>'internalProductId'`;
+      const from = `FROM jobs job LEFT JOIN internal_products internal ON internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT`;
       const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
       const limit = add(query.limit);
       const offset = add(query.offset);
@@ -651,7 +660,9 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
              COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
              COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
              COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h
-           FROM jobs`,
+           FROM jobs
+           WHERE status = 'completed'
+             AND finished_at >= NOW() - INTERVAL '24 hours'`,
         ),
         client.query<DatabaseRow>(
           `WITH active AS (

@@ -379,6 +379,29 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("export_target.id::TEXT = job.payload->>'targetId'");
   });
 
+  it("builds indexed numeric job search without joining the whole jobs table", async () => {
+    const executor = new FakeExecutor([
+      [{ total: "1" }],
+      [{ ...jobRow, source_product_id: "87549", duration_ms: 1000 }],
+      [],
+      [],
+      [],
+      [{ last15m: 0, last1h: 0, last24h: 0 }],
+      [{ eta_minutes: null }],
+    ]);
+
+    const result = await new PostgresProductAdminRepository(pool(executor)).listJobs({ search: "87549", limit: 50, offset: 0 });
+
+    expect(result.total).toBe(1);
+    expect(executor.calls[0]?.values[0]).toBe("87549");
+    expect(executor.calls[0]?.text).toContain("job.id = $1::BIGINT");
+    expect(executor.calls[0]?.text).toContain("job.payload->>'sourceProductId' = $1::TEXT");
+    expect(executor.calls[0]?.text).toContain("searched_internal.source_product_id = $1::BIGINT");
+    expect(executor.calls[0]?.text).not.toContain("internal.source_product_id::TEXT = $1");
+    expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT");
+    expect(executor.calls[5]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
+  });
+
   it.each(["complete", "retry", "fail"] as const)("%s clears the job lock", async (operation) => {
     const executor = new FakeExecutor([[{ id: "21" }]]);
     const repository = new PostgresJobRepository(executor);
