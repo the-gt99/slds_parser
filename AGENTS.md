@@ -705,6 +705,12 @@ Parser commit `ff87513` развёрнут на production. Теперь пра�
 
 После deployment прошли `typecheck`, `231` тест, `build`, миграции без pending. Live read-only preview через новый target-linked API: `302` matched, `197` affected, `105` shadowed, `0` ambiguous; для перекрытого примера API вернул правило `#14` и пояснение, что результат тот же. Target `slamdunk=false`, export jobs отсутствуют, API active, worker inactive. WordPress writes не выполнялись.
 
+## Удаление правил и актуальный статус решения 7 августа 2026
+
+Parser commit `5182b83` развёрнут на production с миграцией `019`. В настройках contextual rule появилась кнопка `Удалить`: правило сразу исключается из классификатора и списка, связанные projections отключаются, история и автор удаления сохраняются, затронутые товары ставятся на `process_product`. Это audit-preserving soft delete, а не оставление отключённого правила в пользовательском списке.
+
+Карточка товара больше не выдаёт устаревшее «Не сопоставлено» как текущее состояние, если решение уже сохранено, а `process_product` ждёт выполнения. API read-only пересчитывает текущие mappings/rules без записи и возвращает `pendingResolution`; интерфейс показывает «Решение уже сохранено и будет применено после запуска обработки». Live проверка `sourceProductId=76399` подтвердила старое observation `unresolved`, актуальное pending mapping `#147` и pending job `350520`. Worker оставлен inactive, target `slamdunk=false`, active export jobs `0`, WordPress writes не выполнялись. Проверки: `typecheck`, `234` теста, `build`, migration applied, health `200`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
