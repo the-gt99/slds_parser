@@ -82,7 +82,7 @@
 
 Пустые media и offers допустимы во внутреннем DTO: товар только с GOAT placeholder сохраняется с `images: []`, товар без offers — с `variants: []`. Нельзя выдумывать изображение, размер, остаток или цену. WordPress exporter отдельно блокирует оба случая до внешнего HTTP-вызова, пока соответствующие target-контракты не согласованы.
 
-Worker использует отдельные lane-группы для discovery, collection, processing и export. Production сейчас настроен на три collection lane и четыре processing lane. Collection lane сначала резервирует healthy enabled proxy session и только затем забирает job; без свободного прокси job остаётся pending. Product и offers одного collect attempt закреплены за одним proxy/client/cookie jar. GOAT image downloader использует тот же пул, общий лимит и раздельные cookie jars. Несколько полных worker-процессов не запускать.
+Worker использует отдельные lane-группы для discovery, collection, processing и export. Production сейчас настроен на 15 collection lanes и 6 processing lanes. Collection lane сначала резервирует healthy enabled proxy session и только затем забирает job; без свободного прокси job остаётся pending. Product и offers одного collect attempt закреплены за одним proxy/client/cookie jar. GOAT image downloader использует тот же пул, общий лимит и раздельные cookie jars. Несколько полных worker-процессов не запускать.
 
 Управляемый GOAT proxy pool хранится в PostgreSQL с AES-256-GCM шифрованием credentials. Runtime использует только repository/pool при `GOAT_PROXY_POOL_ENABLED=true`; старые env proxy оставлены только для явного rollback. Админка `/proxies` позволяет создавать, проверять, включать и выключать прокси. Public API не возвращает credentials или ciphertext.
 
@@ -720,6 +720,12 @@ API-пользователю `slds-parser` выдано узкое polkit-раз
 На `/jobs` для `pending` и `retry` `process_product` появилась команда `Выполнить сейчас`. Repository атомарно забирает ровно указанный job ID и дополнительно ограничивает его типом `process_product`; завершённый, выполняющийся, failed, collection или export job через этот путь не запускается. Обработка выполняется one-shot приложением, после чего его PostgreSQL pool закрывается. Общий worker и остальная очередь не запускаются. API systemd override разрешает one-shot обработке писать media только в `/srv/slds-parser/state`.
 
 Production smoke выполнен без обработки ожидающего товара: completed job `350450` корректно отклонён новым endpoint, а job `350520` для `sourceProductId=76399` остался `pending`, attempts `0`. Target `slamdunk=false`, активных export jobs `0`, WordPress writes не выполнялись. API active, worker inactive, internal и external health `200`. Локально и на production прошли typecheck, `241` тест, build; миграций pending нет.
+
+## Увеличение processing concurrency 8 августа 2026
+
+После завершения полного collection production `WORKER_PROCESS_CONCURRENCY` увеличен с `4` до `6`. На сервере 4 CPU, внутри каждого товара image download и WebP conversion работают с concurrency `2`, а proxy pool допускает суммарно 15 сессий. Поэтому 6 processing lanes дают до 12 параллельных image-задач; повышать сразу до 15 нельзя без отдельного нагрузочного замера CPU, disk I/O, translation и proxy failures.
+
+Перед изменением активных pending/running/retry jobs не было. `slds-parser-worker.service` перезапущен и active, API health `200`; новая processing-партия этим изменением не создавалась. По последним 1000 первичным processing attempts средняя длительность составляла `9.9 с`, медиана `7.5 с`, p90 `18.3 с`. Ожидаемая скорость с шестью lanes около `2000–2200 товаров/ч`, но её нужно подтвердить на первой новой партии.
 
 ## Старые материалы
 
