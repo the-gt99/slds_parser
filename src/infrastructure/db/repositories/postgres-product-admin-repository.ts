@@ -658,10 +658,13 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
          LIMIT ${limit} OFFSET ${offset}`,
         parameters,
       );
-      const [byStatus, byTypeStatus, errorGroups, throughput] = await Promise.all([
-        client.query<DatabaseRow>("SELECT status, COUNT(*)::INT AS count FROM jobs GROUP BY status ORDER BY status"),
-        client.query<DatabaseRow>("SELECT job_type, status, COUNT(*)::INT AS count FROM jobs GROUP BY job_type, status ORDER BY job_type, status"),
-        client.query<DatabaseRow>(
+      const byStatus = await client.query<DatabaseRow>(
+        "SELECT status, COUNT(*)::INT AS count FROM jobs GROUP BY status ORDER BY status",
+      );
+      const byTypeStatus = await client.query<DatabaseRow>(
+        "SELECT job_type, status, COUNT(*)::INT AS count FROM jobs GROUP BY job_type, status ORDER BY job_type, status",
+      );
+      const errorGroups = await client.query<DatabaseRow>(
           `SELECT job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240) AS message,
                   COUNT(*)::INT AS count, MAX(updated_at) AS latest_at
            FROM jobs
@@ -669,8 +672,8 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
            GROUP BY job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240)
            ORDER BY count DESC, latest_at DESC
            LIMIT 25`,
-        ),
-        client.query<DatabaseRow>(
+      );
+      const throughput = await client.query<DatabaseRow>(
           `WITH stats AS (
              SELECT job_type,
                     COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'retry'))::INT AS remaining,
@@ -691,8 +694,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                   END AS eta_minutes
              FROM stats
             ORDER BY job_type`,
-        ),
-      ]);
+      );
       return {
         total: Number(count.rows[0]?.total ?? 0),
         items: rows.rows.map(mapJobAdmin),
