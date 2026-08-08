@@ -8,6 +8,7 @@ export interface StoredImageAsset {
 
 export interface ImageStore {
   fingerprint(): Record<string, string | number>;
+  read(localPath: string): Promise<Buffer>;
   storeOriginal(
     sourceCode: string,
     sourceProductId: string,

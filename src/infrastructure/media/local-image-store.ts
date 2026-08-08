@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
 
@@ -64,6 +64,10 @@ export class LocalImageStore implements ImageStore {
       publicPathPrefix: this.options.publicPathPrefix ?? "",
       webpQuality: this.options.webpQuality,
     };
+  }
+
+  async read(localPath: string): Promise<Buffer> {
+    return await readFile(this.resolvePath(localPath));
   }
 
   async storeOriginal(

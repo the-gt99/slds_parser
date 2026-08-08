@@ -27,7 +27,7 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
   gold: "Золотой",
   silver: "Серебристый",
   lime: "Лайм",
-  navy: "Флот",
+  navy: "Темно-синий",
   sail: "Парусный",
   cream: "Кремовый",
   ivory: "Айвори",
@@ -40,6 +40,52 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
   flyweave: "Флайвив",
   ndure: "Эн-Дьюр",
   intelliknit: "ИнтеллиКнит",
+  synthetic: "Синтетика",
+  knit: "Трикотаж",
+  mesh: "Сетка",
+  leather: "Кожа",
+  suede: "Замша",
+  textile: "Текстиль",
+  canvas: "Холст",
+  nubuck: "Нубук",
+  nylon: "Нейлон",
+  rubber: "Резина",
+  polyester: "Полиэстер",
+  neoprene: "Неопрен",
+  cotton: "Хлопок",
+  denim: "Деним",
+  flyknit: "Флайкнит",
+  primeknit: "Праймкнит",
+  "gore-tex": "Гор-Текс",
+  "patent leather": "Лакированная кожа",
+  "core black": "Черный",
+  "cloud white": "Белый",
+  "footwear white": "Белый",
+  "metallic silver": "Серебристый металлик",
+  "silver metallic": "Серебристый металлик",
+  "wolf grey": "Серый",
+  carbon: "Карбон",
+  "midnight navy": "Темно-синий",
+  gum: "Каучуковый",
+  "gold metallic": "Золотой металлик",
+  "metallic gold": "Золотой металлик",
+  "true white": "Белый",
+  "team red": "Красный",
+  milk: "Молочный",
+  "gym red": "Красный",
+  "team orange": "Оранжевый",
+  "racer blue": "Синий",
+  bone: "Светло-бежевый",
+  "light bone": "Светло-бежевый",
+  "university blue": "Университетский синий",
+  "total orange": "Оранжевый",
+  "armory navy": "Темно-синий",
+  blk: "Черный",
+  "ttl orng": "Оранжевый",
+  "brght crmsn": "Малиновый",
+  "grn glow": "Зеленый",
+  "prpl dynsty": "Фиолетовый",
+  "mtllc gold": "Золотой",
 };
 
 export interface TranslateContentOperationOptions {
@@ -65,6 +111,10 @@ function normalizeComparison(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/gu, " ");
 }
 
+function dictionaryKey(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/gu, " ");
+}
+
 function suspiciousTranslation(source: string, translated: string): boolean {
   const normalizedSource = normalizeComparison(source);
   const normalizedTranslation = normalizeComparison(translated);
@@ -76,7 +126,7 @@ function suspiciousTranslation(source: string, translated: string): boolean {
 export class TranslateContentOperation implements ProductOperation {
   readonly code = "translate-content";
   readonly name = "Перевод контента";
-  readonly version = "1.0.0";
+  readonly version = "1.1.0";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -101,13 +151,18 @@ export class TranslateContentOperation implements ProductOperation {
     const details = attribute(product, "details");
     const upperMaterial = attribute(product, "upperMaterial");
 
+    const translatedDescription = await this.translateVerified("description", description);
+    const translatedStory = story === description
+      ? translatedDescription
+      : await this.translateVerified("story", story);
+
     return {
       ...product,
       translatedContent: {
         sourceLocale: this.options.sourceLocale,
         targetLocale: this.options.targetLocale,
-        description: await this.translateVerified("description", description),
-        story: await this.translateVerified("story", story),
+        description: translatedDescription,
+        story: translatedStory,
         color: await this.translateVerified("color", color),
         details: await this.translateVerified("details", details),
         upperMaterial: await this.translateVerified("upperMaterial", upperMaterial),
@@ -133,7 +188,7 @@ export class TranslateContentOperation implements ProductOperation {
   }
 
   async translatePassiveAttribute(source: string): Promise<string> {
-    const direct = ATTRIBUTE_TRANSLATIONS[source.toLowerCase()];
+    const direct = ATTRIBUTE_TRANSLATIONS[dictionaryKey(source)];
     if (direct !== undefined) return direct;
     const parts = source.split(/(\s*[\/,;|]\s*)/u);
     if (parts.length <= 1) return await this.translateText(source);
@@ -145,13 +200,30 @@ export class TranslateContentOperation implements ProductOperation {
         translated.push(delimiter === "/" ? "/ " : `${delimiter} `);
         continue;
       }
+      translated.push(await this.translatePassiveSegment(part.trim()));
+    }
+    return translated.join("").trim();
+  }
+
+  async translatePassiveSegment(source: string): Promise<string> {
+    const direct = ATTRIBUTE_TRANSLATIONS[dictionaryKey(source)];
+    if (direct !== undefined) return direct;
+    const parts = source.split(/(\s*-\s*)/u);
+    if (parts.length <= 1) return await this.translateText(source);
+    const translated: string[] = [];
+    for (const part of parts) {
+      if (part === "") continue;
+      if (/^\s*-\s*$/u.test(part)) {
+        translated.push(" - ");
+        continue;
+      }
       translated.push(await this.translateText(part.trim()));
     }
     return translated.join("").trim();
   }
 
   async translateText(source: string): Promise<string> {
-    const dictionary = ATTRIBUTE_TRANSLATIONS[source.toLowerCase()];
+    const dictionary = ATTRIBUTE_TRANSLATIONS[dictionaryKey(source)];
     return dictionary ?? await this.provider.translate(source, this.options.sourceLocale, this.options.targetLocale);
   }
 }

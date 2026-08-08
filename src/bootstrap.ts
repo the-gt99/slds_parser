@@ -4,8 +4,9 @@ import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistr
 import { createPostgresPool, createPostgresRepositories, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
+import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressExporter, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
-import { ConvertImagesToWebpOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
+import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ProductClassifier, TargetReferenceMappingService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
@@ -30,6 +31,13 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
     imageStore,
     { concurrency: processing.image.concurrency, sourceCodes: ["goat"] },
   ));
+  if (processing.shoeHeight !== null) {
+    registry.register(new DetectShoeHeightOperation(
+      new ShoeHeightApiProvider(processing.shoeHeight),
+      imageStore,
+      { sourceImagePosition: processing.shoeHeight.sourceImagePosition, eligibleCategoryValues: ["shoes"], sourceCodes: ["goat"] },
+    ));
+  }
   registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
   registry.register(new PublishImagesOperation(imageStore, ["goat"]));
   registry.register(new ValidateProcessedProductOperation(["goat"]));

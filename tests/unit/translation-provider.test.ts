@@ -26,4 +26,11 @@ describe("legacy Google translation provider", () => {
     await expect(provider.translate("Hello", "en", "ru")).resolves.toBe("Привет");
     expect(request).toHaveBeenCalledTimes(2);
   });
+
+  it("removes invisible formatting characters from translated text", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify([[['в \u200bпередней\u00a0части', 'in forefoot']]]), { status: 200 }));
+    const provider = new LegacyGoogleTranslationProvider({ timeoutMs: 1_000, attempts: 1, retryDelayMs: 0 }, request);
+
+    await expect(provider.translate("in forefoot", "en", "ru")).resolves.toBe("в передней части");
+  });
 });

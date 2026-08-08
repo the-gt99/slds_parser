@@ -11,8 +11,8 @@ import type { ProductOperationContext, UniversalProductDTO } from "../../src/con
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { ProductOperationRegistry } from "../../src/core/registry/index.js";
 import { LocalImageStore } from "../../src/infrastructure/media/index.js";
-import type { ImageBinaryDownloader, TextTranslationProvider } from "../../src/processing/index.js";
-import { ConvertImagesToWebpOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "../../src/processing/index.js";
+import type { ImageBinaryDownloader, ShoeHeightPredictionProvider, TextTranslationProvider } from "../../src/processing/index.js";
+import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "../../src/processing/index.js";
 import { validProduct } from "../support/in-memory.js";
 
 const context = {
@@ -87,6 +87,86 @@ describe("product operations", () => {
     expect(translate).not.toHaveBeenCalledWith("Flyweave", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("NDure", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("IntelliKnit", "en", "ru");
+  });
+
+  it("uses the sneaker glossary for common material and colorway mistakes", async () => {
+    const translate = vi.fn(async (text: string) => ({ Description: "Описание", "Source story": "История" })[text] ?? text);
+    const provider: TextTranslationProvider = { code: "fake", version: "1", translate };
+    const result = await new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({
+      description: "Description",
+      attributes: { story: "Source story", color: "Navy", details: "Core Black/Racer Blue/Metallic Silver", upperMaterial: "Knit" },
+    }));
+
+    expect(result.translatedContent).toMatchObject({
+      color: "Темно-синий",
+      details: "Черный/ Синий/ Серебристый металлик",
+      upperMaterial: "Трикотаж",
+    });
+    expect(translate).not.toHaveBeenCalledWith("Knit", "en", "ru");
+    expect(translate).not.toHaveBeenCalledWith("Racer Blue", "en", "ru");
+  });
+
+  it("reuses one translation when GOAT description and story are identical", async () => {
+    const translate = vi.fn(async (text: string) => ({ Story: "История", Leather: "Кожа", Mesh: "Сетка" })[text] ?? text);
+    const provider: TextTranslationProvider = { code: "fake", version: "1", translate };
+    const result = await new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({
+      description: "Story",
+      attributes: { story: "Story", color: "blue", details: "Leather", upperMaterial: "Mesh" },
+    }));
+
+    expect(result.translatedContent).toMatchObject({ description: "История", story: "История" });
+    expect(translate.mock.calls.filter(([value]) => value === "Story")).toHaveLength(1);
+  });
+
+  it("adds a shoe height candidate from the downloaded primary image", async () => {
+    const prediction: ShoeHeightPredictionProvider = {
+      code: "fixture-height",
+      version: "1",
+      configurationFingerprint: {},
+      predict: vi.fn().mockResolvedValue({ predictedClass: "low", confidence: 0.99, top1Index: 1 }),
+    };
+    const store = { read: vi.fn().mockResolvedValue(Buffer.from("image")) };
+    const input = product({ images: [{ url: "https://image.example/main.png", position: 0, alt: "Product", localPath: "goat/item_2/01-main.png", attributes: {} }] });
+
+    const result = await new DetectShoeHeightOperation(prediction, store as never, { sourceImagePosition: 0 }).execute(input);
+
+    expect(result.attributes).toMatchObject({ shoeHeight: "low" });
+    expect(result.metadata).toMatchObject({ shoeHeightDetection: { predictedClass: "low", finalClass: "low", confidence: 0.99 } });
+    expect(result.referenceCandidates).toContainEqual(expect.objectContaining({ key: "product:shoe-height", typeCode: "shoe_height", scope: "product.shoe_height", sourceValue: "low" }));
+    expect(store.read).toHaveBeenCalledWith("goat/item_2/01-main.png");
+  });
+
+  it("uses an explicit title height over a conflicting visual prediction", async () => {
+    const prediction: ShoeHeightPredictionProvider = {
+      code: "fixture-height",
+      version: "1",
+      configurationFingerprint: {},
+      predict: vi.fn().mockResolvedValue({ predictedClass: "high", confidence: 0.6 }),
+    };
+    const store = { read: vi.fn().mockResolvedValue(Buffer.from("image")) };
+    const input = product({
+      title: "Nike Dunk Low Black",
+      images: [{ url: "https://image.example/main.png", position: 0, alt: "Product", localPath: "goat/item_2/01-main.png", attributes: {} }],
+    });
+
+    const result = await new DetectShoeHeightOperation(prediction, store as never, { sourceImagePosition: 0 }).execute(input);
+
+    expect(result.attributes).toMatchObject({ shoeHeight: "low" });
+    expect(result.metadata).toMatchObject({ shoeHeightDetection: { predictedClass: "high", finalClass: "low", titleHint: "low", modelOverrideApplied: true } });
+  });
+
+  it("skips products outside configured footwear categories", async () => {
+    const prediction: ShoeHeightPredictionProvider = {
+      code: "fixture-height",
+      version: "1",
+      configurationFingerprint: {},
+      predict: vi.fn(),
+    };
+    const store = { read: vi.fn() };
+    const input = product({ referenceCandidates: [{ key: "product:category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "clothing", context: {}, evidence: {} }] });
+
+    await expect(new DetectShoeHeightOperation(prediction, store as never, { sourceImagePosition: 0, eligibleCategoryValues: ["shoes"] }).execute(input)).resolves.toBe(input);
+    expect(prediction.predict).not.toHaveBeenCalled();
   });
 
   it("downloads, validates, converts, publishes and validates real image bytes", async () => {

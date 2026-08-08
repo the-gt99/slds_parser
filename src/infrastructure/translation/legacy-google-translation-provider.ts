@@ -35,12 +35,18 @@ function shift(input: number, pattern: string): number {
 
 function translatedText(value: unknown): string {
   if (!Array.isArray(value) || !Array.isArray(value[0])) throw new IntegrationContractError("Google translation response has an invalid shape");
-  return value[0].flatMap((row) => Array.isArray(row) && typeof row[0] === "string" ? [row[0]] : []).join("").trim();
+  return value[0]
+    .flatMap((row) => Array.isArray(row) && typeof row[0] === "string" ? [row[0]] : [])
+    .join("")
+    .normalize("NFC")
+    .replace(/[\p{Cf}\u00a0]+/gu, " ")
+    .replace(/[ \t]+/gu, " ")
+    .trim();
 }
 
 export class LegacyGoogleTranslationProvider implements TextTranslationProvider {
   readonly code = "legacy-google-translate";
-  readonly version = "1.0.0";
+  readonly version = "1.1.0";
 
   constructor(
     private readonly options: LegacyGoogleTranslationProviderOptions,

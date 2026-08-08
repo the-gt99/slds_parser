@@ -92,6 +92,11 @@ PARSER_TRANSLATION_TARGET=ru
 PARSER_TRANSLATION_TIMEOUT_MS=8000
 PARSER_TRANSLATION_ATTEMPTS=2
 PARSER_TRANSLATION_RETRY_DELAY_MS=400
+SHOE_HEIGHT_API_URL=
+SHOE_HEIGHT_API_TIMEOUT_MS=20000
+SHOE_HEIGHT_API_ATTEMPTS=2
+SHOE_HEIGHT_API_RETRY_DELAY_MS=400
+SHOE_HEIGHT_SOURCE_IMAGE_POSITION=0
 ```
 
 HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
@@ -116,7 +121,7 @@ CLI создаёт или обновляет source `goat`, записывает
 
 `npm run classifier:exact-matches` показывает однозначные точные совпадения unresolved-значений с актуальным словарём выключенного target. По умолчанию разрешены только однотипные связи brand, model, color, material и tag; категории исключены из-за иерархии. Дубли имён target пропускаются. Запись выполняется только с `CLASSIFIER_EXACT_MATCH_APPLY=true` через штатный сервис решений с аудитом и точечной постановкой переобработки.
 
-`PARSER_IMAGE_BASE_DIR` должен быть доступен HTTP-серверу по адресу, образованному из `PARSER_PUBLIC_BASE_URL`, `PARSER_PUBLIC_PATH_PREFIX` и относительного пути файла. Без реального публичного URL worker не запускается: выдуманный адрес сделал бы сохранённые ссылки нерабочими. Переводчик перенесён из старого проекта через отдельный provider и использует его неофициальный Google Translate endpoint; поэтому его можно заменить, не меняя операцию и DTO.
+`PARSER_IMAGE_BASE_DIR` должен быть доступен HTTP-серверу по адресу, образованному из `PARSER_PUBLIC_BASE_URL`, `PARSER_PUBLIC_PATH_PREFIX` и относительного пути файла. Без реального публичного URL worker не запускается: выдуманный адрес сделал бы сохранённые ссылки нерабочими. Переводчик перенесён из старого проекта через отдельный provider и использует его неофициальный Google Translate endpoint; поэтому его можно заменить, не меняя операцию и DTO. При заданном `SHOE_HEIGHT_API_URL` первая скачанная фотография обуви отправляется отдельному классификатору высоты, а результат `low`/`mid`/`high` добавляется в обычную очередь классификации как `shoe_height`; одежда этой операцией не обрабатывается.
 
 WordPress importer скачивает готовые WebP по публичным URL, поэтому `publish-images` и `PARSER_PUBLIC_BASE_URL` остаются частью текущего рабочего контракта.
 
