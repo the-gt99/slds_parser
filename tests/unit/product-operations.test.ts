@@ -169,6 +169,22 @@ describe("product operations", () => {
     expect(prediction.predict).not.toHaveBeenCalled();
   });
 
+  it("accepts the normalized GOAT footwear category", async () => {
+    const prediction: ShoeHeightPredictionProvider = {
+      code: "fixture-height",
+      version: "1",
+      configurationFingerprint: {},
+      predict: vi.fn().mockResolvedValue({ predictedClass: "low" }),
+    };
+    const store = { read: vi.fn().mockResolvedValue(Buffer.from("image")) };
+    const input = product({ referenceCandidates: [{ key: "product:category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "sneakers", context: {}, evidence: {} }], images: [{ url: "https://image.example/main.png", position: 0, alt: "Product", localPath: "goat/item_2/01-main.png", attributes: {} }] });
+
+    const result = await new DetectShoeHeightOperation(prediction, store as never, { sourceImagePosition: 0, eligibleCategoryValues: ["sneakers"] }).execute(input);
+
+    expect(result.attributes).toMatchObject({ shoeHeight: "low" });
+    expect(prediction.predict).toHaveBeenCalledOnce();
+  });
+
   it("downloads, validates, converts, publishes and validates real image bytes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "slds-images-"));
     try {

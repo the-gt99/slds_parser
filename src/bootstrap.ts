@@ -35,7 +35,7 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
     registry.register(new DetectShoeHeightOperation(
       new ShoeHeightApiProvider(processing.shoeHeight),
       imageStore,
-      { sourceImagePosition: processing.shoeHeight.sourceImagePosition, eligibleCategoryValues: ["shoes"], sourceCodes: ["goat"] },
+      { sourceImagePosition: processing.shoeHeight.sourceImagePosition, eligibleCategoryValues: ["sneakers"], sourceCodes: ["goat"] },
     ));
   }
   registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
