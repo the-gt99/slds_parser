@@ -5,7 +5,6 @@ import { hashStableJson } from "../core/utils/index.js";
 import {
   applyWordPressTitlePolicy,
   buildWordPressDescriptionHtml,
-  previewWordPressUpsertPayload,
   type WordPressProductSnapshotReader,
   WordPressExporter,
 } from "../integrations/index.js";
@@ -313,10 +312,10 @@ export class WordPressPreviewService {
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
       },
       ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),
-    } satisfies Parameters<typeof previewWordPressUpsertPayload>[0];
+    } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
     let draft;
     try {
-      draft = await previewWordPressUpsertPayload(context);
+      draft = await exporter.previewPayload(context);
     } catch (error) {
       if (!(error instanceof IntegrationContractError)) throw error;
       return {

@@ -10,3 +10,8 @@ export {
   type WordPressUpsertPreflightResult,
 } from "./wordpress-exporter.js";
 export { WordPressProductSnapshotReader, type WordPressProductSnapshotResult } from "./wordpress-product-snapshot-reader.js";
+export {
+  WordPressSizeConverter,
+  type WordPressSizeConversionInput,
+  type WordPressSizeConverterLike,
+} from "./wordpress-size-converter.js";

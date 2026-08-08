@@ -196,6 +196,8 @@ Target `slamdunk` на parser production создан и остаётся вык
 
 Target-specific readiness реализована в WordPress exporter. Она опирается на универсальные `typeCode`, явно настроенный target-список `requiredReferenceTypes`, проверяет `target_value_mappings` и точные `sizeMappings`. Нельзя возвращать обязательность модели по GOAT-полю `attributes.family` или считать внутреннее resolved-решение достаточным для любого target.
 
+Нативный размер источника сохраняется в DTO. Если для WordPress нет прямого mapping, exporter конвертирует EU/UK/JP/RU/CM в US по реальной брендовой таблице WordPress с контекстом `pa_brand`, `product_cat` и `audience`; обувные IT/FR используют подтверждённую колонку EU. Результат всё равно обязан иметь точный `sizeMappings`. Нельзя возвращать старую эвристику «значение больше 22 значит EU», подбирать ближайший размер или перезаписывать исходные варианты при processing.
+
 Для обувных категорий production target настроен добавлять префикс `Кроссовки` по `product_cat` term IDs `74`, `75`, `865`. Старый parser подтвердил такое формирование title; это target-правило, а не универсальная операция.
 
 WordPress `product_tag` нельзя собирать только из GOAT technologies/source tags. Старый parser добавлял связанные теги бренда и модели из `tag_id`, а категория могла дополнительно проецироваться в метку. В новой архитектуре это реализуется штатными `target_classification_projections`, а не дублированием кандидатов в `SourceProcessor`. На production активно 38 projections: четыре ранее подтверждённых YZY и 34 добавленных по проверенному WordPress cohort для брендов, моделей, модельных правил и категорий. Без projections режим `replace` удалил бы существующие брендовые и модельные product tags.

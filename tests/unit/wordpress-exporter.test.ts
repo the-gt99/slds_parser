@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
-import { buildWordPressUpsertPayload, WordPressExporter } from "../../src/integrations/index.js";
+import { buildWordPressUpsertPayload, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
   sourceProductId: "2",
@@ -93,6 +93,34 @@ describe("WordPressExporter", () => {
 
     expect(input.references.resolveReference).toHaveBeenCalledWith(expect.objectContaining({ referenceType: "brand", targetScope: "catalog.brand" }));
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
+  });
+
+  it("converts a native source size before resolving the WordPress size term", async () => {
+    const base = context({
+      sizeConversionCategoryTermIds: [41],
+      sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }],
+    });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        variants: base.product.variants.map((variant) => ({
+          ...variant,
+          size: { sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" },
+        })),
+      },
+    };
+    const converter: WordPressSizeConverterLike = {
+      supports: vi.fn(() => true),
+      convert: vi.fn(async ({ size }) => ({ ...size, sourceValue: "8", displayValue: "8", system: "us-numeric" })),
+    };
+
+    const payload = await buildWordPressUpsertPayload(input, converter);
+    const item = ((payload.variations as JsonObject).items as readonly JsonObject[])[0]!;
+
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, size: input.product.variants[0]!.size });
+    expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 108 });
+    expect(input.product.variants[0]!.size).toEqual({ sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" });
   });
 
   it("applies an explicit target title prefix for the resolved product category", async () => {

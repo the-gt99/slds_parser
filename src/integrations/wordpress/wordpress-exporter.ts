@@ -11,6 +11,7 @@ import type {
 } from "../../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import { hashStableJson } from "../../core/utils/index.js";
+import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 
 const CONTRACT_VERSION = "slds.wordpress.product-upsert.v1";
 
@@ -132,16 +133,23 @@ function mappingMatches(mapping: SizeMapping, size: ProductSizeDTO): boolean {
     && (mapping.audience === undefined || mapping.audience === size.audience);
 }
 
-function resolveSize(size: ProductSizeDTO, mappings: readonly SizeMapping[]): SizeMapping {
+function findSizeMapping(size: ProductSizeDTO, mappings: readonly SizeMapping[]): SizeMapping | null {
   const matches = mappings.filter((mapping) => mappingMatches(mapping, size));
   const key = [size.system ?? "", size.audience ?? "", size.sourceValue, size.displayValue].join("/");
-  if (matches.length === 0) throw new IntegrationContractError(`WordPress size mapping is missing: ${key}`);
+  if (matches.length === 0) return null;
   const specificity = (mapping: SizeMapping): number => [mapping.displayValue, mapping.system, mapping.audience]
     .filter((value) => value !== undefined).length;
   const mostSpecific = Math.max(...matches.map(specificity));
   const winners = matches.filter((mapping) => specificity(mapping) === mostSpecific);
   if (winners.length > 1) throw new IntegrationContractError(`WordPress size mapping is ambiguous: ${key}`);
   return winners[0]!;
+}
+
+function resolveSize(size: ProductSizeDTO, mappings: readonly SizeMapping[]): SizeMapping {
+  const mapping = findSizeMapping(size, mappings);
+  if (mapping !== null) return mapping;
+  const key = [size.system ?? "", size.audience ?? "", size.sourceValue, size.displayValue].join("/");
+  throw new IntegrationContractError(`WordPress size mapping is missing: ${key}`);
 }
 
 function mappedTargetScope(config: JsonObject, defaultScope: string): string {
@@ -248,8 +256,63 @@ export function buildWordPressDescriptionHtml(product: UniversalProductDTO): str
   return parts.join("\n");
 }
 
-function variationPayload(variant: ProductVariantDTO, identityKey: string, mappings: readonly SizeMapping[]): JsonObject {
-  const size = resolveSize(variant.size, mappings);
+function taxonomyTermIds(taxonomies: JsonObject, taxonomy: string): readonly number[] {
+  const value = taxonomies[taxonomy];
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
+  const termIds = (value as JsonObject).term_ids;
+  return Array.isArray(termIds)
+    ? termIds.map(Number).filter((termId) => Number.isSafeInteger(termId) && termId > 0)
+    : [];
+}
+
+function configuredConversionCategoryIds(config: JsonObject): readonly number[] {
+  if (Array.isArray(config.sizeConversionCategoryTermIds)) {
+    return config.sizeConversionCategoryTermIds.map((value, index) => positiveInteger(value, `target.config.sizeConversionCategoryTermIds[${index}]`));
+  }
+  const titlePolicy = config.titlePrefixByCategoryTermId;
+  if (titlePolicy === null || typeof titlePolicy !== "object" || Array.isArray(titlePolicy)) return [];
+  return Object.keys(titlePolicy).filter((value) => /^\d+$/u.test(value)).map(Number);
+}
+
+function sizeConversionIdentity(taxonomies: JsonObject, config: JsonObject): { readonly brandTermId: number; readonly categoryTermId: number } {
+  const brandIds = taxonomyTermIds(taxonomies, "pa_brand");
+  if (brandIds.length !== 1) {
+    throw new IntegrationContractError("WordPress size conversion requires exactly one resolved pa_brand term");
+  }
+  const productCategoryIds = taxonomyTermIds(taxonomies, "product_cat");
+  const configured = new Set(configuredConversionCategoryIds(config));
+  const candidates = configured.size === 0 ? productCategoryIds : productCategoryIds.filter((termId) => configured.has(termId));
+  if (candidates.length !== 1) {
+    throw new IntegrationContractError("WordPress size conversion requires exactly one configured product_cat term");
+  }
+  return { brandTermId: brandIds[0]!, categoryTermId: candidates[0]! };
+}
+
+async function resolveVariationSize(
+  size: ProductSizeDTO,
+  mappings: readonly SizeMapping[],
+  converter: WordPressSizeConverterLike | undefined,
+  identity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
+): Promise<SizeMapping> {
+  const direct = findSizeMapping(size, mappings);
+  if (direct !== null) return direct;
+  if (converter === undefined || !converter.supports(size) || identity === undefined) return resolveSize(size, mappings);
+  const converted = await converter.convert({ ...identity, size });
+  const convertedMapping = findSizeMapping(converted, mappings);
+  if (convertedMapping !== null) return convertedMapping;
+  const sourceKey = [size.system ?? "", size.audience ?? "", size.sourceValue].join("/");
+  const targetKey = [converted.system ?? "", converted.audience ?? "", converted.sourceValue].join("/");
+  throw new IntegrationContractError(`WordPress size mapping is missing after conversion: ${sourceKey} -> ${targetKey}`);
+}
+
+async function variationPayload(
+  variant: ProductVariantDTO,
+  identityKey: string,
+  mappings: readonly SizeMapping[],
+  converter: WordPressSizeConverterLike | undefined,
+  conversionIdentity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
+): Promise<JsonObject> {
+  const size = await resolveVariationSize(variant.size, mappings, converter, conversionIdentity);
   if (variant.inventory.availability !== "available" && variant.inventory.availability !== "unavailable") {
     throw new IntegrationContractError(`Unsupported WordPress availability for variant ${variant.sourceVariantKey}: ${variant.inventory.availability}`);
   }
@@ -342,6 +405,7 @@ async function taxonomyPayload(
 async function buildWordPressPayload(
   context: ExportContext,
   allowMissingRequired: boolean,
+  converter?: WordPressSizeConverterLike,
 ): Promise<WordPressUpsertPayloadPreview> {
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress export");
@@ -357,7 +421,15 @@ async function buildWordPressPayload(
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
   const { taxonomies, missingRequired } = await taxonomyPayload(context, required, allowMissingRequired);
-  const variations = context.product.variants.map((variant) => variationPayload(variant, externalKey, mappings));
+  const needsConversion = converter !== undefined && context.product.variants.some(
+    (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
+  );
+  const conversionIdentity = needsConversion && converter !== undefined
+    ? sizeConversionIdentity(taxonomies, context.target.config)
+    : undefined;
+  const variations = await Promise.all(context.product.variants.map(
+    (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
+  ));
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -394,12 +466,18 @@ async function buildWordPressPayload(
   };
 }
 
-export async function previewWordPressUpsertPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
-  return buildWordPressPayload(context, true);
+export async function previewWordPressUpsertPayload(
+  context: ExportContext,
+  converter?: WordPressSizeConverterLike,
+): Promise<WordPressUpsertPayloadPreview> {
+  return buildWordPressPayload(context, true, converter);
 }
 
-export async function buildWordPressUpsertPayload(context: ExportContext): Promise<JsonObject> {
-  return (await buildWordPressPayload(context, false)).payload;
+export async function buildWordPressUpsertPayload(
+  context: ExportContext,
+  converter?: WordPressSizeConverterLike,
+): Promise<JsonObject> {
+  return (await buildWordPressPayload(context, false, converter)).payload;
 }
 
 function normalizeJob(value: unknown): WordPressJob {
@@ -412,13 +490,24 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.2.0";
+  readonly version = "1.3.0";
+  private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
     private readonly config: WordPressTargetConfig,
     private readonly requestImplementation: typeof fetch = fetch,
     private readonly wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
-  ) {}
+  ) {
+    this.sizeConverter = new WordPressSizeConverter(config, requestImplementation);
+  }
+
+  async previewPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
+    return previewWordPressUpsertPayload(context, this.sizeConverter);
+  }
+
+  async buildPayload(context: ExportContext): Promise<JsonObject> {
+    return buildWordPressUpsertPayload(context, this.sizeConverter);
+  }
 
   async preflightPayload(payload: JsonObject): Promise<WordPressUpsertPreflightResult> {
     const expectedPayloadHash = text(payload.payload_hash);
@@ -446,7 +535,7 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    const payload = await buildWordPressUpsertPayload(context);
+    const payload = await this.buildPayload(context);
     const expectedPayloadHash = text(payload.payload_hash);
     const created = await this.request("upsert-jobs", { method: "POST", body: JSON.stringify({ payload }) });
     const initialJob = normalizeJob(created.job);

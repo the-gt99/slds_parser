@@ -2,7 +2,7 @@ import { createApplication } from "../bootstrap.js";
 import { loadWordPressTargetConfig } from "../config/index.js";
 import type { JsonObject } from "../contracts/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import { buildWordPressUpsertPayload, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
+import { WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 
 function idsFromEnvironment(value: string | undefined, name: string): readonly string[] {
   const ids = [...new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
@@ -188,7 +188,7 @@ try {
       continue;
     }
     try {
-      const payload = await buildWordPressUpsertPayload({
+      const payload = await exporter.buildPayload({
         source: { id: source.id, code: source.code, config: source.config },
         sourceProduct: {
           id: sourceProduct.id,
