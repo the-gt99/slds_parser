@@ -254,10 +254,12 @@ function mapJobAdmin(row: DatabaseRow): JobAdminListItem {
     attempts: Number(row.attempts),
     createdAt: timestamp(row, "created_at"),
     availableAt: timestamp(row, "available_at"),
+    startedAt: nullableTimestamp(row, "started_at"),
     lockedAt: nullableTimestamp(row, "locked_at"),
     lockedBy: nullableText(row, "locked_by"),
     updatedAt: timestamp(row, "updated_at"),
     finishedAt: nullableTimestamp(row, "finished_at"),
+    queueWaitMs: nullableNumber(row, "queue_wait_ms"),
     durationMs: nullableNumber(row, "duration_ms"),
     sourceProductId: nullableText(row, "source_product_id"),
     lastError: nullableText(row, "last_error"),
@@ -641,8 +643,14 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         `SELECT job.*,
                 COALESCE(job.payload->>'sourceProductId', internal.source_product_id::TEXT) AS source_product_id,
                 CASE
-                  WHEN job.locked_at IS NOT NULL AND job.finished_at IS NULL THEN EXTRACT(EPOCH FROM (NOW() - job.locked_at)) * 1000
-                  WHEN job.finished_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.finished_at - job.created_at)) * 1000
+                  WHEN job.status = 'pending' THEN EXTRACT(EPOCH FROM (NOW() - job.created_at)) * 1000
+                  WHEN job.status = 'retry' THEN EXTRACT(EPOCH FROM (NOW() - job.updated_at)) * 1000
+                  WHEN job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.started_at - job.created_at)) * 1000
+                  ELSE NULL
+                END AS queue_wait_ms,
+                CASE
+                  WHEN job.status = 'running' AND job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (NOW() - job.started_at)) * 1000
+                  WHEN job.finished_at IS NOT NULL AND job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.finished_at - job.started_at)) * 1000
                   ELSE NULL
                 END AS duration_ms
          ${from} ${filter}
@@ -650,7 +658,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
          LIMIT ${limit} OFFSET ${offset}`,
         parameters,
       );
-      const [byStatus, byTypeStatus, errorGroups, completion, eta] = await Promise.all([
+      const [byStatus, byTypeStatus, errorGroups, throughput] = await Promise.all([
         client.query<DatabaseRow>("SELECT status, COUNT(*)::INT AS count FROM jobs GROUP BY status ORDER BY status"),
         client.query<DatabaseRow>("SELECT job_type, status, COUNT(*)::INT AS count FROM jobs GROUP BY job_type, status ORDER BY job_type, status"),
         client.query<DatabaseRow>(
@@ -663,25 +671,28 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
            LIMIT 25`,
         ),
         client.query<DatabaseRow>(
-          `SELECT
-             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
-             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
-             COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h
-           FROM jobs
-           WHERE status = 'completed'
-             AND finished_at >= NOW() - INTERVAL '24 hours'`,
-        ),
-        client.query<DatabaseRow>(
-          `WITH active AS (
-             SELECT COUNT(*)::FLOAT AS remaining FROM jobs WHERE status IN ('pending', 'running', 'retry')
-           ), speed AS (
-             SELECT COUNT(*)::FLOAT / 60 AS per_minute FROM jobs WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour'
+          `WITH stats AS (
+             SELECT job_type,
+                    COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'retry'))::INT AS remaining,
+                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
+                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
+                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h
+               FROM jobs
+              WHERE status IN ('pending', 'running', 'retry')
+                 OR (status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')
+              GROUP BY job_type
            )
-           SELECT CASE WHEN speed.per_minute > 0 THEN CEIL(active.remaining / speed.per_minute)::INT ELSE NULL END AS eta_minutes
-           FROM active, speed`,
+           SELECT *,
+                  CASE
+                    WHEN remaining = 0 THEN NULL
+                    WHEN last15m > 0 THEN CEIL(remaining / (last15m::NUMERIC / 15))::INT
+                    WHEN last1h > 0 THEN CEIL(remaining / (last1h::NUMERIC / 60))::INT
+                    ELSE NULL
+                  END AS eta_minutes
+             FROM stats
+            ORDER BY job_type`,
         ),
       ]);
-      const completionRow = completion.rows[0];
       return {
         total: Number(count.rows[0]?.total ?? 0),
         items: rows.rows.map(mapJobAdmin),
@@ -694,12 +705,16 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
             count: Number(row.count),
             latestAt: timestamp(row, "latest_at"),
           })),
-          completion: {
-            last15m: Number(completionRow?.last15m ?? 0),
-            last1h: Number(completionRow?.last1h ?? 0),
-            last24h: Number(completionRow?.last24h ?? 0),
-          },
-          etaMinutes: eta.rows[0]?.eta_minutes === null || eta.rows[0]?.eta_minutes === undefined ? null : Number(eta.rows[0].eta_minutes),
+          byJobType: throughput.rows.map((row) => ({
+            jobType: row.job_type as JobType,
+            remaining: Number(row.remaining ?? 0),
+            completion: {
+              last15m: Number(row.last15m ?? 0),
+              last1h: Number(row.last1h ?? 0),
+              last24h: Number(row.last24h ?? 0),
+            },
+            etaMinutes: row.eta_minutes === null || row.eta_minutes === undefined ? null : Number(row.eta_minutes),
+          })),
         },
       };
     } finally { client.release(); }

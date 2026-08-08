@@ -6,10 +6,20 @@ import { PermanentError } from "../../src/core/errors/index.js";
 describe("processing config", () => {
   it("uses the confirmed legacy processing defaults", () => {
     expect(loadProcessingConfig({ PARSER_PUBLIC_BASE_URL: "https://parser.example/images" })).toEqual({
-      image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, concurrency: 2 },
+      image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2 },
       translation: { sourceLocale: "en", targetLocale: "ru", timeoutMs: 8_000, attempts: 2, retryDelayMs: 400 },
       shoeHeight: null,
     });
+  });
+
+  it("keeps operation concurrency stable when image transport concurrency changes", () => {
+    const config = loadProcessingConfig({
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      GOAT_IMAGE_DOWNLOAD_CONCURRENCY: "12",
+    });
+
+    expect(config.image.transportConcurrency).toBe(12);
+    expect(config.image.operationConcurrency).toBe(2);
   });
 
   it("loads the optional shoe height classifier contract", () => {

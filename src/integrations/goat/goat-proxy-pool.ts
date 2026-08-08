@@ -45,13 +45,11 @@ function buildProxyUrl(record: ProxyRecord, credentials: ProxyCredentials | null
 
 class Lease implements GoatProxyLease {
   readonly publicProxy: { readonly id: EntityId; readonly name: string };
-  readonly #clients = new Map<string, GoatHttpClient>();
   readonly #startedAt = Date.now();
   #released = false;
 
   constructor(
     private readonly pool: GoatProxyPool,
-    private readonly environment: GoatProxyPoolEnvironment,
     private readonly record: ProxyRecord,
     private readonly credentials: ProxyCredentials | null,
     readonly sessionSlot: number,
@@ -63,16 +61,7 @@ class Lease implements GoatProxyLease {
   get proxyName(): string { return this.record.name; }
 
   client(cookieJarSuffix = ""): GoatHttpClient {
-    const existing = this.#clients.get(cookieJarSuffix);
-    if (existing !== undefined) return existing;
-    const baseCookieJar = this.environment.GOAT_COOKIE_JAR_PATH?.trim();
-    const clientEnvironment: GoatHttpEnvironment = {
-      ...this.environment,
-      ...(baseCookieJar === undefined || baseCookieJar === "" ? {} : { GOAT_COOKIE_JAR_PATH: `${baseCookieJar}${cookieJarSuffix}.proxy-${this.record.id}.session-${this.sessionSlot}` }),
-    };
-    const created = new GoatHttpClient(clientEnvironment, { proxyUrl: buildProxyUrl(this.record, this.credentials) });
-    this.#clients.set(cookieJarSuffix, created);
-    return created;
+    return this.pool.clientForLease(this.record, this.credentials, this.sessionSlot, cookieJarSuffix);
   }
 
   async release(success: boolean | null, latencyMs: number | null): Promise<void> {
@@ -86,6 +75,7 @@ export class GoatProxyPool {
   readonly #storage = new AsyncLocalStorage<GoatProxyLease>();
   readonly #crypto: ProxyCredentialsCrypto;
   readonly #activeSlots = new Map<EntityId, Set<number>>();
+  readonly #clients = new Map<string, { readonly transport: string; readonly client: GoatHttpClient }>();
   readonly #concurrencyPerProxy: number;
   #roundRobin = 0;
 
@@ -104,6 +94,21 @@ export class GoatProxyPool {
 
   currentLease(): GoatProxyLease | undefined {
     return this.#storage.getStore();
+  }
+
+  clientForLease(record: ProxyRecord, credentials: ProxyCredentials | null, sessionSlot: number, cookieJarSuffix: string): GoatHttpClient {
+    const key = `${record.id}:${sessionSlot}:${cookieJarSuffix}`;
+    const transport = JSON.stringify([record.protocol, record.host, record.port, record.credentialsCiphertext]);
+    const existing = this.#clients.get(key);
+    if (existing?.transport === transport) return existing.client;
+    const baseCookieJar = this.environment.GOAT_COOKIE_JAR_PATH?.trim();
+    const clientEnvironment: GoatHttpEnvironment = {
+      ...this.environment,
+      ...(baseCookieJar === undefined || baseCookieJar === "" ? {} : { GOAT_COOKIE_JAR_PATH: `${baseCookieJar}${cookieJarSuffix}.proxy-${record.id}.session-${sessionSlot}` }),
+    };
+    const client = new GoatHttpClient(clientEnvironment, { proxyUrl: buildProxyUrl(record, credentials) });
+    this.#clients.set(key, { transport, client });
+    return client;
   }
 
   async reserveClaim(): Promise<WorkerClaimPermit | null> {
@@ -155,7 +160,7 @@ export class GoatProxyPool {
       active.add(sessionSlot);
       this.#activeSlots.set(record.id, active);
       this.#roundRobin = (index + 1) % available.length;
-      return new Lease(this, this.environment, record, credentials, sessionSlot);
+      return new Lease(this, record, credentials, sessionSlot);
     }
     return null;
   }

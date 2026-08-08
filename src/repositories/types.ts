@@ -634,22 +634,30 @@ export interface JobAdminListItem {
   readonly attempts: number;
   readonly createdAt: Timestamp;
   readonly availableAt: Timestamp;
+  readonly startedAt: Timestamp | null;
   readonly lockedAt: Timestamp | null;
   readonly lockedBy: string | null;
   readonly updatedAt: Timestamp;
   readonly finishedAt: Timestamp | null;
+  readonly queueWaitMs: number | null;
   readonly durationMs: number | null;
   readonly sourceProductId: EntityId | null;
   readonly lastError: string | null;
   readonly payload: JsonValue;
 }
 
+export interface JobAdminTypeSummary {
+  readonly jobType: JobType;
+  readonly remaining: number;
+  readonly completion: { readonly last15m: number; readonly last1h: number; readonly last24h: number };
+  readonly etaMinutes: number | null;
+}
+
 export interface JobAdminSummary {
   readonly byStatus: readonly { readonly status: JobStatus; readonly count: number }[];
   readonly byTypeStatus: readonly { readonly jobType: JobType; readonly status: JobStatus; readonly count: number }[];
   readonly errorGroups: readonly { readonly jobType: JobType; readonly message: string; readonly count: number; readonly latestAt: Timestamp }[];
-  readonly completion: { readonly last15m: number; readonly last1h: number; readonly last24h: number };
-  readonly etaMinutes: number | null;
+  readonly byJobType: readonly JobAdminTypeSummary[];
 }
 
 export interface JobAdminListResult {

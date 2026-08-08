@@ -60,7 +60,8 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       publicBaseUrl,
       publicPathPrefix: environment.PARSER_PUBLIC_PATH_PREFIX?.trim() ?? "",
       webpQuality: 85,
-      concurrency: integer(environment.GOAT_IMAGE_DOWNLOAD_CONCURRENCY, 2, "GOAT_IMAGE_DOWNLOAD_CONCURRENCY", 1),
+      transportConcurrency: integer(environment.GOAT_IMAGE_DOWNLOAD_CONCURRENCY, 8, "GOAT_IMAGE_DOWNLOAD_CONCURRENCY", 1),
+      operationConcurrency: 2,
     },
     translation: {
       sourceLocale: locale(environment.PARSER_TRANSLATION_SOURCE, "en", "PARSER_TRANSLATION_SOURCE"),

@@ -291,7 +291,7 @@ describe("HTTP server", () => {
   it("serves jobs dashboard and failed retry endpoints without allowing export retry", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const productAdmin = {
-      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0, summary: { byStatus: [], byTypeStatus: [], errorGroups: [], completion: { last15m: 0, last1h: 0, last24h: 0 }, etaMinutes: null } }),
+      listJobs: vi.fn().mockResolvedValue({ items: [], total: 0, summary: { byStatus: [], byTypeStatus: [], errorGroups: [], byJobType: [] } }),
       previewFailedJobRetry: vi.fn((type) => type === "export_product"
         ? Promise.reject(new IntegrationContractError("Export retry is disabled from this administrative action"))
         : Promise.resolve({ retryCount: 2 })),

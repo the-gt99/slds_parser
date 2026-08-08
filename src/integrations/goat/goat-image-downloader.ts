@@ -44,7 +44,7 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
       try {
         const result = lease === undefined || lease === null
           ? await this.#client(slot).getBuffer(url)
-          : await this.pooledClientFactory(lease, `.images-${slot + 1}`).getBuffer(url);
+          : await this.pooledClientFactory(lease, ".images").getBuffer(url);
         await lease?.release(true, Date.now() - started);
         return result;
       } catch (error) {

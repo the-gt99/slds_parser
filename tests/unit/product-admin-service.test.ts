@@ -259,8 +259,8 @@ describe("ProductAdminService", () => {
       getById: vi.fn(),
       listJobs: vi.fn().mockResolvedValue({
         total: 1,
-        items: [{ id: "1", jobType: "collect_product", status: "failed", attempts: 1, createdAt: "now", availableAt: "now", lockedAt: null, lockedBy: null, updatedAt: "now", finishedAt: null, durationMs: null, sourceProductId: "2", lastError: "x", payload: { token: "secret", nested: { password: "secret" }, sourceProductId: "2" } }],
-        summary: { byStatus: [], byTypeStatus: [], errorGroups: [], completion: { last15m: 0, last1h: 0, last24h: 0 }, etaMinutes: null },
+        items: [{ id: "1", jobType: "collect_product", status: "failed", attempts: 1, createdAt: "now", availableAt: "now", startedAt: null, lockedAt: null, lockedBy: null, updatedAt: "now", finishedAt: null, queueWaitMs: null, durationMs: null, sourceProductId: "2", lastError: "x", payload: { token: "secret", nested: { password: "secret" }, sourceProductId: "2" } }],
+        summary: { byStatus: [], byTypeStatus: [], errorGroups: [], byJobType: [] },
       }),
     };
 

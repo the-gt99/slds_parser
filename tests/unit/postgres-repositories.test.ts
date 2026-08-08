@@ -321,6 +321,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(call?.text).toContain("FOR UPDATE SKIP LOCKED");
     expect(call?.text).toContain("status = 'running' AND locked_at <");
     expect(call?.text).toContain("attempts = attempts + 1");
+    expect(call?.text).toContain("started_at = NOW()");
     expect(call?.text).toContain("ORDER BY available_at, id");
     expect(call?.text).toContain("job_type = ANY($3::TEXT[])");
     expect(call?.values).toEqual(["worker", 30000, ["process_product"]]);
@@ -333,6 +334,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(call?.text).toContain("WHERE id = $1");
     expect(call?.text).toContain("job_type = ANY($3::TEXT[])");
     expect(call?.text).toContain("status IN ('pending', 'retry')");
+    expect(call?.text).toContain("started_at = NOW()");
     expect(call?.text).not.toContain("ORDER BY");
     expect(call?.values).toEqual(["42", "worker:manual", ["process_product"]]);
   });
@@ -386,8 +388,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       [],
       [],
       [],
-      [{ last15m: 0, last1h: 0, last24h: 0 }],
-      [{ eta_minutes: null }],
+      [{ job_type: "process_product", remaining: 2, last15m: 10, last1h: 20, last24h: 30, eta_minutes: 3 }],
     ]);
 
     const result = await new PostgresProductAdminRepository(pool(executor)).listJobs({ search: "87549", limit: 50, offset: 0 });
@@ -400,6 +401,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).not.toContain("internal.source_product_id::TEXT = $1");
     expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT");
     expect(executor.calls[5]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
+    expect(executor.calls[5]?.text).toContain("GROUP BY job_type");
+    expect(executor.calls[5]?.text).toContain("last15m::NUMERIC / 15");
+    expect(executor.calls[1]?.text).toContain("job.finished_at - job.started_at");
+    expect(result.summary.byJobType[0]).toEqual({
+      jobType: "process_product",
+      remaining: 2,
+      completion: { last15m: 10, last1h: 20, last24h: 30 },
+      etaMinutes: 3,
+    });
   });
 
   it("serializes every JSON batch audit field as JSON", async () => {

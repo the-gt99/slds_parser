@@ -212,9 +212,35 @@ function renderSnapshots(items) {
   }
 }
 
+function elapsedText(milliseconds) {
+  if (!Number.isFinite(milliseconds)) return "-";
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  if (seconds < 60) return `${seconds} сек.`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return `${minutes} мин. ${rest} сек.`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} ч. ${minutes % 60} мин.`;
+}
+
+function elapsedNode(milliseconds, liveSince = null) {
+  const value = document.createElement("span");
+  value.className = "job-elapsed";
+  if (liveSince) value.dataset.liveSince = liveSince;
+  value.textContent = liveSince ? elapsedText(Date.now() - new Date(liveSince).valueOf()) : elapsedText(milliseconds);
+  return value;
+}
+
+function refreshLiveElapsed() {
+  for (const value of document.querySelectorAll("[data-live-since]")) {
+    const started = new Date(value.dataset.liveSince).valueOf();
+    value.textContent = Number.isFinite(started) ? elapsedText(Date.now() - started) : "-";
+  }
+}
+
 function renderJobs(data) {
   const summary = data.summary || {};
-  headings(["Job", "Статус", "Товар", "Создан", "Длительность", "Попытки", "Worker/lane", "Ошибка", "Действие"]);
+  headings(["Job", "Статус", "Товар", "Создан", "Ожидание", "Выполнение", "Попытки", "Worker/lane", "Ошибка", "Действие"]);
   const body = byId("table-body");
   body.replaceChildren();
   for (const item of data.items || []) {
@@ -223,9 +249,12 @@ function renderJobs(data) {
     cell(tr, status(item.status));
     cell(tr, item.sourceProductId ? link(`#${item.sourceProductId}`, `/products/${item.sourceProductId}`) : "-");
     cell(tr, date(item.createdAt));
-    cell(tr, item.durationMs ? `${Math.round(item.durationMs / 1000)} сек.` : "-");
+    const waitingSince = item.status === "pending" ? item.createdAt : item.status === "retry" ? item.updatedAt : null;
+    cell(tr, elapsedNode(item.queueWaitMs, waitingSince), "job-time-cell");
+    const executionSince = item.status === "running" ? (item.startedAt || item.lockedAt) : null;
+    cell(tr, elapsedNode(item.durationMs, executionSince), "job-time-cell");
     cell(tr, item.attempts);
-    cell(tr, item.lockedBy || "-");
+    cell(tr, item.lockedBy ? link(item.lockedBy, "/runtime") : "-");
     const error = document.createElement("span");
     error.textContent = item.lastError || "-";
     if (item.payload) error.append(jsonMini("payload", item.payload));
@@ -249,19 +278,44 @@ function renderJobs(data) {
     dashboard.className = "section runtime-card runtime-wide";
     byId("filters").after(dashboard);
   }
-  const statusText = (summary.byStatus || []).map((item) => `${status(item.status)}: ${item.count}`).join(" · ") || "Нет данных";
-  const speed = summary.completion || {};
   dashboard.innerHTML = `
     <div class="section-title"><div><p class="eyebrow">Очередь и ошибки</p><h2>Сводка jobs</h2></div></div>
-    <div class="runtime-list">
-      <div class="runtime-row"><span>${statusText}</span><strong>ETA ${summary.etaMinutes === null || summary.etaMinutes === undefined ? "—" : `${summary.etaMinutes} мин.`}</strong></div>
-      <div class="runtime-row"><span>Completion за 15 мин / час / сутки</span><strong>${speed.last15m ?? 0} / ${speed.last1h ?? 0} / ${speed.last24h ?? 0}</strong></div>
+    <div id="jobs-type-metrics" class="runtime-list"></div>
+    <details class="data-details"><summary>Группы ошибок</summary><pre id="jobs-error-groups"></pre></details>
+    <div class="runtime-actions">
+      <button id="show-running-jobs" class="button secondary" type="button">Показать выполняющиеся</button>
+      <button id="retry-process-failed" class="button secondary" type="button">Вернуть ошибочные обработки в очередь</button>
     </div>
-    <details class="data-details"><summary>Группы ошибок</summary><pre>${JSON.stringify(summary.errorGroups || [], null, 2)}</pre></details>
-    <div class="runtime-actions"><button id="retry-process-failed" class="button secondary" type="button">Вернуть ошибочные обработки в очередь</button></div>
-    <p class="muted runtime-note">Повторно запускает существующие process jobs со статусом «Ошибка». Сбор товаров не выполняется.</p>
+    <p class="muted runtime-note">Скорость и ETA считаются отдельно для каждого типа job. Поиск и фильтр статуса не смешивают сбор с обработкой.</p>
   `;
+  const selectedJobType = byId("source").value;
+  const metrics = (summary.byJobType || []).filter((item) => !selectedJobType || item.jobType === selectedJobType);
+  const metricsRoot = byId("jobs-type-metrics");
+  if (metrics.length === 0) metricsRoot.textContent = "Нет свежих данных по выбранному типу jobs.";
+  for (const metric of metrics) {
+    const counts = Object.fromEntries((summary.byTypeStatus || [])
+      .filter((item) => item.jobType === metric.jobType)
+      .map((item) => [item.status, item.count]));
+    const row = document.createElement("div");
+    row.className = "runtime-row job-metric-row";
+    const queue = document.createElement("span");
+    const label = document.createElement("strong");
+    label.textContent = queueLabel(metric.jobType);
+    queue.append(label, document.createTextNode(` · в очереди ${counts.pending || 0} · выполняется ${counts.running || 0} · повтор ${counts.retry || 0} · ошибок ${counts.failed || 0}`));
+    const speed = document.createElement("strong");
+    speed.textContent = `15 мин / час / сутки: ${metric.completion.last15m} / ${metric.completion.last1h} / ${metric.completion.last24h} · ETA ${metric.etaMinutes === null ? "—" : `${metric.etaMinutes} мин.`}`;
+    row.append(queue, speed);
+    metricsRoot.append(row);
+  }
+  const visibleErrors = (summary.errorGroups || []).filter((item) => !selectedJobType || item.jobType === selectedJobType);
+  byId("jobs-error-groups").textContent = JSON.stringify(visibleErrors, null, 2);
+  byId("show-running-jobs").addEventListener("click", () => {
+    byId("stage").value = "running";
+    state.offset = 0;
+    load();
+  });
   byId("retry-process-failed").addEventListener("click", retryFailedProcessing);
+  refreshLiveElapsed();
 }
 
 async function runProcessJob(item, control) {
@@ -1249,6 +1303,7 @@ function configure() {
     byId("classification-filter").hidden = true;
     byId("target-filter").hidden = true;
     byId("search").placeholder = "Job ID, sourceProductId или текст ошибки";
+    window.setInterval(refreshLiveElapsed, 1_000);
   }
   if (mode === "runtime") {
     const runtime = document.createElement("section");

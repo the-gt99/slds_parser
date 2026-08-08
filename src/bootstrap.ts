@@ -27,9 +27,9 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
   registry.register(new NormalizeProductOperation());
   registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
   registry.register(new DownloadImagesOperation(
-    new GoatImageDownloader(environment, { concurrency: processing.image.concurrency }, undefined, proxyPool),
+    new GoatImageDownloader(environment, { concurrency: processing.image.transportConcurrency }, undefined, proxyPool),
     imageStore,
-    { concurrency: processing.image.concurrency, sourceCodes: ["goat"] },
+    { concurrency: processing.image.operationConcurrency, sourceCodes: ["goat"] },
   ));
   if (processing.shoeHeight !== null) {
     registry.register(new DetectShoeHeightOperation(
@@ -38,7 +38,7 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
       { sourceImagePosition: processing.shoeHeight.sourceImagePosition, eligibleCategoryValues: ["sneakers"], sourceCodes: ["goat"] },
     ));
   }
-  registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.concurrency, sourceCodes: ["goat"] }));
+  registry.register(new ConvertImagesToWebpOperation(imageStore, { concurrency: processing.image.operationConcurrency, sourceCodes: ["goat"] }));
   registry.register(new PublishImagesOperation(imageStore, ["goat"]));
   registry.register(new ValidateProcessedProductOperation(["goat"]));
 }

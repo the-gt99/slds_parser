@@ -144,6 +144,26 @@ describe("GoatProxyPool", () => {
     await Promise.all([...leases.filter((lease, index) => lease !== null && index !== 1), reused].map((lease) => lease?.release(true, 1)));
   });
 
+  it("reuses a warmed client when the same proxy session is leased again", async () => {
+    const repository = new MemoryProxyRepository([proxy({ id: "1" })]);
+    const pool = new GoatProxyPool(repository, {
+      GOAT_PROXY_POOL_ENABLED: "true",
+      PARSER_PROXY_ENCRYPTION_KEY: key,
+      GOAT_CLI_CURL_BIN: "curl",
+      GOAT_COOKIE_JAR_PATH: "/tmp/goat.jar",
+    });
+
+    const first = await pool.tryAcquire();
+    const firstClient = first?.client(".images");
+    await first?.release(true, 1);
+    const second = await pool.tryAcquire();
+
+    expect(second?.sessionSlot).toBe(first?.sessionSlot);
+    expect(second?.client(".images")).toBe(firstClient);
+    expect(second?.client()).not.toBe(firstClient);
+    await second?.release(true, 1);
+  });
+
   it("rejects invalid per-proxy concurrency", () => {
     const repository = new MemoryProxyRepository([proxy()]);
     expect(() => new GoatProxyPool(repository, {
@@ -228,7 +248,7 @@ describe("GOAT pool integration", () => {
 
     expect(maxActive).toBe(2);
     expect(repository.useRecords.filter((item) => item.success)).toHaveLength(3);
-    expect(clients.every((jar) => jar.includes(".images-") && jar.includes(".proxy-") && jar.includes(".session-"))).toBe(true);
+    expect(clients.every((jar) => jar.includes(".images") && jar.includes(".proxy-") && jar.includes(".session-"))).toBe(true);
   });
 });
 
