@@ -5,6 +5,7 @@ import type {
   ClassificationConfigListQuery,
   ClassificationConfigListResult,
   ClassificationReferenceValueOption,
+  ClassificationReviewExample,
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
@@ -28,6 +29,10 @@ import type {
 export interface ClassificationAdminRepository {
   listConfiguration(query: ClassificationConfigListQuery): Promise<ClassificationConfigListResult>;
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]>;
+  listReviewExamples(
+    reviewGroupId: string,
+    currentProcessorVersions?: Readonly<Record<string, string>>,
+  ): Promise<readonly ClassificationReviewExample[]>;
   listReferenceValues(
     typeCode: string,
     search: string | undefined,

@@ -278,7 +278,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[5]?.text).toContain("apply_classification_review_product_contributions");
   });
 
-  it("limits review groups before loading examples and uses their indexed type id", async () => {
+  it("lists review groups without scanning observations for examples", async () => {
     const executor = new FakeExecutor([[]]);
     await new PostgresClassificationAdminRepository(pool(executor)).listReviewQueue({
       limit: 200,
@@ -288,18 +288,23 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const sql = executor.calls[0]?.text ?? "";
     expect(sql).toContain("review_page AS MATERIALIZED");
     expect(sql).toContain("FROM classification_review_groups review");
-    expect(sql).toContain("JOIN LATERAL");
-    expect(sql).toContain("review_rule_resolutions AS MATERIALIZED");
-    expect(sql).toContain("review_example_products AS MATERIALIZED");
-    expect(sql).toContain("SELECT DISTINCT ON (observation.source_product_id)");
-    expect(sql).not.toContain("review_ranked_examples AS MATERIALIZED");
-    expect(sql).toContain("LEFT JOIN review_examples ON");
-    expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
-    expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
+    expect(sql).toContain("review_page.id AS review_group_id");
+    expect(sql).toContain("LIMIT $6 OFFSET $7");
+    expect(sql).not.toContain("source_reference_observations");
+    expect(sql).not.toContain("classification_review_rule_resolutions");
+  });
+
+  it("loads examples only for one materialized review group", async () => {
+    const executor = new FakeExecutor([[{ examples: [] }]]);
+    await new PostgresClassificationAdminRepository(pool(executor)).listReviewExamples("42", { "1": "2.9.0" });
+
+    const call = executor.calls[0];
+    const sql = call?.text ?? "";
+    expect(sql).toContain("WHERE review.id = $1");
+    expect(sql).toContain("group_observations AS MATERIALIZED");
     expect(sql).toContain("classification_review_rule_resolutions");
-    expect(sql).not.toContain("LEFT JOIN LATERAL classification_review_rule_resolutions");
-    expect(sql).not.toContain("type.code = review_groups.type_code");
-    expect(sql).not.toContain("MIN(observation.context::TEXT)");
+    expect(sql).toContain("LIMIT 3");
+    expect(call?.values).toEqual(["42", '{"1":"2.9.0"}']);
   });
 
   it("prefilters rule candidates with normalized SQL conditions", async () => {

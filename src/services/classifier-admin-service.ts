@@ -164,6 +164,11 @@ export class ClassifierAdminService {
     return this.adminRepository.listReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
   }
 
+  listReviewExamples(reviewGroupId: EntityId) {
+    validateText(reviewGroupId, "reviewGroupId", 64);
+    return this.adminRepository.listReviewExamples(reviewGroupId, this.currentProcessorVersions);
+  }
+
   listConfiguration(query: ClassificationConfigListQuery) {
     return this.adminRepository.listConfiguration({ ...query, currentProcessorVersions: this.currentProcessorVersions });
   }

@@ -21,6 +21,7 @@ const state = {
   queueSourceId: null,
   queueContextKey: null,
   pendingQueueSelection: null,
+  selectedExamplesRequest: 0,
 };
 
 function applyQueueDeepLink() {
@@ -221,7 +222,11 @@ async function loadQueue({ preserveSelection = false } = {}) {
       state.selected = state.queue.find((item) => decisionKey(item) === decisionKey(state.selected)) ?? null;
     }
     renderQueue();
-    if (state.selected) renderDetail();
+    if (state.selected) {
+      state.selectedExamplesRequest += 1;
+      renderDetail();
+      void loadReviewExamples(state.selected);
+    }
   } catch (error) {
     list.replaceChildren(emptyText(error.message));
   }
@@ -255,6 +260,7 @@ function renderQueue() {
   if (state.queue.length === 0) {
     list.append(emptyText("В этой выборке ничего не ожидает решения."));
     state.selected = null;
+    state.selectedExamplesRequest += 1;
     showEmptyDetail();
     return;
   }
@@ -279,6 +285,7 @@ function renderQueue() {
 }
 
 function selectQueueItem(item) {
+  state.selectedExamplesRequest += 1;
   state.selected = item;
   state.selectedMapping = null;
   state.decisionPreview = null;
@@ -289,9 +296,24 @@ function selectQueueItem(item) {
   state.resolved = false;
   renderQueue();
   renderDetail();
+  void loadReviewExamples(item);
   if (item.status !== "waiting_apply") {
     byId("mapping-search").value = item.sourceValue;
     void loadMappingResults();
+  }
+}
+
+async function loadReviewExamples(item) {
+  const requestId = state.selectedExamplesRequest;
+  byId("examples-list").replaceChildren(loading("Загружаем примеры…"));
+  try {
+    const response = await api(`/api/classifier/queue/${encodeURIComponent(item.reviewGroupId)}/examples`);
+    if (requestId !== state.selectedExamplesRequest || state.selected?.reviewGroupId !== item.reviewGroupId) return;
+    item.examples = response.items ?? [];
+    renderExamples(item, item.examples);
+  } catch (error) {
+    if (requestId !== state.selectedExamplesRequest || state.selected?.reviewGroupId !== item.reviewGroupId) return;
+    byId("examples-list").replaceChildren(emptyText(error.message));
   }
 }
 

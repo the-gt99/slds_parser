@@ -55,6 +55,10 @@ interface QueueQuery {
   readonly offset?: string;
 }
 
+interface ReviewExamplesParams {
+  readonly reviewGroupId: string;
+}
+
 interface ReferenceQuery {
   readonly typeCode?: string;
   readonly search?: string;
@@ -482,6 +486,16 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     });
     return { items };
   });
+
+  server.get<{ Params: ReviewExamplesParams }>(
+    "/api/classifier/queue/:reviewGroupId/examples",
+    { preHandler: requireAdmin },
+    async (request) => ({
+      items: await dependencies.classifier.listReviewExamples(
+        entityId(request.params.reviewGroupId, "reviewGroupId"),
+      ),
+    }),
+  );
 
   server.get<{ Querystring: ReferenceQuery }>("/api/classifier/reference-values", { preHandler: requireAdmin }, async (request) => {
     const typeCode = requiredString(request.query.typeCode, "typeCode");

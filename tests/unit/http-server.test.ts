@@ -49,7 +49,10 @@ describe("HTTP server", () => {
 
   it("protects classifier endpoints with a bearer token", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
-    const classifier = { listReviewQueue: vi.fn().mockResolvedValue([]) } as unknown as ClassifierAdminService;
+    const classifier = {
+      listReviewQueue: vi.fn().mockResolvedValue([]),
+      listReviewExamples: vi.fn().mockResolvedValue([]),
+    } as unknown as ClassifierAdminService;
     const server = createHttpServer({
       ...dependencies(database),
       classifier,
@@ -66,10 +69,16 @@ describe("HTTP server", () => {
       url: "/api/classifier/queue?status=waiting_apply",
       headers: { authorization: `Bearer ${adminToken}` },
     });
+    const examples = await server.inject({
+      method: "GET",
+      url: "/api/classifier/queue/42/examples",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
 
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
     expect(waiting.statusCode).toBe(200);
+    expect(examples.statusCode).toBe(200);
     expect(authorized.json()).toEqual({ items: [] });
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: "1",
@@ -79,6 +88,7 @@ describe("HTTP server", () => {
       contextKey: "context-women",
     }));
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
+    expect(classifier.listReviewExamples).toHaveBeenCalledWith("42");
     await server.close();
   });
 

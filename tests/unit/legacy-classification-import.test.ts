@@ -28,6 +28,7 @@ function dictionary(overrides: Partial<TargetDictionaryValueRecord> = {}): Targe
 
 function review(overrides: Partial<ClassificationReviewItem> = {}): ClassificationReviewItem {
   return {
+    reviewGroupId: "1",
     sourceId: "1",
     sourceCode: "goat",
     sourceName: "GOAT",

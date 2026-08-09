@@ -694,111 +694,31 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
         `WITH review_page AS MATERIALIZED (
-          SELECT
-            ROW_NUMBER() OVER ()::INTEGER AS review_group_id,
-            page.*
-          FROM (
-            SELECT review.*,
-              CASE WHEN review.review_status = 'waiting_apply'
-                THEN review.waiting_observation_count
-                ELSE review.needs_decision_observation_count
-              END AS observation_count,
-              CASE WHEN review.review_status = 'waiting_apply'
-                THEN review.waiting_product_count
-                ELSE review.needs_decision_product_count
-              END AS product_count
-            FROM classification_review_groups review
-            WHERE ($5::JSONB = '{}'::JSONB
-                OR review.processor_version = $5::JSONB ->> review.source_id::TEXT)
-              AND ($1::BIGINT IS NULL OR review.source_id = $1)
-              AND ($2::TEXT = '' OR review.reference_type_id = (
-                SELECT id FROM reference_types WHERE code = $2
-              ))
-              AND (($3::TEXT = '' AND review.review_status IN ('unresolved', 'ambiguous'))
-                OR review.review_status = $3)
-              AND ($4::TEXT = '' OR review.source_value ILIKE '%' || $4 || '%')
-              AND ($8::TEXT = '' OR review.context_key = $8)
-            ORDER BY product_count DESC, review.last_seen_at DESC, review.normalized_source_value
-            LIMIT $6 OFFSET $7
-          ) page
-        ), review_rule_resolutions AS MATERIALIZED (
-          SELECT resolution.*
-          FROM classification_review_rule_resolutions(NULL::BIGINT[]) resolution
-        ), review_example_products AS MATERIALIZED (
-          SELECT
-            review_page.review_group_id,
-            example.observation_id,
-            example.source_product_id,
-            example.last_seen_at
-          FROM review_page
-          JOIN LATERAL (
-            SELECT
-              distinct_product.observation_id,
-              distinct_product.source_product_id,
-              distinct_product.last_seen_at
-            FROM (
-              SELECT DISTINCT ON (observation.source_product_id)
-                observation.id AS observation_id,
-                observation.source_product_id,
-                observation.last_seen_at
-              FROM source_reference_observations observation
-              LEFT JOIN source_reference_mappings mapping
-                ON mapping.source_id = observation.source_id
-               AND mapping.reference_type_id = observation.reference_type_id
-               AND mapping.scope = observation.scope
-               AND mapping.normalized_source_value = observation.normalized_source_value
-               AND mapping.context_key = observation.context_key
-               AND (mapping.status = 'ignored' OR EXISTS (
-                 SELECT 1 FROM reference_values value
-                 WHERE value.id = mapping.reference_value_id AND value.enabled = TRUE
-               ))
-              LEFT JOIN review_rule_resolutions pending_rule
-                ON pending_rule.observation_id = observation.id
-              WHERE observation.source_id = review_page.source_id
-                AND observation.reference_type_id = review_page.reference_type_id
-                AND observation.processor_version = review_page.processor_version
-                AND observation.scope = review_page.scope
-                AND observation.normalized_source_value = review_page.normalized_source_value
-                AND observation.context_key = review_page.context_key
-                AND observation.status = review_page.observation_status
-                AND observation.active = TRUE
-                AND observation.status IN ('unresolved', 'ambiguous')
-                AND CASE WHEN review_page.review_status = 'waiting_apply'
-                  THEN mapping.id IS NOT NULL OR pending_rule.rule_id IS NOT NULL
-                  ELSE mapping.id IS NULL AND pending_rule.rule_id IS NULL
-                END
-              ORDER BY observation.source_product_id, observation.last_seen_at DESC, observation.id DESC
-            ) distinct_product
-            ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id DESC
-            LIMIT 3
-          ) example ON TRUE
-        ), review_examples AS MATERIALIZED (
-          SELECT
-            ranked.review_group_id,
-            JSONB_AGG(JSONB_BUILD_OBJECT(
-              'observation_id', observation.id,
-              'source_product_id', product.id,
-              'source_key', product.source_key,
-              'title', internal.data->>'title',
-              'sku', internal.data->>'sku',
-              'evidence', observation.evidence,
-              'target_snapshots', COALESCE((
-                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
-                  'target_id', snapshot.target_id::TEXT,
-                  'external_id', snapshot.external_id,
-                  'snapshot', snapshot.payload
-                ) ORDER BY snapshot.target_id)
-                FROM target_product_snapshots snapshot
-                WHERE snapshot.source_product_id = ranked.source_product_id
-              ), '[]'::JSONB)
-            ) ORDER BY ranked.observation_id) AS examples
-          FROM review_example_products ranked
-          JOIN source_reference_observations observation ON observation.id = ranked.observation_id
-          JOIN source_products product ON product.id = ranked.source_product_id
-          JOIN internal_products internal ON internal.source_product_id = ranked.source_product_id
-          GROUP BY ranked.review_group_id
+          SELECT review.*,
+            CASE WHEN review.review_status = 'waiting_apply'
+              THEN review.waiting_observation_count
+              ELSE review.needs_decision_observation_count
+            END AS observation_count,
+            CASE WHEN review.review_status = 'waiting_apply'
+              THEN review.waiting_product_count
+              ELSE review.needs_decision_product_count
+            END AS product_count
+          FROM classification_review_groups review
+          WHERE ($5::JSONB = '{}'::JSONB
+              OR review.processor_version = $5::JSONB ->> review.source_id::TEXT)
+            AND ($1::BIGINT IS NULL OR review.source_id = $1)
+            AND ($2::TEXT = '' OR review.reference_type_id = (
+              SELECT id FROM reference_types WHERE code = $2
+            ))
+            AND (($3::TEXT = '' AND review.review_status IN ('unresolved', 'ambiguous'))
+              OR review.review_status = $3)
+            AND ($4::TEXT = '' OR review.source_value ILIKE '%' || $4 || '%')
+            AND ($8::TEXT = '' OR review.context_key = $8)
+          ORDER BY product_count DESC, review.last_seen_at DESC, review.normalized_source_value
+          LIMIT $6 OFFSET $7
         )
         SELECT
+          review_page.id AS review_group_id,
           review_page.source_id,
           source.code AS source_code,
           source.name AS source_name,
@@ -815,11 +735,10 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           review_page.product_count,
           review_page.first_seen_at,
           review_page.last_seen_at,
-          COALESCE(review_examples.examples, '[]'::JSONB) AS examples
+          '[]'::JSONB AS examples
         FROM review_page
         JOIN sources source ON source.id = review_page.source_id
         JOIN reference_types type ON type.id = review_page.reference_type_id
-        LEFT JOIN review_examples ON review_examples.review_group_id = review_page.review_group_id
         ORDER BY product_count DESC, last_seen_at DESC, normalized_source_value`,
         [
           query.sourceId ?? null,
@@ -834,6 +753,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       );
 
       return result.rows.map((row) => ({
+        reviewGroupId: String(row.review_group_id),
         sourceId: String(row.source_id),
         sourceCode: String(row.source_code),
         sourceName: String(row.source_name),
@@ -852,6 +772,95 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         lastSeenAt: timestamp(row.last_seen_at),
         examples: reviewExamples(row.examples),
       }));
+    });
+  }
+
+  async listReviewExamples(
+    reviewGroupId: string,
+    currentProcessorVersions?: Readonly<Record<string, string>>,
+  ): Promise<readonly ClassificationReviewExample[]> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `WITH review_group AS MATERIALIZED (
+          SELECT review.*
+          FROM classification_review_groups review
+          WHERE review.id = $1
+            AND ($2::JSONB = '{}'::JSONB
+              OR review.processor_version = $2::JSONB ->> review.source_id::TEXT)
+        ), group_observations AS MATERIALIZED (
+          SELECT observation.*
+          FROM review_group review
+          JOIN source_reference_observations observation
+            ON observation.source_id = review.source_id
+           AND observation.reference_type_id = review.reference_type_id
+           AND observation.processor_version = review.processor_version
+           AND observation.scope = review.scope
+           AND observation.normalized_source_value = review.normalized_source_value
+           AND observation.context_key = review.context_key
+           AND observation.status = review.observation_status
+          WHERE observation.active = TRUE
+            AND observation.status IN ('unresolved', 'ambiguous')
+        ), review_rule_resolutions AS MATERIALIZED (
+          SELECT resolution.*
+          FROM classification_review_rule_resolutions(NULL::BIGINT[]) resolution
+        ), mapping_state AS MATERIALIZED (
+          SELECT mapping.id IS NOT NULL AS mapped
+          FROM review_group review
+          LEFT JOIN source_reference_mappings mapping
+            ON mapping.source_id = review.source_id
+           AND mapping.reference_type_id = review.reference_type_id
+           AND mapping.scope = review.scope
+           AND mapping.normalized_source_value = review.normalized_source_value
+           AND mapping.context_key = review.context_key
+           AND (mapping.status = 'ignored' OR EXISTS (
+             SELECT 1 FROM reference_values value
+             WHERE value.id = mapping.reference_value_id AND value.enabled = TRUE
+           ))
+        ), distinct_products AS MATERIALIZED (
+          SELECT DISTINCT ON (observation.source_product_id)
+            observation.id AS observation_id,
+            observation.source_product_id,
+            observation.last_seen_at
+          FROM group_observations observation
+          CROSS JOIN review_group review
+          CROSS JOIN mapping_state mapping
+          LEFT JOIN review_rule_resolutions pending_rule
+            ON pending_rule.observation_id = observation.id
+          WHERE CASE WHEN review.review_status = 'waiting_apply'
+            THEN mapping.mapped OR pending_rule.rule_id IS NOT NULL
+            ELSE NOT mapping.mapped AND pending_rule.rule_id IS NULL
+          END
+          ORDER BY observation.source_product_id, observation.last_seen_at DESC, observation.id DESC
+        ), selected_products AS MATERIALIZED (
+          SELECT distinct_product.*
+          FROM distinct_products distinct_product
+          ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id DESC
+          LIMIT 3
+        )
+        SELECT COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT(
+          'observation_id', observation.id,
+          'source_product_id', product.id,
+          'source_key', product.source_key,
+          'title', internal.data->>'title',
+          'sku', internal.data->>'sku',
+          'evidence', observation.evidence,
+          'target_snapshots', COALESCE((
+            SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+              'target_id', snapshot.target_id::TEXT,
+              'external_id', snapshot.external_id,
+              'snapshot', snapshot.payload
+            ) ORDER BY snapshot.target_id)
+            FROM target_product_snapshots snapshot
+            WHERE snapshot.source_product_id = selected.source_product_id
+          ), '[]'::JSONB)
+        ) ORDER BY selected.last_seen_at DESC, selected.observation_id DESC), '[]'::JSONB) AS examples
+        FROM selected_products selected
+        JOIN source_reference_observations observation ON observation.id = selected.observation_id
+        JOIN source_products product ON product.id = selected.source_product_id
+        JOIN internal_products internal ON internal.source_product_id = selected.source_product_id`,
+        [reviewGroupId, processorVersions(currentProcessorVersions)],
+      );
+      return reviewExamples(result.rows[0]?.examples);
     });
   }
 

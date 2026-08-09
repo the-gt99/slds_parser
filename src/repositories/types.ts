@@ -738,6 +738,7 @@ export interface ClassificationReviewExample {
 }
 
 export interface ClassificationReviewItem extends ClassificationDecisionKey {
+  readonly reviewGroupId: EntityId;
   readonly sourceCode: string;
   readonly sourceName: string;
   readonly typeName: string;
