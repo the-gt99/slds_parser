@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -15,7 +15,10 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       position: 0,
       alt: "Test shoe",
       attributes: {},
-      ...(options.matchingPerceptualImages ? { perceptualHash: "0000000000000000" } : {}),
+      ...(options.matchingPerceptualImages ? {
+        sourceUrl: "https://source.example/new.png",
+        perceptualHash: "0000000000000000",
+      } : {}),
     }],
     variants: [{
       sourceVariantKey: "offer-7",
@@ -66,7 +69,8 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
             url: "https://shop.example/wp-content/uploads/old.webp",
             position: 0,
             featured: true,
-            ...(options.matchingPerceptualImages ? { perceptual_hash: "0000000000000001" } : {}),
+            ...(options.matchingPerceptualImages ? { perceptual_hash: "00000000000007ff" } : {}),
+            ...(options.mismatchedStoredOrigin ? { origin_url: "https://source.example/old.png" } : {}),
           }],
           taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}, variations: [],
         } },
@@ -229,9 +233,18 @@ describe("WordPressPreviewService", () => {
       diff: { images: { changed: false, differences: [] } },
       comparison: {
         images: {
-          rows: [{ status: "unchanged", matchReason: "perceptual_hash", perceptualDistance: 1 }],
+          rows: [{ status: "unchanged", matchReason: "perceptual_hash", perceptualDistance: 11 }],
         },
       },
+    });
+  });
+
+  it("treats a changed stored source URL as a new image revision", async () => {
+    const { service } = setup(321, "source_identity", { matchingPerceptualImages: true, mismatchedStoredOrigin: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      diff: { images: { changed: true, differences: [expect.objectContaining({ position: 0 })] } },
+      comparison: { images: { rows: [{ status: "change", matchReason: null }] } },
     });
   });
 });

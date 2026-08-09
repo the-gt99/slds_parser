@@ -190,10 +190,13 @@ const referenceLabels: Readonly<Record<string, string>> = {
   season: "Сезон",
 };
 
+const maximumLegacyImagePerceptualDistance = 12;
+
 function imageIdentity(value: unknown) {
   const image = record(value);
   const url = typeof image.url === "string" ? image.url.trim() : "";
   const sourceUrl = typeof image.source_url === "string" ? image.source_url.trim() : "";
+  const originUrl = typeof image.origin_url === "string" ? image.origin_url.trim() : "";
   const filename = typeof image.filename === "string" ? image.filename.trim() : "";
   const importName = typeof image.import_name === "string" ? image.import_name.trim() : "";
   const contentHash = typeof image.content_hash === "string" ? image.content_hash.trim().toLowerCase() : "";
@@ -201,6 +204,7 @@ function imageIdentity(value: unknown) {
   return {
     url,
     sourceUrl,
+    originUrl,
     filename: filename || importName,
     contentHash,
     perceptualHash,
@@ -213,8 +217,15 @@ function imagesMatch(expected: unknown, actual: unknown) {
   if (left.contentHash !== "" && right.contentHash !== "" && left.contentHash === right.contentHash) {
     return { matched: true, reason: "content_hash", perceptualDistance: null };
   }
+  if (left.sourceUrl !== "" && right.originUrl !== "") {
+    return {
+      matched: left.sourceUrl === right.originUrl,
+      reason: left.sourceUrl === right.originUrl ? "source_url" : null,
+      perceptualDistance: null,
+    };
+  }
   const perceptualDistance = perceptualHashDistance(left.perceptualHash, right.perceptualHash);
-  if (perceptualDistance !== null && perceptualDistance <= 6) {
+  if (perceptualDistance !== null && perceptualDistance <= maximumLegacyImagePerceptualDistance) {
     return { matched: true, reason: "perceptual_hash", perceptualDistance };
   }
   const matched = JSON.stringify({ url: left.url, sourceUrl: left.sourceUrl, filename: left.filename })
