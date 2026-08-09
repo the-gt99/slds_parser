@@ -251,6 +251,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("review_page AS MATERIALIZED");
     expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
     expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
+    expect(sql.match(/observation\.status IN \('unresolved', 'ambiguous'\)/g)).toHaveLength(2);
     expect(sql).not.toContain("type.code = review_groups.type_code");
   });
 

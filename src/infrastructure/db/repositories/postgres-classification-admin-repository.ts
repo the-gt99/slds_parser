@@ -496,6 +496,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                 JOIN source_products product ON product.id = observation.source_product_id
                 LEFT JOIN internal_products internal ON internal.source_product_id = product.id
                 WHERE observation.active = TRUE
+                  AND observation.status IN ('unresolved', 'ambiguous')
                   AND observation.source_id = review_page.source_id
                   AND observation.reference_type_id = review_page.reference_type_id
                   AND observation.scope = review_page.scope
