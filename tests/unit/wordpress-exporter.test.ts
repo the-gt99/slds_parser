@@ -9,7 +9,16 @@ const product: UniversalProductDTO = {
   title: "Nike Test Shoe",
   description: "Source description",
   sku: "ROOT-SKU",
-  images: [{ url: "https://parser.example/images/test-1.webp", sourceUrl: "https://source.example/test.png", position: 0, alt: "Test", attributes: {} }],
+  images: [{
+    url: "https://parser.example/images/test-1.webp",
+    sourceUrl: "https://source.example/test.png",
+    sourceContentHash: "a".repeat(64),
+    contentHash: "b".repeat(64),
+    perceptualHash: "0123456789abcdef",
+    position: 0,
+    alt: "Test",
+    attributes: {},
+  }],
   variants: [{
     sourceVariantKey: "offer-7",
     sku: "ROOT-SKU-7",
@@ -66,7 +75,14 @@ describe("WordPressExporter", () => {
 
     expect(identity).toEqual({ source_code: "goat", source_external_id: "100", external_key: "goat:100", target_id: 0 });
     expect(targetProduct.taxonomies).toEqual({ pa_brand: { mode: "replace", term_ids: [31] }, product_cat: { mode: "replace", term_ids: [41] } });
-    expect(targetProduct.images).toEqual([{ url: "https://parser.example/images/test-1.webp", filename: "test-1.webp", source_url: "https://source.example/test.png" }]);
+    expect(targetProduct.images).toEqual([{
+      url: "https://parser.example/images/test-1.webp",
+      filename: "test-1.webp",
+      source_url: "https://source.example/test.png",
+      source_content_hash: "a".repeat(64),
+      content_hash: "b".repeat(64),
+      perceptual_hash: "0123456789abcdef",
+    }]);
     expect(targetProduct.description_html).toContain("<li>Технология: Air</li>");
     expect(targetProduct.description_html).toContain("<li>Категория: sneakers</li>");
     expect(targetProduct.description_html).toContain("<li>Дата релиза: 02 января 2026г.</li>");

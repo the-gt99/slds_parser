@@ -110,6 +110,7 @@ export class LocalImageStore implements ImageStore {
       await sharp(this.resolvePath(normalized), { failOn: "warning" }).webp({ quality: this.options.webpQuality }).toFile(temporary);
       await rename(temporary, target);
       await chmod(target, 0o640);
+      await rm(this.resolvePath(normalized), { force: true });
     } finally {
       await rm(temporary, { force: true });
     }

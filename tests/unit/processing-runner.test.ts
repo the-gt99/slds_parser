@@ -41,6 +41,24 @@ describe("ProcessingRunner", () => {
     expect([...first.store.internals.values()][0]?.data.title).toBe("Normalized");
     expect([...first.store.internals.values()][0]?.inputHash).not.toBe([...second.store.internals.values()][0]?.inputHash);
   });
+  it("passes the previously saved product to operations during reprocessing", async () => {
+    const contexts: unknown[] = [];
+    const operation: ProductOperation = {
+      code: "observe-previous",
+      version: "1",
+      execute: async (product, context) => {
+        contexts.push(context.previousProduct);
+        return product;
+      },
+    };
+    const { runner } = await setup("1", operation);
+
+    await runner.processProduct({ sourceProductId: "2", force: false });
+    await runner.processProduct({ sourceProductId: "2", force: true });
+
+    expect(contexts[0]).toBeUndefined();
+    expect(contexts[1]).toMatchObject({ sourceProductId: "2" });
+  });
   it("reprocesses when source configuration changes", async () => {
     const { runner, store, process } = await setup(); await runner.processProduct({ sourceProductId: "2", force: false });
     const previous = store.sources.get("1")!; store.sources.set("1", { ...previous, config: { locale: "ru" } });

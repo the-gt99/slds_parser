@@ -4,13 +4,19 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
     description: "Description",
     sku: "SKU-2",
-    images: [{ url: "https://parser.example/images/100.webp", position: 0, alt: "Test shoe", attributes: {} }],
+    images: [{
+      url: "https://parser.example/images/100.webp",
+      position: 0,
+      alt: "Test shoe",
+      attributes: {},
+      ...(options.matchingPerceptualImages ? { perceptualHash: "0000000000000000" } : {}),
+    }],
     variants: [{
       sourceVariantKey: "offer-7",
       sku: "SKU-2-7",
@@ -55,7 +61,13 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
         payload: { product: {
           title: "Old title", slug: "test-shoe", sku: "SKU-2",
           description_html: "<p>Old</p>", short_description_html: "<p>Сохранить</p>",
-          images: [{ attachment_id: 55, url: "https://shop.example/wp-content/uploads/old.webp", position: 0, featured: true }],
+          images: [{
+            attachment_id: 55,
+            url: "https://shop.example/wp-content/uploads/old.webp",
+            position: 0,
+            featured: true,
+            ...(options.matchingPerceptualImages ? { perceptual_hash: "0000000000000001" } : {}),
+          }],
           taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}, variations: [],
         } },
       }),
@@ -208,5 +220,18 @@ describe("WordPressPreviewService", () => {
     });
     expect(repositories.targets.findProductSnapshot).toHaveBeenCalledWith("10", "2");
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("keeps visually identical legacy WordPress images despite different URLs", async () => {
+    const { service } = setup(321, "source_identity", { matchingPerceptualImages: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      diff: { images: { changed: false, differences: [] } },
+      comparison: {
+        images: {
+          rows: [{ status: "unchanged", matchReason: "perceptual_hash", perceptualDistance: 1 }],
+        },
+      },
+    });
   });
 });

@@ -2,6 +2,7 @@ import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO } fro
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
+import { perceptualHashDistance } from "../processing/media/index.js";
 import {
   applyWordPressTitlePolicy,
   buildWordPressDescriptionHtml,
@@ -189,17 +190,36 @@ const referenceLabels: Readonly<Record<string, string>> = {
   season: "Сезон",
 };
 
-function imageIdentity(value: unknown): string {
+function imageIdentity(value: unknown) {
   const image = record(value);
   const url = typeof image.url === "string" ? image.url.trim() : "";
   const sourceUrl = typeof image.source_url === "string" ? image.source_url.trim() : "";
   const filename = typeof image.filename === "string" ? image.filename.trim() : "";
   const importName = typeof image.import_name === "string" ? image.import_name.trim() : "";
-  return JSON.stringify({
+  const contentHash = typeof image.content_hash === "string" ? image.content_hash.trim().toLowerCase() : "";
+  const perceptualHash = typeof image.perceptual_hash === "string" ? image.perceptual_hash.trim().toLowerCase() : "";
+  return {
     url,
     sourceUrl,
     filename: filename || importName,
-  });
+    contentHash,
+    perceptualHash,
+  };
+}
+
+function imagesMatch(expected: unknown, actual: unknown) {
+  const left = imageIdentity(expected);
+  const right = imageIdentity(actual);
+  if (left.contentHash !== "" && right.contentHash !== "" && left.contentHash === right.contentHash) {
+    return { matched: true, reason: "content_hash", perceptualDistance: null };
+  }
+  const perceptualDistance = perceptualHashDistance(left.perceptualHash, right.perceptualHash);
+  if (perceptualDistance !== null && perceptualDistance <= 6) {
+    return { matched: true, reason: "perceptual_hash", perceptualDistance };
+  }
+  const matched = JSON.stringify({ url: left.url, sourceUrl: left.sourceUrl, filename: left.filename })
+    === JSON.stringify({ url: right.url, sourceUrl: right.sourceUrl, filename: right.filename });
+  return { matched, reason: matched ? "identity" : null, perceptualDistance };
 }
 
 function imageDiff(expected: unknown, actual: unknown) {
@@ -211,7 +231,8 @@ function imageDiff(expected: unknown, actual: unknown) {
   for (let index = 0; index < max; index++) {
     const expectedImage = expectedImages[index] ?? null;
     const actualImage = actualImages[index] ?? null;
-    const changed = imageIdentity(expectedImage) !== imageIdentity(actualImage);
+    const comparison = imagesMatch(expectedImage, actualImage);
+    const changed = !comparison.matched;
     if (changed) {
       differences.push({ position: index, expected: expectedImage, actual: actualImage });
     }
@@ -220,6 +241,8 @@ function imageDiff(expected: unknown, actual: unknown) {
       status: expectedImage === null ? "remove" : actualImage === null ? "add" : changed ? "change" : "unchanged",
       expected: expectedImage,
       actual: actualImage,
+      matchReason: comparison.reason,
+      perceptualDistance: comparison.perceptualDistance,
     });
   }
   return {

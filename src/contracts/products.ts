@@ -98,6 +98,7 @@ export interface ProcessingContext {
 export interface ProductOperationContext {
   readonly source: SourceDTO;
   readonly sourceProduct: SourceProductDTO;
+  readonly previousProduct?: UniversalProductDTO;
 }
 
 export interface MoneyDTO {
@@ -130,6 +131,12 @@ export interface ProductImageDTO {
   readonly storedFormat?: string;
   readonly width?: number;
   readonly height?: number;
+  /** SHA-256 of the bytes received from the source before conversion. */
+  readonly sourceContentHash?: string;
+  /** SHA-256 of the final published image bytes. */
+  readonly contentHash?: string;
+  /** 64-bit perceptual dHash of the rendered image. */
+  readonly perceptualHash?: string;
   readonly attributes: JsonObject;
 }
 

@@ -213,14 +213,19 @@ describe("product operations", () => {
       const result = await pipeline.run(product(), context);
 
       expect(result.translatedContent).toMatchObject({ story: "История", color: "Синий/ Белый", details: "Кожа", upperMaterial: "Сетка" });
-      expect(result.images[0]).toMatchObject({ sourceUrl: "https://image.example/main.png", localPath: "goat/item_2/01-main.png", webpLocalPath: "goat/item_2/01-main.webp", mimeType: "image/png", storedFormat: "png", width: 2, height: 3, url: "https://parser.example/images/goat/item_2/01-main.webp" });
+      expect(result.images[0]).toMatchObject({ sourceUrl: "https://image.example/main.png", localPath: "goat/item_2/01-main.webp", webpLocalPath: "goat/item_2/01-main.webp", mimeType: "image/webp", storedFormat: "webp", width: 2, height: 3, url: "https://parser.example/images/goat/item_2/01-main.webp" });
+      expect(result.images[0]?.sourceContentHash).toMatch(/^[0-9a-f]{64}$/u);
+      expect(result.images[0]?.contentHash).toMatch(/^[0-9a-f]{64}$/u);
+      expect(result.images[0]?.perceptualHash).toMatch(/^[0-9a-f]{16}$/u);
       expect(existsSync(store.resolvePath(result.images[0]!.localPath!))).toBe(true);
       expect(existsSync(store.resolvePath(result.images[0]!.webpLocalPath!))).toBe(true);
+      expect(existsSync(store.resolvePath("goat/item_2/01-main.png"))).toBe(false);
       if (process.platform !== "win32") {
         expect((await stat(store.resolvePath(result.images[0]!.webpLocalPath!))).mode & 0o777).toBe(0o640);
         expect((await stat(join(directory, "goat", "item_2"))).mode & 0o777).toBe(0o750);
       }
-      await expect(pipeline.run(product(), context)).resolves.toMatchObject({ images: [{ url: "https://parser.example/images/goat/item_2/01-main.webp" }] });
+      await expect(pipeline.run(product(), { ...context, previousProduct: result })).resolves.toMatchObject({ images: [{ url: "https://parser.example/images/goat/item_2/01-main.webp" }] });
+      expect(downloader.download).toHaveBeenCalledOnce();
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

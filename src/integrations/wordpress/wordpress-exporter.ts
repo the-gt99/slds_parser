@@ -212,6 +212,9 @@ function imagePayload(image: ProductImageDTO, externalId: string): JsonObject {
     url: url.toString(),
     filename: imageFilename(image, externalId),
     ...(image.sourceUrl === undefined ? {} : { source_url: image.sourceUrl }),
+    ...(image.sourceContentHash === undefined ? {} : { source_content_hash: image.sourceContentHash }),
+    ...(image.contentHash === undefined ? {} : { content_hash: image.contentHash }),
+    ...(image.perceptualHash === undefined ? {} : { perceptual_hash: image.perceptualHash }),
   };
 }
 

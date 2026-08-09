@@ -5,6 +5,7 @@ import type {
   UniversalProductDTO,
 } from "../../contracts/index.js";
 import type { ImageStore } from "../media/index.js";
+import { imageContentHash, imagePerceptualHash } from "../media/index.js";
 import { fulfilledOrThrow, settleWithConcurrency } from "./media-operation-support.js";
 
 export interface ConvertImagesToWebpOperationOptions {
@@ -15,7 +16,7 @@ export interface ConvertImagesToWebpOperationOptions {
 export class ConvertImagesToWebpOperation implements ProductOperation {
   readonly code = "convert-images-to-webp";
   readonly name = "Конвертация изображений в WEBP";
-  readonly version = "1.1.0";
+  readonly version = "1.2.0";
   readonly dependsOn = ["download-images"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -33,7 +34,17 @@ export class ConvertImagesToWebpOperation implements ProductOperation {
     if (product.images.length === 0) return product;
     const results = await settleWithConcurrency(product.images, this.options.concurrency, async (image): Promise<ProductImageDTO> => {
       if (image.localPath === undefined) throw new Error("Downloaded image local path is missing");
-      return { ...image, webpLocalPath: await this.store.convertToWebp(image.localPath) };
+      const webpLocalPath = await this.store.convertToWebp(image.localPath);
+      const binary = await this.store.read(webpLocalPath);
+      return {
+        ...image,
+        localPath: webpLocalPath,
+        webpLocalPath,
+        mimeType: "image/webp",
+        storedFormat: "webp",
+        contentHash: imageContentHash(binary),
+        perceptualHash: await imagePerceptualHash(binary),
+      };
     });
     return { ...product, images: fulfilledOrThrow(results, "Downloaded product images are empty") };
   }

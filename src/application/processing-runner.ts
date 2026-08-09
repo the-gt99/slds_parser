@@ -66,7 +66,11 @@ export class ProcessingRunner {
       ...(part.sourceUpdatedAt === null ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), adapterVersion: part.adapterVersion }));
       const baseProduct = await processor.process({ source: sourceDto, sourceProduct: productDto, parts: partDtos });
       if (baseProduct.sourceProductId !== product.id) throw new IntegrationContractError(`Processed sourceProductId does not match ${product.id}`);
-      const operationRun = await this.operations.runTracked(baseProduct, { source: sourceDto, sourceProduct: productDto }, processor.version);
+      const operationRun = await this.operations.runTracked(baseProduct, {
+        source: sourceDto,
+        sourceProduct: productDto,
+        ...(existing === null ? {} : { previousProduct: existing.data }),
+      }, processor.version);
       attemptId = operationRun.attemptId;
       operationsOutput = operationRun.product;
       try {
