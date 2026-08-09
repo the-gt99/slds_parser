@@ -302,7 +302,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const sql = call?.text ?? "";
     expect(sql).toContain("WHERE review.id = $1");
     expect(sql).toContain("group_observations AS MATERIALIZED");
-    expect(sql).toContain("classification_review_rule_resolutions");
+    expect(sql).not.toContain("classification_review_rule_resolutions");
+    expect(sql).not.toContain("source_reference_mappings");
     expect(sql).toContain("LIMIT 3");
     expect(call?.values).toEqual(["42", '{"1":"2.9.0"}']);
   });

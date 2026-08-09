@@ -800,36 +800,12 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            AND observation.status = review.observation_status
           WHERE observation.active = TRUE
             AND observation.status IN ('unresolved', 'ambiguous')
-        ), review_rule_resolutions AS MATERIALIZED (
-          SELECT resolution.*
-          FROM classification_review_rule_resolutions(NULL::BIGINT[]) resolution
-        ), mapping_state AS MATERIALIZED (
-          SELECT mapping.id IS NOT NULL AS mapped
-          FROM review_group review
-          LEFT JOIN source_reference_mappings mapping
-            ON mapping.source_id = review.source_id
-           AND mapping.reference_type_id = review.reference_type_id
-           AND mapping.scope = review.scope
-           AND mapping.normalized_source_value = review.normalized_source_value
-           AND mapping.context_key = review.context_key
-           AND (mapping.status = 'ignored' OR EXISTS (
-             SELECT 1 FROM reference_values value
-             WHERE value.id = mapping.reference_value_id AND value.enabled = TRUE
-           ))
         ), distinct_products AS MATERIALIZED (
           SELECT DISTINCT ON (observation.source_product_id)
             observation.id AS observation_id,
             observation.source_product_id,
             observation.last_seen_at
           FROM group_observations observation
-          CROSS JOIN review_group review
-          CROSS JOIN mapping_state mapping
-          LEFT JOIN review_rule_resolutions pending_rule
-            ON pending_rule.observation_id = observation.id
-          WHERE CASE WHEN review.review_status = 'waiting_apply'
-            THEN mapping.mapped OR pending_rule.rule_id IS NOT NULL
-            ELSE NOT mapping.mapped AND pending_rule.rule_id IS NULL
-          END
           ORDER BY observation.source_product_id, observation.last_seen_at DESC, observation.id DESC
         ), selected_products AS MATERIALIZED (
           SELECT distinct_product.*
