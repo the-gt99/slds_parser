@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS source_reference_observations_review_idx;
