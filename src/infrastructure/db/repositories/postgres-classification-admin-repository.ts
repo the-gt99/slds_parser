@@ -320,10 +320,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          ), current_products AS MATERIALIZED (
            SELECT source_product_id, processor_version
            FROM internal_products
-         ), matched_observations AS MATERIALIZED (
+         ), observation_stats AS MATERIALIZED (
            SELECT item.kind, item.id AS config_id,
-                  observation.id AS observation_id, observation.source_product_id,
-                  observation.last_seen_at
+                  COUNT(DISTINCT observation.source_product_id)::INTEGER AS affected_product_count
            FROM page_items item
            JOIN source_reference_observations observation ON observation.mapping_id = item.id
            JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
@@ -331,8 +330,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
                OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           GROUP BY item.kind, item.id
            UNION ALL
-           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
            JOIN source_reference_observations observation ON observation.rule_id = item.id
            JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
@@ -340,8 +340,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
                OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           GROUP BY item.kind, item.id
            UNION ALL
-           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
            JOIN source_reference_observations observation
              ON observation.resolved_reference_value_id = item.reference_value_id
@@ -350,8 +351,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
                OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           GROUP BY item.kind, item.id
            UNION ALL
-           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
            JOIN source_reference_observations observation ON observation.mapping_id = item.resolution_id
            JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
@@ -360,8 +362,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
                OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           GROUP BY item.kind, item.id
            UNION ALL
-           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
            JOIN source_reference_observations observation ON observation.rule_id = item.resolution_id
            JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
@@ -370,35 +373,98 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
                OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
-         ), observation_stats AS MATERIALIZED (
-           SELECT kind, config_id,
-                  COUNT(DISTINCT source_product_id)::INTEGER AS affected_product_count
-           FROM matched_observations
-           GROUP BY kind, config_id
-         ), ranked_examples AS MATERIALIZED (
-           SELECT matched_observations.*,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY kind, config_id
-                    ORDER BY last_seen_at DESC, observation_id DESC
-                  ) AS example_rank
-           FROM matched_observations
+           GROUP BY item.kind, item.id
+         ), example_observations AS MATERIALIZED (
+           SELECT item.kind, item.id AS config_id, example.*
+           FROM page_items item
+           JOIN LATERAL (
+             SELECT observation.id AS observation_id, observation.source_product_id, observation.last_seen_at
+             FROM source_reference_observations observation
+             JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+             WHERE observation.mapping_id = item.id
+               AND observation.active = TRUE
+               AND (${versions}::JSONB = '{}'::JSONB
+                 OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+             ORDER BY observation.last_seen_at DESC, observation.id DESC
+             LIMIT 5
+           ) example ON TRUE
+           WHERE item.kind = 'mapping'
+           UNION ALL
+           SELECT item.kind, item.id, example.*
+           FROM page_items item
+           JOIN LATERAL (
+             SELECT observation.id, observation.source_product_id, observation.last_seen_at
+             FROM source_reference_observations observation
+             JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+             WHERE observation.rule_id = item.id
+               AND observation.active = TRUE
+               AND (${versions}::JSONB = '{}'::JSONB
+                 OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+             ORDER BY observation.last_seen_at DESC, observation.id DESC
+             LIMIT 5
+           ) example ON TRUE
+           WHERE item.kind = 'rule'
+           UNION ALL
+           SELECT item.kind, item.id, example.*
+           FROM page_items item
+           JOIN LATERAL (
+             SELECT observation.id, observation.source_product_id, observation.last_seen_at
+             FROM source_reference_observations observation
+             JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+             WHERE observation.resolved_reference_value_id = item.reference_value_id
+               AND observation.active = TRUE
+               AND (${versions}::JSONB = '{}'::JSONB
+                 OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+             ORDER BY observation.last_seen_at DESC, observation.id DESC
+             LIMIT 5
+           ) example ON TRUE
+           WHERE item.kind = 'target_mapping'
+           UNION ALL
+           SELECT item.kind, item.id, example.*
+           FROM page_items item
+           JOIN LATERAL (
+             SELECT observation.id, observation.source_product_id, observation.last_seen_at
+             FROM source_reference_observations observation
+             JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+             WHERE observation.mapping_id = item.resolution_id
+               AND observation.active = TRUE
+               AND (${versions}::JSONB = '{}'::JSONB
+                 OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+             ORDER BY observation.last_seen_at DESC, observation.id DESC
+             LIMIT 5
+           ) example ON TRUE
+           WHERE item.kind = 'projection' AND item.resolution_kind = 'mapping'
+           UNION ALL
+           SELECT item.kind, item.id, example.*
+           FROM page_items item
+           JOIN LATERAL (
+             SELECT observation.id, observation.source_product_id, observation.last_seen_at
+             FROM source_reference_observations observation
+             JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+             WHERE observation.rule_id = item.resolution_id
+               AND observation.active = TRUE
+               AND (${versions}::JSONB = '{}'::JSONB
+                 OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+             ORDER BY observation.last_seen_at DESC, observation.id DESC
+             LIMIT 5
+           ) example ON TRUE
+           WHERE item.kind = 'projection' AND item.resolution_kind = 'rule'
          ), observation_examples AS MATERIALIZED (
-           SELECT ranked.kind, ranked.config_id,
+           SELECT example.kind, example.config_id,
                   JSONB_AGG(JSONB_BUILD_OBJECT(
-                    'observation_id', ranked.observation_id,
-                    'source_product_id', ranked.source_product_id,
+                    'observation_id', example.observation_id,
+                    'source_product_id', example.source_product_id,
                     'source_key', product.source_key,
                     'title', internal.data->>'title',
                     'sku', internal.data->>'sku',
                     'evidence', observation.evidence,
                     'target_snapshots', '[]'::JSONB
-                  ) ORDER BY ranked.observation_id) AS examples
-           FROM ranked_examples ranked
-           JOIN source_reference_observations observation ON observation.id = ranked.observation_id
-           JOIN source_products product ON product.id = ranked.source_product_id
-           JOIN internal_products internal ON internal.source_product_id = ranked.source_product_id
-           WHERE ranked.example_rank <= 5
-           GROUP BY ranked.kind, ranked.config_id
+                  ) ORDER BY example.last_seen_at DESC, example.observation_id DESC) AS examples
+           FROM example_observations example
+           JOIN source_reference_observations observation ON observation.id = example.observation_id
+           JOIN source_products product ON product.id = example.source_product_id
+           JOIN internal_products internal ON internal.source_product_id = example.source_product_id
+           GROUP BY example.kind, example.config_id
          )
          SELECT page_items.*,
            COALESCE(observation_stats.affected_product_count, 0) AS affected_product_count,
