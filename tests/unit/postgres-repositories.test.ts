@@ -345,6 +345,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("item.id = $2");
     expect(executor.calls[0]?.values.slice(0, 2)).toEqual(["rule", "8"]);
     expect(executor.calls[1]?.text).toContain("matched_observations AS MATERIALIZED");
+    expect(executor.calls[1]?.text).toContain("current_products AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("observation_stats AS MATERIALIZED");
   });
 

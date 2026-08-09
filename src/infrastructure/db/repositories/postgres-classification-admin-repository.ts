@@ -317,13 +317,16 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            ${filtered}
            ORDER BY item.updated_at DESC, item.kind, item.id DESC
            LIMIT ${limit} OFFSET ${offset}
+         ), current_products AS MATERIALIZED (
+           SELECT source_product_id, processor_version
+           FROM internal_products
          ), matched_observations AS MATERIALIZED (
            SELECT item.kind, item.id AS config_id,
                   observation.id AS observation_id, observation.source_product_id,
                   observation.last_seen_at
            FROM page_items item
            JOIN source_reference_observations observation ON observation.mapping_id = item.id
-           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
            WHERE item.kind = 'mapping'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
@@ -332,7 +335,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
            FROM page_items item
            JOIN source_reference_observations observation ON observation.rule_id = item.id
-           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
            WHERE item.kind = 'rule'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
@@ -342,7 +345,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            FROM page_items item
            JOIN source_reference_observations observation
              ON observation.resolved_reference_value_id = item.reference_value_id
-           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
            WHERE item.kind = 'target_mapping'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
@@ -351,7 +354,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
            FROM page_items item
            JOIN source_reference_observations observation ON observation.mapping_id = item.resolution_id
-           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
            WHERE item.kind = 'projection'
              AND item.resolution_kind = 'mapping'
              AND observation.active = TRUE
@@ -361,7 +364,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
            FROM page_items item
            JOIN source_reference_observations observation ON observation.rule_id = item.resolution_id
-           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           JOIN current_products current_internal ON current_internal.source_product_id = observation.source_product_id
            WHERE item.kind = 'projection'
              AND item.resolution_kind = 'rule'
              AND observation.active = TRUE
