@@ -406,12 +406,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls).toHaveLength(2);
     expect(executor.calls[0]?.text).toContain("ORDER BY locked_at, id");
     expect(executor.calls[0]?.text).toContain("status = 'running'");
-    expect(executor.calls[0]?.values).toEqual(["worker", 30000, ["process_product"]]);
+    expect(executor.calls[0]?.text).toContain("job_type = $3::TEXT");
+    expect(executor.calls[0]?.values).toEqual(["worker", 30000, "process_product"]);
     expect(executor.calls[1]?.text).toContain("FOR UPDATE SKIP LOCKED");
     expect(executor.calls[1]?.text).toContain("status IN ('pending', 'retry')");
     expect(executor.calls[1]?.text).toContain("attempts = attempts + 1");
     expect(executor.calls[1]?.text).toContain("ORDER BY available_at, id");
-    expect(executor.calls[1]?.values).toEqual(["worker", ["process_product"]]);
+    expect(executor.calls[1]?.text).toContain("job_type = $2::TEXT");
+    expect(executor.calls[1]?.values).toEqual(["worker", "process_product"]);
   });
 
   it("returns an expired job without scanning the available queue", async () => {
