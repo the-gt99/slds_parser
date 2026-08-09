@@ -18,8 +18,9 @@ describe("worker config", () => {
 
   it("accepts a bounded processing concurrency", () => {
     expect(loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "3" }).processConcurrency).toBe(3);
-    expect(() => loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "9" })).toThrow(
-      "WORKER_PROCESS_CONCURRENCY must be an integer from 1 to 8",
+    expect(loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "15" }).processConcurrency).toBe(15);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "17" })).toThrow(
+      "WORKER_PROCESS_CONCURRENCY must be an integer from 1 to 16",
     );
   });
 

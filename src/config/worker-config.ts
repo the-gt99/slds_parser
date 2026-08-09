@@ -21,8 +21,8 @@ function positiveInteger(environment: WorkerEnvironment, key: keyof WorkerEnviro
 function processConcurrency(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 1;
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 8) {
-    throw new Error("WORKER_PROCESS_CONCURRENCY must be an integer from 1 to 8");
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 16) {
+    throw new Error("WORKER_PROCESS_CONCURRENCY must be an integer from 1 to 16");
   }
   return parsed;
 }

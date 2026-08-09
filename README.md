@@ -33,7 +33,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - `process_product` — построение внутреннего товара;
 - `export_product` — экспорт внутреннего товара в одну цель.
 
-Один `Worker` использует отдельные lane-группы для discovery, collection, processing и export. Processing lanes задаются `WORKER_PROCESS_CONCURRENCY` от 1 до 8, collection lanes — `WORKER_COLLECTION_CONCURRENCY` от 1 до 16. При включённом GOAT proxy pool collection lane сначала резервирует свободный session slot и только потом claim-ит `collect_product`; если свободных слотов на проверенных proxy нет, job остаётся `pending` без увеличения attempts. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
+Один `Worker` использует отдельные lane-группы для discovery, collection, processing и export. Processing lanes задаются `WORKER_PROCESS_CONCURRENCY` от 1 до 16, collection lanes — `WORKER_COLLECTION_CONCURRENCY` от 1 до 16. При включённом GOAT proxy pool collection lane сначала резервирует свободный session slot и только потом claim-ит `collect_product`; если свободных слотов на проверенных proxy нет, job остаётся `pending` без увеличения attempts. `JobRepository.claimNext` фильтрует типы и использует `FOR UPDATE SKIP LOCKED`. Просроченные `running` locks снова доступны после `WORKER_LOCK_TIMEOUT_MS`; число попыток увеличивается атомарно при claim.
 
 Повторяются только `RetryableError`, пока число попыток меньше `MAX_JOB_ATTEMPTS`. Задержка растёт экспоненциально от `JOB_RETRY_BASE_MS` и ограничивается `JOB_RETRY_MAX_MS`. `PermanentError` и неизвестные программные ошибки сразу завершают задачу как `failed`. Terminal failure discovery дополнительно помечает активный `source_collection_run` как `failed`.
 
@@ -174,7 +174,7 @@ WordPress importer скачивает готовые WebP по публичны�
 1. Скопируйте `.env.example` в `.env` и укажите строку подключения либо задайте `DATABASE_URL` в окружении.
 2. Запустите `npm run db:migrate`.
 
-Для worker также задайте `WORKER_ID`, `WORKER_POLL_INTERVAL_MS`, `WORKER_LOCK_TIMEOUT_MS`, `WORKER_PROCESS_CONCURRENCY`, `MAX_JOB_ATTEMPTS`, `JOB_RETRY_BASE_MS` и `JOB_RETRY_MAX_MS`. Processing concurrency допускается от 1 до 8, остальные числовые значения должны быть положительными целыми, а базовая retry-задержка — не больше максимальной.
+Для worker также задайте `WORKER_ID`, `WORKER_POLL_INTERVAL_MS`, `WORKER_LOCK_TIMEOUT_MS`, `WORKER_PROCESS_CONCURRENCY`, `MAX_JOB_ATTEMPTS`, `JOB_RETRY_BASE_MS` и `JOB_RETRY_MAX_MS`. Processing concurrency допускается от 1 до 16, остальные числовые значения должны быть положительными целыми, а базовая retry-задержка — не больше максимальной.
 
 Конфигурация подключения читается при создании пула. Поэтому импорт модулей не требует `DATABASE_URL`, а попытка создать подключение без этой переменной завершится понятной ошибкой. Миграции применяются в порядке имён файлов, каждая в отдельной транзакции. PostgreSQL advisory lock исключает параллельный запуск двух migration runners.
 
