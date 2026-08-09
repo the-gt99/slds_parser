@@ -257,6 +257,24 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).not.toContain("type.code = review_groups.type_code");
   });
 
+  it("prefilters rule candidates with normalized SQL conditions", async () => {
+    const executor = new FakeExecutor([[]]);
+    await new PostgresClassificationAdminRepository(pool(executor)).listRuleCandidates(
+      "1",
+      "category",
+      "2.9.0",
+      [
+        { field: "sourceValue", operator: "equals", value: " Sneakers " },
+        { field: "context.audience", operator: "equals", value: "Youth" },
+      ],
+    );
+
+    const call = executor.calls[0]!;
+    expect(call.text).toContain("observation.normalized_source_value = $4");
+    expect(call.text).toContain("observation.context ->> $5");
+    expect(call.values).toEqual(["1", "category", "2.9.0", "sneakers", "audience", "youth"]);
+  });
+
   it("resolves an existing internal value for a rule selected from a target term", async () => {
     const executor = new FakeExecutor([[{ reference_value_id: "23" }]]);
     const referenceValueId = await new PostgresClassificationAdminRepository(pool(executor)).findRuleTargetReference({
@@ -326,6 +344,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(executor.calls[0]?.text).toContain("item.id = $2");
     expect(executor.calls[0]?.values.slice(0, 2)).toEqual(["rule", "8"]);
+    expect(executor.calls[1]?.text).toContain("matched_observations AS MATERIALIZED");
+    expect(executor.calls[1]?.text).toContain("observation_stats AS MATERIALIZED");
   });
 
   it("saves a target snapshot and links the observed target product atomically", async () => {

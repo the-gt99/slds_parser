@@ -226,7 +226,12 @@ export class ClassifierAdminService {
     validateRuleDraft(draft);
     const [resolution, candidates, existingRules] = await Promise.all([
       this.resolveRuleResult(draft),
-      this.adminRepository.listRuleCandidates(draft.sourceId, draft.typeCode, this.currentProcessorVersions[draft.sourceId]),
+      this.adminRepository.listRuleCandidates(
+        draft.sourceId,
+        draft.typeCode,
+        this.currentProcessorVersions[draft.sourceId],
+        draft.conditions,
+      ),
       this.classificationRepository.listActiveRules(draft.sourceId, [draft.typeCode])
         .then((rules) => rules.filter((rule) => rule.id !== excludeRuleId)),
     ]);
@@ -491,6 +496,7 @@ export class ClassifierAdminService {
       rule.sourceId,
       rule.typeCode,
       this.currentProcessorVersions[rule.sourceId],
+      rule.conditions,
     );
     return [...new Set(candidates
       .filter((item) => item.mappingId === null && matchesClassificationRule(item.candidate, rule.conditions))

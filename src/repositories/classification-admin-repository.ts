@@ -8,6 +8,7 @@ import type {
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
+  ClassificationRuleConditionRecord,
   ClassificationRuleAdminRecord,
   ClassificationRuleConditionFieldOption,
   ClassificationConfigHistoryRecord,
@@ -36,6 +37,7 @@ export interface ClassificationAdminRepository {
     sourceId: string,
     typeCode: string,
     currentProcessorVersion?: string,
+    conditions?: readonly ClassificationRuleConditionRecord[],
   ): Promise<readonly ClassificationRuleCandidateRecord[]>;
   getRule(ruleId: string): Promise<ClassificationRuleAdminRecord | null>;
   listRuleConditionFields(

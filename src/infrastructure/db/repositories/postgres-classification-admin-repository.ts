@@ -16,6 +16,7 @@ import type {
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
   ClassificationRuleAdminRecord,
+  ClassificationRuleConditionRecord,
   ClassificationRuleConditionFieldOption,
   CreateClassificationRuleInput,
   CreateClassificationRuleResult,
@@ -108,6 +109,48 @@ function configOutputs(value: unknown): readonly ClassificationConfigOutput[] {
 
 function processorVersions(value: Readonly<Record<string, string>> | undefined): string {
   return JSON.stringify(value ?? {});
+}
+
+function ruleCandidateFilters(
+  conditions: readonly ClassificationRuleConditionRecord[],
+  firstParameter: number,
+): { readonly sql: string; readonly values: readonly string[] } {
+  const clauses: string[] = [];
+  const values: string[] = [];
+  const parameter = (value: string): string => {
+    values.push(value);
+    return `$${firstParameter + values.length - 1}`;
+  };
+  for (const condition of conditions) {
+    if (condition.operator === "regex") continue;
+    let actual: string;
+    if (condition.field === "sourceValue") {
+      actual = "observation.normalized_source_value";
+    } else if (condition.field === "scope") {
+      actual = "LOWER(NORMALIZE(BTRIM(observation.scope), NFKC))";
+    } else if (condition.field === "subjectKind") {
+      actual = "LOWER(NORMALIZE(BTRIM(observation.subject_kind), NFKC))";
+    } else {
+      const match = /^(context|evidence)\.([a-zA-Z][a-zA-Z0-9_-]*)$/u.exec(condition.field);
+      if (match === null) continue;
+      const key = parameter(match[2]!);
+      actual = `LOWER(NORMALIZE(BTRIM(COALESCE(observation.${match[1]} ->> ${key}, '')), NFKC))`;
+    }
+    const normalized = condition.value.trim().normalize("NFKC").toLowerCase();
+    if (condition.operator === "equals") {
+      clauses.push(`${actual} = ${parameter(normalized)}`);
+    } else if (condition.operator === "contains") {
+      clauses.push(`${actual} LIKE '%' || ${parameter(normalized)} || '%'`);
+    } else {
+      for (const word of normalized.split(/\s+/u).filter(Boolean)) {
+        clauses.push(`${actual} LIKE '%' || ${parameter(word)} || '%'`);
+      }
+    }
+  }
+  return {
+    sql: clauses.length === 0 ? "" : `\n           AND ${clauses.join("\n           AND ")}`,
+    values,
+  };
 }
 
 function mapTargetValueMappingAdmin(row: DatabaseRow): TargetValueMappingAdminRecord {
@@ -269,55 +312,95 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const limit = add(query.limit);
       const offset = add(query.offset);
       const result = await client.query<DatabaseRow>(
-        `WITH page AS (
-           SELECT item.*,
-             COALESCE((
-               SELECT COUNT(DISTINCT observation.source_product_id)::INTEGER
-               FROM source_reference_observations observation
-               JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
-               WHERE observation.active = TRUE
-                 AND (${versions}::JSONB = '{}'::JSONB
-                   OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
-                 AND (
-                   (item.kind = 'mapping' AND observation.mapping_id = item.id)
-                   OR (item.kind = 'rule' AND observation.rule_id = item.id)
-                   OR (item.kind = 'target_mapping' AND observation.resolved_reference_value_id = item.reference_value_id)
-                   OR (item.kind = 'projection' AND (
-                     (item.resolution_kind = 'mapping' AND observation.mapping_id = item.resolution_id)
-                     OR (item.resolution_kind = 'rule' AND observation.rule_id = item.resolution_id)
-                   ))
-                 )
-             ), 0) AS affected_product_count,
-             COALESCE((
-               SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
-               FROM (
-                 SELECT observation.id AS observation_id,
-                        observation.source_product_id,
-                        product.source_key,
-                        internal.data->>'title' AS title,
-                        internal.data->>'sku' AS sku,
-                        observation.evidence,
-                        '[]'::JSONB AS target_snapshots
-                 FROM source_reference_observations observation
-                 JOIN source_products product ON product.id = observation.source_product_id
-                 JOIN internal_products internal ON internal.source_product_id = observation.source_product_id
-                 WHERE observation.active = TRUE
-                   AND (${versions}::JSONB = '{}'::JSONB
-                     OR internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
-                   AND (
-                     (item.kind = 'mapping' AND observation.mapping_id = item.id)
-                     OR (item.kind = 'rule' AND observation.rule_id = item.id)
-                     OR (item.kind = 'target_mapping' AND observation.resolved_reference_value_id = item.reference_value_id)
-                     OR (item.kind = 'projection' AND (
-                       (item.resolution_kind = 'mapping' AND observation.mapping_id = item.resolution_id)
-                       OR (item.resolution_kind = 'rule' AND observation.rule_id = item.resolution_id)
-                     ))
-                   )
-                 ORDER BY observation.last_seen_at DESC, observation.id DESC
-                 LIMIT 5
-               ) example
-             ), '[]'::JSONB) AS examples,
-             COALESCE((
+        `WITH page_items AS MATERIALIZED (
+           SELECT item.*
+           ${filtered}
+           ORDER BY item.updated_at DESC, item.kind, item.id DESC
+           LIMIT ${limit} OFFSET ${offset}
+         ), matched_observations AS MATERIALIZED (
+           SELECT item.kind, item.id AS config_id,
+                  observation.id AS observation_id, observation.source_product_id,
+                  observation.last_seen_at
+           FROM page_items item
+           JOIN source_reference_observations observation ON observation.mapping_id = item.id
+           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           WHERE item.kind = 'mapping'
+             AND observation.active = TRUE
+             AND (${versions}::JSONB = '{}'::JSONB
+               OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           UNION ALL
+           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           FROM page_items item
+           JOIN source_reference_observations observation ON observation.rule_id = item.id
+           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           WHERE item.kind = 'rule'
+             AND observation.active = TRUE
+             AND (${versions}::JSONB = '{}'::JSONB
+               OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           UNION ALL
+           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           FROM page_items item
+           JOIN source_reference_observations observation
+             ON observation.resolved_reference_value_id = item.reference_value_id
+           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           WHERE item.kind = 'target_mapping'
+             AND observation.active = TRUE
+             AND (${versions}::JSONB = '{}'::JSONB
+               OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           UNION ALL
+           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           FROM page_items item
+           JOIN source_reference_observations observation ON observation.mapping_id = item.resolution_id
+           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           WHERE item.kind = 'projection'
+             AND item.resolution_kind = 'mapping'
+             AND observation.active = TRUE
+             AND (${versions}::JSONB = '{}'::JSONB
+               OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+           UNION ALL
+           SELECT item.kind, item.id, observation.id, observation.source_product_id, observation.last_seen_at
+           FROM page_items item
+           JOIN source_reference_observations observation ON observation.rule_id = item.resolution_id
+           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
+           WHERE item.kind = 'projection'
+             AND item.resolution_kind = 'rule'
+             AND observation.active = TRUE
+             AND (${versions}::JSONB = '{}'::JSONB
+               OR current_internal.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+         ), observation_stats AS MATERIALIZED (
+           SELECT kind, config_id,
+                  COUNT(DISTINCT source_product_id)::INTEGER AS affected_product_count
+           FROM matched_observations
+           GROUP BY kind, config_id
+         ), ranked_examples AS MATERIALIZED (
+           SELECT matched_observations.*,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY kind, config_id
+                    ORDER BY last_seen_at DESC, observation_id DESC
+                  ) AS example_rank
+           FROM matched_observations
+         ), observation_examples AS MATERIALIZED (
+           SELECT ranked.kind, ranked.config_id,
+                  JSONB_AGG(JSONB_BUILD_OBJECT(
+                    'observation_id', ranked.observation_id,
+                    'source_product_id', ranked.source_product_id,
+                    'source_key', product.source_key,
+                    'title', internal.data->>'title',
+                    'sku', internal.data->>'sku',
+                    'evidence', observation.evidence,
+                    'target_snapshots', '[]'::JSONB
+                  ) ORDER BY ranked.observation_id) AS examples
+           FROM ranked_examples ranked
+           JOIN source_reference_observations observation ON observation.id = ranked.observation_id
+           JOIN source_products product ON product.id = ranked.source_product_id
+           JOIN internal_products internal ON internal.source_product_id = ranked.source_product_id
+           WHERE ranked.example_rank <= 5
+           GROUP BY ranked.kind, ranked.config_id
+         )
+         SELECT page_items.*,
+           COALESCE(observation_stats.affected_product_count, 0) AS affected_product_count,
+           COALESCE(observation_examples.examples, '[]'::JSONB) AS examples,
+           COALESCE((
                SELECT JSONB_AGG(TO_JSONB(output) ORDER BY output.kind, output.target_scope, output.target_label)
                FROM (
                  SELECT 'target_mapping'::TEXT AS kind, target_mapping.id,
@@ -330,8 +413,8 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                  FROM target_value_mappings target_mapping
                  JOIN targets target ON target.id = target_mapping.target_id
                  LEFT JOIN target_dictionary_values dictionary ON dictionary.id = target_mapping.dictionary_value_id
-                 WHERE item.kind IN ('mapping', 'rule')
-                   AND target_mapping.reference_value_id = item.reference_value_id
+                 WHERE page_items.kind IN ('mapping', 'rule')
+                   AND target_mapping.reference_value_id = page_items.reference_value_id
                  UNION ALL
                  SELECT 'projection'::TEXT AS kind, projection.id,
                         projection.target_id, target.code AS target_code,
@@ -343,16 +426,19 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                  FROM target_classification_projections projection
                  JOIN targets target ON target.id = projection.target_id
                  JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
-                 WHERE item.kind IN ('mapping', 'rule')
-                   AND ((item.kind = 'mapping' AND projection.mapping_id = item.id)
-                     OR (item.kind = 'rule' AND projection.rule_id = item.id))
+                 WHERE page_items.kind IN ('mapping', 'rule')
+                   AND ((page_items.kind = 'mapping' AND projection.mapping_id = page_items.id)
+                     OR (page_items.kind = 'rule' AND projection.rule_id = page_items.id))
                ) output
              ), '[]'::JSONB) AS outputs
-           ${filtered}
-           ORDER BY item.updated_at DESC, item.kind, item.id DESC
-           LIMIT ${limit} OFFSET ${offset}
-         )
-         SELECT * FROM page`,
+         FROM page_items
+         LEFT JOIN observation_stats
+           ON observation_stats.kind = page_items.kind
+          AND observation_stats.config_id = page_items.id
+         LEFT JOIN observation_examples
+           ON observation_examples.kind = page_items.kind
+          AND observation_examples.config_id = page_items.id
+         ORDER BY page_items.updated_at DESC, page_items.kind, page_items.id DESC`,
         parameters,
       );
       const sources = await client.query<DatabaseRow>("SELECT id, code, name FROM sources ORDER BY name, id");
@@ -605,8 +691,10 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     sourceId: string,
     typeCode: string,
     currentProcessorVersion?: string,
+    conditions: readonly ClassificationRuleConditionRecord[] = [],
   ): Promise<readonly ClassificationRuleCandidateRecord[]> {
     return withClient(this.pool, async (client) => {
+      const filters = ruleCandidateFilters(conditions, 4);
       const result = await client.query<DatabaseRow>(
         `SELECT
            observation.id AS observation_id,
@@ -618,7 +706,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            observation.mapping_id,
            CASE WHEN observation.mapping_id IS NULL THEN NULL ELSE observation.resolved_reference_value_id END AS mapping_reference_value_id,
            observation.candidate_key,
-           type.code AS type_code,
+           $2::TEXT AS type_code,
            observation.scope,
            observation.subject_kind,
            observation.subject_key,
@@ -626,15 +714,17 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            observation.context,
            observation.evidence
          FROM source_reference_observations observation
-         JOIN reference_types type ON type.id = observation.reference_type_id
          JOIN source_products product ON product.id = observation.source_product_id
          LEFT JOIN internal_products internal ON internal.source_product_id = product.id
          WHERE observation.active = TRUE
            AND observation.source_id = $1
-           AND type.code = $2
+           AND observation.reference_type_id = (
+             SELECT id FROM reference_types WHERE code = $2
+           )
            AND ($3::TEXT IS NULL OR internal.processor_version = $3)
+           ${filters.sql}
          ORDER BY observation.id`,
-        [sourceId, typeCode, currentProcessorVersion ?? null],
+        [sourceId, typeCode, currentProcessorVersion ?? null, ...filters.values],
       );
 
       return result.rows.map((row) => {
