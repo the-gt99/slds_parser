@@ -240,7 +240,10 @@ AS $$
   GROUP BY ranked.observation_id;
 $$;
 
-CREATE OR REPLACE FUNCTION refresh_classification_review_groups(keys JSONB)
+CREATE OR REPLACE FUNCTION refresh_classification_review_groups(
+  keys JSONB,
+  lock_groups BOOLEAN DEFAULT TRUE
+)
 RETURNS VOID
 LANGUAGE plpgsql
 AS $$
@@ -251,31 +254,33 @@ BEGIN
     RETURN;
   END IF;
 
-  FOR group_lock IN
-    SELECT DISTINCT classification_review_group_lock_key(
-      item.source_id,
-      type.id,
-      item.processor_version,
-      item.scope,
-      item.normalized_source_value,
-      item.context_key,
-      item.observation_status
-    )
-    FROM JSONB_TO_RECORDSET(keys) AS item(
-      source_id BIGINT,
-      type_code TEXT,
-      processor_version TEXT,
-      scope TEXT,
-      normalized_source_value TEXT,
-      context_key TEXT,
-      observation_status TEXT
-    )
-    JOIN reference_types type ON type.code = item.type_code
-    WHERE item.observation_status IN ('unresolved', 'ambiguous')
-    ORDER BY 1
-  LOOP
-    PERFORM PG_ADVISORY_XACT_LOCK(group_lock);
-  END LOOP;
+  IF lock_groups THEN
+    FOR group_lock IN
+      SELECT DISTINCT classification_review_group_lock_key(
+        item.source_id,
+        type.id,
+        item.processor_version,
+        item.scope,
+        item.normalized_source_value,
+        item.context_key,
+        item.observation_status
+      )
+      FROM JSONB_TO_RECORDSET(keys) AS item(
+        source_id BIGINT,
+        type_code TEXT,
+        processor_version TEXT,
+        scope TEXT,
+        normalized_source_value TEXT,
+        context_key TEXT,
+        observation_status TEXT
+      )
+      JOIN reference_types type ON type.code = item.type_code
+      WHERE item.observation_status IN ('unresolved', 'ambiguous')
+      ORDER BY 1
+    LOOP
+      PERFORM PG_ADVISORY_XACT_LOCK(group_lock);
+    END LOOP;
+  END IF;
 
   WITH affected AS (
     SELECT DISTINCT
@@ -717,7 +722,10 @@ BEGIN
     WHERE observation.active = TRUE
       AND observation.status IN ('unresolved', 'ambiguous')
   ) key_row;
-  PERFORM refresh_classification_review_groups(all_keys);
+  -- The full rebuild already holds table locks. Taking one transaction-level
+  -- advisory lock per group would exhaust PostgreSQL's shared lock table on a
+  -- production-sized catalog.
+  PERFORM refresh_classification_review_groups(all_keys, FALSE);
 END;
 $$;
 
