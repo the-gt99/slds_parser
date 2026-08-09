@@ -1,0 +1,22 @@
+[Unit]
+Description=SLDS Parser database retention cleanup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+ExecStart=/usr/local/bin/node dist/src/cli/cleanup-retention.js
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

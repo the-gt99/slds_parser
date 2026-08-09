@@ -37,8 +37,47 @@ export class PostgresJobRepository implements JobRepository {
   }
 
   async claimNext(workerId: string, lockTimeoutMs: number, jobTypes?: readonly JobType[]): Promise<JobRecord | null> {
-    const result = await this.executor.query<DatabaseRow>(`WITH candidate AS (SELECT id FROM jobs WHERE ($3::TEXT[] IS NULL OR job_type = ANY($3::TEXT[])) AND ((status IN ('pending', 'retry') AND available_at <= NOW()) OR (status = 'running' AND locked_at < NOW() - ($2::double precision * INTERVAL '1 millisecond'))) ORDER BY available_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE jobs SET status = 'running', started_at = NOW(), locked_at = NOW(), locked_by = $1, attempts = attempts + 1, finished_at = NULL, updated_at = NOW() FROM candidate WHERE jobs.id = candidate.id RETURNING jobs.*`, [workerId, lockTimeoutMs, jobTypes ?? null]);
-    return result.rows[0] ? mapJob(result.rows[0]) : null;
+    const expired = await this.executor.query<DatabaseRow>(
+      `WITH candidate AS (
+         SELECT id
+         FROM jobs
+         WHERE ($3::TEXT[] IS NULL OR job_type = ANY($3::TEXT[]))
+           AND status = 'running'
+           AND locked_at < NOW() - ($2::DOUBLE PRECISION * INTERVAL '1 millisecond')
+         ORDER BY locked_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       UPDATE jobs
+       SET status = 'running', started_at = NOW(), locked_at = NOW(), locked_by = $1,
+           attempts = attempts + 1, finished_at = NULL, updated_at = NOW()
+       FROM candidate
+       WHERE jobs.id = candidate.id
+       RETURNING jobs.*`,
+      [workerId, lockTimeoutMs, jobTypes ?? null],
+    );
+    if (expired.rows[0]) return mapJob(expired.rows[0]);
+
+    const available = await this.executor.query<DatabaseRow>(
+      `WITH candidate AS (
+         SELECT id
+         FROM jobs
+         WHERE ($2::TEXT[] IS NULL OR job_type = ANY($2::TEXT[]))
+           AND status IN ('pending', 'retry')
+           AND available_at <= NOW()
+         ORDER BY available_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       UPDATE jobs
+       SET status = 'running', started_at = NOW(), locked_at = NOW(), locked_by = $1,
+           attempts = attempts + 1, finished_at = NULL, updated_at = NOW()
+       FROM candidate
+       WHERE jobs.id = candidate.id
+       RETURNING jobs.*`,
+      [workerId, jobTypes ?? null],
+    );
+    return available.rows[0] ? mapJob(available.rows[0]) : null;
   }
 
   async claimById(id: EntityId, workerId: string, jobTypes: readonly JobType[]): Promise<JobRecord | null> {

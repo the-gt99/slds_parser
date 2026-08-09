@@ -12,6 +12,7 @@ import {
   PostgresSourceRunRepository,
   PostgresTargetContentTemplateRepository,
   PostgresTargetRepository,
+  DatabaseRetentionService,
 } from "../../src/infrastructure/db/index.js";
 import type { SqlExecutor, SqlPool, SqlResult } from "../../src/infrastructure/db/index.js";
 
@@ -399,17 +400,54 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[1]?.values).toHaveLength(4);
   });
 
-  it("atomically claims available or expired jobs and increments attempts", async () => {
+  it("checks expired jobs before atomically claiming an available job", async () => {
+    const executor = new FakeExecutor([[], [jobRow]]);
+    await new PostgresJobRepository(executor).claimNext("worker", 30000, ["process_product"]);
+    expect(executor.calls).toHaveLength(2);
+    expect(executor.calls[0]?.text).toContain("ORDER BY locked_at, id");
+    expect(executor.calls[0]?.text).toContain("status = 'running'");
+    expect(executor.calls[0]?.values).toEqual(["worker", 30000, ["process_product"]]);
+    expect(executor.calls[1]?.text).toContain("FOR UPDATE SKIP LOCKED");
+    expect(executor.calls[1]?.text).toContain("status IN ('pending', 'retry')");
+    expect(executor.calls[1]?.text).toContain("attempts = attempts + 1");
+    expect(executor.calls[1]?.text).toContain("ORDER BY available_at, id");
+    expect(executor.calls[1]?.values).toEqual(["worker", ["process_product"]]);
+  });
+
+  it("returns an expired job without scanning the available queue", async () => {
     const executor = new FakeExecutor([[jobRow]]);
     await new PostgresJobRepository(executor).claimNext("worker", 30000, ["process_product"]);
-    const call = executor.calls[0];
-    expect(call?.text).toContain("FOR UPDATE SKIP LOCKED");
-    expect(call?.text).toContain("status = 'running' AND locked_at <");
-    expect(call?.text).toContain("attempts = attempts + 1");
-    expect(call?.text).toContain("started_at = NOW()");
-    expect(call?.text).toContain("ORDER BY available_at, id");
-    expect(call?.text).toContain("job_type = ANY($3::TEXT[])");
-    expect(call?.values).toEqual(["worker", 30000, ["process_product"]]);
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.text).toContain("locked_at <");
+  });
+
+  it("deletes expired operational data in bounded batches", async () => {
+    const executor = new FakeExecutor([
+      [{ id: "1" }, { id: "2" }],
+      [{ id: "3" }],
+      [],
+      [{ attempts: 1, operations: 7 }],
+      [],
+    ]);
+    const result = await new DatabaseRetentionService(pool(executor)).cleanup({
+      completedJobsBefore: new Date("2026-08-08T00:00:00.000Z"),
+      failedJobsBefore: new Date("2026-07-10T00:00:00.000Z"),
+      processingHistoryBefore: new Date("2026-07-10T00:00:00.000Z"),
+      inactiveObservationsBefore: new Date("2026-07-10T00:00:00.000Z"),
+      batchSize: 2,
+    });
+
+    expect(result).toEqual({
+      completedJobs: 3,
+      failedJobs: 0,
+      processingAttempts: 1,
+      operationExecutions: 7,
+      inactiveObservations: 0,
+    });
+    expect(executor.calls[0]?.text).toContain("status = 'completed'");
+    expect(executor.calls[0]?.text).toContain("LIMIT $2");
+    expect(executor.calls[3]?.text).toContain("deleted_operations AS");
+    expect(executor.calls[4]?.text).toContain("active = FALSE");
   });
 
   it("claims only an explicitly selected pending processing job", async () => {

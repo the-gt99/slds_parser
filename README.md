@@ -191,6 +191,7 @@ WordPress importer скачивает готовые WebP по публичны�
 - `npm run api` — запустить собранный API на `PARSER_HTTP_HOST` и `PARSER_HTTP_PORT`;
 - `npm run dev` — запуск точки входа через `tsx` в watch-режиме;
 - `npm run db:migrate` — применить PostgreSQL-миграции;
+- `npm run db:cleanup` — удалить истёкшие operational jobs, processing history и неактивные наблюдения небольшими пакетами;
 - `npm run goat:enqueue-discovery` — сохранить полный sitemap-реестр без collection;
 - `npm run goat:enqueue-cohort` — проверить либо поставить ограниченную выборку discovery-товаров на collection;
 - `npm run goat:enqueue-route-collection` — посчитать либо атомарно поставить весь остаток route на collection без downstream processing;
@@ -254,5 +255,7 @@ WordPress-адаптер включается только когда однов
 Типы в фильтре классификатора берутся из реально ожидающих решения наблюдений и их имён в PostgreSQL, а не из списка в браузерном коде. Возможность привязки к WordPress, соответствующая сущность и кратность объявляются самим target-адаптером. Карточка товара открывается по `/products/:productId`; старые товары покажут имеющиеся высокоуровневые jobs, а детальная история операций начнёт заполняться при следующей обработке.
 
 Полный worker в процессе API не запускается: production использует только `slds-parser-worker.service`. Для управления службой из админки пользователь API должен получить polkit-разрешение только на start/stop этой службы; готовое правило находится в `deploy/polkit`. Точечная ручная обработка выполняется отдельным one-shot приложением и атомарно забирает конкретный job по ID. Для записи media из такого запуска API-службе требуется override из `deploy/systemd`.
+
+Operational-данные ограничены политикой хранения. По умолчанию завершённые jobs хранятся 24 часа, failed jobs — 30 дней, история processing и неактивные наблюдения классификатора — 30 дней. Значения задаются через `PARSER_COMPLETED_JOB_RETENTION_HOURS`, `PARSER_FAILED_JOB_RETENTION_DAYS`, `PARSER_PROCESSING_HISTORY_RETENTION_DAYS`, `PARSER_INACTIVE_OBSERVATION_RETENTION_DAYS` и `PARSER_RETENTION_BATCH_SIZE`. Таймер `deploy/systemd/slds-parser-cleanup.timer` запускает очистку каждый час. Исходные части товаров, текущие товары, решения классификатора и audit history очистка не затрагивает.
 
 Процесс корректно закрывает HTTP-сервер и PostgreSQL pool по `SIGINT` и `SIGTERM`. Для production API следует запускать как отдельную службу за reverse proxy, не открывая внутренний порт наружу.
