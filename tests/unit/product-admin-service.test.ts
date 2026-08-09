@@ -206,12 +206,14 @@ describe("ProductAdminService", () => {
       }),
       saveBatchAudit: vi.fn().mockResolvedValue("11"),
     };
+    const queuedJob = {
+      id: "10", jobType: "process_product", payload: { sourceProductId: "5", force: true }, status: "pending",
+      attempts: 0, availableAt: now, lockedAt: null, lockedBy: null, uniqueKey: "source-product:5:process",
+      lastError: null, createdAt: now, updatedAt: now, finishedAt: null,
+    } satisfies JobRecord;
     const jobs: JobRepository = {
-      enqueue: vi.fn().mockResolvedValue({
-        id: "10", jobType: "process_product", payload: { sourceProductId: "5", force: true }, status: "pending",
-        attempts: 0, availableAt: now, lockedAt: null, lockedBy: null, uniqueKey: "source-product:5:process",
-        lastError: null, createdAt: now, updatedAt: now, finishedAt: null,
-      } satisfies JobRecord),
+      enqueue: vi.fn().mockResolvedValue(queuedJob),
+      enqueueMany: vi.fn().mockResolvedValue([queuedJob]),
       claimNext: vi.fn(), claimById: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn(),
     };
 
@@ -220,11 +222,11 @@ describe("ProductAdminService", () => {
       filter: { selectedIds: ["5"], limit: 100 },
     }, "admin");
 
-    expect(jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+    expect(jobs.enqueueMany).toHaveBeenCalledWith([expect.objectContaining({
       jobType: "process_product",
       payload: { sourceProductId: "5", force: true },
       uniqueKey: "source-product:5:process",
-    }));
+    })]);
     expect(repository.saveBatchAudit).toHaveBeenCalledWith(expect.objectContaining({ actor: "admin", createdJobIds: ["10"] }));
     expect(result.auditId).toBe("11");
   });
@@ -244,7 +246,7 @@ describe("ProductAdminService", () => {
       listFailedJobRetryIds: vi.fn().mockResolvedValue(["1", "2"]),
       saveBatchAudit: vi.fn().mockResolvedValue("20"),
     };
-    const jobs: JobRepository = { enqueue: vi.fn(), claimNext: vi.fn(), claimById: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn() };
+    const jobs: JobRepository = { enqueue: vi.fn(), enqueueMany: vi.fn(), claimNext: vi.fn(), claimById: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn() };
 
     const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).retryFailedJobs("process_product", 100, "admin", "retry");
 

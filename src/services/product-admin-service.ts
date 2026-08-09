@@ -34,6 +34,9 @@ function publicImage(image: ProductImageDTO) {
     storedFormat: image.storedFormat ?? null,
     width: image.width ?? null,
     height: image.height ?? null,
+    sourceContentHash: image.sourceContentHash ?? null,
+    contentHash: image.contentHash ?? null,
+    perceptualHash: image.perceptualHash ?? null,
     attributes: image.attributes,
   };
 }
@@ -245,16 +248,13 @@ export class ProductAdminService {
     const dryRun = await this.previewBatch(input);
     const selected = await this.repository.listBatchCandidates({ ...input.filter, includeFailedProcessing: input.action === "retry_failed_processing" });
     const eligible = selected.items.filter((item) => skipReason(input.action, item) === null);
-    const createdJobIds: EntityId[] = [];
     const jobType = jobTypeForAction(input.action);
-    for (const item of eligible) {
-      const job = await this.jobs.enqueue({
+    const jobs = await this.jobs.enqueueMany(eligible.map((item) => ({
         jobType,
         payload: jobPayload(item.sourceProductId, input.action),
         uniqueKey: `source-product:${item.sourceProductId}:${jobType === "collect_product" ? "collect" : "process"}`,
-      });
-      if (activeJobStatuses.has(job.status)) createdJobIds.push(job.id);
-    }
+    })));
+    const createdJobIds = jobs.filter((job) => activeJobStatuses.has(job.status)).map((job) => job.id);
     const auditId = await this.repository.saveBatchAudit({
       action: input.action,
       filter: input.filter,

@@ -8,8 +8,32 @@ export class PostgresJobRepository implements JobRepository {
   constructor(private readonly executor: SqlExecutor) {}
 
   async enqueue(input: EnqueueJobInput): Promise<JobRecord> {
-    const result = await this.executor.query<DatabaseRow>(`INSERT INTO jobs (job_type, payload, status, available_at, unique_key) VALUES ($1, $2::jsonb, 'pending', COALESCE($3::timestamptz, NOW()), $4) ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO UPDATE SET unique_key = jobs.unique_key RETURNING *`, [input.jobType, input.payload, input.availableAt ?? null, input.uniqueKey]);
-    return mapJob(requireRow(result.rows, "job", `${input.jobType}/${input.uniqueKey}`));
+    const jobs = await this.enqueueMany([input]);
+    return requireRow(jobs, "job", `${input.jobType}/${input.uniqueKey}`);
+  }
+
+  async enqueueMany(inputs: readonly EnqueueJobInput[]): Promise<readonly JobRecord[]> {
+    const jobs: JobRecord[] = [];
+    const batchSize = 1_000;
+    for (let offset = 0; offset < inputs.length; offset += batchSize) {
+      const batch = inputs.slice(offset, offset + batchSize);
+      const values: unknown[] = [];
+      const rows = batch.map((input) => {
+        const start = values.length;
+        values.push(input.jobType, input.payload, input.availableAt ?? null, input.uniqueKey);
+        return `($${start + 1}, $${start + 2}::jsonb, 'pending', COALESCE($${start + 3}::timestamptz, NOW()), $${start + 4})`;
+      });
+      const result = await this.executor.query<DatabaseRow>(
+        `INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
+         VALUES ${rows.join(", ")}
+         ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry')
+         DO UPDATE SET unique_key = jobs.unique_key
+         RETURNING *`,
+        values,
+      );
+      jobs.push(...result.rows.map(mapJob));
+    }
+    return jobs;
   }
 
   async claimNext(workerId: string, lockTimeoutMs: number, jobTypes?: readonly JobType[]): Promise<JobRecord | null> {

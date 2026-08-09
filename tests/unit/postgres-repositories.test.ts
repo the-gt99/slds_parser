@@ -314,6 +314,21 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql.split("DO UPDATE SET")[1]).not.toMatch(/payload\s*=/);
   });
 
+  it("enqueues large job sets in bounded SQL batches", async () => {
+    const executor = new FakeExecutor([[], []]);
+    const inputs = Array.from({ length: 1_001 }, (_, index) => ({
+      jobType: "process_product" as const,
+      payload: { sourceProductId: String(index + 1), force: false },
+      uniqueKey: `source-product:${index + 1}:process`,
+    }));
+
+    await new PostgresJobRepository(executor).enqueueMany(inputs);
+
+    expect(executor.calls).toHaveLength(2);
+    expect(executor.calls[0]?.values).toHaveLength(4_000);
+    expect(executor.calls[1]?.values).toHaveLength(4);
+  });
+
   it("atomically claims available or expired jobs and increments attempts", async () => {
     const executor = new FakeExecutor([[jobRow]]);
     await new PostgresJobRepository(executor).claimNext("worker", 30000, ["process_product"]);

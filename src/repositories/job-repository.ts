@@ -3,6 +3,7 @@ import type { EnqueueJobInput, JobRecord, JobType, RetryJobInput } from "./types
 
 export interface JobRepository {
   enqueue(input: EnqueueJobInput): Promise<JobRecord>;
+  enqueueMany(inputs: readonly EnqueueJobInput[]): Promise<readonly JobRecord[]>;
   claimNext(workerId: string, lockTimeoutMs: number, jobTypes?: readonly JobType[]): Promise<JobRecord | null>;
   claimById(id: EntityId, workerId: string, jobTypes: readonly JobType[]): Promise<JobRecord | null>;
   complete(id: EntityId): Promise<void>;
