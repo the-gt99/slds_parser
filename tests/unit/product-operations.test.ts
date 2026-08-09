@@ -224,8 +224,11 @@ describe("product operations", () => {
         expect((await stat(store.resolvePath(result.images[0]!.webpLocalPath!))).mode & 0o777).toBe(0o640);
         expect((await stat(join(directory, "goat", "item_2"))).mode & 0o777).toBe(0o750);
       }
+      await store.storeOriginal("goat", "2", 0, binary);
+      expect(existsSync(store.resolvePath("goat/item_2/01-main.png"))).toBe(true);
       await expect(pipeline.run(product(), { ...context, previousProduct: result })).resolves.toMatchObject({ images: [{ url: "https://parser.example/images/goat/item_2/01-main.webp" }] });
       expect(downloader.download).toHaveBeenCalledOnce();
+      expect(existsSync(store.resolvePath("goat/item_2/01-main.png"))).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

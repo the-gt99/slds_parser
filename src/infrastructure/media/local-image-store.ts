@@ -101,7 +101,13 @@ export class LocalImageStore implements ImageStore {
 
   async convertToWebp(localPath: string): Promise<string> {
     const normalized = localPath.replaceAll("\\", "/").replace(/^\/+/, "");
-    if (extname(normalized).toLowerCase() === ".webp") return normalized;
+    if (extname(normalized).toLowerCase() === ".webp") {
+      const stem = normalized.slice(0, -extname(normalized).length);
+      await Promise.all([".png", ".jpg", ".jpeg", ".gif"].map(async (extension) => {
+        await rm(this.resolvePath(`${stem}${extension}`), { force: true });
+      }));
+      return normalized;
+    }
     const webpPath = normalized.slice(0, -extname(normalized).length) + ".webp";
     const target = this.resolvePath(webpPath);
     const temporary = `${target}.${randomUUID()}.tmp`;
