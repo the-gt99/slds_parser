@@ -781,6 +781,14 @@ Parser commit `8da923c` развёрнут на production вместе с ми�
 
 Production smoke для `sourceProductId=76399` через transient short-description template вернул readiness `ready`, финальные доступные размеры `5 — 16.5`, аудиторию `WOMEN`, систему `US` и строку «Женская размерная сетка бренда». Smoke ничего не сохранил: в `target_content_templates` `0` записей, target `slamdunk=false`, `export_product` jobs `0`, WordPress writes не выполнялись. После deploy API и worker active, processing-очередь продолжилась с `10` running jobs, health `200`, production worktree чистый. Локально и на production прошли typecheck, `279` тестов, build и миграции.
 
+## Оптимизация очереди классификатора 9 августа 2026
+
+Parser commits `478b99c`, `58fb292`, `a54c0b8` и `ad9ad36` развёрнуты на production с миграциями `023` и `024`. Причиной `504` на `/api/classifier/queue?limit=200` был SQL примеров: для каждой из 200 групп PostgreSQL повторно читал большую часть `source_reference_observations`, а затем выполнял десятки тысяч точечных lookup по товарам и internal products. Увеличение nginx timeout не требовалось.
+
+Очередь теперь сначала фиксирует страницу агрегированных групп, одним проходом выбирает наблюдения только для этой страницы, ранжирует уникальные товары и подгружает полные данные максимум для трёх примеров каждой группы. Новый partial index покрывает полный ключ review-группы; старый короткий индекс удалён как избыточный префикс, который вводил планировщик в заблуждение.
+
+Production HTTP smoke с административной сессией и работающим worker: `limit=200`, `200` items, HTTP `200`, `5.64 с` вместо `504` после примерно `60 с`. Прямые repository-замеры под той же нагрузкой: `limit=50` — `6.32 с`, `limit=200` — `6.70 с`. На production прошли typecheck, `280` тестов, build, проверки JavaScript и `git diff --check`; API/worker active, health `200`, target `slamdunk=false`, active export jobs `0`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
