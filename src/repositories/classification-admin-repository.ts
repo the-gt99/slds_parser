@@ -63,6 +63,7 @@ export interface ClassificationAdminRepository {
     readonly actor: string;
     readonly reason?: string;
     readonly affectedSourceProductIds: readonly string[];
+    readonly matchedObservationIds: readonly string[];
   }): Promise<{ readonly affectedProductCount: number; readonly revision: string }>;
   deleteRule(input: {
     readonly ruleId: string;

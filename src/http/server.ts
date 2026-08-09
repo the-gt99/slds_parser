@@ -465,8 +465,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get<{ Querystring: QueueQuery }>("/api/classifier/queue", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);
     if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
-    if (request.query.status !== undefined && request.query.status !== "unresolved" && request.query.status !== "ambiguous") {
-      throw new HttpInputError("status must be unresolved or ambiguous");
+    if (request.query.status !== undefined
+      && request.query.status !== "unresolved"
+      && request.query.status !== "ambiguous"
+      && request.query.status !== "waiting_apply") {
+      throw new HttpInputError("status must be unresolved, ambiguous or waiting_apply");
     }
     const items = await dependencies.classifier.listReviewQueue({
       ...(request.query.sourceId === undefined ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),

@@ -37,7 +37,7 @@ function applyQueueDeepLink() {
     if (![...select.options].some((option) => option.value === typeCode)) select.append(new Option(typeCode, typeCode));
     select.value = typeCode;
   }
-  if (status === "unresolved" || status === "ambiguous") byId("status-filter").value = status;
+  if (["unresolved", "ambiguous", "waiting_apply"].includes(status)) byId("status-filter").value = status;
   state.queueSourceId = sourceId || null;
   state.queueContextKey = contextKey || null;
   state.pendingQueueSelection = { typeCode, status, search, contextKey };
@@ -248,6 +248,9 @@ function decisionKey(item) {
 function renderQueue() {
   const list = byId("queue-list");
   list.replaceChildren();
+  byId("queue-eyebrow").textContent = byId("status-filter").value === "waiting_apply"
+    ? "Ждут обработки"
+    : "Ожидают решения";
   byId("queue-count").textContent = String(state.queue.length);
   if (state.queue.length === 0) {
     list.append(emptyText("В этой выборке ничего не ожидает решения."));
@@ -286,8 +289,10 @@ function selectQueueItem(item) {
   state.resolved = false;
   renderQueue();
   renderDetail();
-  byId("mapping-search").value = item.sourceValue;
-  void loadMappingResults();
+  if (item.status !== "waiting_apply") {
+    byId("mapping-search").value = item.sourceValue;
+    void loadMappingResults();
+  }
 }
 
 function showEmptyDetail() {
@@ -303,16 +308,20 @@ function renderDetail() {
   byId("detail-value").textContent = item.sourceValue;
   byId("detail-context").textContent = contextSummary(item.context);
   byId("product-count").textContent = `${item.productCount} товаров`;
+  const waiting = item.status === "waiting_apply";
   const badges = byId("detail-badges");
   badges.replaceChildren(
     badge(typeName(item)),
     badge(item.sourceCode),
-    badge(item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
+    badge(waiting ? "Ждёт обработки" : item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
   );
   renderExamples(item, item.examples ?? []);
-  byId("decision-actions").hidden = state.resolved;
+  byId("ignore-button").hidden = waiting;
+  byId("waiting-panel").hidden = !waiting;
+  byId("mapping-section").hidden = waiting;
+  byId("decision-actions").hidden = state.resolved || waiting;
   byId("decision-success").hidden = !state.resolved;
-  byId("ignore-button").disabled = state.resolved;
+  byId("ignore-button").disabled = state.resolved || waiting;
   if (!state.resolved && !state.decisionPreview) {
     byId("decision-preview").hidden = true;
     byId("confirm-button").textContent = "Проверить точное сопоставление";

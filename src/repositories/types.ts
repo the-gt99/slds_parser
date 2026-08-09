@@ -242,11 +242,13 @@ export interface ProductClassificationObservationInput {
   readonly resolutionKind: ReferenceResolutionKind | null;
   readonly resolutionId: EntityId | null;
   readonly resolutionRevision: string | null;
+  readonly matchedRuleIds?: readonly EntityId[];
 }
 
 export interface SaveProductClassificationInput {
   readonly sourceId: EntityId;
   readonly sourceProductId: EntityId;
+  readonly processorVersion: string;
   readonly classifierVersion: string;
   readonly fingerprint: string;
   readonly observations: readonly ProductClassificationObservationInput[];
@@ -711,7 +713,7 @@ export interface RetryJobInput {
   readonly availableAt: Timestamp;
 }
 
-export type ClassificationReviewStatus = "unresolved" | "ambiguous";
+export type ClassificationReviewStatus = "unresolved" | "ambiguous" | "waiting_apply";
 
 export interface ClassificationDecisionKey {
   readonly sourceId: EntityId;
@@ -817,6 +819,7 @@ export interface CreateClassificationRuleInput {
   readonly actor: string;
   readonly reason?: string;
   readonly affectedSourceProductIds: readonly EntityId[];
+  readonly matchedObservationIds: readonly EntityId[];
 }
 
 export interface CreateClassificationRuleResult {
@@ -957,6 +960,7 @@ export interface UpdateClassificationRuleInput {
   readonly actor: string;
   readonly reason?: string;
   readonly affectedSourceProductIds: readonly EntityId[];
+  readonly matchedObservationIds: readonly EntityId[];
 }
 
 export interface UpdateClassificationRuleResult {

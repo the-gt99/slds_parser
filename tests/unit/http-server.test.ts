@@ -61,9 +61,15 @@ describe("HTTP server", () => {
       url: "/api/classifier/queue?sourceId=1&typeCode=category&status=unresolved&search=sneakers&contextKey=context-women",
       headers: { authorization: `Bearer ${adminToken}` },
     });
+    const waiting = await server.inject({
+      method: "GET",
+      url: "/api/classifier/queue?status=waiting_apply",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
 
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
+    expect(waiting.statusCode).toBe(200);
     expect(authorized.json()).toEqual({ items: [] });
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: "1",
@@ -72,6 +78,7 @@ describe("HTTP server", () => {
       search: "sneakers",
       contextKey: "context-women",
     }));
+    expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
     await server.close();
   });
 

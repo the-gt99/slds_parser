@@ -126,14 +126,23 @@ export class PostgresClassificationRepository implements ClassificationRepositor
   }
 
   async saveProductResult(input: SaveProductClassificationInput): Promise<void> {
+    const previousContributions = await this.executor.query<DatabaseRow>(
+      "SELECT * FROM classification_review_product_contributions($1)",
+      [input.sourceProductId],
+    );
+    await this.executor.query(
+      `DELETE FROM classification_review_rule_coverage coverage
+       USING source_reference_observations observation
+       WHERE observation.id = coverage.observation_id
+         AND observation.source_product_id = $1`,
+      [input.sourceProductId],
+    );
     await this.executor.query(
       `UPDATE source_reference_observations
        SET active = FALSE, updated_at = NOW()
        WHERE source_product_id = $1 AND active = TRUE`,
       [input.sourceProductId],
     );
-    if (input.observations.length === 0) return;
-
     const rows = input.observations.map((observation) => ({
       candidate_key: observation.candidate.key,
       type_code: observation.candidate.typeCode,
@@ -151,12 +160,13 @@ export class PostgresClassificationRepository implements ClassificationRepositor
       mapping_id: observation.resolutionKind === "mapping" ? observation.resolutionId : null,
       rule_id: observation.resolutionKind === "rule" ? observation.resolutionId : null,
       resolution_revision: observation.resolutionRevision,
+      matched_rule_ids: observation.matchedRuleIds ?? [],
     }));
 
-    await this.executor.query(
+    if (rows.length > 0) await this.executor.query(
       `WITH incoming AS (
         SELECT *
-        FROM JSONB_TO_RECORDSET($5::JSONB) AS item(
+        FROM JSONB_TO_RECORDSET($6::JSONB) AS item(
           candidate_key TEXT,
           type_code TEXT,
           scope TEXT,
@@ -172,14 +182,15 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           resolved_reference_value_id BIGINT,
           mapping_id BIGINT,
           rule_id BIGINT,
-          resolution_revision BIGINT
+          resolution_revision BIGINT,
+          matched_rule_ids JSONB
         )
       ), typed AS (
         SELECT incoming.*, type.id AS reference_type_id
         FROM incoming
         JOIN reference_types type ON type.code = incoming.type_code
-      )
-      INSERT INTO source_reference_observations (
+      ), upserted AS (
+        INSERT INTO source_reference_observations (
         source_id,
         source_product_id,
         candidate_key,
@@ -198,6 +209,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         mapping_id,
         rule_id,
         resolution_revision,
+        processor_version,
         classifier_version,
         classification_fingerprint,
         active
@@ -223,6 +235,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         resolution_revision,
         $3,
         $4,
+        $5,
         TRUE
       FROM typed
       ON CONFLICT (source_product_id, candidate_key) DO UPDATE SET
@@ -242,12 +255,39 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         mapping_id = EXCLUDED.mapping_id,
         rule_id = EXCLUDED.rule_id,
         resolution_revision = EXCLUDED.resolution_revision,
+        processor_version = EXCLUDED.processor_version,
         classifier_version = EXCLUDED.classifier_version,
         classification_fingerprint = EXCLUDED.classification_fingerprint,
         active = TRUE,
         last_seen_at = NOW(),
+        updated_at = NOW()
+      RETURNING id, candidate_key, status
+      )
+      INSERT INTO classification_review_rule_coverage (
+        observation_id, rule_id, rule_revision
+      )
+      SELECT upserted.id, rule.id, rule.revision
+      FROM upserted
+      JOIN incoming ON incoming.candidate_key = upserted.candidate_key
+      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(incoming.matched_rule_ids) matched(rule_id)
+      JOIN source_reference_rules rule
+        ON rule.id = matched.rule_id::BIGINT
+       AND rule.enabled = TRUE
+       AND rule.deleted_at IS NULL
+      WHERE upserted.status IN ('unresolved', 'ambiguous')
+      ON CONFLICT (observation_id, rule_id) DO UPDATE SET
+        rule_revision = EXCLUDED.rule_revision,
         updated_at = NOW()`,
-      [input.sourceId, input.sourceProductId, input.classifierVersion, input.fingerprint, JSON.stringify(rows)],
+      [input.sourceId, input.sourceProductId, input.processorVersion, input.classifierVersion, input.fingerprint, JSON.stringify(rows)],
+    );
+
+    const currentContributions = await this.executor.query<DatabaseRow>(
+      "SELECT * FROM classification_review_product_contributions($1)",
+      [input.sourceProductId],
+    );
+    await this.executor.query(
+      "SELECT apply_classification_review_product_contributions($1::JSONB, $2::JSONB)",
+      [JSON.stringify(previousContributions.rows), JSON.stringify(currentContributions.rows)],
     );
   }
 }

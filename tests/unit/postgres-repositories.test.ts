@@ -237,8 +237,45 @@ describe("PostgreSQL repository mapping and SQL", () => {
       offset: 0,
     });
 
-    expect(executor.calls[0]?.text).toContain("observation.context_key = $8");
+    expect(executor.calls[0]?.text).toContain("review.context_key = $8");
     expect(executor.calls[0]?.values[7]).toBe("context-women");
+  });
+
+  it("updates classifier review counters by product delta and preserves ambiguous rule matches", async () => {
+    const executor = new FakeExecutor([[], [], [], [], [], []]);
+    await new PostgresClassificationRepository(executor).saveProductResult({
+      sourceId: "1",
+      sourceProductId: "10",
+      processorVersion: "2.9.0",
+      classifierVersion: "1.0.0",
+      fingerprint: "fingerprint",
+      observations: [{
+        candidate: {
+          key: "product:category",
+          typeCode: "category",
+          scope: "product.category",
+          subjectKind: "product",
+          sourceValue: "sneakers",
+          context: {},
+          evidence: {},
+        },
+        normalizedSourceValue: "sneakers",
+        contextKey: "{}",
+        status: "ambiguous",
+        issueReason: "rule_ambiguous",
+        referenceValueId: null,
+        resolutionKind: null,
+        resolutionId: null,
+        resolutionRevision: null,
+        matchedRuleIds: ["5", "6"],
+      }],
+    });
+
+    expect(executor.calls[0]?.text).toContain("classification_review_product_contributions");
+    expect(executor.calls[3]?.text).toContain("INSERT INTO classification_review_rule_coverage");
+    expect(executor.calls[3]?.values[2]).toBe("2.9.0");
+    expect(executor.calls[3]?.values[5]).toContain('"matched_rule_ids":["5","6"]');
+    expect(executor.calls[5]?.text).toContain("apply_classification_review_product_contributions");
   });
 
   it("limits review groups before loading examples and uses their indexed type id", async () => {
@@ -250,7 +287,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     const sql = executor.calls[0]?.text ?? "";
     expect(sql).toContain("review_page AS MATERIALIZED");
-    expect(sql).toContain("review_details AS MATERIALIZED");
+    expect(sql).toContain("FROM classification_review_groups review");
     expect(sql).toContain("JOIN LATERAL");
     expect(sql).toContain("review_example_products AS MATERIALIZED");
     expect(sql).toContain("SELECT DISTINCT ON (observation.source_product_id)");
@@ -258,7 +295,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("LEFT JOIN review_examples ON");
     expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
     expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
-    expect(sql.match(/observation\.status IN \('unresolved', 'ambiguous'\)/g)).toHaveLength(3);
+    expect(sql).toContain("classification_review_rule_resolutions");
     expect(sql).not.toContain("type.code = review_groups.type_code");
     expect(sql).not.toContain("MIN(observation.context::TEXT)");
   });
@@ -310,7 +347,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       conditions: [{ field: "context.audience", operator: "equals", value: "women" }],
       referenceValueId: "23",
       targetLink: { targetId: "1", targetScope: "product.category", dictionaryValueId: "88" },
-      actor: "admin", affectedSourceProductIds: [],
+      actor: "admin", affectedSourceProductIds: [], matchedObservationIds: [],
     });
 
     expect(result).toMatchObject({ ruleId: "22", referenceValueId: "23", affectedProductCount: 0 });
@@ -323,7 +360,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const previousRule = { id: "22", revision: "1", enabled: true, deleted_at: null };
     const previousProjection = { id: "46", revision: "1", active: true, rule_id: "22" };
     const executor = new FakeExecutor([
-      [], [previousRule], [previousProjection],
+      [], [previousRule], [], [previousProjection],
       [{ ...previousRule, revision: "2", enabled: false, deleted_at: "2026-08-07T00:00:00Z" }],
       [], [{ ...previousProjection, revision: "2", active: false }], [], [],
     ]);
@@ -350,7 +387,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(executor.calls[0]?.text).toContain("item.id = $2");
     expect(executor.calls[0]?.values.slice(0, 2)).toEqual(["rule", "8"]);
-    expect(executor.calls[1]?.text).toContain("current_products AS MATERIALIZED");
+    expect(executor.calls[1]?.text).not.toContain("current_products AS MATERIALIZED");
+    expect(executor.calls[1]?.text).toContain("observation.processor_version");
     expect(executor.calls[1]?.text).toContain("observation_stats AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("example_observations AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("JOIN LATERAL");

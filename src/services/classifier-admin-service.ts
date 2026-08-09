@@ -222,7 +222,11 @@ export class ClassifierAdminService {
     return this.adminRepository.listRuleConditionFields(sourceId, typeCode, this.currentProcessorVersions[sourceId]);
   }
 
-  async previewRule(draft: ClassificationRuleDraft, excludeRuleId?: EntityId): Promise<ClassificationRulePreview> {
+  async previewRule(
+    draft: ClassificationRuleDraft,
+    excludeRuleId?: EntityId,
+    matchedObservationIds?: Set<EntityId>,
+  ): Promise<ClassificationRulePreview> {
     validateRuleDraft(draft);
     const [resolution, candidates, existingRules] = await Promise.all([
       this.resolveRuleResult(draft),
@@ -256,6 +260,7 @@ export class ClassifierAdminService {
     for (const item of candidates) {
       if (!matchesClassificationRule(item.candidate, draft.conditions)) continue;
       matchedObservations += 1;
+      matchedObservationIds?.add(item.observationId);
       matchedProductIds.add(item.sourceProductId);
       if (item.mappingId !== null) {
         shadowedObservations += 1;
@@ -351,7 +356,8 @@ export class ClassifierAdminService {
   }
 
   async createRule(draft: ClassificationRuleDraft, actor = this.actor) {
-    const preview = await this.previewRule(draft);
+    const matchedObservationIds = new Set<EntityId>();
+    const preview = await this.previewRule(draft, undefined, matchedObservationIds);
     const resolution = await this.resolveRuleResult(draft);
     const result = await this.adminRepository.createRule({
       ...draft,
@@ -361,6 +367,7 @@ export class ClassifierAdminService {
       ...(resolution.referenceValueId === null ? { generatedReferenceCode: `ref-${randomUUID()}` } : {}),
       actor,
       affectedSourceProductIds: preview.affectedSourceProductIds,
+      matchedObservationIds: [...matchedObservationIds],
     });
     return { ...result, preview };
   }
@@ -377,23 +384,41 @@ export class ClassifierAdminService {
     if (resolution.referenceValueId === null) {
       throw new IntegrationContractError("A new target-linked internal value can only be created with a new rule");
     }
-    const preview = await this.previewRule(normalizedDraft, ruleId);
+    const matchedObservationIds = new Set<EntityId>();
+    const preview = await this.previewRule(normalizedDraft, ruleId, matchedObservationIds);
     const result = await this.adminRepository.updateRule({
       ruleId, ...normalizedDraft,
       referenceValueId: resolution.referenceValueId,
       name: draft.name.trim(),
       actor,
       affectedSourceProductIds: preview.affectedSourceProductIds,
+      matchedObservationIds: [...matchedObservationIds],
     });
     return { ...result, preview };
   }
 
-  setRuleEnabled(ruleId: EntityId, enabled: boolean, actor = this.actor, reason?: string) {
+  async setRuleEnabled(ruleId: EntityId, enabled: boolean, actor = this.actor, reason?: string) {
     validateText(ruleId, "ruleId", 64);
-    return this.ruleAffectedProducts(ruleId).then((affectedSourceProductIds) => this.adminRepository.setRuleEnabled({
+    const rule = await this.adminRepository.getRule(ruleId);
+    if (rule === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
+    const matchedObservationIds = new Set<EntityId>();
+    const affectedSourceProductIds = enabled && rule.sourceId !== null
+      ? (await this.previewRule({
+          sourceId: rule.sourceId,
+          typeCode: rule.typeCode,
+          name: rule.name,
+          priority: rule.priority,
+          conditions: rule.conditions,
+          referenceValueId: rule.referenceValueId,
+        }, ruleId, matchedObservationIds)).affectedSourceProductIds
+      : rule.sourceId === null
+        ? []
+        : await this.ruleAffectedProducts(ruleId);
+    return this.adminRepository.setRuleEnabled({
       ruleId, enabled, actor, affectedSourceProductIds,
+      matchedObservationIds: [...matchedObservationIds],
       ...(reason === undefined ? {} : { reason }),
-    }));
+    });
   }
 
   deleteRule(ruleId: EntityId, actor = this.actor, reason?: string) {
@@ -489,9 +514,7 @@ export class ClassifierAdminService {
   private async ruleAffectedProducts(ruleId: EntityId): Promise<readonly EntityId[]> {
     const rule = await this.adminRepository.getRule(ruleId);
     if (rule === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
-    if (rule.sourceId === null) {
-      throw new IntegrationContractError("Global rule activation is not supported by the administrative workflow");
-    }
+    if (rule.sourceId === null) return [];
     const candidates = await this.adminRepository.listRuleCandidates(
       rule.sourceId,
       rule.typeCode,

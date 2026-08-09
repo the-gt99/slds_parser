@@ -157,6 +157,7 @@ describe("ClassifierAdminService", () => {
     expect(deps.admin.updateRule).toHaveBeenCalledWith(expect.objectContaining({
       ruleId: "10",
       affectedSourceProductIds: ["101"],
+      matchedObservationIds: ["1"],
     }));
   });
 
@@ -181,7 +182,34 @@ describe("ClassifierAdminService", () => {
 
     expect(deps.admin.createRule).toHaveBeenCalledWith(expect.objectContaining({
       affectedSourceProductIds: ["101"],
+      matchedObservationIds: ["1"],
       actor: "admin-api",
+    }));
+  });
+
+  it("delegates global rule reactivation to the repository-wide matcher", async () => {
+    const deps = repositories([]);
+    deps.admin.getRule.mockResolvedValue({
+      id: "10",
+      sourceId: null,
+      typeCode: "tag",
+      name: "Global",
+      priority: 10,
+      conditions: [{ field: "sourceValue", operator: "equals", value: "Lifestyle" }],
+      referenceValueId: "500",
+      revision: "1",
+      enabled: false,
+    });
+    const service = new ClassifierAdminService(deps.admin, deps.classification);
+
+    await service.setRuleEnabled("10", true);
+
+    expect(deps.admin.listRuleCandidates).not.toHaveBeenCalled();
+    expect(deps.admin.setRuleEnabled).toHaveBeenCalledWith(expect.objectContaining({
+      ruleId: "10",
+      enabled: true,
+      affectedSourceProductIds: [],
+      matchedObservationIds: [],
     }));
   });
 
@@ -269,6 +297,7 @@ describe("ClassifierAdminService", () => {
       referenceValueId: "500",
       targetLink: targetDraft.targetLink,
       affectedSourceProductIds: ["101"],
+      matchedObservationIds: ["1"],
     }));
   });
 

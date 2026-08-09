@@ -166,6 +166,10 @@ WordPress importer скачивает готовые WebP по публичны�
 - `source_reference_rules` — общие или source-specific контекстные правила;
 - `source_reference_observations` — актуальные кандидаты каждого товара, их состояние и использованное решение;
 - `source_reference_decision_history` — история будущих действий интерфейса над mappings и правилами.
+- `classification_review_rule_coverage` — ещё не применённые к товарам совпадения активных правил;
+- `classification_review_groups` — быстрая проекция очереди классификатора со счётчиками состояний «требует решения» и «ждёт обработки».
+
+Проекция не заменяет наблюдения как источник истины. Обработка товара обновляет её дельтой только по этому товару, а изменение точного сопоставления или правила пересчитывает затронутые группы в той же транзакции. Для проверки или восстановления после ручных изменений БД используется `npm run classifier:rebuild-review`; команда блокирует записи классификатора на время полного пересчёта и не предназначена для частого расписания.
 
 У `reference_types` задаются разрешённые субъекты (`product`/`variant`) и кратность (`single`/`multiple`). Бренд, модель и цвет остаются одиночными значениями товара; категории, материалы, назначения и теги могут быть множественными, а размер относится к конкретному варианту.
 
@@ -199,6 +203,7 @@ WordPress importer скачивает готовые WebP по публичны�
 - `npm run proxy:import-env` — идемпотентно импортировать текущий `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` или legacy `GOAT_HTTP_PROXY`/`GOAT_SOCKS5_PROXY` в зашифрованную выключенную запись;
 - `npm run proxy:test`, `npm run proxy:enable`, `npm run proxy:disable` — проверить и управлять proxy record по ID без печати секретов;
 - `npm run classifier:exact-matches` — найти либо применить однозначные точные связи с target-справочником;
+- `npm run classifier:rebuild-review` — полностью пересобрать проекцию очереди классификатора;
 - `npm run worker` — запустить worker с отдельными discovery, collection, processing и export lanes; `SIGINT` и `SIGTERM` корректно останавливают цикл и закрывают Pool;
 - `npm run typecheck` — проверить типы;
 - `npm test` — однократно запустить unit-тесты;

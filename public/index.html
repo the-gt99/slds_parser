@@ -53,7 +53,7 @@
       <aside class="queue-panel">
         <div class="queue-heading">
           <div>
-            <p class="eyebrow">Ожидают решения</p>
+            <p id="queue-eyebrow" class="eyebrow">Ожидают решения</p>
             <h2><span id="queue-count">0</span> значений</h2>
           </div>
         </div>
@@ -66,9 +66,10 @@
             <option value="">Все типы</option>
           </select>
           <select id="status-filter" aria-label="Статус">
-            <option value="">Все статусы</option>
+            <option value="">Требуют решения</option>
             <option value="unresolved">Не сопоставлено</option>
             <option value="ambiguous">Есть конфликт</option>
+            <option value="waiting_apply">Ждёт обработки</option>
           </select>
         </div>
         <div id="queue-list" class="queue-list" aria-live="polite"></div>
@@ -99,7 +100,11 @@
             <div id="examples-list" class="examples-list"></div>
           </section>
 
-          <section class="section mapping-section">
+          <div id="waiting-panel" class="success-panel" hidden>
+            <div><strong>Решение уже сохранено.</strong> Товары стоят в очереди и исчезнут отсюда после повторной обработки.</div>
+          </div>
+
+          <section id="mapping-section" class="section mapping-section">
             <div class="section-title mapping-title">
               <div>
                 <p class="eyebrow">Решение</p>

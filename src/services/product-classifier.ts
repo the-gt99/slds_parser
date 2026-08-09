@@ -45,6 +45,7 @@ interface CandidateOutcome {
   readonly resolved?: ClassifiedReferenceDTO;
   readonly ignored?: IgnoredReferenceDTO;
   readonly unresolved?: UnresolvedReferenceDTO;
+  readonly matchedRuleIds?: readonly EntityId[];
   readonly fingerprint: JsonObject;
 }
 
@@ -194,6 +195,7 @@ function ruleOutcome(
   if (references.size > 1) {
     return {
       prepared,
+      matchedRuleIds: matches.map(({ rule }) => rule.id),
       unresolved: {
         candidateKey: candidate.key,
         typeCode: candidate.typeCode,
@@ -303,6 +305,7 @@ export class ProductClassifier {
         resolutionKind: resolution?.resolutionKind ?? (ignoredReference === undefined ? null : "mapping"),
         resolutionId: resolution?.resolutionId ?? ignoredReference?.mappingId ?? null,
         resolutionRevision: resolution?.resolutionRevision ?? ignoredReference?.mappingRevision ?? null,
+        ...(outcome.matchedRuleIds === undefined ? {} : { matchedRuleIds: outcome.matchedRuleIds }),
       };
     });
     return { product: { ...product, classification }, observations };

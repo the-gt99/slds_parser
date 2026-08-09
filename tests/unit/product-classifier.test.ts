@@ -129,6 +129,7 @@ describe("ProductClassifier", () => {
     const classifier = new ProductClassifier(createMemoryRepositories(store).classifications);
     const result = await classifier.classify("goat", productWith(modelCandidate("Nike Pegasus", "Nike", "Pegasus")));
     expect(result.product.classification).toMatchObject({ status: "partial", unresolved: [{ reason: "rule_ambiguous" }] });
+    expect(result.observations[0]?.matchedRuleIds).toEqual(["5", "6"]);
   });
 
   it("preserves an explicit ignored decision without inventing a reference", async () => {
