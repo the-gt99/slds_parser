@@ -257,7 +257,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("LEFT JOIN review_examples ON");
     expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
     expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
-    expect(sql.match(/observation\.status IN \('unresolved', 'ambiguous'\)/g)).toHaveLength(2);
+    expect(sql.match(/observation\.status IN \('unresolved', 'ambiguous'\)/g)).toHaveLength(3);
     expect(sql).not.toContain("type.code = review_groups.type_code");
     expect(sql).not.toContain("MIN(observation.context::TEXT)");
   });

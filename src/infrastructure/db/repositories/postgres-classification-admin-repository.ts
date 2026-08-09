@@ -617,6 +617,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
               AND observation.context_key = review_page.context_key
               AND observation.status = review_page.status
               AND observation.active = TRUE
+              AND observation.status IN ('unresolved', 'ambiguous')
               AND ($5::JSONB = '{}'::JSONB
                 OR current_internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
             ORDER BY observation.last_seen_at DESC, observation.id DESC
