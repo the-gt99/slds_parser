@@ -369,6 +369,61 @@ function updateBulkActionHelp() {
   if (help) help.textContent = action?.description || "";
 }
 
+function paginationItems(currentPage, totalPages) {
+  const visiblePages = new Set([1, totalPages]);
+  for (let page = currentPage - 2; page <= currentPage + 2; page += 1) {
+    if (page > 1 && page < totalPages) visiblePages.add(page);
+  }
+  const items = [];
+  let previousPage = 0;
+  for (const page of [...visiblePages].sort((left, right) => left - right)) {
+    if (previousPage && page - previousPage > 1) items.push(null);
+    items.push(page);
+    previousPage = page;
+  }
+  return items;
+}
+
+function goToPage(page) {
+  const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
+  const normalizedPage = Math.min(totalPages, Math.max(1, Math.trunc(Number(page))));
+  if (!Number.isFinite(normalizedPage)) return;
+  const nextOffset = (normalizedPage - 1) * state.limit;
+  if (nextOffset === state.offset) return;
+  state.offset = nextOffset;
+  load();
+}
+
+function renderPagination(itemsLength) {
+  const currentPage = Math.floor(state.offset / state.limit) + 1;
+  const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
+  byId("page-info").textContent = state.total
+    ? `${state.offset + 1}-${Math.min(state.offset + itemsLength, state.total)} из ${state.total}`
+    : "0";
+  byId("prev").disabled = currentPage === 1;
+  byId("next").disabled = currentPage === totalPages;
+  const pages = byId("page-numbers");
+  pages.replaceChildren();
+  for (const item of paginationItems(currentPage, totalPages)) {
+    if (item === null) {
+      const ellipsis = document.createElement("span");
+      ellipsis.className = "pagination-ellipsis";
+      ellipsis.textContent = "…";
+      ellipsis.setAttribute("aria-hidden", "true");
+      pages.append(ellipsis);
+      continue;
+    }
+    const pageButton = button(String(item), `button quiet${item === currentPage ? " active" : ""}`);
+    pageButton.setAttribute("aria-label", `Страница ${item}`);
+    if (item === currentPage) pageButton.setAttribute("aria-current", "page");
+    else pageButton.addEventListener("click", () => goToPage(item));
+    pages.append(pageButton);
+  }
+  byId("page-number").value = String(currentPage);
+  byId("page-number").max = String(totalPages);
+  byId("page-total").textContent = `из ${totalPages}`;
+}
+
 async function previewBulk() {
   const action = byId("bulk-action").value;
   if (action === "export") return;
@@ -1498,6 +1553,10 @@ async function load() {
     }
     const items = data.items || [];
     state.total = data.total ?? items.length;
+    if (state.total > 0 && state.offset >= state.total) {
+      state.offset = (Math.ceil(state.total / state.limit) - 1) * state.limit;
+      return load();
+    }
     if (mode === "runtime") {
       renderRuntime(data);
       byId("empty").hidden = true;
@@ -1530,9 +1589,7 @@ async function load() {
     else renderSnapshots(items);
     byId("empty").hidden = items.length !== 0;
     byId("table-section").hidden = items.length === 0;
-    byId("page-info").textContent = state.total ? `${state.offset + 1}-${Math.min(state.offset + items.length, state.total)} из ${state.total}` : "0";
-    byId("prev").disabled = state.offset === 0;
-    byId("next").disabled = state.offset + items.length >= state.total;
+    renderPagination(items.length);
   } catch (error) {
     if (error.status === 401) return showLogin();
     byId("error").textContent = error.message;
@@ -1567,12 +1624,14 @@ byId("filters").addEventListener("submit", (event) => {
   load();
 });
 byId("prev").addEventListener("click", () => {
-  state.offset = Math.max(0, state.offset - state.limit);
-  load();
+  goToPage(Math.floor(state.offset / state.limit));
 });
 byId("next").addEventListener("click", () => {
-  state.offset += state.limit;
-  load();
+  goToPage(Math.floor(state.offset / state.limit) + 2);
+});
+byId("page-jump").addEventListener("submit", (event) => {
+  event.preventDefault();
+  goToPage(byId("page-number").value);
 });
 
 configure();

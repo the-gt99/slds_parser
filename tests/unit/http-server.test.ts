@@ -306,6 +306,9 @@ describe("HTTP server", () => {
     const exportRetry = await server.inject({ method: "POST", url: "/api/jobs/failed/preview-retry", headers, payload: { jobType: "export_product", limit: 10 } });
 
     expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('id="page-numbers"');
+    expect(page.body).toContain('id="page-jump"');
+    expect(page.body).toContain('Перейти');
     expect(jobs.statusCode).toBe(200);
     expect(retry.statusCode).toBe(200);
     expect(exportRetry.statusCode).toBe(422);

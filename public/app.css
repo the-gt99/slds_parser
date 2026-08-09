@@ -51,7 +51,14 @@ h3 { font-size: 17px; line-height: 1.3; }
 .admin-table tr.clickable-row { cursor: pointer; }
 .admin-table tr.clickable-row:hover td { background: var(--surface-soft); }
 .admin-table tr.selected-row td { background: var(--accent-soft); }
-.pagination { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px; }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px; }
+.pagination-info { margin-right: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pagination-controls, .pagination-pages, .pagination-jump { display: flex; align-items: center; gap: 6px; }
+.pagination-pages .button { min-width: 36px; padding-inline: 10px; }
+.pagination-pages .button.active { background: var(--accent-soft); color: var(--accent); font-weight: 750; }
+.pagination-ellipsis { min-width: 22px; color: var(--muted); text-align: center; }
+.pagination-jump { color: var(--muted); font-size: 12px; }
+.pagination-jump input { width: 72px; min-height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; background: var(--surface); color: var(--text); font: inherit; }
 .compact-links { display: flex; gap: 8px; }
 .job-time-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .config-meta-grid { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; margin-top: 14px; font-size: 12px; }
@@ -514,4 +521,8 @@ h3 { font-size: 17px; line-height: 1.3; }
   .classification-result { text-align: left; }
   .classification-actions { width: 100%; flex-direction: column; }
   .preview-description-comparison { grid-template-columns: 1fr; }
+  .pagination { align-items: stretch; }
+  .pagination-info { flex-basis: 100%; }
+  .pagination-controls { max-width: 100%; overflow-x: auto; }
+  .pagination-jump { flex-wrap: wrap; }
 }
