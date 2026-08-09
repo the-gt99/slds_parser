@@ -566,10 +566,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             observation.scope,
             observation.normalized_source_value,
             observation.context_key,
-            MIN(observation.source_value) AS source_value,
-            MIN(observation.context::TEXT)::JSONB AS context,
             observation.status,
-            MIN(observation.issue_reason) AS issue_reason,
             COUNT(*)::INTEGER AS observation_count,
             COUNT(DISTINCT observation.source_product_id)::INTEGER AS product_count,
             MIN(observation.first_seen_at) AS first_seen_at,
@@ -598,9 +595,33 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           FROM (
             SELECT *
             FROM review_groups
-            ORDER BY product_count DESC, last_seen_at DESC, source_value
+            ORDER BY product_count DESC, last_seen_at DESC, normalized_source_value
             LIMIT $6 OFFSET $7
           ) page
+        ), review_details AS MATERIALIZED (
+          SELECT
+            review_page.review_group_id,
+            detail.source_value,
+            detail.context,
+            detail.issue_reason
+          FROM review_page
+          JOIN LATERAL (
+            SELECT observation.source_value, observation.context, observation.issue_reason
+            FROM source_reference_observations observation
+            JOIN internal_products current_internal
+              ON current_internal.source_product_id = observation.source_product_id
+            WHERE observation.source_id = review_page.source_id
+              AND observation.reference_type_id = review_page.reference_type_id
+              AND observation.scope = review_page.scope
+              AND observation.normalized_source_value = review_page.normalized_source_value
+              AND observation.context_key = review_page.context_key
+              AND observation.status = review_page.status
+              AND observation.active = TRUE
+              AND ($5::JSONB = '{}'::JSONB
+                OR current_internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
+            ORDER BY observation.last_seen_at DESC, observation.id DESC
+            LIMIT 1
+          ) detail ON TRUE
         ), review_example_products AS MATERIALIZED (
           SELECT
             ranked.review_group_id,
@@ -678,20 +699,21 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           review_page.scope,
           review_page.normalized_source_value,
           review_page.context_key,
-          review_page.source_value,
-          review_page.context,
+          review_details.source_value,
+          review_details.context,
           review_page.status,
-          review_page.issue_reason,
+          review_details.issue_reason,
           review_page.observation_count,
           review_page.product_count,
           review_page.first_seen_at,
           review_page.last_seen_at,
           COALESCE(review_examples.examples, '[]'::JSONB) AS examples
         FROM review_page
+        JOIN review_details ON review_details.review_group_id = review_page.review_group_id
         JOIN sources source ON source.id = review_page.source_id
         JOIN reference_types type ON type.id = review_page.reference_type_id
         LEFT JOIN review_examples ON review_examples.review_group_id = review_page.review_group_id
-        ORDER BY product_count DESC, last_seen_at DESC, source_value`,
+        ORDER BY product_count DESC, last_seen_at DESC, normalized_source_value`,
         [
           query.sourceId ?? null,
           query.typeCode ?? "",
