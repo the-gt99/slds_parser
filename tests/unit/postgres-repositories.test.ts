@@ -289,6 +289,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("review_page AS MATERIALIZED");
     expect(sql).toContain("FROM classification_review_groups review");
     expect(sql).toContain("JOIN LATERAL");
+    expect(sql).toContain("review_rule_resolutions AS MATERIALIZED");
     expect(sql).toContain("review_example_products AS MATERIALIZED");
     expect(sql).toContain("SELECT DISTINCT ON (observation.source_product_id)");
     expect(sql).not.toContain("review_ranked_examples AS MATERIALIZED");
@@ -296,6 +297,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
     expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
     expect(sql).toContain("classification_review_rule_resolutions");
+    expect(sql).not.toContain("LEFT JOIN LATERAL classification_review_rule_resolutions");
     expect(sql).not.toContain("type.code = review_groups.type_code");
     expect(sql).not.toContain("MIN(observation.context::TEXT)");
   });

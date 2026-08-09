@@ -721,6 +721,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             ORDER BY product_count DESC, review.last_seen_at DESC, review.normalized_source_value
             LIMIT $6 OFFSET $7
           ) page
+        ), review_rule_resolutions AS MATERIALIZED (
+          SELECT resolution.*
+          FROM classification_review_rule_resolutions(NULL::BIGINT[]) resolution
         ), review_example_products AS MATERIALIZED (
           SELECT
             review_page.review_group_id,
@@ -749,9 +752,8 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                  SELECT 1 FROM reference_values value
                  WHERE value.id = mapping.reference_value_id AND value.enabled = TRUE
                ))
-              LEFT JOIN LATERAL classification_review_rule_resolutions(
-                ARRAY[observation.id]
-              ) pending_rule ON TRUE
+              LEFT JOIN review_rule_resolutions pending_rule
+                ON pending_rule.observation_id = observation.id
               WHERE observation.source_id = review_page.source_id
                 AND observation.reference_type_id = review_page.reference_type_id
                 AND observation.processor_version = review_page.processor_version
