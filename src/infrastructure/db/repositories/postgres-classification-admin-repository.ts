@@ -407,10 +407,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         `WITH review_groups AS (
           SELECT
             observation.source_id,
-            source.code AS source_code,
-            source.name AS source_name,
-            type.code AS type_code,
-            type.name AS type_name,
+            observation.reference_type_id,
             observation.scope,
             observation.normalized_source_value,
             observation.context_key,
@@ -423,24 +420,45 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             MIN(observation.first_seen_at) AS first_seen_at,
             MAX(observation.last_seen_at) AS last_seen_at
           FROM source_reference_observations observation
-          JOIN sources source ON source.id = observation.source_id
-          JOIN reference_types type ON type.id = observation.reference_type_id
           JOIN internal_products current_internal ON current_internal.source_product_id = observation.source_product_id
           WHERE observation.active = TRUE
             AND observation.status IN ('unresolved', 'ambiguous')
             AND ($5::JSONB = '{}'::JSONB
               OR current_internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
             AND ($1::BIGINT IS NULL OR observation.source_id = $1)
-            AND ($2::TEXT = '' OR type.code = $2)
+            AND ($2::TEXT = '' OR observation.reference_type_id = (
+              SELECT id FROM reference_types WHERE code = $2
+            ))
             AND ($3::TEXT = '' OR observation.status = $3)
             AND ($4::TEXT = '' OR observation.source_value ILIKE '%' || $4 || '%')
             AND ($8::TEXT = '' OR observation.context_key = $8)
           GROUP BY
-            observation.source_id, source.code, source.name, type.code, type.name,
+            observation.source_id, observation.reference_type_id,
             observation.scope, observation.normalized_source_value,
             observation.context_key, observation.status
+        ), review_page AS MATERIALIZED (
+          SELECT *
+          FROM review_groups
+          ORDER BY product_count DESC, last_seen_at DESC, source_value
+          LIMIT $6 OFFSET $7
         )
-        SELECT review_groups.*,
+        SELECT
+          review_page.source_id,
+          source.code AS source_code,
+          source.name AS source_name,
+          type.code AS type_code,
+          type.name AS type_name,
+          review_page.scope,
+          review_page.normalized_source_value,
+          review_page.context_key,
+          review_page.source_value,
+          review_page.context,
+          review_page.status,
+          review_page.issue_reason,
+          review_page.observation_count,
+          review_page.product_count,
+          review_page.first_seen_at,
+          review_page.last_seen_at,
           COALESCE((
             SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
             FROM (
@@ -477,14 +495,13 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                 FROM source_reference_observations observation
                 JOIN source_products product ON product.id = observation.source_product_id
                 LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-                JOIN reference_types type ON type.id = observation.reference_type_id
                 WHERE observation.active = TRUE
-                  AND observation.source_id = review_groups.source_id
-                  AND type.code = review_groups.type_code
-                  AND observation.scope = review_groups.scope
-                  AND observation.normalized_source_value = review_groups.normalized_source_value
-                  AND observation.context_key = review_groups.context_key
-                  AND observation.status = review_groups.status
+                  AND observation.source_id = review_page.source_id
+                  AND observation.reference_type_id = review_page.reference_type_id
+                  AND observation.scope = review_page.scope
+                  AND observation.normalized_source_value = review_page.normalized_source_value
+                  AND observation.context_key = review_page.context_key
+                  AND observation.status = review_page.status
                   AND ($5::JSONB = '{}'::JSONB
                     OR internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
               ) distinct_product
@@ -493,9 +510,10 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
               LIMIT 3
             ) example
           ), '[]'::JSONB) AS examples
-        FROM review_groups
-        ORDER BY product_count DESC, last_seen_at DESC, source_value
-        LIMIT $6 OFFSET $7`,
+        FROM review_page
+        JOIN sources source ON source.id = review_page.source_id
+        JOIN reference_types type ON type.id = review_page.reference_type_id
+        ORDER BY product_count DESC, last_seen_at DESC, source_value`,
         [
           query.sourceId ?? null,
           query.typeCode ?? "",

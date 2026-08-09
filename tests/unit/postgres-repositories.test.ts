@@ -240,6 +240,20 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values[7]).toBe("context-women");
   });
 
+  it("limits review groups before loading examples and uses their indexed type id", async () => {
+    const executor = new FakeExecutor([[]]);
+    await new PostgresClassificationAdminRepository(pool(executor)).listReviewQueue({
+      limit: 200,
+      offset: 0,
+    });
+
+    const sql = executor.calls[0]?.text ?? "";
+    expect(sql).toContain("review_page AS MATERIALIZED");
+    expect(sql.indexOf("LIMIT $6 OFFSET $7")).toBeLessThan(sql.indexOf("AS examples"));
+    expect(sql).toContain("observation.reference_type_id = review_page.reference_type_id");
+    expect(sql).not.toContain("type.code = review_groups.type_code");
+  });
+
   it("resolves an existing internal value for a rule selected from a target term", async () => {
     const executor = new FakeExecutor([[{ reference_value_id: "23" }]]);
     const referenceValueId = await new PostgresClassificationAdminRepository(pool(executor)).findRuleTargetReference({
