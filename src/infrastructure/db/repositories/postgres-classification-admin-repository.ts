@@ -437,10 +437,82 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             observation.scope, observation.normalized_source_value,
             observation.context_key, observation.status
         ), review_page AS MATERIALIZED (
-          SELECT *
-          FROM review_groups
-          ORDER BY product_count DESC, last_seen_at DESC, source_value
-          LIMIT $6 OFFSET $7
+          SELECT
+            ROW_NUMBER() OVER ()::INTEGER AS review_group_id,
+            page.*
+          FROM (
+            SELECT *
+            FROM review_groups
+            ORDER BY product_count DESC, last_seen_at DESC, source_value
+            LIMIT $6 OFFSET $7
+          ) page
+        ), review_example_products AS MATERIALIZED (
+          SELECT
+            ranked.review_group_id,
+            ranked.observation_id,
+            ranked.source_product_id,
+            ranked.last_seen_at
+          FROM (
+            SELECT
+              review_page.review_group_id,
+              observation.id AS observation_id,
+              observation.source_product_id,
+              observation.last_seen_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY review_page.review_group_id, observation.source_product_id
+                ORDER BY observation.last_seen_at DESC, observation.id
+              ) AS product_rank
+            FROM review_page
+            JOIN source_reference_observations observation
+              ON observation.source_id = review_page.source_id
+             AND observation.reference_type_id = review_page.reference_type_id
+             AND observation.scope = review_page.scope
+             AND observation.normalized_source_value = review_page.normalized_source_value
+             AND observation.context_key = review_page.context_key
+             AND observation.status = review_page.status
+            JOIN internal_products current_internal
+              ON current_internal.source_product_id = observation.source_product_id
+            WHERE observation.active = TRUE
+              AND observation.status IN ('unresolved', 'ambiguous')
+              AND ($5::JSONB = '{}'::JSONB
+                OR current_internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
+          ) ranked
+          WHERE ranked.product_rank = 1
+        ), review_ranked_examples AS MATERIALIZED (
+          SELECT
+            review_example_products.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY review_example_products.review_group_id
+              ORDER BY review_example_products.last_seen_at DESC,
+                review_example_products.observation_id
+            ) AS example_rank
+          FROM review_example_products
+        ), review_examples AS MATERIALIZED (
+          SELECT
+            ranked.review_group_id,
+            JSONB_AGG(JSONB_BUILD_OBJECT(
+              'observation_id', observation.id,
+              'source_product_id', product.id,
+              'source_key', product.source_key,
+              'title', internal.data->>'title',
+              'sku', internal.data->>'sku',
+              'evidence', observation.evidence,
+              'target_snapshots', COALESCE((
+                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                  'target_id', snapshot.target_id::TEXT,
+                  'external_id', snapshot.external_id,
+                  'snapshot', snapshot.payload
+                ) ORDER BY snapshot.target_id)
+                FROM target_product_snapshots snapshot
+                WHERE snapshot.source_product_id = ranked.source_product_id
+              ), '[]'::JSONB)
+            ) ORDER BY ranked.observation_id) AS examples
+          FROM review_ranked_examples ranked
+          JOIN source_reference_observations observation ON observation.id = ranked.observation_id
+          JOIN source_products product ON product.id = ranked.source_product_id
+          JOIN internal_products internal ON internal.source_product_id = ranked.source_product_id
+          WHERE ranked.example_rank <= 3
+          GROUP BY ranked.review_group_id
         )
         SELECT
           review_page.source_id,
@@ -459,61 +531,11 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           review_page.product_count,
           review_page.first_seen_at,
           review_page.last_seen_at,
-          COALESCE((
-            SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
-            FROM (
-              SELECT
-                distinct_product.observation_id,
-                distinct_product.source_product_id,
-                distinct_product.source_key,
-                distinct_product.title,
-                distinct_product.sku,
-                distinct_product.evidence,
-                distinct_product.target_snapshots
-              FROM (
-                SELECT
-                  observation.id AS observation_id,
-                  product.id AS source_product_id,
-                  product.source_key,
-                  internal.data->>'title' AS title,
-                  internal.data->>'sku' AS sku,
-                  observation.evidence,
-                  COALESCE((
-                    SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
-                      'target_id', snapshot.target_id::TEXT,
-                      'external_id', snapshot.external_id,
-                      'snapshot', snapshot.payload
-                    ) ORDER BY snapshot.target_id)
-                    FROM target_product_snapshots snapshot
-                    WHERE snapshot.source_product_id = observation.source_product_id
-                  ), '[]'::JSONB) AS target_snapshots,
-                  observation.last_seen_at,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY observation.source_product_id
-                    ORDER BY observation.last_seen_at DESC, observation.id
-                  ) AS product_rank
-                FROM source_reference_observations observation
-                JOIN source_products product ON product.id = observation.source_product_id
-                LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-                WHERE observation.active = TRUE
-                  AND observation.status IN ('unresolved', 'ambiguous')
-                  AND observation.source_id = review_page.source_id
-                  AND observation.reference_type_id = review_page.reference_type_id
-                  AND observation.scope = review_page.scope
-                  AND observation.normalized_source_value = review_page.normalized_source_value
-                  AND observation.context_key = review_page.context_key
-                  AND observation.status = review_page.status
-                  AND ($5::JSONB = '{}'::JSONB
-                    OR internal.processor_version = $5::JSONB ->> observation.source_id::TEXT)
-              ) distinct_product
-              WHERE distinct_product.product_rank = 1
-              ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id
-              LIMIT 3
-            ) example
-          ), '[]'::JSONB) AS examples
+          COALESCE(review_examples.examples, '[]'::JSONB) AS examples
         FROM review_page
         JOIN sources source ON source.id = review_page.source_id
         JOIN reference_types type ON type.id = review_page.reference_type_id
+        LEFT JOIN review_examples ON review_examples.review_group_id = review_page.review_group_id
         ORDER BY product_count DESC, last_seen_at DESC, source_value`,
         [
           query.sourceId ?? null,
