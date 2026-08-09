@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SLDS · Шаблоны контента</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/content-templates.js"></script>
+</head>
+<body>
+<div id="login-view" class="login-shell" hidden>
+  <form id="login-form" class="login-card">
+    <div class="brand-mark">S</div>
+    <div><p class="eyebrow">SLDS Parser</p><h1>Шаблоны контента</h1><p class="muted">Войдите в административный интерфейс.</p></div>
+    <label class="field"><span>Пользователь</span><input id="login-username" required autocomplete="username"></label>
+    <label class="field"><span>Пароль</span><input id="login-password" type="password" required autocomplete="current-password"></label>
+    <p id="login-error" class="form-error" hidden></p>
+    <button class="button primary wide" type="submit">Войти</button>
+  </form>
+</div>
+
+<div id="app-view" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="brand-line"><a class="brand-mark small brand-link" href="/classifier">S</a><div><p class="eyebrow">SLDS Parser</p><h1>Шаблоны контента</h1></div></div>
+    <div class="topbar-actions"><span id="operator-name" class="operator"></span><button id="logout-button" class="button quiet">Выйти</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Основные разделы"><a href="/classifier">Классификатор</a><a href="/classifier-config">Настройки классификации</a><a class="active" aria-current="page" href="/content-templates">Шаблоны контента</a><a href="/products">Товары</a><a href="/operations">Операции</a><a href="/runtime">Парсер</a><a href="/jobs">Очередь и ошибки</a><a href="/wordpress-snapshots">Снимки WordPress</a><a href="/proxies">Прокси</a></nav>
+
+  <main class="template-page">
+    <section class="template-heading">
+      <div><p class="eyebrow">WordPress payload</p><h2>Редактор описаний</h2><p>Шаблон исполняется при preview и экспорте. Обработка товара и изображения не запускаются повторно.</p></div>
+      <label class="template-target"><span>Target</span><select id="target-select"></select></label>
+    </section>
+
+    <div class="template-field-tabs" role="tablist" aria-label="Поле WordPress">
+      <button class="template-field-tab active" data-field="description" role="tab">Описание</button>
+      <button class="template-field-tab" data-field="short_description" role="tab">Краткое описание</button>
+    </div>
+
+    <div id="page-error" class="product-message error" hidden></div>
+    <div id="page-loading" class="product-message">Загрузка...</div>
+
+    <div id="template-workspace" class="template-workspace" hidden>
+      <section class="template-editor-card">
+        <div class="template-editor-toolbar">
+          <label><span>Название версии</span><input id="template-name" maxlength="160" value="Шаблон описания"></label>
+          <label><span>Товар для проверки</span><div class="template-product-input"><input id="preview-product-id" inputmode="numeric" placeholder="sourceProductId, например 76399"><a id="open-product-link" class="button quiet small-button" href="/products">Открыть</a></div></label>
+        </div>
+        <div class="template-source-heading"><div><h3>Шаблон</h3><p>HTML и безопасные вставки вида <code>{{ product.effective_title }}</code>. Произвольный JavaScript не выполняется.</p></div><span id="editor-state" class="badge">Не сохранён</span></div>
+        <textarea id="template-source" class="template-source" spellcheck="false" aria-label="Исходный код шаблона"></textarea>
+        <div class="template-actions">
+          <span id="validation-state" class="template-action-status">Изменения ещё не проверены</span>
+          <div><button id="preview-button" class="button secondary">Проверить на товаре</button><button id="save-button" class="button primary">Сохранить черновик</button></div>
+        </div>
+      </section>
+
+      <aside class="template-reference-card">
+        <div><p class="eyebrow">Данные товара</p><h3>Переменные</h3><p class="muted">Нажмите, чтобы вставить в позицию курсора.</p></div>
+        <div id="variable-groups" class="template-reference-list"></div>
+        <details class="template-helper-details" open><summary>Функции обработки</summary><div id="helper-list" class="template-helper-list"></div></details>
+        <details class="template-helper-details"><summary>Условие</summary><button class="template-code-example" data-insert="{% if variants.available_sizes %}\n  \n{% endif %}"><code>{% if переменная %}…{% endif %}</code><span>Показывает блок, только когда данные есть</span></button></details>
+      </aside>
+
+      <section class="template-preview-card">
+        <div class="template-preview-heading"><div><p class="eyebrow">Read-only WordPress preflight</p><h3>Предпросмотр</h3></div><span id="preview-badge" class="badge">Не проверено</span></div>
+        <p id="preview-message" class="muted">Укажите товар и нажмите «Проверить на товаре».</p>
+        <div id="preview-comparison" class="template-preview-comparison" hidden>
+          <article><div class="template-preview-label">Сейчас в WordPress</div><iframe id="preview-before" sandbox title="Текущее описание"></iframe></article>
+          <article><div class="template-preview-label">После merge</div><iframe id="preview-after" sandbox title="Новое описание"></iframe></article>
+        </div>
+        <details id="preview-context-details" class="template-context" hidden><summary>Доступные значения этого товара</summary><pre id="preview-context"></pre></details>
+      </section>
+
+      <section class="template-versions-card">
+        <div class="template-preview-heading"><div><p class="eyebrow">История без перезаписи</p><h3>Версии</h3></div><span id="versions-count" class="count-pill">0</span></div>
+        <div id="versions-list" class="template-versions-list"></div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

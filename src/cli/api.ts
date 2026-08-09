@@ -12,10 +12,11 @@ import {
   PostgresGoatProxyRepository,
   PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
+  PostgresUnitOfWork,
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ClassifierAdminService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { ClassifierAdminService, ContentTemplateAdminService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -84,11 +85,14 @@ async function main(): Promise<void> {
     const wordpressPreview = wordpress === null
       ? undefined
       : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository, new WordPressProductSnapshotReader(wordpress));
+    const contentTemplates = wordpressPreview === undefined
+      ? undefined
+      : new ContentTemplateAdminService(repositories.contentTemplates, repositories.targets, wordpressPreview, new PostgresUnitOfWork(pool));
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
     runtime = new RuntimeAdminService(pool, repositories);
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }) });
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(contentTemplates === undefined ? {} : { contentTemplates }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

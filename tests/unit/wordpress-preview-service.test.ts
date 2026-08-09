@@ -48,6 +48,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     sources: { getById: vi.fn().mockResolvedValue({ id: "1", code: "goat", name: "GOAT", adapterCode: "goat", config: {}, enabled: true }) },
     sourceProducts: { getById: vi.fn().mockResolvedValue({ id: "2", sourceId: "1", sourceKey: "test", externalId: "100", slug: "test-shoe", url: "https://goat.example/test", discoveryMetadata: {} }) },
     internalProducts: { findBySourceProductId: vi.fn().mockResolvedValue(options.internalMissing ? null : { id: "7", sourceProductId: "2", data: product }) },
+    contentTemplates: { listActive: vi.fn().mockResolvedValue([]) },
     targets: {
       getById: vi.fn().mockResolvedValue({
         id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", enabled: false,

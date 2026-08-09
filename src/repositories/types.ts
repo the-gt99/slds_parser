@@ -328,6 +328,30 @@ export interface TargetRecord {
   readonly updatedAt: Timestamp;
 }
 
+export type TargetContentTemplateField = "description" | "short_description";
+export type TargetContentTemplateStatus = "draft" | "active" | "archived";
+
+export interface TargetContentTemplateRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly field: TargetContentTemplateField;
+  readonly name: string;
+  readonly templateSource: string;
+  readonly status: TargetContentTemplateStatus;
+  readonly revision: number;
+  readonly actor: string;
+  readonly createdAt: Timestamp;
+  readonly activatedAt: Timestamp | null;
+}
+
+export interface CreateTargetContentTemplateDraftInput {
+  readonly targetId: EntityId;
+  readonly field: TargetContentTemplateField;
+  readonly name: string;
+  readonly templateSource: string;
+  readonly actor: string;
+}
+
 export interface TargetProductRecord {
   readonly id: EntityId;
   readonly targetId: EntityId;

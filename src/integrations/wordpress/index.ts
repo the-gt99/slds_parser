@@ -2,7 +2,7 @@ export { WordPressDictionaryProvider } from "./wordpress-dictionary-provider.js"
 export {
   buildWordPressUpsertPayload,
   applyWordPressTitlePolicy,
-  buildWordPressDescriptionHtml,
+  renderWordPressContentFields,
   previewWordPressUpsertPayload,
   WordPressExporter,
   WORDPRESS_PRODUCT_UPSERT_CONTRACT,
@@ -15,3 +15,12 @@ export {
   type WordPressSizeConversionInput,
   type WordPressSizeConverterLike,
 } from "./wordpress-size-converter.js";
+export {
+  contentTemplateCatalog,
+  DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
+  EXAMPLE_WORDPRESS_SHORT_DESCRIPTION_TEMPLATE,
+  renderWordPressContentTemplate,
+  validateWordPressContentTemplate,
+  type WordPressContentTemplateDefinition,
+  type WordPressContentTemplateField,
+} from "./wordpress-content-template.js";

@@ -39,6 +39,7 @@ export type {
   SourceProductDTO,
   SourceProductPartDTO,
   TargetDTO,
+  TargetContentTemplateDTO,
   TargetReferenceResolutionInput,
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,

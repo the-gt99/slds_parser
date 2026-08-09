@@ -149,6 +149,33 @@ describe("WordPressExporter", () => {
     expect(targetProduct.description_html).toContain("<h2>Кроссовки Nike Test Shoe</h2>");
   });
 
+  it("renders active long and short templates from final WordPress size data", async () => {
+    const input: ExportContext = {
+      ...context({ titlePrefixByCategoryTermId: { "41": "Кроссовки" } }),
+      contentTemplates: [
+        {
+          id: "201",
+          field: "description",
+          revision: 3,
+          templateSource: "<h2>Заказать {{ product.effective_title | lower_first }} с бесплатной доставкой</h2>{{ content.story | paragraphs }}",
+        },
+        {
+          id: "202",
+          field: "short_description",
+          revision: 2,
+          templateSource: "{% if variants.available_sizes %}<p>Размеры: {{ variants.available_sizes | unique | numeric_sort | range:\" — \" }} {{ variants.audience | upper }} {{ variants.size_system | size_system_label }} ({{ variants.audience | audience_label }} размерная сетка бренда)</p>{% endif %}",
+        },
+      ],
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+    const targetProduct = payload.product as JsonObject;
+
+    expect(targetProduct.description_html).toContain("<h2>Заказать кроссовки Nike Test Shoe с бесплатной доставкой</h2>");
+    expect(targetProduct.short_description_html).toBe("<p>Размеры: 7 — 7 MEN US (Мужская размерная сетка бренда)</p>");
+    expect(payload.managed_fields).toContain("short_description");
+  });
+
   it("adds taxonomy terms projected from concrete classification decisions", async () => {
     const input = context();
     vi.mocked(input.references.resolveProjections).mockResolvedValue([

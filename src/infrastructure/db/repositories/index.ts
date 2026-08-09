@@ -12,6 +12,7 @@ import { PostgresSourceProductRepository } from "./postgres-source-product-repos
 import { PostgresSourceRepository } from "./postgres-source-repository.js";
 import { PostgresSourceRunRepository } from "./postgres-source-run-repository.js";
 import { PostgresTargetRepository } from "./postgres-target-repository.js";
+import { PostgresTargetContentTemplateRepository } from "./postgres-target-content-template-repository.js";
 import { PostgresTargetDictionaryRepository } from "./postgres-target-dictionary-repository.js";
 
 export { PostgresClassificationRepository } from "./postgres-classification-repository.js";
@@ -26,6 +27,7 @@ export { PostgresSourceProductRepository } from "./postgres-source-product-repos
 export { PostgresSourceRepository } from "./postgres-source-repository.js";
 export { PostgresSourceRunRepository } from "./postgres-source-run-repository.js";
 export { PostgresTargetRepository } from "./postgres-target-repository.js";
+export { PostgresTargetContentTemplateRepository } from "./postgres-target-content-template-repository.js";
 export { PostgresTargetDictionaryRepository } from "./postgres-target-dictionary-repository.js";
 
 export function createPostgresRepositories(executor: SqlExecutor): TransactionRepositories {
@@ -37,6 +39,7 @@ export function createPostgresRepositories(executor: SqlExecutor): TransactionRe
     internalProducts: new PostgresInternalProductRepository(executor),
     references: new PostgresReferenceRepository(executor),
     targets: new PostgresTargetRepository(executor),
+    contentTemplates: new PostgresTargetContentTemplateRepository(executor),
     jobs: new PostgresJobRepository(executor),
     productOperationHistory: new PostgresProductOperationHistoryRepository(executor),
   };

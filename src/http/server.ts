@@ -18,6 +18,7 @@ import type {
   ClassificationDecisionCommand,
   ClassificationRuleDraft,
   ClassifierAdminService,
+  ContentTemplateAdminService,
   CreateTargetTermCommand,
   ProductAdminService,
   ProxyAdminService,
@@ -41,6 +42,7 @@ export interface HttpServerDependencies {
   readonly proxies?: ProxyAdminService;
   readonly runtime?: RuntimeAdminService;
   readonly wordpressPreview?: WordPressPreviewService;
+  readonly contentTemplates?: ContentTemplateAdminService;
 }
 
 interface QueueQuery {
@@ -97,6 +99,15 @@ interface ProxyBody {
   readonly username?: unknown;
   readonly password?: unknown;
 }
+interface ContentTemplateQuery { readonly targetId?: string; readonly field?: string }
+interface ContentTemplateParams { readonly targetId: string; readonly templateId: string }
+interface ContentTemplateBody {
+  readonly targetId?: unknown;
+  readonly sourceProductId?: unknown;
+  readonly field?: unknown;
+  readonly name?: unknown;
+  readonly templateSource?: unknown;
+}
 
 class HttpInputError extends Error {}
 
@@ -122,6 +133,13 @@ function entityId(value: unknown, field: string): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function contentTemplateField(value: unknown): "description" | "short_description" {
+  if (value !== "description" && value !== "short_description") {
+    throw new HttpInputError("field must be description or short_description");
+  }
+  return value;
 }
 
 function decisionBody(value: unknown): ClassificationDecisionCommand {
@@ -366,6 +384,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   const runtimeService = (): RuntimeAdminService => {
     if (dependencies.runtime === undefined) throw new HttpInputError("Runtime management is not configured");
     return dependencies.runtime;
+  };
+  const contentTemplateService = (): ContentTemplateAdminService => {
+    if (dependencies.contentTemplates === undefined) throw new HttpInputError("Content template management is not configured");
+    return dependencies.contentTemplates;
   };
 
   registerStaticUi(server);
@@ -640,6 +662,54 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get("/api/targets", { preHandler: requireAdmin }, async () => ({
     items: await dependencies.targetDictionaries.listTargets(),
   }));
+
+  server.get("/api/content-templates/catalog", { preHandler: requireAdmin }, async () => contentTemplateService().catalog());
+
+  server.get<{ Querystring: ContentTemplateQuery }>("/api/content-templates", { preHandler: requireAdmin }, async (request) => ({
+    items: await contentTemplateService().list(
+      entityId(request.query.targetId, "targetId"),
+      request.query.field === undefined || request.query.field === "" ? undefined : contentTemplateField(request.query.field),
+    ),
+  }));
+
+  server.post<{ Body: ContentTemplateBody }>(
+    "/api/content-templates/preview",
+    { preHandler: requireAdmin },
+    async (request) => ({
+      item: await contentTemplateService().preview({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        sourceProductId: entityId(request.body?.sourceProductId, "sourceProductId"),
+        field: contentTemplateField(request.body?.field),
+        name: requiredString(request.body?.name, "name"),
+        templateSource: requiredString(request.body?.templateSource, "templateSource"),
+      }),
+    }),
+  );
+
+  server.post<{ Body: ContentTemplateBody }>(
+    "/api/content-templates/drafts",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request, reply) => reply.code(201).send({
+      item: await contentTemplateService().createDraft({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        field: contentTemplateField(request.body?.field),
+        name: requiredString(request.body?.name, "name"),
+        templateSource: requiredString(request.body?.templateSource, "templateSource"),
+      }, actor(request)),
+    }),
+  );
+
+  server.post<{ Params: ContentTemplateParams }>(
+    "/api/targets/:targetId/content-templates/:templateId/activate",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      item: await contentTemplateService().activate(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.templateId, "templateId"),
+        actor(request),
+      ),
+    }),
+  );
 
   server.get<{ Querystring: ProductListQuery }>("/api/products", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);

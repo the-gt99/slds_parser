@@ -155,7 +155,11 @@ GOAT сейчас выдаёт в классификатор только реа
 
 Наблюдаемость реализована в parser commit `2116833` и исправлена commit `343fe13`. Проверены `/classifier`, `/products`, `/operations`, `/wordpress-snapshots` и `/products/:id`.
 
-Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. Длинное описание показывается безопасно отрендеренным до/после merge. Краткое описание не входит в managed fields нового parser и отображается как сохраняемое без изменений. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Перед write всё равно нужно просматривать полный diff.
+Preview сравнивает `title`, `slug`, `sku`, taxonomies, вариации, `description_html`, `short_description_html` и identity/URL изображений. Описания показываются безопасно отрендеренными до/после merge. Краткое описание по умолчанию не входит в managed fields и сохраняется без изменений; оно становится управляемым только после явной активации шаблона `short_description`. WordPress snapshot отдаёт description fields, attachment `import_name` и `source_url`. Перед write всё равно нужно просматривать полный diff.
+
+Шаблоны длинного и краткого описания являются частью WordPress target payload, а не `ProductOperation`. Они исполняются после классификации, применения title policy и финальной конвертации размеров. Поэтому изменение активной версии не требует `process_product`, повторного скачивания изображений или повторной классификации: preview рендерится по сохранённому DTO, а массовое применение выполняется только через `export_product`. Активные revision/source входят в export fingerprint.
+
+Редактор `/content-templates` использует ограниченный язык `{{ variable | helper }}` и `{% if variable %}` без произвольного JavaScript, файлов, БД или сети. Разрешённые переменные и helpers задаются серверным catalog; значения экранируются, итоговый HTML очищается allowlist. Версии неизменяемы: сначала создаётся draft, затем он отдельно активируется; предыдущая active-версия архивируется. Preview выполняет реальный read-only WordPress preflight и не создаёт export jobs.
 
 Точечную ручную обработку на production нельзя запускать от `root`: каталог media тогда получает владельца `root`, и Nginx отвечает `403`, хотя файл существует. Разовые processing-команды должны работать от пользователя `slds-parser`, как штатный worker.
 

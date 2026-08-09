@@ -10,6 +10,7 @@ import {
   PostgresSourceProductRepository,
   PostgresSourceRepository,
   PostgresSourceRunRepository,
+  PostgresTargetContentTemplateRepository,
   PostgresTargetRepository,
 } from "../../src/infrastructure/db/index.js";
 import type { SqlExecutor, SqlPool, SqlResult } from "../../src/infrastructure/db/index.js";
@@ -65,7 +66,31 @@ const targetSnapshotRow = {
   fetched_at: new Date("2026-04-02T00:00:00.000Z"), created_at: new Date("2026-04-02T00:00:00.000Z"), updated_at: new Date("2026-04-02T00:00:00.000Z"),
 };
 
+const contentTemplateRow = {
+  id: "51", target_id: "10", field_code: "description", name: "Описание",
+  template_source: "<p>{{ product.sku }}</p>", status: "draft", revision: 2, actor: "admin",
+  created_at: new Date("2026-08-09T00:00:00.000Z"), activated_at: null,
+};
+
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("serializes template revisions and activation inside the caller transaction", async () => {
+    const createExecutor = new FakeExecutor([[], [contentTemplateRow]]);
+    const repository = new PostgresTargetContentTemplateRepository(createExecutor);
+    const draft = await repository.createDraft({ targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>", actor: "admin" });
+
+    expect(draft).toMatchObject({ id: "51", field: "description", revision: 2, status: "draft" });
+    expect(createExecutor.calls[0]?.text).toContain("pg_advisory_xact_lock");
+    expect(createExecutor.calls[1]?.text).toContain("MAX(revision) + 1");
+
+    const activeRow = { ...contentTemplateRow, status: "active", activated_at: new Date("2026-08-09T00:01:00.000Z") };
+    const activateExecutor = new FakeExecutor([[contentTemplateRow], [], [activeRow]]);
+    const activated = await new PostgresTargetContentTemplateRepository(activateExecutor).activate("51", "10", "admin");
+    expect(activated).toMatchObject({ id: "51", status: "active", activatedAt: "2026-08-09T00:01:00.000Z" });
+    expect(activateExecutor.calls[0]?.text).toContain("FOR UPDATE");
+    expect(activateExecutor.calls[1]?.text).toContain("status = 'archived'");
+    expect(activateExecutor.calls[2]?.text).toContain("status = 'active'");
+  });
+
   it("maps BIGINT as strings and timestamps as ISO strings", async () => {
     const repository = new PostgresSourceRepository(new FakeExecutor([[sourceRow]]));
     const source = await repository.getById("9007199254740993");

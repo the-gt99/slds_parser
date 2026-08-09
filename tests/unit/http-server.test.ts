@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ContentTemplateAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -162,6 +162,42 @@ describe("HTTP server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain("SLDS · Прокси");
+    await server.close();
+  });
+
+  it("serves and protects the content template workflow", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const template = {
+      id: "22", targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>",
+      status: "draft", revision: 1, actor: "admin", createdAt: "2026-08-09T00:00:00.000Z", activatedAt: null,
+    };
+    const contentTemplates = {
+      catalog: vi.fn().mockReturnValue({ variables: [], helpers: [], defaults: {} }),
+      list: vi.fn().mockResolvedValue([template]),
+      preview: vi.fn().mockResolvedValue({ proposed: { fields: { description_html: "<p>SKU</p>" } } }),
+      createDraft: vi.fn().mockResolvedValue(template),
+      activate: vi.fn().mockResolvedValue({ ...template, status: "active" }),
+    } as unknown as ContentTemplateAdminService;
+    const server = createHttpServer({ ...dependencies(database), contentTemplates });
+    const page = await server.inject({ method: "GET", url: "/content-templates" });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const headers = { cookie, "x-csrf-token": login.json().csrfToken };
+    const catalog = await server.inject({ method: "GET", url: "/api/content-templates/catalog", headers: { cookie } });
+    const preview = await server.inject({ method: "POST", url: "/api/content-templates/preview", headers: { cookie }, payload: { targetId: "10", sourceProductId: "76399", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
+    const forbidden = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers: { cookie }, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
+    const saved = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
+    const activated = await server.inject({ method: "POST", url: "/api/targets/10/content-templates/22/activate", headers, payload: {} });
+
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("SLDS · Шаблоны контента");
+    expect(catalog.statusCode).toBe(200);
+    expect(preview.statusCode).toBe(200);
+    expect(forbidden.statusCode).toBe(403);
+    expect(saved.statusCode).toBe(201);
+    expect(activated.statusCode).toBe(200);
+    expect(contentTemplates.preview).toHaveBeenCalledWith(expect.objectContaining({ sourceProductId: "76399", field: "description" }));
+    expect(contentTemplates.activate).toHaveBeenCalledWith("10", "22", "admin");
     await server.close();
   });
 

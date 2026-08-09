@@ -12,6 +12,11 @@ import type {
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import { hashStableJson } from "../../core/utils/index.js";
 import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
+import {
+  DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
+  renderWordPressContentTemplate,
+  type WordPressContentTemplateDefinition,
+} from "./wordpress-content-template.js";
 
 const CONTRACT_VERSION = "slds.wordpress.product-upsert.v1";
 
@@ -70,6 +75,7 @@ export interface WordPressUpsertPreflightResult {
 export interface WordPressUpsertPayloadPreview {
   readonly payload: JsonObject;
   readonly missingRequiredReferences: readonly string[];
+  readonly contentContext: JsonObject;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -218,14 +224,6 @@ function imagePayload(image: ProductImageDTO, externalId: string): JsonObject {
   };
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;").replace(/"/gu, "&quot;").replace(/'/gu, "&#039;");
-}
-
-function paragraphHtml(value: string): string {
-  return value.trim() === "" ? "" : value.trim().split(/\r?\n\s*\r?\n/gu).map((item) => `<p>${escapeHtml(item.replace(/\s+/gu, " ").trim())}</p>`).join("\n");
-}
-
 function releaseDate(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/u.exec(value.trim());
   if (match === null) return value.trim();
@@ -236,27 +234,6 @@ function releaseDate(value: string): string {
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return value.trim();
   const months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
   return `${String(day).padStart(2, "0")} ${months[month - 1]!} ${year}г.`;
-}
-
-export function buildWordPressDescriptionHtml(product: UniversalProductDTO): string {
-  const translated = product.translatedContent;
-  const story = translated?.story || translated?.description || product.description;
-  const properties = [
-    ["Артикул", product.sku],
-    ["Цвет", translated?.color || text(product.attributes.color)],
-    ["Расцветка", translated?.details || text(product.attributes.details)],
-    ["Материал верха", translated?.upperMaterial || text(product.attributes.upperMaterial)],
-    ["Технология", text(product.attributes.midsole)],
-    ["Категория", text(product.attributes.categoryRaw)],
-    ["Дата релиза", releaseDate(text(product.attributes.releaseDate))],
-  ].filter((entry) => entry[1] !== "");
-  const parts = [`<h2>${escapeHtml(product.title)}</h2>`];
-  const storyHtml = paragraphHtml(story);
-  if (storyHtml !== "") parts.push(storyHtml);
-  if (properties.length > 0) {
-    parts.push(`<ul>\n${properties.map(([name, value]) => `<li>${escapeHtml(name!)}: ${escapeHtml(value!)}</li>`).join("\n")}\n</ul>`);
-  }
-  return parts.join("\n");
 }
 
 function taxonomyTermIds(taxonomies: JsonObject, taxonomy: string): readonly number[] {
@@ -296,13 +273,13 @@ async function resolveVariationSize(
   mappings: readonly SizeMapping[],
   converter: WordPressSizeConverterLike | undefined,
   identity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
-): Promise<SizeMapping> {
+): Promise<{ readonly mapping: SizeMapping; readonly size: ProductSizeDTO }> {
   const direct = findSizeMapping(size, mappings);
-  if (direct !== null) return direct;
-  if (converter === undefined || !converter.supports(size) || identity === undefined) return resolveSize(size, mappings);
+  if (direct !== null) return { mapping: direct, size };
+  if (converter === undefined || !converter.supports(size) || identity === undefined) return { mapping: resolveSize(size, mappings), size };
   const converted = await converter.convert({ ...identity, size });
   const convertedMapping = findSizeMapping(converted, mappings);
-  if (convertedMapping !== null) return convertedMapping;
+  if (convertedMapping !== null) return { mapping: convertedMapping, size: converted };
   const sourceKey = [size.system ?? "", size.audience ?? "", size.sourceValue].join("/");
   const targetKey = [converted.system ?? "", converted.audience ?? "", converted.sourceValue].join("/");
   throw new IntegrationContractError(`WordPress size mapping is missing after conversion: ${sourceKey} -> ${targetKey}`);
@@ -314,8 +291,8 @@ async function variationPayload(
   mappings: readonly SizeMapping[],
   converter: WordPressSizeConverterLike | undefined,
   conversionIdentity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
-): Promise<JsonObject> {
-  const size = await resolveVariationSize(variant.size, mappings, converter, conversionIdentity);
+): Promise<{ readonly payload: JsonObject; readonly size: ProductSizeDTO; readonly availability: ProductVariantDTO["inventory"]["availability"] }> {
+  const resolvedSize = await resolveVariationSize(variant.size, mappings, converter, conversionIdentity);
   if (variant.inventory.availability !== "available" && variant.inventory.availability !== "unavailable") {
     throw new IntegrationContractError(`Unsupported WordPress availability for variant ${variant.sourceVariantKey}: ${variant.inventory.availability}`);
   }
@@ -328,16 +305,89 @@ async function variationPayload(
   if (variant.inventory.availability === "available" && price === null) {
     throw new IntegrationContractError(`Available WordPress variation has no price: ${variant.sourceVariantKey}`);
   }
-  return {
+  return { payload: {
     variation_key: `${identityKey}|${variant.sourceVariantKey}`,
     source_variant_key: variant.sourceVariantKey,
     sku: variant.sku,
-    size: { taxonomy: size.taxonomy, term_id: size.termId },
+    size: { taxonomy: resolvedSize.mapping.taxonomy, term_id: resolvedSize.mapping.termId },
     price,
     inventory: {
       availability: variant.inventory.availability,
       ...(variant.inventory.quantity === undefined ? {} : { quantity: variant.inventory.quantity }),
     },
+  }, size: resolvedSize.size, availability: variant.inventory.availability };
+}
+
+function classifiedValues(product: UniversalProductDTO, typeCode: string): readonly string[] {
+  const resolved = new Set(product.classification?.resolved.filter((item) => item.typeCode === typeCode).map((item) => item.candidateKey) ?? []);
+  return [...new Set(product.referenceCandidates
+    .filter((candidate) => candidate.typeCode === typeCode && resolved.has(candidate.key))
+    .map((candidate) => candidate.sourceValue.trim())
+    .filter(Boolean))];
+}
+
+function singleValue(values: readonly (string | undefined)[]): string {
+  const unique = [...new Set(values.map((value) => value?.trim() ?? "").filter(Boolean))];
+  return unique.length === 1 ? unique[0]! : "";
+}
+
+function wordpressContentContext(
+  product: UniversalProductDTO,
+  effectiveTitle: string,
+  variations: readonly { readonly size: ProductSizeDTO; readonly availability: ProductVariantDTO["inventory"]["availability"] }[],
+): JsonObject {
+  const translated = product.translatedContent;
+  const allSizes = variations.map((variation) => variation.size.displayValue || variation.size.sourceValue);
+  const availableSizes = variations.filter((variation) => variation.availability === "available")
+    .map((variation) => variation.size.displayValue || variation.size.sourceValue);
+  return {
+    product: { effective_title: effectiveTitle, source_title: product.title, sku: product.sku },
+    content: {
+      story: translated?.story || translated?.description || product.description,
+      description: translated?.description || product.description,
+      color: translated?.color || text(product.attributes.color),
+      details: translated?.details || text(product.attributes.details),
+      upper_material: translated?.upperMaterial || text(product.attributes.upperMaterial),
+    },
+    attributes: {
+      midsole: text(product.attributes.midsole),
+      category: text(product.attributes.categoryRaw),
+      release_date: releaseDate(text(product.attributes.releaseDate)),
+    },
+    classification: {
+      brands: classifiedValues(product, "brand"),
+      models: classifiedValues(product, "model"),
+      categories: classifiedValues(product, "category"),
+      tags: classifiedValues(product, "tag"),
+      colors: classifiedValues(product, "color"),
+      materials: classifiedValues(product, "material"),
+    },
+    variants: {
+      available_sizes: availableSizes,
+      all_sizes: allSizes,
+      audience: singleValue(variations.map((variation) => variation.size.audience)),
+      size_system: singleValue(variations.map((variation) => variation.size.system)),
+      available_count: variations.filter((variation) => variation.availability === "available").length,
+      count: variations.length,
+    },
+  };
+}
+
+function templateByField(templates: readonly WordPressContentTemplateDefinition[], field: WordPressContentTemplateDefinition["field"]): WordPressContentTemplateDefinition | null {
+  const matches = templates.filter((template) => template.field === field);
+  if (matches.length > 1) throw new IntegrationContractError(`More than one active WordPress ${field} template is configured`);
+  return matches[0] ?? null;
+}
+
+export function renderWordPressContentFields(
+  context: JsonObject,
+  templates: readonly WordPressContentTemplateDefinition[] = [],
+): { readonly descriptionHtml: string; readonly shortDescriptionHtml?: string } {
+  const description = templateByField(templates, "description");
+  const shortDescription = templateByField(templates, "short_description");
+  return {
+    descriptionHtml: renderWordPressContentTemplate(description?.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, context),
+    ...(shortDescription === null ? {} : { shortDescriptionHtml: renderWordPressContentTemplate(shortDescription.templateSource, context) }),
   };
 }
 
@@ -430,9 +480,10 @@ async function buildWordPressPayload(
   const conversionIdentity = needsConversion && converter !== undefined
     ? sizeConversionIdentity(taxonomies, context.target.config)
     : undefined;
-  const variations = await Promise.all(context.product.variants.map(
+  const resolvedVariations = await Promise.all(context.product.variants.map(
     (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
   ));
+  const variations = resolvedVariations.map((variation) => variation.payload);
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -440,6 +491,11 @@ async function buildWordPressPayload(
   if (targetSizes.size !== variations.length) throw new IntegrationContractError("More than one product variant resolves to the same WordPress size");
   const targetId = context.existingExternalId === undefined ? 0 : positiveInteger(context.existingExternalId, "existingExternalId");
   const title = applyWordPressTitlePolicy(context.product.title, taxonomies, context.target.config);
+  const contentContext = wordpressContentContext(context.product, title, resolvedVariations);
+  const contentTemplates = context.contentTemplates ?? [];
+  const content = renderWordPressContentFields(contentContext, contentTemplates);
+  const managedFields = ["title", "slug", "sku", "description", "images", "taxonomies", "variations"];
+  if (content.shortDescriptionHtml !== undefined) managedFields.push("short_description");
   const base: JsonObject = {
     contract_version: CONTRACT_VERSION,
     mode: "upsert",
@@ -449,12 +505,13 @@ async function buildWordPressPayload(
       external_key: externalKey,
       target_id: targetId,
     },
-    managed_fields: ["title", "slug", "sku", "description", "images", "taxonomies", "variations"],
+    managed_fields: managedFields,
     product: {
       title,
       slug: context.sourceProduct.slug ?? "",
       sku: context.product.sku,
-      description_html: buildWordPressDescriptionHtml({ ...context.product, title }),
+      description_html: content.descriptionHtml,
+      ...(content.shortDescriptionHtml === undefined ? {} : { short_description_html: content.shortDescriptionHtml }),
       status: "publish",
       images: context.product.images.map((image) => imagePayload(image, sourceExternalId)),
       taxonomies,
@@ -466,6 +523,7 @@ async function buildWordPressPayload(
   return {
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
+    contentContext,
   };
 }
 
@@ -493,7 +551,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.3.0";
+  readonly version = "1.4.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

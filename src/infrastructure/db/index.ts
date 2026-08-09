@@ -23,5 +23,6 @@ export {
   PostgresSourceRepository,
   PostgresSourceRunRepository,
   PostgresTargetRepository,
+  PostgresTargetContentTemplateRepository,
   PostgresTargetDictionaryRepository,
 } from "./repositories/index.js";

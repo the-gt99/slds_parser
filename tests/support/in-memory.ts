@@ -1,5 +1,5 @@
 import type { EntityId } from "../../src/contracts/index.js";
-import type { ClassificationMappingMatchRecord, ClassificationRuleRecord, CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, ProductClassificationObservationInput, RecordSourceRunPageInput, ReferenceRepository, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetProductRecord, TargetProductSnapshotRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
+import type { ClassificationMappingMatchRecord, ClassificationRuleRecord, CompleteSourceRunInput, CreateSourceRunInput, EnqueueJobInput, FailSourceRunInput, InternalProductRecord, JobRecord, JobRepository, ProductClassificationObservationInput, RecordSourceRunPageInput, ReferenceRepository, RetryJobInput, SaveExportFailureInput, SaveExportSuccessInput, SourceProductPartRecord, SourceProductRecord, SourceRecord, SourceRunRecord, TargetContentTemplateRecord, TargetProductRecord, TargetProductSnapshotRecord, TargetRecord, TargetValueMappingRecord, TransactionRepositories, UnitOfWork, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertInternalProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../src/repositories/index.js";
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
@@ -12,6 +12,7 @@ export class MemoryStore {
   readonly targets = new Map<string, TargetRecord>();
   readonly targetProducts = new Map<string, TargetProductRecord>();
   readonly targetSnapshots = new Map<string, TargetProductSnapshotRecord>();
+  readonly contentTemplates = new Map<string, TargetContentTemplateRecord>();
   readonly jobs = new Map<string, JobRecord>();
   readonly classificationTypes = new Set(["brand", "category", "merchandising_category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height", "activity"]);
   readonly classificationDecisions = new Map<string, Omit<ClassificationMappingMatchRecord, "candidateKey">>();
@@ -116,6 +117,34 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       },
       saveExportSuccess: async (input: SaveExportSuccessInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: input.externalId, status: input.status, lastExportedHash: input.exportedHash, lastExportFingerprint: input.exportFingerprint, lastAttemptAt: input.attemptedAt, syncedAt: input.syncedAt, lastError: null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
       saveExportFailure: async (input: SaveExportFailureInput) => { const key = `${input.targetId}/${input.internalProductId}`; const old = store.targetProducts.get(key); const record: TargetProductRecord = { id: old?.id ?? store.id(), targetId: input.targetId, internalProductId: input.internalProductId, externalId: old?.externalId ?? null, status: input.status, lastExportedHash: old?.lastExportedHash ?? null, lastExportFingerprint: old?.lastExportFingerprint ?? null, lastAttemptAt: input.attemptedAt, syncedAt: old?.syncedAt ?? null, lastError: input.error, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.targetProducts.set(key, record); return record; },
+    },
+    contentTemplates: {
+      list: async (targetId, field) => [...store.contentTemplates.values()]
+        .filter((item) => item.targetId === targetId && (field === undefined || item.field === field))
+        .sort((left, right) => right.revision - left.revision),
+      listActive: async (targetId) => [...store.contentTemplates.values()]
+        .filter((item) => item.targetId === targetId && item.status === "active"),
+      getById: async (id) => store.contentTemplates.get(id) ?? null,
+      createDraft: async (input) => {
+        const revision = Math.max(0, ...[...store.contentTemplates.values()]
+          .filter((item) => item.targetId === input.targetId && item.field === input.field)
+          .map((item) => item.revision)) + 1;
+        const record: TargetContentTemplateRecord = { id: store.id(), ...input, status: "draft", revision, createdAt: timestamp, activatedAt: null };
+        store.contentTemplates.set(record.id, record);
+        return record;
+      },
+      activate: async (id, targetId, actor) => {
+        const selected = store.contentTemplates.get(id);
+        if (selected === undefined || selected.targetId !== targetId) throw new Error(`Template not found: ${id}`);
+        for (const [key, item] of store.contentTemplates) {
+          if (item.targetId === targetId && item.field === selected.field && item.status === "active") {
+            store.contentTemplates.set(key, { ...item, status: "archived" });
+          }
+        }
+        const active: TargetContentTemplateRecord = { ...selected, status: "active", actor, activatedAt: timestamp };
+        store.contentTemplates.set(id, active);
+        return active;
+      },
     },
     jobs: new MemoryJobRepository(store),
     productOperationHistory: {

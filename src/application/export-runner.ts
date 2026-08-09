@@ -2,7 +2,7 @@ import type { SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.
 import { EntityNotFoundError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository } from "../repositories/index.js";
+import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, TargetRepository } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "../services/index.js";
 import type { ExportProductPayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
@@ -12,6 +12,7 @@ export interface ExportRunnerRepositories {
   readonly sourceProducts: SourceProductRepository;
   readonly internalProducts: InternalProductRepository;
   readonly targets: TargetRepository;
+  readonly contentTemplates: TargetContentTemplateRepository;
 }
 
 export class ExportRunner {
@@ -32,8 +33,11 @@ export class ExportRunner {
     if (target === null) throw new EntityNotFoundError("Target", payload.targetId);
     const exporter = this.exporters.get(target.exporterCode);
     const existing = await this.repositories.targets.findTargetProduct(target.id, internal.id);
+    const contentTemplates = [...await this.repositories.contentTemplates.listActive(target.id)]
+      .sort((left, right) => left.field.localeCompare(right.field));
     const mappingRevision = await this.mappings.getTargetMappingRevision(target.id);
-    const fingerprint = hashStableJson({ contentHash: internal.contentHash, exporterVersion: exporter.version, targetConfig: target.config, mappingRevision });
+    const fingerprint = hashStableJson({ contentHash: internal.contentHash, exporterVersion: exporter.version, targetConfig: target.config, mappingRevision,
+      contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })) });
     if (!payload.force && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
     const attemptedAt = new Date().toISOString();
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
@@ -53,6 +57,7 @@ export class ExportRunner {
           resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
         },
+        contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })),
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });
       await this.repositories.targets.saveExportSuccess({ targetId: target.id, internalProductId: internal.id, externalId: result.externalId,
         status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date().toISOString() });

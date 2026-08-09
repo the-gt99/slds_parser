@@ -2,6 +2,7 @@ const byId = (id) => document.getElementById(id);
 
 const state = { session: null, product: null };
 const productId = location.pathname.match(/^\/products\/(\d+)\/?$/u)?.[1] ?? null;
+if (productId !== null) byId("edit-content-template").href = `/content-templates?productId=${encodeURIComponent(productId)}`;
 
 const statusNames = {
   discovered: "Обнаружен",

@@ -1,11 +1,11 @@
-import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
+import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetContentTemplateDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import { perceptualHashDistance } from "../processing/media/index.js";
 import {
   applyWordPressTitlePolicy,
-  buildWordPressDescriptionHtml,
+  renderWordPressContentFields,
   type WordPressProductSnapshotReader,
   WordPressExporter,
 } from "../integrations/index.js";
@@ -16,6 +16,7 @@ import type {
   TargetDictionaryRepository,
   TargetDictionaryValueRecord,
   TargetRepository,
+  TargetContentTemplateRepository,
 } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
 
@@ -94,7 +95,7 @@ function snapshotTaxonomies(value: unknown): Record<string, number[]> {
   return Object.fromEntries(Object.entries(record(value)).map(([taxonomy, terms]) => [taxonomy, Array.isArray(terms) ? terms.map((term) => Number(record(term).term_id)).filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b) : []]));
 }
 
-interface PreviewTerm {
+export interface PreviewTerm {
   readonly termId: number;
   readonly name: string;
   readonly slug: string | null;
@@ -267,14 +268,14 @@ function imageDiff(expected: unknown, actual: unknown) {
 
 export class WordPressPreviewService {
   constructor(
-    private readonly repositories: { readonly sources: SourceRepository; readonly sourceProducts: SourceProductRepository; readonly internalProducts: InternalProductRepository; readonly targets: TargetRepository },
+    private readonly repositories: { readonly sources: SourceRepository; readonly sourceProducts: SourceProductRepository; readonly internalProducts: InternalProductRepository; readonly targets: TargetRepository; readonly contentTemplates: TargetContentTemplateRepository },
     private readonly exporters: TargetExporterRegistry,
     private readonly mappings: TargetReferenceMappingService,
     private readonly targetDictionaries?: TargetDictionaryRepository,
     private readonly snapshotReader?: Pick<WordPressProductSnapshotReader, "read">,
   ) {}
 
-  async preview(sourceProductId: EntityId, targetId: EntityId) {
+  async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = []) {
     const sourceProduct = await this.repositories.sourceProducts.getById(sourceProductId);
     if (sourceProduct === null) throw new EntityNotFoundError("Source product", sourceProductId);
     const source = await this.repositories.sources.getById(sourceProduct.sourceId);
@@ -283,6 +284,14 @@ export class WordPressPreviewService {
     if (target === null) throw new EntityNotFoundError("Target", targetId);
     const exporter = this.exporters.get(target.exporterCode);
     if (!(exporter instanceof WordPressExporter)) throw new IntegrationContractError("Target does not use the WordPress exporter");
+    const activeTemplates = await this.repositories.contentTemplates.listActive(target.id);
+    const overriddenFields = new Set(templateOverrides.map((template) => template.field));
+    const contentTemplates: readonly TargetContentTemplateDTO[] = [
+      ...activeTemplates.filter((template) => !overriddenFields.has(template.field)).map((template) => ({
+        id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
+      })),
+      ...templateOverrides,
+    ];
     let snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
     let lookupFound: boolean | null = null;
     let lookupMatchedBy: string | null = null;
@@ -345,6 +354,7 @@ export class WordPressPreviewService {
         resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
       },
+      contentTemplates,
       ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),
     } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
     let draft;
@@ -405,10 +415,17 @@ export class WordPressPreviewService {
       }),
     };
     const effectiveTitle = applyWordPressTitlePolicy(String(product.title ?? ""), effectiveTaxonomies, target.config);
+    const draftProductContext = record(draft.contentContext.product);
+    const effectiveContentContext = {
+      ...draft.contentContext,
+      product: { ...draftProductContext, effective_title: effectiveTitle },
+    };
+    const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates);
     const effectiveProduct = {
       ...product,
       title: effectiveTitle,
-      description_html: buildWordPressDescriptionHtml({ ...internal.data, title: effectiveTitle }),
+      description_html: effectiveContent.descriptionHtml,
+      ...(effectiveContent.shortDescriptionHtml === undefined ? {} : { short_description_html: effectiveContent.shortDescriptionHtml }),
     };
     const managedFields = new Set(Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : []);
     const fieldRows = fieldComparison(effectiveProduct, current, managedFields);
@@ -437,6 +454,7 @@ export class WordPressPreviewService {
       current: currentSummary,
       proposed: {
         complete: ready,
+        contentContext: effectiveContentContext,
         fields: Object.fromEntries(fieldRows.map((row) => [row.field, row.expected])),
         taxonomies: taxonomyRows.map((row) => ({ taxonomy: row.taxonomy, terms: row.after, managed: row.managed })),
         images: Array.isArray(product.images) ? product.images : [],

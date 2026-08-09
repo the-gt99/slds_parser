@@ -11,6 +11,7 @@ const assets = new Map([
   ["/assets/product.js", { file: "product.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/admin-list.js", { file: "admin-list.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/proxies.js", { file: "proxies.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/content-templates.js", { file: "content-templates.js", type: "text/javascript; charset=utf-8" }],
   ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/classifier-config", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/operations", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
@@ -18,6 +19,7 @@ const assets = new Map([
   ["/runtime", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/jobs", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/proxies", { file: "proxies.html", type: "text/html; charset=utf-8" }],
+  ["/content-templates", { file: "content-templates.html", type: "text/html; charset=utf-8" }],
 ] as const);
 
 function securityHeaders(reply: FastifyReply): FastifyReply {

@@ -7,6 +7,7 @@ import type { SourceProductRepository } from "./source-product-repository.js";
 import type { SourceRunRepository } from "./source-run-repository.js";
 import type { SourceRepository } from "./source-repository.js";
 import type { TargetRepository } from "./target-repository.js";
+import type { TargetContentTemplateRepository } from "./target-content-template-repository.js";
 
 export interface TransactionRepositories {
   readonly classifications: ClassificationRepository;
@@ -16,6 +17,7 @@ export interface TransactionRepositories {
   readonly internalProducts: InternalProductRepository;
   readonly references: ReferenceRepository;
   readonly targets: TargetRepository;
+  readonly contentTemplates: TargetContentTemplateRepository;
   readonly jobs: JobRepository;
   readonly productOperationHistory: ProductOperationHistoryRepository;
 }

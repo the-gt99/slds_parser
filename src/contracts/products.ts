@@ -22,6 +22,13 @@ export interface TargetDTO {
   readonly config: JsonObject;
 }
 
+export interface TargetContentTemplateDTO {
+  readonly id: EntityId;
+  readonly field: "description" | "short_description";
+  readonly revision: number;
+  readonly templateSource: string;
+}
+
 export interface DiscoveredSourceProduct {
   readonly sourceKey: string;
   readonly externalId?: string;
@@ -284,6 +291,7 @@ export interface ExportContext {
   readonly target: TargetDTO;
   readonly product: UniversalProductDTO;
   readonly references: TargetReferenceResolver;
+  readonly contentTemplates?: readonly TargetContentTemplateDTO[];
   readonly existingExternalId?: string;
 }
 
