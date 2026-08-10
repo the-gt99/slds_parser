@@ -21,13 +21,11 @@ describe("HTTP config", () => {
       PARSER_ADMIN_USERNAME: "admin",
       PARSER_ADMIN_PASSWORD: "password-long-enough",
       PARSER_SESSION_SECRET: "s".repeat(32),
-      PARSER_WORDPRESS_CREATE_PASSWORD: "wordpress-password",
     })).toEqual({
       token: "a".repeat(32),
       username: "admin",
       password: "password-long-enough",
       sessionSecret: "s".repeat(32),
-      wordpressCreatePassword: "wordpress-password",
     });
   });
 

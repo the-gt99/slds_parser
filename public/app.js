@@ -202,7 +202,7 @@ async function login(event) {
         password: byId("login-password").value,
       },
     });
-    state.session = { ...session, wordpressCreateAllowed: false };
+    state.session = session;
     state.csrfToken = session.csrfToken;
     showApp();
     await loadDashboard();
@@ -803,8 +803,6 @@ async function openCreateTerm() {
   byId("term-landing").checked = Boolean(relation);
   byId("landing-mode-field").hidden = !relation;
   if (relation) await loadLandingChoices(target.id, relation, item.sourceValue);
-  byId("wp-password").value = "";
-  byId("wp-password-field").hidden = Boolean(state.session?.wordpressCreateAllowed);
   const parentField = byId("parent-field");
   parentField.hidden = entityType !== "product_categories";
   if (!parentField.hidden) await loadCategoryParents(target.id);
@@ -854,13 +852,6 @@ async function createTerm(event) {
   submit.disabled = true;
   submit.textContent = "Создаём…";
   try {
-    if (!state.session?.wordpressCreateAllowed) {
-      const grant = await api("/api/auth/wordpress-create", {
-        method: "POST",
-        body: { password: byId("wp-password").value },
-      });
-      state.session.wordpressCreateAllowed = grant.allowed;
-    }
     const body = {
       ...decisionBodyFor(item),
       targetScope: targetScope(item),
@@ -897,10 +888,6 @@ async function createTerm(event) {
     renderDetail();
     showToast(`Запись «${response.result.dictionaryValue.name}» создана и связана.`);
   } catch (requestError) {
-    if (requestError.code === "wordpress_create_permission_required") {
-      state.session.wordpressCreateAllowed = false;
-      byId("wp-password-field").hidden = false;
-    }
     showError(errorElement, requestError.message);
   } finally {
     submit.disabled = false;

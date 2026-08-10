@@ -5,15 +5,13 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AdminApiConfig } from "../config/index.js";
 
 const SESSION_COOKIE = "slds_parser_session";
-const WORDPRESS_COOKIE = "slds_parser_wordpress_create";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
-const WORDPRESS_TTL_SECONDS = 10 * 60;
 
 interface SignedPayload {
   readonly sub: string;
   readonly exp: number;
   readonly csrf: string;
-  readonly scope: "admin" | "wordpress:create";
+  readonly scope: "admin";
 }
 
 export interface AdminAuthContext {
@@ -76,46 +74,13 @@ export class AdminAuth {
   }
 
   logout(reply: FastifyReply): void {
-    reply.header("Set-Cookie", [clearCookie(SESSION_COOKIE), clearCookie(WORDPRESS_COOKIE)]);
-  }
-
-  grantWordPressCreate(
-    request: FastifyRequest,
-    password: string,
-    reply: FastifyReply,
-  ): { readonly expiresIn: number } | null {
-    if (this.config.wordpressCreatePassword === null || !safeEquals(this.config.wordpressCreatePassword, password)) return null;
-    const session = this.authenticate(request);
-    if (session === null) return null;
-    const payload: SignedPayload = {
-      sub: session.operator,
-      exp: Math.floor(Date.now() / 1_000) + WORDPRESS_TTL_SECONDS,
-      csrf: session.csrf ?? "",
-      scope: "wordpress:create",
-    };
-    reply.header("Set-Cookie", cookie(WORDPRESS_COOKIE, this.sign(payload), WORDPRESS_TTL_SECONDS));
-    return { expiresIn: WORDPRESS_TTL_SECONDS };
-  }
-
-  hasWordPressCreate(request: FastifyRequest, context: AdminAuthContext): boolean {
-    if (context.method === "bearer") {
-      const provided = request.headers["x-wordpress-create-token"];
-      return this.config.wordpressCreatePassword !== null
-        && typeof provided === "string"
-        && safeEquals(this.config.wordpressCreatePassword, provided);
-    }
-    const payload = this.verify(cookies(request)[WORDPRESS_COOKIE], "wordpress:create");
-    return payload !== null && payload.sub === context.operator && payload.csrf === context.csrf;
+    reply.header("Set-Cookie", clearCookie(SESSION_COOKIE));
   }
 
   csrfMatches(request: FastifyRequest, context: AdminAuthContext): boolean {
     if (context.method === "bearer") return true;
     const provided = request.headers["x-csrf-token"];
     return typeof provided === "string" && context.csrf !== null && safeEquals(context.csrf, provided);
-  }
-
-  wordpressCreateConfigured(): boolean {
-    return this.config.wordpressCreatePassword !== null;
   }
 
   private sign(payload: SignedPayload): string {

@@ -5,7 +5,6 @@ export interface HttpEnvironment {
   readonly PARSER_ADMIN_USERNAME?: string;
   readonly PARSER_ADMIN_PASSWORD?: string;
   readonly PARSER_SESSION_SECRET?: string;
-  readonly PARSER_WORDPRESS_CREATE_PASSWORD?: string;
 }
 
 export interface HttpConfig {
@@ -18,7 +17,6 @@ export interface AdminApiConfig {
   readonly username: string;
   readonly password: string;
   readonly sessionSecret: string;
-  readonly wordpressCreatePassword: string | null;
 }
 
 export function loadHttpConfig(
@@ -45,7 +43,6 @@ export function loadAdminApiConfig(
   const username = environment.PARSER_ADMIN_USERNAME?.trim() ?? "";
   const password = environment.PARSER_ADMIN_PASSWORD ?? "";
   const sessionSecret = environment.PARSER_SESSION_SECRET ?? "";
-  const wordpressCreatePassword = environment.PARSER_WORDPRESS_CREATE_PASSWORD ?? "";
   if (username === "" || username.length > 64) {
     throw new Error("PARSER_ADMIN_USERNAME must contain from 1 to 64 characters");
   }
@@ -55,14 +52,10 @@ export function loadAdminApiConfig(
   if (sessionSecret.length < 32) {
     throw new Error("PARSER_SESSION_SECRET must contain at least 32 characters");
   }
-  if (wordpressCreatePassword !== "" && wordpressCreatePassword.length < 12) {
-    throw new Error("PARSER_WORDPRESS_CREATE_PASSWORD must contain at least 12 characters");
-  }
   return {
     token,
     username,
     password,
     sessionSecret,
-    wordpressCreatePassword: wordpressCreatePassword === "" ? null : wordpressCreatePassword,
   };
 }

@@ -112,7 +112,6 @@ interface TargetAssignmentRuleBody {
   readonly reason?: unknown;
 }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
-interface WordPressGrantBody { readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
 interface ProxyBody {
@@ -453,12 +452,6 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       await reply.code(403).send({ error: "csrf_failed" });
     }
   };
-  const requireWordPressCreate = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const context = authContexts.get(request);
-    if (context === undefined || !auth.hasWordPressCreate(request, context)) {
-      await reply.code(403).send({ error: "wordpress_create_permission_required" });
-    }
-  };
   const actor = (request: FastifyRequest): string => authContexts.get(request)?.operator ?? "unknown";
   const proxyService = (): ProxyAdminService => {
     if (dependencies.proxies === undefined) throw new HttpInputError("Proxy management is not configured");
@@ -507,13 +500,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get("/api/auth/session", async (request) => {
     const context = auth.authenticate(request);
     return context === null
-      ? { authenticated: false, wordpressCreateConfigured: auth.wordpressCreateConfigured() }
+      ? { authenticated: false }
       : {
           authenticated: true,
           operator: context.operator,
           csrfToken: context.csrf,
-          wordpressCreateAllowed: auth.hasWordPressCreate(request, context),
-          wordpressCreateConfigured: auth.wordpressCreateConfigured(),
         };
   });
 
@@ -531,17 +522,6 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     async (_request, reply) => {
       auth.logout(reply);
       return { authenticated: false };
-    },
-  );
-
-  server.post<{ Body: WordPressGrantBody }>(
-    "/api/auth/wordpress-create",
-    { preHandler: [requireAdmin, requireMutationAccess] },
-    async (request, reply) => {
-      const password = requiredString(request.body?.password, "password");
-      const result = auth.grantWordPressCreate(request, password, reply);
-      if (result === null) return reply.code(403).send({ error: "invalid_wordpress_create_credentials" });
-      return { allowed: true, expiresIn: result.expiresIn };
     },
   );
 
@@ -1063,7 +1043,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
 
   server.post<{ Params: TargetParams }>(
     "/api/targets/:targetId/dictionary/terms",
-    { preHandler: [requireAdmin, requireMutationAccess, requireWordPressCreate] },
+    { preHandler: [requireAdmin, requireMutationAccess] },
     async (request, reply) => reply.code(201).send({
       result: await dependencies.targetDictionaries.createTermAndDecide(
         targetTermBody(entityId(request.params.targetId, "targetId"), request.body),

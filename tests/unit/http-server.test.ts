@@ -9,7 +9,6 @@ const auth = {
   username: "admin",
   password: "test-admin-password",
   sessionSecret: "test-session-secret-with-at-least-32-characters",
-  wordpressCreatePassword: "test-wordpress-password",
 };
 
 function dependencies(database: { query(sql: string): Promise<unknown> }) {
@@ -595,7 +594,7 @@ describe("HTTP server", () => {
     await server.close();
   });
 
-  it("requires a separate short-lived permission before creating a WordPress term", async () => {
+  it("creates a WordPress term with an authenticated session and CSRF confirmation", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const targetDictionaries = {
       createTermAndDecide: vi.fn().mockResolvedValue({ dictionaryValue: { id: "88" }, decision: { mappingId: "99" } }),
@@ -620,30 +619,20 @@ describe("HTTP server", () => {
       slug: "pegasus-trail",
     };
 
-    const forbidden = await server.inject({
+    const withoutCsrf = await server.inject({
       method: "POST",
       url: "/api/targets/10/dictionary/terms",
-      headers: { cookie: sessionCookie, "x-csrf-token": csrfToken },
+      headers: { cookie: sessionCookie },
       payload: termPayload,
     });
-    const grant = await server.inject({
-      method: "POST",
-      url: "/api/auth/wordpress-create",
-      headers: { cookie: sessionCookie, "x-csrf-token": csrfToken },
-      payload: { password: "test-wordpress-password" },
-    });
-    const permissionCookie = String(grant.headers["set-cookie"]).split(";")[0];
     const allowed = await server.inject({
       method: "POST",
       url: "/api/targets/10/dictionary/terms",
-      headers: { cookie: `${sessionCookie}; ${permissionCookie}`, "x-csrf-token": csrfToken },
+      headers: { cookie: sessionCookie, "x-csrf-token": csrfToken },
       payload: termPayload,
     });
 
-    expect(forbidden.statusCode).toBe(403);
-    expect(forbidden.json()).toEqual({ error: "wordpress_create_permission_required" });
-    expect(grant.statusCode).toBe(200);
-    expect(String(grant.headers["set-cookie"])).toContain("Max-Age=600");
+    expect(withoutCsrf.statusCode).toBe(403);
     expect(allowed.statusCode).toBe(201);
     expect(targetDictionaries.createTermAndDecide).toHaveBeenCalledWith(
       expect.objectContaining({ targetId: "10", slug: "pegasus-trail" }),
