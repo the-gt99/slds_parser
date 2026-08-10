@@ -353,16 +353,96 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const call = executor.calls[0];
     const sql = call?.text ?? "";
     expect(sql).toContain("WHERE review.id = $1");
-    expect(sql).toContain("group_observations AS MATERIALIZED");
+    expect(sql).toContain("candidate AS MATERIALIZED");
     expect(sql).not.toContain("classification_review_rule_resolutions");
     expect(sql).not.toContain("source_reference_mappings");
-    expect(sql).toContain("matching_products AS MATERIALIZED");
+    expect(sql).toContain("matching_links AS MATERIALIZED");
+    expect(sql).toContain("filtered_links AS MATERIALIZED");
+    expect(sql).toContain("source_product_classification_links link");
+    expect(sql).not.toContain("source_reference_observations");
     expect(sql).toContain("product.id::TEXT = $3");
     expect(sql).toContain("LIMIT $4 OFFSET $5");
-    expect(sql).toContain("COUNT(*)::INTEGER FROM matching_products");
+    expect(sql).toContain("COUNT(*)::INTEGER FROM filtered_links");
     expect(sql).toContain("snapshot.payload->'product'->'taxonomies'");
     expect(call?.values).toEqual(["42", '{"1":"2.9.0"}', "Vans", 50, 100]);
     expect(result).toEqual({ items: [], total: 90 });
+  });
+
+  it("previews an exact decision without returning every affected product id", async () => {
+    const executor = new FakeExecutor([[
+      {
+        observation_count: "13067",
+        product_count: "13067",
+        current_status: null,
+        current_reference_value_id: null,
+        examples: [],
+      },
+    ]]);
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).previewDecision({
+      sourceId: "1",
+      typeCode: "merchandising_category",
+      scope: "product.merchandising_category",
+      normalizedSourceValue: "skateboarding",
+      contextKey: "context-men",
+      action: "confirm",
+      referenceValueId: "148",
+      actor: "admin",
+    });
+
+    const sql = executor.calls[0]?.text ?? "";
+    expect(sql).toContain("example_links AS MATERIALIZED");
+    expect(sql).toContain("classification_candidates definition");
+    expect(sql).not.toContain("JSONB_AGG(DISTINCT source_product_id");
+    expect(sql).not.toContain("source_reference_observations");
+    expect(result).toMatchObject({ observationCount: 13067, productCount: 13067, unchanged: false });
+    expect(result).not.toHaveProperty("affectedSourceProductIds");
+  });
+
+  it("saves an exact decision with set-based job enqueueing", async () => {
+    const mapping = { id: "152", revision: "1", status: "confirmed", reference_value_id: "148" };
+    const executor = new FakeExecutor([
+      [],
+      [{
+        id: "901",
+        candidate_id: "501",
+        type_id: "16",
+        source_value: "Skateboarding",
+        context: { audience: "men" },
+      }],
+      [{ id: "148" }],
+      [],
+      [mapping],
+      [],
+      [],
+      [{ affected_product_count: "13067" }],
+      [],
+    ]);
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).saveDecision({
+      sourceId: "1",
+      typeCode: "merchandising_category",
+      scope: "product.merchandising_category",
+      normalizedSourceValue: "skateboarding",
+      contextKey: "context-men",
+      action: "confirm",
+      referenceValueId: "148",
+      actor: "admin",
+    });
+
+    const sql = executor.calls.map((call) => call.text).join("\n");
+    expect(sql).toContain("classification_candidates candidate");
+    expect(sql).toContain("FOR UPDATE OF link");
+    expect(sql).toContain("UPDATE classification_review_groups review");
+    expect(sql).toContain("affected AS MATERIALIZED");
+    expect(sql).toContain("DO NOTHING");
+    expect(sql).not.toContain("refresh_classification_review_groups");
+    expect(sql).not.toContain("DO UPDATE SET unique_key = jobs.unique_key");
+    expect(result).toEqual({
+      mappingId: "152",
+      referenceValueId: "148",
+      revision: "1",
+      affectedProductCount: 13067,
+      affectedExportCount: 0,
+    });
   });
 
   it("lists rule fields without aggregating every observed value", async () => {

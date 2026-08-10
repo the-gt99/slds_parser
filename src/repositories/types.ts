@@ -991,7 +991,6 @@ export interface ClassificationRuleConditionFieldOption {
 export interface ClassificationDecisionPreview {
   readonly observationCount: number;
   readonly productCount: number;
-  readonly affectedSourceProductIds: readonly EntityId[];
   readonly currentReferenceValueId: EntityId | null;
   readonly proposedReferenceValueId: EntityId | null;
   readonly currentStatus: "confirmed" | "ignored" | null;

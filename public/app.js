@@ -678,7 +678,11 @@ async function confirmDecision(action = "confirm") {
   if (!item) return;
   const button = action === "ignore" ? byId("ignore-button") : byId("confirm-button");
   if (action === "confirm" && !state.selectedMapping) return;
+  const originalText = button.textContent;
+  const isPreview = action === "confirm" && !state.decisionPreview;
   button.disabled = true;
+  button.textContent = isPreview ? "Проверяем…" : "Сохраняем…";
+  button.setAttribute("aria-busy", "true");
   try {
     const body = { ...decisionBodyFor(item), action };
     if (action === "confirm" && state.mappingMode === "internal") body.referenceValueId = state.selectedMapping.id;
@@ -699,6 +703,7 @@ async function confirmDecision(action = "confirm") {
         : decisionPreviewText(item, state.selectedMapping, response.preview.productCount);
       preview.hidden = false;
       button.textContent = "Сохранить точное сопоставление";
+      button.removeAttribute("aria-busy");
       button.disabled = false;
       return;
     }
@@ -711,9 +716,12 @@ async function confirmDecision(action = "confirm") {
     if (action === "confirm" && !byId("projection-section").hidden) {
       byId("projection-section").scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    button.removeAttribute("aria-busy");
     showToast(action === "ignore" ? "Значение будет игнорироваться." : "Основная связь сохранена. Ниже можно добавить категории, метки или другие назначения WordPress.");
   } catch (error) {
     showToast(error.message);
+    button.textContent = originalText;
+    button.removeAttribute("aria-busy");
     button.disabled = false;
   }
 }

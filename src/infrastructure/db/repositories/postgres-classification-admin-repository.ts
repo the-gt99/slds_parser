@@ -223,7 +223,7 @@ async function withClient<Result>(
 async function enqueueProducts(client: SqlClient, sourceProductIds: readonly string[]): Promise<number> {
   const uniqueIds = [...new Set(sourceProductIds)];
   if (uniqueIds.length === 0) return 0;
-  const result = await client.query(
+  await client.query(
     `INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
      SELECT
        'process_product',
@@ -232,12 +232,65 @@ async function enqueueProducts(client: SqlClient, sourceProductIds: readonly str
        NOW(),
        'source-product:' || product_id::TEXT || ':process'
      FROM UNNEST($1::BIGINT[]) AS product_id
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM jobs active_job
+       WHERE active_job.job_type = 'process_product'
+         AND active_job.unique_key = 'source-product:' || product_id::TEXT || ':process'
+         AND active_job.status IN ('pending', 'running', 'retry')
+     )
      ON CONFLICT (job_type, unique_key)
        WHERE status IN ('pending', 'running', 'retry')
-     DO UPDATE SET unique_key = jobs.unique_key`,
+     DO NOTHING`,
     [uniqueIds],
   );
-  return result.rowCount ?? uniqueIds.length;
+  return uniqueIds.length;
+}
+
+async function enqueueDecisionProducts(
+  client: SqlClient,
+  candidateId: string,
+  sharedReferenceValueId: string | null,
+): Promise<number> {
+  const result = await client.query<DatabaseRow>(
+    `WITH affected AS MATERIALIZED (
+       SELECT link.source_product_id AS product_id
+       FROM source_product_classification_links link
+       WHERE link.candidate_id = $1
+         AND link.active = TRUE
+       UNION
+       SELECT link.source_product_id AS product_id
+       FROM source_product_classification_links link
+       WHERE $2::BIGINT IS NOT NULL
+         AND link.resolved_reference_value_id = $2
+         AND link.active = TRUE
+     ), enqueued AS (
+       INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
+       SELECT
+         'process_product',
+         JSONB_BUILD_OBJECT('sourceProductId', affected.product_id::TEXT, 'force', FALSE),
+         'pending',
+         NOW(),
+         'source-product:' || affected.product_id::TEXT || ':process'
+       FROM affected
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM jobs active_job
+         WHERE active_job.job_type = 'process_product'
+           AND active_job.unique_key = 'source-product:' || affected.product_id::TEXT || ':process'
+           AND active_job.status IN ('pending', 'running', 'retry')
+       )
+       ON CONFLICT (job_type, unique_key)
+         WHERE status IN ('pending', 'running', 'retry')
+       DO NOTHING
+       RETURNING id
+     )
+     SELECT COUNT(*)::INTEGER AS affected_product_count,
+            (SELECT COUNT(*) FROM enqueued) AS enqueued_job_count
+     FROM affected`,
+    [candidateId, sharedReferenceValueId],
+  );
+  return Number(result.rows[0]?.affected_product_count ?? 0);
 }
 
 function reviewGroupKey(row: DatabaseRow) {
@@ -314,27 +367,27 @@ async function replaceRuleReviewCoverage(
   return [];
 }
 
-async function refreshDecisionReviewGroups(
+async function markDecisionReviewGroupsWaiting(
   client: SqlClient,
   key: ClassificationDecisionKey,
   referenceTypeId: string,
 ): Promise<void> {
-  const result = await client.query<DatabaseRow>(
-    `SELECT DISTINCT observation.source_id, type.code AS type_code, observation.processor_version,
-            observation.scope, observation.normalized_source_value, observation.context_key,
-            observation.status AS observation_status
-     FROM ${classificationObservationReadModelSql} observation
-     JOIN reference_types type ON type.id = observation.reference_type_id
-     WHERE observation.active = TRUE
-       AND observation.status IN ('unresolved', 'ambiguous')
-       AND observation.source_id = $1
-       AND observation.reference_type_id = $2
-       AND observation.scope = $3
-       AND observation.normalized_source_value = $4
-       AND observation.context_key = $5`,
+  await client.query(
+    `UPDATE classification_review_groups review
+     SET review_status = 'waiting_apply',
+         needs_decision_observation_count = 0,
+         needs_decision_product_count = 0,
+         waiting_observation_count = review.total_observation_count,
+         waiting_product_count = review.total_product_count,
+         updated_at = NOW()
+     WHERE review.source_id = $1
+       AND review.reference_type_id = $2
+       AND review.scope = $3
+       AND review.normalized_source_value = $4
+       AND review.context_key = $5
+       AND review.observation_status IN ('unresolved', 'ambiguous')`,
     [key.sourceId, referenceTypeId, key.scope, key.normalizedSourceValue, key.contextKey],
   );
-  await refreshReviewGroups(client, result.rows.map(reviewGroupKey));
 }
 
 export class PostgresClassificationAdminRepository implements ClassificationAdminRepository {
@@ -794,54 +847,72 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           WHERE review.id = $1
             AND ($2::JSONB = '{}'::JSONB
               OR review.processor_version = $2::JSONB ->> review.source_id::TEXT)
-        ), group_observations AS MATERIALIZED (
-          SELECT observation.*
+        ), candidate AS MATERIALIZED (
+          SELECT definition.id
           FROM review_group review
-          JOIN ${classificationObservationReadModelSql} observation
-            ON observation.source_id = review.source_id
-           AND observation.reference_type_id = review.reference_type_id
-           AND observation.processor_version = review.processor_version
-           AND observation.scope = review.scope
-           AND observation.normalized_source_value = review.normalized_source_value
-           AND observation.context_key = review.context_key
-           AND observation.status = review.observation_status
-          WHERE observation.active = TRUE
-            AND observation.status IN ('unresolved', 'ambiguous')
-        ), distinct_products AS MATERIALIZED (
-          SELECT DISTINCT ON (observation.source_product_id)
-            observation.id AS observation_id,
-            observation.source_product_id,
-            observation.last_seen_at
-          FROM group_observations observation
-          ORDER BY observation.source_product_id, observation.last_seen_at DESC, observation.id DESC
-        ), matching_products AS MATERIALIZED (
-          SELECT distinct_product.*, product.source_key,
-                 internal.data->>'title' AS title,
-                 internal.data->>'sku' AS sku
-          FROM distinct_products distinct_product
-          JOIN source_products product ON product.id = distinct_product.source_product_id
-          JOIN internal_products internal ON internal.source_product_id = distinct_product.source_product_id
+          JOIN classification_candidates definition
+            ON definition.source_id = review.source_id
+           AND definition.reference_type_id = review.reference_type_id
+           AND definition.scope = review.scope
+           AND definition.normalized_source_value = review.normalized_source_value
+           AND definition.context_key = review.context_key
+        ), matching_links AS MATERIALIZED (
+          SELECT DISTINCT ON (link.source_product_id)
+            link.id AS observation_id,
+            link.source_product_id,
+            link.evidence_id,
+            link.last_seen_at
+          FROM review_group review
+          JOIN candidate ON TRUE
+          JOIN source_product_classification_links link ON link.candidate_id = candidate.id
+          JOIN source_product_classification_states state
+            ON state.source_product_id = link.source_product_id
+           AND state.processor_version = review.processor_version
+          WHERE link.active = TRUE
+            AND link.status = review.observation_status
+            AND link.status IN ('unresolved', 'ambiguous')
+          ORDER BY link.source_product_id, link.last_seen_at DESC, link.id DESC
+        ), filtered_links AS MATERIALIZED (
+          SELECT matching.*
+          FROM matching_links matching
           WHERE $3::TEXT = ''
-             OR product.id::TEXT = $3
-             OR product.source_key ILIKE '%' || $3 || '%'
-             OR COALESCE(internal.data->>'title', '') ILIKE '%' || $3 || '%'
-             OR COALESCE(internal.data->>'sku', '') ILIKE '%' || $3 || '%'
-        ), selected_products AS MATERIALIZED (
-          SELECT matching_product.*
-          FROM matching_products matching_product
-          ORDER BY matching_product.last_seen_at DESC, matching_product.observation_id DESC
+             OR EXISTS (
+               SELECT 1
+               FROM source_products product
+               JOIN internal_products internal ON internal.source_product_id = product.id
+               WHERE product.id = matching.source_product_id
+                 AND (
+                   product.id::TEXT = $3
+                   OR product.source_key ILIKE '%' || $3 || '%'
+                   OR COALESCE(internal.data->>'title', '') ILIKE '%' || $3 || '%'
+                   OR COALESCE(internal.data->>'sku', '') ILIKE '%' || $3 || '%'
+                 )
+             )
+        ), selected_links AS MATERIALIZED (
+          SELECT matching.*
+          FROM filtered_links matching
+          ORDER BY matching.last_seen_at DESC, matching.observation_id DESC
           LIMIT $4 OFFSET $5
+        ), selected_products AS MATERIALIZED (
+          SELECT selected.*, product.source_key,
+                 internal.data->>'title' AS title,
+                 internal.data->>'sku' AS sku,
+                 evidence.evidence
+          FROM selected_links selected
+          JOIN source_products product ON product.id = selected.source_product_id
+          JOIN internal_products internal ON internal.source_product_id = selected.source_product_id
+          JOIN source_product_classification_evidence evidence ON evidence.id = selected.evidence_id
         )
         SELECT
-          (SELECT COUNT(*)::INTEGER FROM matching_products) AS total,
+          (SELECT COUNT(*)::INTEGER FROM filtered_links) AS total,
           COALESCE((
             SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
-              'observation_id', observation.id,
+              'observation_id', selected.observation_id,
               'source_product_id', selected.source_product_id,
               'source_key', selected.source_key,
               'title', selected.title,
               'sku', selected.sku,
-              'evidence', observation.evidence,
+              'evidence', selected.evidence,
               'target_snapshots', COALESCE((
                 SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
                   'target_id', snapshot.target_id::TEXT,
@@ -857,7 +928,6 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
               ), '[]'::JSONB)
             ) ORDER BY selected.last_seen_at DESC, selected.observation_id DESC)
             FROM selected_products selected
-            JOIN ${classificationObservationReadModelSql} observation ON observation.id = selected.observation_id
           ), '[]'::JSONB) AS examples`,
         [
           query.reviewGroupId,
@@ -1070,19 +1140,34 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
   async previewDecision(input: SaveClassificationDecisionInput): Promise<ClassificationDecisionPreview> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
-        `WITH matched AS (
-           SELECT observation.*, product.source_key,
-                  internal.data->>'title' AS title, internal.data->>'sku' AS sku
-           FROM ${classificationObservationReadModelSql} observation
-           JOIN reference_types type ON type.id = observation.reference_type_id
-           JOIN source_products product ON product.id = observation.source_product_id
-           LEFT JOIN internal_products internal ON internal.source_product_id = product.id
-           WHERE observation.active = TRUE
-             AND observation.source_id = $1
+        `WITH candidate AS MATERIALIZED (
+           SELECT definition.id
+           FROM classification_candidates definition
+           JOIN reference_types type ON type.id = definition.reference_type_id
+           WHERE definition.source_id = $1
              AND type.code = $2
-             AND observation.scope = $3
-             AND observation.normalized_source_value = $4
-             AND observation.context_key = $5
+             AND definition.scope = $3
+             AND definition.normalized_source_value = $4
+             AND definition.context_key = $5
+         ), matched AS MATERIALIZED (
+           SELECT link.id, link.source_product_id, link.last_seen_at, link.evidence_id
+           FROM candidate
+           JOIN source_product_classification_links link ON link.candidate_id = candidate.id
+           WHERE link.active = TRUE
+         ), example_links AS MATERIALIZED (
+           SELECT matched.*
+           FROM matched
+           ORDER BY matched.last_seen_at DESC, matched.id DESC
+           LIMIT 5
+         ), examples AS (
+           SELECT link.id AS observation_id, link.source_product_id,
+                  product.source_key, internal.data->>'title' AS title,
+                  internal.data->>'sku' AS sku, evidence.evidence,
+                  '[]'::JSONB AS target_snapshots
+           FROM example_links link
+           JOIN source_products product ON product.id = link.source_product_id
+           LEFT JOIN internal_products internal ON internal.source_product_id = link.source_product_id
+           JOIN source_product_classification_evidence evidence ON evidence.id = link.evidence_id
          ), existing AS (
            SELECT mapping.status, mapping.reference_value_id
            FROM source_reference_mappings mapping
@@ -1092,17 +1177,10 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          )
          SELECT (SELECT COUNT(*)::INTEGER FROM matched) AS observation_count,
                 (SELECT COUNT(DISTINCT source_product_id)::INTEGER FROM matched) AS product_count,
-                COALESCE((SELECT JSONB_AGG(DISTINCT source_product_id::TEXT) FROM matched), '[]'::JSONB) AS product_ids,
                 (SELECT status FROM existing) AS current_status,
                 (SELECT reference_value_id FROM existing) AS current_reference_value_id,
-                COALESCE((
-                  SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
-                  FROM (
-                    SELECT id AS observation_id, source_product_id, source_key, title, sku, evidence,
-                           '[]'::JSONB AS target_snapshots
-                    FROM matched ORDER BY last_seen_at DESC, id DESC LIMIT 5
-                  ) example
-                ), '[]'::JSONB) AS examples`,
+                COALESCE((SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.observation_id)
+                          FROM examples example), '[]'::JSONB) AS examples`,
         [input.sourceId, input.typeCode, input.scope, input.normalizedSourceValue, input.contextKey],
       );
       const row = result.rows[0]!;
@@ -1113,7 +1191,6 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       return {
         observationCount: Number(row.observation_count),
         productCount: Number(row.product_count),
-        affectedSourceProductIds: stringArray(row.product_ids),
         currentReferenceValueId,
         proposedReferenceValueId,
         currentStatus,
@@ -1795,18 +1872,21 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       await client.query("BEGIN");
       try {
         const observationResult = await client.query<DatabaseRow>(
-          `SELECT observation.*, type.id AS type_id
-           FROM ${classificationObservationReadModelSql} observation
-           JOIN reference_types type ON type.id = observation.reference_type_id
-           WHERE observation.active = TRUE
-             AND observation.source_id = $1
+          `SELECT link.*, candidate.id AS candidate_id,
+                  candidate.reference_type_id AS type_id,
+                  candidate.context
+           FROM classification_candidates candidate
+           JOIN reference_types type ON type.id = candidate.reference_type_id
+           JOIN source_product_classification_links link ON link.candidate_id = candidate.id
+           WHERE link.active = TRUE
+             AND candidate.source_id = $1
              AND type.code = $2
-             AND observation.scope = $3
-             AND observation.normalized_source_value = $4
-             AND observation.context_key = $5
-           ORDER BY observation.last_seen_at DESC, observation.id
+             AND candidate.scope = $3
+             AND candidate.normalized_source_value = $4
+             AND candidate.context_key = $5
+           ORDER BY link.last_seen_at DESC, link.id
            LIMIT 1
-           FOR UPDATE OF observation`,
+           FOR UPDATE OF link`,
           [input.sourceId, input.typeCode, input.scope, input.normalizedSourceValue, input.contextKey],
         );
         const observation = observationResult.rows[0];
@@ -1964,31 +2044,16 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         }
 
         if (!unchanged) {
-          await refreshDecisionReviewGroups(client, input, String(observation.type_id));
+          await markDecisionReviewGroupsWaiting(client, input, String(observation.type_id));
         }
 
-        const affectedResult = await client.query<DatabaseRow>(
-          `SELECT DISTINCT observation.source_product_id
-           FROM ${classificationObservationReadModelSql} observation
-           WHERE observation.active = TRUE
-             AND observation.source_id = $1
-             AND observation.reference_type_id = $2
-             AND observation.scope = $3
-             AND observation.normalized_source_value = $4
-             AND observation.context_key = $5`,
-          [input.sourceId, observation.type_id, input.scope, input.normalizedSourceValue, input.contextKey],
-        );
-        const affectedIds = affectedResult.rows.map((row) => String(row.source_product_id));
-        if (targetLinkChanged && referenceValueId !== null) {
-          const sharedResult = await client.query<DatabaseRow>(
-            `SELECT DISTINCT source_product_id
-             FROM ${classificationObservationReadModelSql} observation
-             WHERE active = TRUE AND resolved_reference_value_id = $1`,
-            [referenceValueId],
+        const affectedProductCount = unchanged && !targetLinkChanged
+          ? 0
+          : await enqueueDecisionProducts(
+            client,
+            String(observation.candidate_id),
+            targetLinkChanged ? referenceValueId : null,
           );
-          affectedIds.push(...sharedResult.rows.map((row) => String(row.source_product_id)));
-        }
-        const affectedProductCount = unchanged && !targetLinkChanged ? 0 : await enqueueProducts(client, affectedIds);
         const affectedExportCount = 0;
 
         await client.query("COMMIT");
