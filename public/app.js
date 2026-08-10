@@ -344,15 +344,15 @@ function maybeLoadNextQueuePage() {
 function populateTypeFilter() {
   const select = byId("type-filter");
   const current = select.value;
-  const known = new Set([...select.options].slice(1).map((option) => option.value));
-  for (const typeCode of [...new Set(state.queue.map((item) => item.typeCode))].sort()) {
-    if (known.has(typeCode)) continue;
-    const option = document.createElement("option");
-    option.value = typeCode;
-    option.textContent = typeName(typeCode);
-    select.append(option);
+  const supported = new Set(state.queue.map((item) => item.typeCode));
+  for (const target of state.targets) {
+    for (const capability of target.dictionary?.classificationCapabilities ?? []) supported.add(capability.typeCode);
   }
-  select.value = current;
+  const types = [...supported]
+    .map((code) => state.configMeta.types.find((type) => type.code === code) ?? { code, name: typeName(code) })
+    .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  select.replaceChildren(new Option("Все типы", ""), ...types.map((type) => new Option(type.name, type.code)));
+  if ([...select.options].some((option) => option.value === current)) select.value = current;
 }
 
 function decisionKey(item) {
@@ -1507,6 +1507,7 @@ async function deactivateProjection(projectionId) {
 }
 
 function populateCatalogFilters() {
+  populateTypeFilter();
   const typeSelects = [byId("reference-type"), byId("rule-list-type")];
   for (const select of typeSelects) {
     if (!select) continue;
