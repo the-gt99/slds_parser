@@ -188,7 +188,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           context_key
         )
         SELECT DISTINCT
-          $1,
+          $1::BIGINT,
           reference_type_id,
           scope,
           normalized_source_value,
@@ -210,7 +210,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           evidence
         )
         SELECT DISTINCT
-          $2,
+          $2::BIGINT,
           ENCODE(DIGEST(evidence::TEXT, 'sha256'), 'hex'),
           evidence
         FROM incoming
@@ -222,7 +222,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         processor_version,
         classifier_version,
         classification_fingerprint
-      ) VALUES ($2, $3, $4, $5)
+      ) VALUES ($2::BIGINT, $3, $4, $5)
       ON CONFLICT (source_product_id) DO UPDATE SET
         processor_version = EXCLUDED.processor_version,
         classifier_version = EXCLUDED.classifier_version,
@@ -262,14 +262,14 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         FROM incoming
         JOIN reference_types type ON type.code = incoming.type_code
         JOIN classification_candidates candidate
-          ON candidate.source_id = $1
+          ON candidate.source_id = $1::BIGINT
          AND candidate.reference_type_id = type.id
          AND candidate.scope = incoming.scope
          AND candidate.normalized_source_value = incoming.normalized_source_value
          AND candidate.context_key = incoming.context_key
          AND candidate.context = incoming.context
         JOIN source_product_classification_evidence evidence_record
-          ON evidence_record.source_product_id = $2
+          ON evidence_record.source_product_id = $2::BIGINT
          AND evidence_record.evidence_hash = ENCODE(DIGEST(incoming.evidence::TEXT, 'sha256'), 'hex')
          AND evidence_record.evidence = incoming.evidence
       ), upserted AS (
@@ -290,7 +290,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           active
         )
         SELECT
-          $2,
+          $2::BIGINT,
           candidate_key,
           candidate_id,
           evidence_id,
