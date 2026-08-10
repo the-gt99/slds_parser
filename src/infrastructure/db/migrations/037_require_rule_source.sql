@@ -87,7 +87,7 @@ BEGIN
     observation_id, rule_id, rule_revision
   )
   SELECT observation.id, rule.id, rule.revision
-  FROM source_reference_observations observation
+  FROM classification_observation_read_model observation
   JOIN source_reference_rules rule
     ON rule.reference_type_id = observation.reference_type_id
    AND rule.source_id = observation.source_id
