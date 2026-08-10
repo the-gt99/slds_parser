@@ -29,6 +29,7 @@ import type {
 export interface ClassificationAdminRepository {
   listConfiguration(query: ClassificationConfigListQuery): Promise<ClassificationConfigListResult>;
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]>;
+  countReviewQueue(query: ClassificationReviewQuery): Promise<number>;
   listReviewExamples(
     reviewGroupId: string,
     currentProcessorVersions?: Readonly<Record<string, string>>,

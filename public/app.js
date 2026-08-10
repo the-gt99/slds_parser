@@ -4,6 +4,7 @@ const state = {
   session: null,
   csrfToken: null,
   queue: [],
+  queueTotal: 0,
   selected: null,
   targets: [],
   mappingMode: "wordpress",
@@ -216,6 +217,7 @@ async function loadQueue({ preserveSelection = false } = {}) {
   try {
     const response = await api(queueUrl());
     state.queue = response.items ?? [];
+    state.queueTotal = Number(response.total);
     for (const item of state.queue) state.typeNames.set(item.typeCode, item.typeName || item.typeCode);
     populateTypeFilter();
     if (preserveSelection && state.selected) {
@@ -256,7 +258,7 @@ function renderQueue() {
   byId("queue-eyebrow").textContent = byId("status-filter").value === "waiting_apply"
     ? "Ждут обработки"
     : "Ожидают решения";
-  byId("queue-count").textContent = String(state.queue.length);
+  byId("queue-count").textContent = state.queueTotal.toLocaleString("ru-RU");
   if (state.queue.length === 0) {
     list.append(emptyText("В этой выборке ничего не ожидает решения."));
     state.selected = null;

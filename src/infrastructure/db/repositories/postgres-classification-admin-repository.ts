@@ -112,6 +112,28 @@ function processorVersions(value: Readonly<Record<string, string>> | undefined):
   return JSON.stringify(value ?? {});
 }
 
+const reviewQueueFilterSql = `WHERE ($5::JSONB = '{}'::JSONB
+    OR review.processor_version = $5::JSONB ->> review.source_id::TEXT)
+  AND ($1::BIGINT IS NULL OR review.source_id = $1)
+  AND ($2::TEXT = '' OR review.reference_type_id = (
+    SELECT id FROM reference_types WHERE code = $2
+  ))
+  AND (($3::TEXT = '' AND review.review_status IN ('unresolved', 'ambiguous'))
+    OR review.review_status = $3)
+  AND ($4::TEXT = '' OR review.source_value ILIKE '%' || $4 || '%')
+  AND ($6::TEXT = '' OR review.context_key = $6)`;
+
+function reviewQueueFilterParameters(query: ClassificationReviewQuery): unknown[] {
+  return [
+    query.sourceId ?? null,
+    query.typeCode ?? "",
+    query.status ?? "",
+    query.search?.trim() ?? "",
+    processorVersions(query.currentProcessorVersions),
+    query.contextKey ?? "",
+  ];
+}
+
 function ruleCandidateFilters(
   conditions: readonly ClassificationRuleConditionRecord[],
   firstParameter: number,
@@ -727,18 +749,9 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
               ELSE review.needs_decision_product_count
             END AS product_count
           FROM classification_review_groups review
-          WHERE ($5::JSONB = '{}'::JSONB
-              OR review.processor_version = $5::JSONB ->> review.source_id::TEXT)
-            AND ($1::BIGINT IS NULL OR review.source_id = $1)
-            AND ($2::TEXT = '' OR review.reference_type_id = (
-              SELECT id FROM reference_types WHERE code = $2
-            ))
-            AND (($3::TEXT = '' AND review.review_status IN ('unresolved', 'ambiguous'))
-              OR review.review_status = $3)
-            AND ($4::TEXT = '' OR review.source_value ILIKE '%' || $4 || '%')
-            AND ($8::TEXT = '' OR review.context_key = $8)
+          ${reviewQueueFilterSql}
           ORDER BY product_count DESC, review.last_seen_at DESC, review.normalized_source_value
-          LIMIT $6 OFFSET $7
+          LIMIT $7 OFFSET $8
         )
         SELECT
           review_page.id AS review_group_id,
@@ -763,16 +776,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         JOIN sources source ON source.id = review_page.source_id
         JOIN reference_types type ON type.id = review_page.reference_type_id
         ORDER BY product_count DESC, last_seen_at DESC, normalized_source_value`,
-        [
-          query.sourceId ?? null,
-          query.typeCode ?? "",
-          query.status ?? "",
-          query.search?.trim() ?? "",
-          processorVersions(query.currentProcessorVersions),
-          query.limit,
-          query.offset,
-          query.contextKey ?? "",
-        ],
+        [...reviewQueueFilterParameters(query), query.limit, query.offset],
       );
 
       return result.rows.map((row) => ({
@@ -795,6 +799,18 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         lastSeenAt: timestamp(row.last_seen_at),
         examples: reviewExamples(row.examples),
       }));
+    });
+  }
+
+  async countReviewQueue(query: ClassificationReviewQuery): Promise<number> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT COUNT(*)::INTEGER AS total
+         FROM classification_review_groups review
+         ${reviewQueueFilterSql}`,
+        reviewQueueFilterParameters(query),
+      );
+      return Number(result.rows[0]?.total ?? 0);
     });
   }
 

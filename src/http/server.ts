@@ -475,7 +475,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       && request.query.status !== "waiting_apply") {
       throw new HttpInputError("status must be unresolved, ambiguous or waiting_apply");
     }
-    const items = await dependencies.classifier.listReviewQueue({
+    const query = {
       ...(request.query.sourceId === undefined ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
       ...(request.query.typeCode === undefined ? {} : { typeCode: request.query.typeCode }),
       ...(request.query.status === undefined ? {} : { status: request.query.status }),
@@ -483,8 +483,12 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       ...(request.query.contextKey === undefined ? {} : { contextKey: request.query.contextKey }),
       limit,
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
-    });
-    return { items };
+    };
+    const [items, total] = await Promise.all([
+      dependencies.classifier.listReviewQueue(query),
+      dependencies.classifier.countReviewQueue(query),
+    ]);
+    return { items, total };
   });
 
   server.get<{ Params: ReviewExamplesParams }>(

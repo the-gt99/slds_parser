@@ -44,6 +44,7 @@ function repositories(
   const admin = {
     listConfiguration: vi.fn(),
     listReviewQueue: vi.fn(),
+    countReviewQueue: vi.fn(),
     listReviewExamples: vi.fn(),
     listReferenceValues: vi.fn(),
     listRuleCandidates: vi.fn().mockResolvedValue(candidates),
@@ -219,11 +220,13 @@ describe("ClassifierAdminService", () => {
     const service = new ClassifierAdminService(deps.admin, deps.classification, undefined, undefined, "admin-api", { "1": "2.9.0" });
 
     await service.listReviewQueue({ limit: 20, offset: 0 });
+    await service.countReviewQueue({ limit: 20, offset: 0 });
     await service.listReviewExamples("42");
     await service.listConfiguration({ kind: "mapping", limit: 20, offset: 0 });
     await service.listRuleConditionFields("1", "model");
 
     expect(deps.admin.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
+    expect(deps.admin.countReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
     expect(deps.admin.listReviewExamples).toHaveBeenCalledWith("42", { "1": "2.9.0" });
     expect(deps.admin.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
     expect(deps.admin.listRuleConditionFields).toHaveBeenCalledWith("1", "model", "2.9.0");

@@ -237,8 +237,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
       offset: 0,
     });
 
-    expect(executor.calls[0]?.text).toContain("review.context_key = $8");
-    expect(executor.calls[0]?.values[7]).toBe("context-women");
+    expect(executor.calls[0]?.text).toContain("review.context_key = $6");
+    expect(executor.calls[0]?.values[5]).toBe("context-women");
   });
 
   it("updates classifier review counters by product delta and preserves ambiguous rule matches", async () => {
@@ -293,9 +293,28 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("review_page AS MATERIALIZED");
     expect(sql).toContain("FROM classification_review_groups review");
     expect(sql).toContain("review_page.id AS review_group_id");
-    expect(sql).toContain("LIMIT $6 OFFSET $7");
+    expect(sql).toContain("LIMIT $7 OFFSET $8");
     expect(sql).not.toContain("source_reference_observations");
     expect(sql).not.toContain("classification_review_rule_resolutions");
+  });
+
+  it("counts every review group matching the queue filters", async () => {
+    const executor = new FakeExecutor([[{ total: "321" }]]);
+    const total = await new PostgresClassificationAdminRepository(pool(executor)).countReviewQueue({
+      sourceId: "1",
+      typeCode: "category",
+      status: "unresolved",
+      search: "sneakers",
+      contextKey: "context-women",
+      limit: 200,
+      offset: 0,
+    });
+
+    expect(total).toBe(321);
+    expect(executor.calls[0]?.text).toContain("COUNT(*)::INTEGER AS total");
+    expect(executor.calls[0]?.text).toContain("FROM classification_review_groups review");
+    expect(executor.calls[0]?.text).toContain("review.context_key = $6");
+    expect(executor.calls[0]?.values).toEqual(["1", "category", "unresolved", "sneakers", "{}", "context-women"]);
   });
 
   it("loads examples only for one materialized review group", async () => {

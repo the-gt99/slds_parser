@@ -164,6 +164,10 @@ export class ClassifierAdminService {
     return this.adminRepository.listReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
   }
 
+  countReviewQueue(query: ClassificationReviewQuery): Promise<number> {
+    return this.adminRepository.countReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
+  }
+
   listReviewExamples(reviewGroupId: EntityId) {
     validateText(reviewGroupId, "reviewGroupId", 64);
     return this.adminRepository.listReviewExamples(reviewGroupId, this.currentProcessorVersions);

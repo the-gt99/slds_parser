@@ -51,6 +51,7 @@ describe("HTTP server", () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = {
       listReviewQueue: vi.fn().mockResolvedValue([]),
+      countReviewQueue: vi.fn().mockResolvedValue(321),
       listReviewExamples: vi.fn().mockResolvedValue([]),
     } as unknown as ClassifierAdminService;
     const server = createHttpServer({
@@ -79,7 +80,7 @@ describe("HTTP server", () => {
     expect(authorized.statusCode).toBe(200);
     expect(waiting.statusCode).toBe(200);
     expect(examples.statusCode).toBe(200);
-    expect(authorized.json()).toEqual({ items: [] });
+    expect(authorized.json()).toEqual({ items: [], total: 321 });
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: "1",
       typeCode: "category",
@@ -88,6 +89,7 @@ describe("HTTP server", () => {
       contextKey: "context-women",
     }));
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
+    expect(classifier.countReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
     expect(classifier.listReviewExamples).toHaveBeenCalledWith("42");
     await server.close();
   });
