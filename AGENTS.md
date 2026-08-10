@@ -789,6 +789,25 @@ Parser commits `478b99c`, `58fb292`, `a54c0b8` и `ad9ad36` развёрнуты
 
 Production HTTP smoke с административной сессией и работающим worker: `limit=200`, `200` items, HTTP `200`, `5.64 с` вместо `504` после примерно `60 с`. Прямые repository-замеры под той же нагрузкой: `limit=50` — `6.32 с`, `limit=200` — `6.70 с`. На production прошли typecheck, `280` тестов, build, проверки JavaScript и `git diff --check`; API/worker active, health `200`, target `slamdunk=false`, active export jobs `0`.
 
+## Нормализация хранения классификатора 10 августа 2026
+
+Parser commits `9750929` и `aad85ae` развёрнуты на production с миграцией `033_normalize_classification_observations.sql`. Прежняя `source_reference_observations` содержала полную строку на каждый кандидат товара: при примерно `1.36 млн` строк она занимала около `1272 MB` heap и `769 MB` индексов, а одинаковые `context`, `evidence`, версии процессора/классификатора и fingerprint повторялись для каждого кандидата.
+
+Источник истины разделён без потери индивидуального состояния товара:
+
+- `classification_candidates` хранит уникальную комбинацию source, reference type, scope, normalized value и context;
+- `source_product_classification_links` хранит короткую связь товара с кандидатом, исходное написание, subject, статус и конкретное mapping/rule-решение;
+- `source_product_classification_evidence` дедуплицирует evidence внутри товара. Evidence не перенесён в общую запись кандидата, потому что правила могут зависеть от `evidence.*` конкретного товара;
+- `source_product_classification_states` хранит processor/classifier versions и classification fingerprint один раз на товар;
+- `source_reference_observations` сохранено как read-only совместимое view, поэтому административные запросы и функции read-model продолжают использовать прежний контракт;
+- `classification_review_groups` намеренно оставлена денормализованной быстрой проекцией очереди, а не вторым источником истины.
+
+Миграция выполняется одной транзакцией под `SHARE` lock исходной таблицы, сохраняет observation IDs и перевязывает FK `classification_review_rule_coverage` и `target_term_creation_history`. До миграции создан recovery dump `/srv/slds-parser/state/audits/2026-08-10-classification-normalization/before.dump`, размер `52 MB`, SHA-256 `0e4e7cd3d512caf5603f0e93c89ae47a11d483c50903a2d9625a5ec8a12f89ff`.
+
+Сразу после production migration сохранено `1375526/1375526` строк view/links, битых candidate/evidence/coverage FK `0`. Получено `178675` уникальных candidates, `370608` product evidence sets и `190676` product states. Общий размер четырёх нормализованных таблиц с индексами около `860 MB` вместо примерно `2.0 GB`. Retention удаляет неактивные links, затем ставшие бесхозными evidence и candidates пакетами.
+
+Write-smoke на отдельной PostgreSQL-базе обнаружил и до запуска worker исправил вывод типов строковых EntityId внутри CTE; итоговый SQL использует явные `::BIGINT`. Повторный транзакционный smoke создал две активные связи с общим evidence и был откатан. Временная БД удалена. На production прошли typecheck, `286` тестов и build. После запуска worker первые `70` processing jobs завершились без новых failures, 10 lanes продолжили очередь. Административный API вернул 200 групп за примерно `569 ms`, примеры группы — за `432 ms`. Internal/external health `200`, target `slamdunk=false`, active export jobs `0`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
