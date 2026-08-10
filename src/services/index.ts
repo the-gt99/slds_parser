@@ -1,6 +1,8 @@
 export { normalizeSourceValue, ProductClassifier, type ProductClassifierRun } from "./product-classifier.js";
 export { ProxyAdminService, publicProxy, validateProxyHost, type ProxyCommand, type ProxyTester } from "./proxy-admin-service.js";
 export { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
+export { matchesTargetAssignmentCondition, resolveTargetAssignments, targetAssignmentFieldValues } from "./target-assignment-rule-matcher.js";
+export { TargetAssignmentAdminService } from "./target-assignment-admin-service.js";
 export {
   ClassifierAdminService,
   type ClassificationDecisionCommand,

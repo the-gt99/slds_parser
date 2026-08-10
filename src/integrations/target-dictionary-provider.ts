@@ -27,6 +27,29 @@ export interface CreateTargetTermInput {
   readonly requestReference: string;
   readonly slug?: string;
   readonly parentExternalId?: string;
+  readonly relatedTerm?: {
+    readonly relationCode: string;
+    readonly entityType: string;
+    readonly mode: "create" | "existing" | "none";
+    readonly externalId?: string;
+  };
+}
+
+export interface CreateTargetTermResult {
+  readonly value: TargetDictionaryRemoteValue;
+  readonly relatedValues: readonly {
+    readonly entityType: string;
+    readonly value: TargetDictionaryRemoteValue;
+  }[];
+}
+
+export interface TargetTermRelationCapability {
+  readonly relationCode: string;
+  readonly sourceEntityType: string;
+  readonly relatedEntityType: string;
+  readonly targetScope: string;
+  readonly label: string;
+  readonly canCreateRelated: boolean;
 }
 
 export interface TargetClassificationCapability {
@@ -41,10 +64,11 @@ export interface TargetDictionaryProvider {
   readonly supportedEntityTypes: readonly string[];
   readonly creatableEntityTypes: readonly string[];
   readonly classificationCapabilities: readonly TargetClassificationCapability[];
+  readonly termRelationCapabilities?: readonly TargetTermRelationCapability[];
   productEditUrl?(externalId: string): string;
   productPublicUrl?(externalId: string): string;
   fetchPage(entityType: string, page: number, perPage: number): Promise<TargetDictionaryPage>;
-  createTerm(input: CreateTargetTermInput): Promise<TargetDictionaryRemoteValue>;
+  createTerm(input: CreateTargetTermInput): Promise<CreateTargetTermResult>;
 }
 
 export class TargetDictionaryProviderRegistry {

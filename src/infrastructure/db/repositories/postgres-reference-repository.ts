@@ -4,6 +4,7 @@ import type {
   ReferenceRepository,
   SaveTargetClassificationProjectionInput,
   TargetClassificationProjectionRecord,
+  TargetAssignmentRuleRecord,
   TargetReferenceProjectionRecord,
   TargetValueMappingRecord,
 } from "../../../repositories/index.js";
@@ -129,10 +130,57 @@ export class PostgresReferenceRepository implements ReferenceRepository {
            FROM target_reference_projections projection
            JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
            WHERE projection.target_id = $1 AND projection.active = TRUE AND dictionary.active = TRUE
+         ), '[]'::JSONB),
+         'assignmentRules', COALESCE((
+           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(rule.id, rule.group_code, rule.priority,
+             rule.conditions, rule.revision, rule.updated_at, actions.items) ORDER BY rule.id)
+           FROM target_assignment_rules rule
+           JOIN LATERAL (
+             SELECT JSONB_AGG(JSONB_BUILD_ARRAY(action.target_scope, action.dictionary_value_id,
+               action.mode, dictionary.external_id, dictionary.updated_at) ORDER BY action.id) AS items
+             FROM target_assignment_rule_actions action
+             JOIN target_dictionary_values dictionary ON dictionary.id = action.dictionary_value_id
+             WHERE action.rule_id = rule.id AND dictionary.active = TRUE
+           ) actions ON TRUE
+           WHERE rule.target_id = $1 AND rule.enabled = TRUE
          ), '[]'::JSONB)
        )::TEXT) AS revision`,
       [targetId],
     );
     return String(result.rows[0]?.revision ?? "");
+  }
+
+  async listTargetAssignmentRules(targetId: EntityId): Promise<readonly TargetAssignmentRuleRecord[]> {
+    const result = await this.executor.query<DatabaseRow>(
+      `SELECT rule.*,
+              COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT(
+                'targetScope', action.target_scope,
+                'dictionaryValueId', action.dictionary_value_id::TEXT,
+                'externalValue', dictionary.external_id,
+                'externalLabel', dictionary.name,
+                'mode', action.mode
+              ) ORDER BY action.id) FILTER (WHERE action.id IS NOT NULL AND dictionary.id IS NOT NULL), '[]'::JSONB) AS actions
+       FROM target_assignment_rules rule
+       LEFT JOIN target_assignment_rule_actions action ON action.rule_id = rule.id
+       LEFT JOIN target_dictionary_values dictionary
+         ON dictionary.id = action.dictionary_value_id AND dictionary.active = TRUE
+       WHERE rule.target_id = $1 AND rule.enabled = TRUE
+       GROUP BY rule.id
+       ORDER BY rule.group_code, rule.priority DESC, rule.id`,
+      [targetId],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      targetId: String(row.target_id),
+      name: String(row.name),
+      groupCode: String(row.group_code),
+      priority: Number(row.priority),
+      conditions: row.conditions as TargetAssignmentRuleRecord["conditions"],
+      actions: row.actions as TargetAssignmentRuleRecord["actions"],
+      enabled: Boolean(row.enabled),
+      revision: String(row.revision),
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    }));
   }
 }

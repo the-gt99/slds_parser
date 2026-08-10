@@ -30,4 +30,5 @@ export {
   PostgresTargetRepository,
   PostgresTargetContentTemplateRepository,
   PostgresTargetDictionaryRepository,
+  PostgresTargetAssignmentRuleRepository,
 } from "./repositories/index.js";

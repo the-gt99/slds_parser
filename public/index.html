@@ -135,7 +135,7 @@
                 <strong>Подходящей записи нет?</strong>
                 <span>Создайте её в WordPress и сразу свяжите.</span>
               </div>
-              <button id="open-create-term" class="button secondary" type="button">+ Создать в WordPress</button>
+              <button id="open-create-term" class="button secondary" type="button">+ Создать или дополнить в WordPress</button>
             </div>
 
             <div id="decision-preview" class="rule-preview" hidden></div>
@@ -217,6 +217,13 @@
         <div><p class="eyebrow">Справочник target</p><h2>WordPress</h2><p id="wordpress-sync-state" class="muted">Здесь показаны реальные термины, полученные с target.</p></div>
         <button id="wordpress-sync-button" class="button secondary" type="button">Обновить справочники</button>
       </section>
+      <section class="section catalog-table-section assignment-rules-section">
+        <div class="section-title mapping-title">
+          <div><p class="eyebrow">Условная раскладка</p><h3>Правила назначений</h3><p class="muted">Правила исполняются после классификации; в каждой группе побеждает одно правило с наибольшим приоритетом.</p></div>
+          <button id="new-assignment-rule" class="button primary" type="button">+ Правило назначения</button>
+        </div>
+        <div id="assignment-rule-list" class="rule-catalog-list"></div>
+      </section>
       <div id="wordpress-filters" class="catalog-filters catalog-filters-wide">
         <select id="wordpress-target" aria-label="Target"></select>
         <select id="wordpress-entity" aria-label="Раздел WordPress"></select>
@@ -231,7 +238,7 @@
       <div class="dialog-header">
         <div>
           <p class="eyebrow">WordPress</p>
-          <h2>Создать и связать</h2>
+          <h2>Термин WordPress и связи</h2>
         </div>
         <button class="icon-button close-dialog" type="button" aria-label="Закрыть">×</button>
       </div>
@@ -243,6 +250,17 @@
       <div class="field readonly-field">
         <span>Тип</span>
         <strong id="term-type"></strong>
+      </div>
+      <div id="landing-field" class="landing-field" hidden>
+        <label class="confirm-check">
+          <input id="term-landing" type="checkbox">
+          <span>Подключить посадочную страницу через метку WordPress.</span>
+        </label>
+        <label id="landing-mode-field" class="field" hidden>
+          <span>Посадочная</span>
+          <select id="term-landing-mode"></select>
+          <small id="term-landing-status">Будет создана метка с тем же slug и записана связь tag_id.</small>
+        </label>
       </div>
       <details class="advanced-details">
         <summary>Дополнительные настройки</summary>
@@ -267,7 +285,7 @@
       <p id="term-error" class="form-error" hidden></p>
       <div class="dialog-actions">
         <button class="button quiet close-dialog" type="button">Отмена</button>
-        <button id="create-term-submit" class="button primary" type="submit">Создать и связать</button>
+        <button id="create-term-submit" class="button primary" type="submit">Сохранить и связать</button>
       </div>
     </form>
   </dialog>
@@ -349,6 +367,29 @@
       <div id="assignment-preview" class="rule-preview" hidden></div>
       <p id="assignment-error" class="form-error" hidden></p>
       <div class="dialog-actions"><button class="button quiet close-assignment" type="button">Отмена</button><button id="assignment-check" class="button secondary" type="button" disabled>Проверить</button><button id="assignment-save" class="button primary" type="submit" disabled>Добавить назначение</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="target-rule-dialog" class="dialog rule-dialog">
+    <form id="target-rule-form" method="dialog">
+      <div class="dialog-header"><div><p class="eyebrow">WordPress</p><h2>Условное назначение</h2></div><button class="icon-button close-target-rule" type="button">×</button></div>
+      <p class="dialog-intro">Используйте отдельную группу для взаимоисключающих результатов. Например, <code>sandal_leaf_category</code>. Сохранение меняет сборку WordPress payload, но само по себе не запускает массовый экспорт.</p>
+      <div class="form-grid two-columns">
+        <label class="field"><span>Название</span><input id="target-rule-name" required maxlength="200"></label>
+        <label class="field"><span>Группа</span><input id="target-rule-group" required pattern="[a-z][a-z0-9_-]{0,63}" placeholder="sandal_leaf_category"></label>
+        <label class="field"><span>Приоритет</span><input id="target-rule-priority" type="number" value="100" min="-10000" max="10000" required></label>
+      </div>
+      <div class="conditions-heading-actions"><strong>Условия</strong><button id="add-target-condition" class="button quiet small-button" type="button">+ Условие</button></div>
+      <div id="target-rule-conditions" class="conditions-list"></div>
+      <div class="projection-controls">
+        <label class="field"><span>Куда назначить</span><select id="target-rule-scope"></select></label>
+        <label class="field"><span>Режим</span><select id="target-rule-mode"><option value="replace">Заменить значения этого поля</option><option value="add">Добавить значение</option></select></label>
+        <label class="field"><span>Найти термин WordPress</span><input id="target-rule-search" type="search" placeholder="Название категории или метки"></label>
+      </div>
+      <div id="target-rule-results" class="mapping-results"></div>
+      <div id="target-rule-preview" class="rule-preview" hidden></div>
+      <p id="target-rule-error" class="form-error" hidden></p>
+      <div class="dialog-actions split"><button class="button quiet close-target-rule" type="button">Отмена</button><div><button id="preview-target-rule" class="button secondary" type="button" disabled>Проверить</button><button id="save-target-rule" class="button primary" type="submit" disabled>Сохранить правило</button></div></div>
     </form>
   </dialog>
 

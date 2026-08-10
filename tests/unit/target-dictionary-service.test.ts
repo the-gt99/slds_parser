@@ -17,7 +17,10 @@ function setup() {
     fetchPage: vi.fn()
       .mockResolvedValueOnce({ values: [{ externalId: "1", name: "Nike", metadata: {} }], hasMore: true, nextPage: 2 })
       .mockResolvedValueOnce({ values: [{ externalId: "2", name: "Adidas", metadata: {} }], hasMore: false, nextPage: null }),
-    createTerm: vi.fn().mockResolvedValue({ externalId: "77", name: "New model", metadata: {} }),
+    createTerm: vi.fn().mockResolvedValue({
+      value: { externalId: "77", name: "New model", metadata: {} },
+      relatedValues: [],
+    }),
   };
   const registry = new TargetDictionaryProviderRegistry();
   registry.register(provider);
@@ -43,6 +46,7 @@ function setup() {
   const classifier = {
     getDecisionContext: vi.fn().mockResolvedValue({ observationId: "55", sourceCode: "goat", sourceValue: "New model" }),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "99", referenceValueId: "100", revision: "1", affectedProductCount: 3, affectedExportCount: 0 }),
+    createTargetProjection: vi.fn().mockResolvedValue({ projection: { id: "200" } }),
   } as unknown as ClassifierAdminService;
   return { provider, repository, classifier, service: new TargetDictionaryService(repository, registry, classifier) };
 }
@@ -179,5 +183,29 @@ describe("TargetDictionaryService", () => {
     })).rejects.toThrow("only for product_categories");
 
     expect(provider.createTerm).not.toHaveBeenCalled();
+  });
+
+  it("creates a brand landing relation and a tag projection in the same audited flow", async () => {
+    const { provider, repository, classifier, service } = setup();
+    (provider as { termRelationCapabilities?: unknown }).termRelationCapabilities = [
+      { relationCode: "landing", sourceEntityType: "brands", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная", canCreateRelated: true },
+    ];
+    vi.mocked(provider.createTerm).mockResolvedValueOnce({
+      value: { externalId: "77", name: "Ferragamo", metadata: { rawMeta: { tag_id: 91 } } },
+      relatedValues: [{ entityType: "tags", value: { externalId: "91", name: "Ferragamo", metadata: {} } }],
+    });
+    vi.mocked(repository.upsertValue)
+      .mockResolvedValueOnce({ id: "88", targetId: "10", entityType: "brands", externalId: "77", name: "Ferragamo", slug: "ferragamo", parentExternalId: null, taxonomy: "pa_brand", attributeCode: "brand", remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" })
+      .mockResolvedValueOnce({ id: "89", targetId: "10", entityType: "tags", externalId: "91", name: "Ferragamo", slug: "ferragamo", parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" });
+
+    await service.createTermAndDecide({
+      sourceId: "1", typeCode: "brand", scope: "product.brand", normalizedSourceValue: "ferragamo", contextKey: "{}",
+      targetId: "10", targetScope: "product.brand", entityType: "brands", name: "Ferragamo",
+      relatedTerm: { relationCode: "landing", entityType: "tags", mode: "existing", externalId: "91" },
+    });
+
+    expect(classifier.createTargetProjection).toHaveBeenCalledWith(expect.objectContaining({
+      resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "89",
+    }), "admin-api");
   });
 });

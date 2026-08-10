@@ -44,6 +44,10 @@ const state = {
   ruleEditorFields: ["sourceValue", "scope", "subjectKind"],
   wordpressValues: [],
   wordpressOffset: 0,
+  targetAssignmentRules: [],
+  targetRuleTerm: null,
+  targetRulePreview: null,
+  landingLookupError: null,
   assignmentReference: null,
   assignmentTerm: null,
   assignmentPreview: null,
@@ -100,6 +104,7 @@ let mappingSearchTimer;
 let projectionSearchTimer;
 let catalogSearchTimer;
 let reviewProductsSearchTimer;
+let targetRuleSearchTimer;
 const queuePageSize = 200;
 const reviewProductsPageSize = 50;
 
@@ -589,6 +594,16 @@ function targetScope(item = state.selected) {
   return activeCapability(item)?.targetScope ?? item?.scope;
 }
 
+function activeTermRelation(entityType = dictionaryEntity()) {
+  return activeTarget()?.dictionary?.termRelationCapabilities
+    ?.find((item) => item.sourceEntityType === entityType && item.relationCode === "landing") ?? null;
+}
+
+function landingTagId(value) {
+  const raw = value?.metadata?.rawMeta?.tag_id;
+  return /^\d+$/.test(String(raw ?? "")) && Number(raw) > 0 ? String(raw) : null;
+}
+
 function updateMappingModeAvailability() {
   const wordpressTab = byId("mapping-tabs").querySelector('[data-mode="wordpress"]');
   wordpressTab.textContent = state.selected?.typeCode === "merchandising_category"
@@ -654,9 +669,13 @@ function renderMappingResults() {
     const name = document.createElement("strong");
     name.textContent = result.name;
     const details = document.createElement("small");
-    details.textContent = state.mappingMode === "wordpress"
-      ? [result.taxonomy, result.slug].filter(Boolean).join(" · ")
-      : result.code;
+    if (state.mappingMode === "wordpress") {
+      const landingId = activeTermRelation(result.entityType) ? landingTagId(result) : null;
+      details.textContent = [result.taxonomy, result.slug, ...(activeTermRelation(result.entityType) ? [landingId ? `посадочная tag #${landingId}` : "посадочной нет"] : [])]
+        .filter(Boolean).join(" · ");
+    } else {
+      details.textContent = result.code;
+    }
     content.append(name, details);
     const id = document.createElement("span");
     id.className = "result-id";
@@ -777,13 +796,38 @@ async function openCreateTerm() {
   byId("term-slug").value = slugify(item.sourceValue);
   byId("term-type").textContent = `${typeName(item)} · ${entityType}`;
   byId("term-confirm").checked = false;
+  state.landingLookupError = null;
+  clearError(byId("term-error"));
+  const relation = activeTermRelation(entityType);
+  byId("landing-field").hidden = !relation;
+  byId("term-landing").checked = Boolean(relation);
+  byId("landing-mode-field").hidden = !relation;
+  if (relation) await loadLandingChoices(target.id, relation, item.sourceValue);
   byId("wp-password").value = "";
   byId("wp-password-field").hidden = Boolean(state.session?.wordpressCreateAllowed);
-  clearError(byId("term-error"));
   const parentField = byId("parent-field");
   parentField.hidden = entityType !== "product_categories";
   if (!parentField.hidden) await loadCategoryParents(target.id);
   byId("create-term-dialog").showModal();
+}
+
+async function loadLandingChoices(targetId, relation, search) {
+  const select = byId("term-landing-mode");
+  select.replaceChildren(new Option("Создать новую метку", "create"));
+  try {
+    const params = new URLSearchParams({ entityType: relation.relatedEntityType, search, limit: "20" });
+    const response = await api(`/api/targets/${targetId}/dictionary?${params}`);
+    const normalized = slugify(search);
+    const matches = (response.items ?? []).filter((item) => slugify(item.name) === normalized || item.slug === normalized);
+    for (const item of matches) select.append(new Option(`Связать существующую: ${item.name} · term #${item.externalId}`, `existing:${item.externalId}`));
+    if (matches.length > 0) select.value = `existing:${matches[0].externalId}`;
+    byId("term-landing-status").textContent = matches.length > 0
+      ? "Найдена существующая метка. Новая метка создаваться не будет."
+      : "Совпадающей метки нет: будет создана новая и записана связь tag_id.";
+  } catch (error) {
+    state.landingLookupError = error.message;
+    byId("term-landing-status").textContent = `Не удалось проверить существующие метки: ${error.message}`;
+  }
 }
 
 async function loadCategoryParents(targetId) {
@@ -827,6 +871,25 @@ async function createTerm(event) {
     const parentExternalId = byId("term-parent").value;
     if (slug) body.slug = slug;
     if (entityType === "product_categories" && parentExternalId) body.parentExternalId = parentExternalId;
+    const relation = activeTermRelation(entityType);
+    if (relation && byId("term-landing").checked) {
+      if (state.landingLookupError) {
+        throw new Error(`Нельзя безопасно подключить посадочную: ${state.landingLookupError}. Повторите попытку или явно снимите галочку.`);
+      }
+      const [mode, externalId] = byId("term-landing-mode").value.split(":");
+      body.relatedTerm = {
+        relationCode: relation.relationCode,
+        entityType: relation.relatedEntityType,
+        mode,
+        ...(externalId ? { externalId } : {}),
+      };
+    } else if (relation) {
+      body.relatedTerm = {
+        relationCode: relation.relationCode,
+        entityType: relation.relatedEntityType,
+        mode: "none",
+      };
+    }
     const response = await api(`/api/targets/${target.id}/dictionary/terms`, { method: "POST", body });
     state.currentReferenceId = response.result.decision.referenceValueId;
     state.resolved = true;
@@ -841,7 +904,7 @@ async function createTerm(event) {
     showError(errorElement, requestError.message);
   } finally {
     submit.disabled = false;
-    submit.textContent = "Создать и связать";
+    submit.textContent = "Сохранить и связать";
   }
 }
 
@@ -1483,7 +1546,7 @@ async function switchClassificationView(view, updateUrl = true) {
   if (view === "rules") await loadRules(true);
   if (view === "wordpress") {
     populateCatalogFilters();
-    await loadWordPressValues(true);
+    await Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]);
   }
 }
 
@@ -1834,10 +1897,217 @@ function renderWordPressValues(hasMore) {
     const id = document.createElement("code");
     id.textContent = `term #${item.externalId}`;
     row.append(name, taxonomy, id);
+    if (["brands", "models"].includes(item.entityType)) {
+      const landing = document.createElement("span");
+      const tagId = landingTagId(item);
+      landing.className = `badge${tagId ? "" : " warning"}`;
+      landing.textContent = tagId ? `Посадочная: tag #${tagId}` : "Посадочной нет";
+      row.append(landing);
+    }
     list.append(row);
   }
   if (!state.wordpressValues.length) list.append(emptyText("Термины не найдены."));
   byId("wordpress-more").hidden = !hasMore;
+}
+
+const targetConditionFields = [
+  ["resolved.category", "Распознанная категория"],
+  ["resolved.merchandising_category", "Распознанная маркетинговая категория"],
+  ["candidate.category.sourceValue", "Структурная категория источника"],
+  ["candidate.merchandising_category.sourceValue", "Маркетинговая категория источника"],
+  ["candidate.category.context.audience", "Аудитория / пол"],
+  ["candidate.category.context.productType", "Тип товара источника"],
+  ["resolved.brand", "Распознанный бренд"],
+  ["resolved.model", "Распознанная модель"],
+  ["product.metadata.source", "Источник товара"],
+  ["product.attribute.gender", "Пол из DTO"],
+];
+
+async function loadTargetAssignmentRules() {
+  const targetId = byId("wordpress-target").value;
+  if (!targetId) return;
+  const list = byId("assignment-rule-list");
+  list.replaceChildren(loading("Загружаем правила назначений…"));
+  try {
+    const response = await api(`/api/targets/${targetId}/assignment-rules`);
+    state.targetAssignmentRules = response.items ?? [];
+    list.replaceChildren();
+    for (const rule of state.targetAssignmentRules) {
+      const row = document.createElement("div");
+      row.className = "rule-catalog-row";
+      const main = document.createElement("div");
+      main.className = "rule-catalog-main";
+      const title = document.createElement("strong");
+      title.textContent = rule.name;
+      const details = document.createElement("span");
+      const conditions = rule.conditions.map((item) => `${item.field} ${item.operator === "one_of" ? "∈" : "="} ${item.values.join(", ")}`).join(" · ");
+      const actions = rule.actions.map((item) => `${item.mode === "replace" ? "заменить" : "добавить"} ${item.targetScope}: ${item.externalLabel}`).join(" · ");
+      details.textContent = `${rule.groupCode} · приоритет ${rule.priority} · ${conditions} → ${actions}`;
+      main.append(title, details);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = `config-pill ${rule.enabled ? "active" : "inactive"}`;
+      toggle.textContent = rule.enabled ? "Активно" : "Отключено";
+      toggle.addEventListener("click", () => toggleTargetAssignmentRule(rule));
+      row.append(main, toggle);
+      list.append(row);
+    }
+    if (!state.targetAssignmentRules.length) list.append(emptyText("Условных назначений пока нет."));
+  } catch (error) { list.replaceChildren(emptyText(error.message)); }
+}
+
+function targetConditionRow(condition = { field: "candidate.category.sourceValue", operator: "equals", values: [] }) {
+  const row = document.createElement("div");
+  row.className = "condition-row";
+  const field = document.createElement("select");
+  field.className = "target-condition-field";
+  for (const [value, label] of targetConditionFields) field.append(new Option(label, value, false, value === condition.field));
+  const operator = document.createElement("select");
+  operator.className = "target-condition-operator";
+  operator.append(new Option("равно", "equals", false, condition.operator === "equals"), new Option("одно из", "one_of", false, condition.operator === "one_of"));
+  const values = document.createElement("input");
+  values.className = "target-condition-values";
+  values.placeholder = condition.field.startsWith("resolved.") ? "Названия или внутренние ID через запятую" : "Значения через запятую";
+  values.value = condition.values.join(", ");
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "icon-button";
+  remove.textContent = "×";
+  remove.addEventListener("click", () => { row.remove(); resetTargetRulePreview(); });
+  for (const control of [field, operator, values]) control.addEventListener("input", resetTargetRulePreview);
+  field.addEventListener("change", () => { values.placeholder = field.value.startsWith("resolved.") ? "Названия или внутренние ID через запятую" : "Значения через запятую"; });
+  row.append(field, operator, values, remove);
+  return row;
+}
+
+function openTargetRuleDialog() {
+  state.targetRuleTerm = null;
+  state.targetRulePreview = null;
+  byId("target-rule-name").value = "";
+  byId("target-rule-group").value = "";
+  byId("target-rule-priority").value = "100";
+  const conditions = byId("target-rule-conditions");
+  conditions.replaceChildren(
+    targetConditionRow({ field: "resolved.category", operator: "equals", values: [] }),
+    targetConditionRow({ field: "candidate.category.context.audience", operator: "equals", values: [] }),
+  );
+  const scope = byId("target-rule-scope");
+  scope.replaceChildren(...capabilitiesByTargetScope().map((item) => new Option(`${targetScopeLabel(item.targetScope)} · ${item.targetScope}`, item.targetScope)));
+  scope.value = capabilitiesByTargetScope().find((item) => item.targetScope === "product.category")?.targetScope ?? scope.value;
+  byId("target-rule-mode").value = "replace";
+  byId("target-rule-search").value = "";
+  byId("target-rule-results").replaceChildren(emptyText("Введите название термина WordPress."));
+  clearError(byId("target-rule-error"));
+  resetTargetRulePreview();
+  byId("target-rule-dialog").showModal();
+}
+
+function resetTargetRulePreview() {
+  state.targetRulePreview = null;
+  byId("target-rule-preview").hidden = true;
+  byId("save-target-rule").disabled = true;
+  byId("preview-target-rule").disabled = !state.targetRuleTerm;
+}
+
+async function loadTargetRuleTerms() {
+  const target = state.targets.find((item) => item.id === byId("wordpress-target").value) ?? activeTarget();
+  const capability = capabilitiesByTargetScope().find((item) => item.targetScope === byId("target-rule-scope").value);
+  if (!target || !capability) return;
+  state.targetRuleTerm = null;
+  resetTargetRulePreview();
+  const results = byId("target-rule-results");
+  results.replaceChildren(loading("Ищем термины…"));
+  try {
+    const params = new URLSearchParams({ entityType: capability.entityType, search: byId("target-rule-search").value.trim(), limit: "100" });
+    const response = await api(`/api/targets/${target.id}/dictionary?${params}`);
+    results.replaceChildren();
+    for (const item of response.items ?? []) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mapping-result";
+      button.textContent = `${item.name} · term #${item.externalId}`;
+      button.addEventListener("click", () => {
+        state.targetRuleTerm = item;
+        for (const node of results.children) node.classList.toggle("selected", node === button);
+        resetTargetRulePreview();
+      });
+      results.append(button);
+    }
+    if (!results.childElementCount) results.append(emptyText("Термины не найдены."));
+  } catch (error) { results.replaceChildren(emptyText(error.message)); }
+}
+
+async function resolveTargetConditionValues(field, values) {
+  if (!field.startsWith("resolved.")) return values;
+  const typeCode = field.split(".")[1];
+  const resolved = [];
+  for (const value of values) {
+    if (/^\d+$/u.test(value)) {
+      resolved.push(value);
+      continue;
+    }
+    const params = new URLSearchParams({ typeCode, search: value, limit: "200" });
+    const response = await api(`/api/classifier/reference-values?${params}`);
+    const normalized = value.trim().normalize("NFKC").toLocaleLowerCase("ru-RU");
+    const exact = (response.items ?? []).filter((item) => [item.name, item.code]
+      .some((candidate) => candidate.trim().normalize("NFKC").toLocaleLowerCase("ru-RU") === normalized));
+    if (exact.length !== 1) throw new Error(`Для «${value}» найдено точных внутренних значений: ${exact.length}. Уточните название или укажите ID.`);
+    resolved.push(exact[0].id);
+  }
+  return resolved;
+}
+
+async function targetRuleBody() {
+  const conditions = await Promise.all([...byId("target-rule-conditions").querySelectorAll(".condition-row")].map(async (row) => {
+    const values = row.querySelector(".target-condition-values").value.split(/[\n,]+/u).map((item) => item.trim()).filter(Boolean);
+    const field = row.querySelector(".target-condition-field").value;
+    return { field, operator: row.querySelector(".target-condition-operator").value, values: await resolveTargetConditionValues(field, values) };
+  }));
+  return {
+    name: byId("target-rule-name").value.trim(),
+    groupCode: byId("target-rule-group").value.trim(),
+    priority: Number(byId("target-rule-priority").value),
+    conditions,
+    actions: [{ targetScope: byId("target-rule-scope").value, dictionaryValueId: state.targetRuleTerm.id, mode: byId("target-rule-mode").value }],
+  };
+}
+
+async function previewTargetRule() {
+  if (!state.targetRuleTerm) return;
+  clearError(byId("target-rule-error"));
+  try {
+    const targetId = byId("wordpress-target").value;
+    const response = await api(`/api/targets/${targetId}/assignment-rules/preview`, { method: "POST", body: await targetRuleBody() });
+    state.targetRulePreview = response.preview;
+    const sample = response.preview.examples.map((item) => item.title || item.sku || `ID ${item.sourceProductId}`).slice(0, 3).join("; ");
+    const conflicts = response.preview.conflicts ?? [];
+    const conflictText = conflicts.length > 0
+      ? ` Конфликт приоритета: ${conflicts.map((item) => `«${item.ruleName}» (${item.productCount})`).join(", ")}.`
+      : "";
+    byId("target-rule-preview").textContent = `Совпало товаров: ${response.preview.productCount.toLocaleString("ru-RU")}.${sample ? ` Примеры: ${sample}.` : ""}${conflictText}`;
+    byId("target-rule-preview").hidden = false;
+    byId("save-target-rule").disabled = conflicts.length > 0;
+  } catch (error) { showError(byId("target-rule-error"), error.message); }
+}
+
+async function saveTargetRule(event) {
+  event.preventDefault();
+  if (!state.targetRulePreview || !state.targetRuleTerm) return;
+  try {
+    const targetId = byId("wordpress-target").value;
+    await api(`/api/targets/${targetId}/assignment-rules`, { method: "POST", body: await targetRuleBody() });
+    byId("target-rule-dialog").close();
+    showToast("Правило назначения сохранено.");
+    await loadTargetAssignmentRules();
+  } catch (error) { showError(byId("target-rule-error"), error.message); }
+}
+
+async function toggleTargetAssignmentRule(rule) {
+  try {
+    const action = rule.enabled ? "disable" : "enable";
+    await api(`/api/targets/${rule.targetId}/assignment-rules/${rule.id}/${action}`, { method: "POST", body: {} });
+    await loadTargetAssignmentRules();
+  } catch (error) { showToast(error.message); }
 }
 
 function openAssignmentDialog(reference, options = {}) {
@@ -2027,6 +2297,9 @@ byId("review-products-more").addEventListener("click", () => loadReviewProducts(
 byId("next-button").addEventListener("click", nextItem);
 byId("open-create-term").addEventListener("click", openCreateTerm);
 byId("create-term-form").addEventListener("submit", createTerm);
+byId("term-landing").addEventListener("change", () => {
+  byId("landing-mode-field").hidden = !byId("term-landing").checked;
+});
 byId("advanced-rule-button").addEventListener("click", openRuleDialog);
 byId("success-rule-button").addEventListener("click", openRuleDialog);
 byId("add-condition").addEventListener("click", () => {
@@ -2068,7 +2341,7 @@ byId("new-rule-button").addEventListener("click", async () => {
   await switchClassificationView("references");
   showToast("Выберите внутреннее значение и нажмите «+ Правило распознавания».");
 });
-byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); void loadWordPressValues(true); });
+byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); void Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]); });
 byId("wordpress-entity").addEventListener("change", () => loadWordPressValues(true));
 byId("wordpress-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);
@@ -2080,6 +2353,16 @@ byId("wordpress-sync-button").addEventListener("click", async () => {
   await syncWordPress(byId("wordpress-sync-button"), target);
   await loadWordPressValues(true);
 });
+byId("new-assignment-rule").addEventListener("click", openTargetRuleDialog);
+byId("add-target-condition").addEventListener("click", () => { byId("target-rule-conditions").append(targetConditionRow()); resetTargetRulePreview(); });
+byId("target-rule-scope").addEventListener("change", loadTargetRuleTerms);
+byId("target-rule-search").addEventListener("input", () => {
+  clearTimeout(targetRuleSearchTimer);
+  targetRuleSearchTimer = setTimeout(loadTargetRuleTerms, 250);
+});
+for (const id of ["target-rule-name", "target-rule-group", "target-rule-priority", "target-rule-mode"]) byId(id).addEventListener("input", resetTargetRulePreview);
+byId("preview-target-rule").addEventListener("click", previewTargetRule);
+byId("target-rule-form").addEventListener("submit", saveTargetRule);
 byId("assignment-scope").addEventListener("change", loadAssignmentTerms);
 byId("assignment-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);
@@ -2091,6 +2374,7 @@ closeDialog(".close-dialog");
 closeDialog(".close-rule");
 closeDialog(".close-assignment");
 closeDialog(".close-review-products");
+closeDialog(".close-target-rule");
 byId("rule-dialog").addEventListener("close", () => {
   state.ruleFieldsRequestId += 1;
   byId("rule-fields-loading").hidden = true;

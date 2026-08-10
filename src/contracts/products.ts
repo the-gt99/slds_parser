@@ -277,6 +277,14 @@ export interface TargetReferenceProjectionDTO {
   readonly externalValue: string;
 }
 
+export interface TargetAssignmentDTO {
+  readonly ruleId: EntityId;
+  readonly groupCode: string;
+  readonly targetScope: string;
+  readonly externalValue: string;
+  readonly mode: "add" | "replace";
+}
+
 export interface TargetReferenceResolver {
   resolveReference(
     input: TargetReferenceResolutionInput,
@@ -284,6 +292,7 @@ export interface TargetReferenceResolver {
   resolveProjections(
     inputs: readonly TargetProjectionResolutionInput[],
   ): Promise<readonly TargetReferenceProjectionDTO[]>;
+  resolveAssignments(product: UniversalProductDTO): Promise<readonly TargetAssignmentDTO[]>;
 }
 
 export interface ExportContext {

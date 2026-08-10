@@ -205,6 +205,7 @@ try {
         references: {
           resolveReference: (input) => application.targetMappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => application.targetMappings.resolveTargetProjections(target.id, inputs),
+          resolveAssignments: (product) => application.targetMappings.resolveTargetAssignments(target.id, product),
         },
       });
       const expectedItems = record(payload.variations).items;

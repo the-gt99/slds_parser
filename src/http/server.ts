@@ -13,6 +13,7 @@ import type {
   JobType,
   ProductBatchAction,
   ProductBatchFilter,
+  TargetAssignmentRuleDraft,
 } from "../repositories/index.js";
 import type {
   ClassificationDecisionCommand,
@@ -24,6 +25,7 @@ import type {
   ProxyAdminService,
   RuntimeAdminService,
   TargetDictionaryService,
+  TargetAssignmentAdminService,
   WordPressPreviewService,
 } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
@@ -43,6 +45,7 @@ export interface HttpServerDependencies {
   readonly runtime?: RuntimeAdminService;
   readonly wordpressPreview?: WordPressPreviewService;
   readonly contentTemplates?: ContentTemplateAdminService;
+  readonly targetAssignments?: TargetAssignmentAdminService;
 }
 
 interface QueueQuery {
@@ -74,6 +77,7 @@ interface ReferenceCatalogQuery { readonly typeCode?: string; readonly search?: 
 interface RuleFieldsQuery { readonly sourceId?: string; readonly typeCode?: string }
 
 interface TargetParams { readonly targetId: string }
+interface TargetAssignmentRuleParams extends TargetParams { readonly ruleId: string; readonly action: string }
 interface ProductParams { readonly productId: string }
 interface ProductListQuery { readonly search?: string; readonly source?: string; readonly stage?: string; readonly classification?: string; readonly targetStatus?: string; readonly limit?: string; readonly offset?: string }
 interface ProductBatchBody {
@@ -99,6 +103,14 @@ interface ConfigQuery { readonly kind?: string; readonly configId?: string; read
 interface RuleParams { readonly ruleId: string }
 interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
+interface TargetAssignmentRuleBody {
+  readonly name?: unknown;
+  readonly groupCode?: unknown;
+  readonly priority?: unknown;
+  readonly conditions?: unknown;
+  readonly actions?: unknown;
+  readonly reason?: unknown;
+}
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface WordPressGrantBody { readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
@@ -363,6 +375,21 @@ function targetTermBody(targetId: string, value: unknown): CreateTargetTermComma
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
   const body = value as Record<string, unknown>;
   const decision = decisionBody({ ...body, action: "confirm" });
+  let relatedTerm: CreateTargetTermCommand["relatedTerm"];
+  if (body.relatedTerm !== undefined) {
+    if (body.relatedTerm === null || typeof body.relatedTerm !== "object" || Array.isArray(body.relatedTerm)) {
+      throw new HttpInputError("relatedTerm must be an object");
+    }
+    const related = body.relatedTerm as Record<string, unknown>;
+    const mode = related.mode;
+    if (mode !== "create" && mode !== "existing" && mode !== "none") throw new HttpInputError("relatedTerm.mode must be create, existing or none");
+    relatedTerm = {
+      relationCode: requiredString(related.relationCode, "relatedTerm.relationCode"),
+      entityType: requiredString(related.entityType, "relatedTerm.entityType"),
+      mode,
+      ...(mode === "existing" ? { externalId: entityId(related.externalId, "relatedTerm.externalId") } : {}),
+    };
+  }
   return {
     sourceId: decision.sourceId,
     typeCode: decision.typeCode,
@@ -377,7 +404,34 @@ function targetTermBody(targetId: string, value: unknown): CreateTargetTermComma
     ...(optionalString(body.parentExternalId) === undefined
       ? {}
       : { parentExternalId: entityId(body.parentExternalId, "parentExternalId") }),
+    ...(relatedTerm === undefined ? {} : { relatedTerm }),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
+  };
+}
+
+function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleBody | undefined): TargetAssignmentRuleDraft {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  if (!Array.isArray(value.conditions) || !Array.isArray(value.actions)) throw new HttpInputError("conditions and actions must be arrays");
+  const priority = Number(value.priority);
+  if (!Number.isInteger(priority)) throw new HttpInputError("priority must be an integer");
+  return {
+    targetId,
+    name: requiredString(value.name, "name"),
+    groupCode: requiredString(value.groupCode, "groupCode"),
+    priority,
+    conditions: value.conditions.map((item, index) => {
+      if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`conditions[${index}] must be an object`);
+      const condition = item as Record<string, unknown>;
+      if (condition.operator !== "equals" && condition.operator !== "one_of") throw new HttpInputError(`conditions[${index}].operator is invalid`);
+      if (!Array.isArray(condition.values)) throw new HttpInputError(`conditions[${index}].values must be an array`);
+      return { field: requiredString(condition.field, `conditions[${index}].field`), operator: condition.operator as "equals" | "one_of", values: condition.values.map((entry) => requiredString(entry, `conditions[${index}].values`)) };
+    }),
+    actions: value.actions.map((item, index) => {
+      if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`actions[${index}] must be an object`);
+      const action = item as Record<string, unknown>;
+      if (action.mode !== "add" && action.mode !== "replace") throw new HttpInputError(`actions[${index}].mode is invalid`);
+      return { targetScope: requiredString(action.targetScope, `actions[${index}].targetScope`), dictionaryValueId: entityId(action.dictionaryValueId, `actions[${index}].dictionaryValueId`), mode: action.mode as "add" | "replace" };
+    }),
   };
 }
 
@@ -1016,6 +1070,45 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         actor(request),
       ),
     }),
+  );
+
+  server.get<{ Params: TargetParams }>("/api/targets/:targetId/assignment-rules", { preHandler: requireAdmin }, async (request) => ({
+    items: await dependencies.targetAssignments?.list(entityId(request.params.targetId, "targetId")) ?? [],
+  }));
+
+  server.post<{ Params: TargetParams; Body: TargetAssignmentRuleBody }>(
+    "/api/targets/:targetId/assignment-rules/preview",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return { preview: await dependencies.targetAssignments.preview(targetAssignmentRuleBody(entityId(request.params.targetId, "targetId"), request.body)) };
+    },
+  );
+
+  server.post<{ Params: TargetParams; Body: TargetAssignmentRuleBody }>(
+    "/api/targets/:targetId/assignment-rules",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request, reply) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return reply.code(201).send({ rule: await dependencies.targetAssignments.create(targetAssignmentRuleBody(entityId(request.params.targetId, "targetId"), request.body), actor(request)) });
+    },
+  );
+
+  server.post<{ Params: TargetAssignmentRuleParams; Body: { readonly reason?: unknown } }>(
+    "/api/targets/:targetId/assignment-rules/:ruleId/:action",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      const action = request.params.action;
+      if (action !== "enable" && action !== "disable") throw new HttpInputError("action must be enable or disable");
+      return { rule: await dependencies.targetAssignments.setEnabled(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.ruleId, "ruleId"),
+        action === "enable",
+        actor(request),
+        optionalString(request.body?.reason),
+      ) };
+    },
   );
 
   return server;

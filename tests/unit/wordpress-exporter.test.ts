@@ -61,6 +61,7 @@ function context(config: JsonObject = {}): ExportContext {
     references: {
       resolveReference: vi.fn(async ({ referenceType }) => referenceType === "brand" ? "31" : "41"),
       resolveProjections: vi.fn().mockResolvedValue([]),
+      resolveAssignments: vi.fn().mockResolvedValue([]),
     },
   };
 }
@@ -109,6 +110,34 @@ describe("WordPressExporter", () => {
 
     expect(input.references.resolveReference).toHaveBeenCalledWith(expect.objectContaining({ referenceType: "brand", targetScope: "catalog.brand" }));
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
+  });
+
+  it("applies the winning target assignment after direct category mappings", async () => {
+    const input = context();
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
+      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", mode: "replace" },
+    ]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+    expect((payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31] },
+      product_cat: { mode: "replace", term_ids: [900] },
+    });
+  });
+
+  it("applies replacements before additions regardless of assignment order", async () => {
+    const input = context();
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
+      { ruleId: "301", groupCode: "seasonal_category", targetScope: "product.category", externalValue: "901", mode: "add" },
+      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", mode: "replace" },
+    ]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect((payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31] },
+      product_cat: { mode: "replace", term_ids: [901, 900] },
+    });
   });
 
   it("converts a native source size before resolving the WordPress size term", async () => {

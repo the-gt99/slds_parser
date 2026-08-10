@@ -11,5 +11,6 @@ export type { SourceRunRepository } from "./source-run-repository.js";
 export type { TargetRepository } from "./target-repository.js";
 export type { TargetContentTemplateRepository } from "./target-content-template-repository.js";
 export type { TargetDictionaryRepository } from "./target-dictionary-repository.js";
+export type { TargetAssignmentRuleRepository } from "./target-assignment-rule-repository.js";
 export type { TransactionRepositories, UnitOfWork } from "./unit-of-work.js";
 export type * from "./types.js";

@@ -88,4 +88,44 @@ describe("WordPressDictionaryProvider", () => {
       parent_target_id: "12",
     });
   });
+
+  it("passes an explicit landing relation and returns the related tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      term: { target_id: 77, name: "Ferragamo", slug: "ferragamo", taxonomy: "pa_brand", raw_meta: { tag_id: 91 } },
+      related_term: { target_id: 91, name: "Ferragamo", slug: "ferragamo", taxonomy: "product_tag" },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 });
+
+    const result = await provider.createTerm({
+      entityType: "brands", name: "Ferragamo", sourceValue: "Ferragamo", sourceCode: "goat", requestReference: "55",
+      relatedTerm: { relationCode: "landing", entityType: "tags", mode: "existing", externalId: "91" },
+    });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      related_term: { relation_code: "landing", entity_type: "tags", mode: "existing", target_id: "91" },
+    });
+    expect(result.relatedValues[0]).toMatchObject({ entityType: "tags", value: { externalId: "91", taxonomy: "product_tag" } });
+  });
+
+  it("passes an explicit opt-out so WordPress does not apply legacy model landing creation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      term: { target_id: 77, name: "Pegasus", slug: "pegasus", taxonomy: "pa_model" },
+      related_term: null,
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new WordPressDictionaryProvider({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 });
+
+    const result = await provider.createTerm({
+      entityType: "models", name: "Pegasus", sourceValue: "Pegasus", sourceCode: "goat", requestReference: "55",
+      relatedTerm: { relationCode: "landing", entityType: "tags", mode: "none" },
+    });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      related_term: { relation_code: "landing", entity_type: "tags", mode: "none" },
+    });
+    expect(result.relatedValues).toEqual([]);
+  });
 });

@@ -922,6 +922,63 @@ export interface TargetReferenceProjectionCommand {
   readonly reason?: string;
 }
 
+export type TargetAssignmentConditionOperator = "equals" | "one_of";
+
+export interface TargetAssignmentConditionRecord {
+  readonly field: string;
+  readonly operator: TargetAssignmentConditionOperator;
+  readonly values: readonly string[];
+}
+
+export interface TargetAssignmentActionRecord {
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly externalValue: string;
+  readonly externalLabel: string;
+  readonly mode: "add" | "replace";
+}
+
+export interface TargetAssignmentRuleRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly name: string;
+  readonly groupCode: string;
+  readonly priority: number;
+  readonly conditions: readonly TargetAssignmentConditionRecord[];
+  readonly actions: readonly TargetAssignmentActionRecord[];
+  readonly enabled: boolean;
+  readonly revision: string;
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+}
+
+export interface TargetAssignmentRuleDraft {
+  readonly targetId: EntityId;
+  readonly name: string;
+  readonly groupCode: string;
+  readonly priority: number;
+  readonly conditions: readonly TargetAssignmentConditionRecord[];
+  readonly actions: readonly {
+    readonly targetScope: string;
+    readonly dictionaryValueId: EntityId;
+    readonly mode: "add" | "replace";
+  }[];
+}
+
+export interface TargetAssignmentRulePreview {
+  readonly productCount: number;
+  readonly examples: readonly {
+    readonly sourceProductId: EntityId;
+    readonly title: string;
+    readonly sku: string;
+  }[];
+  readonly conflicts?: readonly {
+    readonly ruleId: EntityId;
+    readonly ruleName: string;
+    readonly productCount: number;
+  }[];
+}
+
 export interface ClassificationConfigOutput {
   readonly kind: "target_mapping" | "projection";
   readonly id: EntityId;

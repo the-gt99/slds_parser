@@ -56,6 +56,7 @@ export class ExportRunner {
         references: {
           resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
+          resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
         },
         contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })),
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });

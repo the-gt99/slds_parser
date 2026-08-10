@@ -1,6 +1,7 @@
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import type { WordPressTargetConfig } from "../../config/index.js";
 import type {
+  CreateTargetTermResult,
   CreateTargetTermInput,
   TargetDictionaryPage,
   TargetDictionaryProvider,
@@ -14,6 +15,7 @@ interface WordPressResponse {
   readonly has_more?: unknown;
   readonly next_page?: unknown;
   readonly term?: unknown;
+  readonly related_term?: unknown;
 }
 
 function nullableText(value: unknown): string | null {
@@ -83,6 +85,10 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     { typeCode: "shoe_height", entityType: "shoe_heights", targetScope: "product.shoe_height", cardinality: "single" },
     { typeCode: "season", entityType: "seasons", targetScope: "product.season", cardinality: "single" },
   ] as const;
+  readonly termRelationCapabilities = [
+    { relationCode: "landing", sourceEntityType: "brands", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная бренда", canCreateRelated: true },
+    { relationCode: "landing", sourceEntityType: "models", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная модели", canCreateRelated: true },
+  ] as const;
 
   constructor(private readonly config: WordPressTargetConfig) {}
 
@@ -116,7 +122,7 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     };
   }
 
-  async createTerm(input: CreateTargetTermInput): Promise<TargetDictionaryRemoteValue> {
+  async createTerm(input: CreateTargetTermInput): Promise<CreateTargetTermResult> {
     this.ensureSupported(input.entityType, this.creatableEntityTypes);
     const response = await this.request(this.endpoint("create-term"), {
       method: "POST",
@@ -129,9 +135,20 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
         mapping_id: input.requestReference,
         ...(input.slug === undefined ? {} : { slug: input.slug }),
         ...(input.parentExternalId === undefined ? {} : { parent_target_id: input.parentExternalId }),
+        ...(input.relatedTerm === undefined ? {} : {
+          related_term: {
+            relation_code: input.relatedTerm.relationCode,
+            entity_type: input.relatedTerm.entityType,
+            mode: input.relatedTerm.mode,
+            ...(input.relatedTerm.externalId === undefined ? {} : { target_id: input.relatedTerm.externalId }),
+          },
+        }),
       }),
     });
-    return remoteValue(response.term, input.entityType);
+    const related = response.related_term === null || typeof response.related_term !== "object" || Array.isArray(response.related_term)
+      ? []
+      : [{ entityType: input.relatedTerm?.entityType ?? "tags", value: remoteValue(response.related_term, input.relatedTerm?.entityType ?? "tags") }];
+    return { value: remoteValue(response.term, input.entityType), relatedValues: related };
   }
 
   private endpoint(action: string): URL {

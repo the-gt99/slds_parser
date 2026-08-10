@@ -3,6 +3,7 @@ import type {
   ReferenceValueRecord,
   SaveTargetClassificationProjectionInput,
   TargetClassificationProjectionRecord,
+  TargetAssignmentRuleRecord,
   TargetReferenceProjectionRecord,
   TargetValueMappingRecord,
 } from "./types.js";
@@ -19,4 +20,5 @@ export interface ReferenceRepository {
   ): Promise<readonly (TargetClassificationProjectionRecord | TargetReferenceProjectionRecord)[]>;
   saveTargetProjection(input: SaveTargetClassificationProjectionInput): Promise<TargetClassificationProjectionRecord>;
   getTargetMappingRevision(targetId: EntityId): Promise<string>;
+  listTargetAssignmentRules(targetId: EntityId): Promise<readonly TargetAssignmentRuleRecord[]>;
 }

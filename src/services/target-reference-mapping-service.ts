@@ -2,9 +2,11 @@ import type {
   EntityId,
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,
+  UniversalProductDTO,
 } from "../contracts/index.js";
 import { MappingMissingError } from "../core/errors/index.js";
 import type { ReferenceRepository } from "../repositories/index.js";
+import { resolveTargetAssignments } from "./target-assignment-rule-matcher.js";
 
 export class TargetReferenceMappingService {
   constructor(private readonly references: ReferenceRepository) {}
@@ -49,5 +51,9 @@ export class TargetReferenceMappingService {
 
   getTargetMappingRevision(targetId: EntityId): Promise<string> {
     return this.references.getTargetMappingRevision(targetId);
+  }
+
+  async resolveTargetAssignments(targetId: EntityId, product: UniversalProductDTO) {
+    return resolveTargetAssignments(product, await this.references.listTargetAssignmentRules(targetId));
   }
 }

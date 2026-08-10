@@ -440,11 +440,42 @@ async function taxonomyPayload(
     values.add(termId);
     grouped.set(target.taxonomy, values);
   }
+  const assignments = await context.references.resolveAssignments(context.product);
+  const replacementGroups = new Map<string, string>();
+  const preparedAssignments: { readonly assignment: (typeof assignments)[number]; readonly taxonomy: string; readonly termId: number }[] = [];
+  for (const assignment of assignments) {
+    const target = targetForScope(context.target.config, assignment.targetScope);
+    if (target === null) throw new IntegrationContractError(`WordPress assignment has an unsupported target scope: ${assignment.targetScope}`);
+    const assignmentTypes = (Object.keys(REFERENCE_TARGETS) as ReferenceType[])
+      .filter((type) => mappedTargetScope(context.target.config, REFERENCE_TARGETS[type].scope) === assignment.targetScope);
+    if (assignmentTypes.length === 1) presentTypes.add(assignmentTypes[0]!);
+    const termId = positiveInteger(assignment.externalValue, `WordPress assignment rule ${assignment.ruleId}`);
+    preparedAssignments.push({ assignment, taxonomy: target.taxonomy, termId });
+    if (assignment.mode === "replace") {
+      const previousGroup = replacementGroups.get(target.taxonomy);
+      if (previousGroup !== undefined && previousGroup !== assignment.groupCode) {
+        throw new IntegrationContractError(`WordPress assignments replace ${target.taxonomy} from more than one rule group`);
+      }
+      replacementGroups.set(target.taxonomy, assignment.groupCode);
+    }
+  }
+  for (const taxonomy of replacementGroups.keys()) grouped.set(taxonomy, new Set<number>());
+  for (const { taxonomy, termId } of preparedAssignments) {
+    const values = grouped.get(taxonomy) ?? new Set<number>();
+    values.add(termId);
+    grouped.set(taxonomy, values);
+  }
   const invalidSingleTypes = [...termsByType.entries()]
     .filter(([type, termIds]) => REFERENCE_TARGETS[type].cardinality === "single" && termIds.size > 1)
     .map(([type]) => type);
   if (invalidSingleTypes.length > 0) {
     throw new IntegrationContractError(`WordPress single-value references contain multiple terms: ${invalidSingleTypes.join(", ")}`);
+  }
+  const invalidSingleAssignments = Object.values(REFERENCE_TARGETS)
+    .filter((target) => target.cardinality === "single" && (grouped.get(target.taxonomy)?.size ?? 0) > 1)
+    .map((target) => target.scope);
+  if (invalidSingleAssignments.length > 0) {
+    throw new IntegrationContractError(`WordPress single-value assignments contain multiple terms: ${invalidSingleAssignments.join(", ")}`);
   }
   const missing = required.filter((type) => !presentTypes.has(type));
   if (!allowMissingRequired && missing.length > 0) {

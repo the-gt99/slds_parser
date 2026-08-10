@@ -101,6 +101,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   const mappings = {
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
     resolveTargetProjections: vi.fn().mockResolvedValue([]),
+    resolveTargetAssignments: vi.fn().mockResolvedValue([]),
   };
   const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue([]) };
   const snapshotReader = options.remoteSnapshot ? {

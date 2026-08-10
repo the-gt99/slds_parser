@@ -353,6 +353,7 @@ export class WordPressPreviewService {
       references: {
         resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
+        resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
       },
       contentTemplates,
       ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),

@@ -20,6 +20,7 @@ function createRepository(targetResult: TargetValueMappingRecord | null = target
     resolveTargetProjections: vi.fn().mockResolvedValue([]),
     saveTargetProjection: vi.fn(),
     getTargetMappingRevision: vi.fn().mockResolvedValue("revision-1"),
+    listTargetAssignmentRules: vi.fn().mockResolvedValue([]),
   };
 }
 

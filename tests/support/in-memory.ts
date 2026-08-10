@@ -102,6 +102,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       resolveTargetProjections: async () => [],
       saveTargetProjection: async () => { throw new Error("Not implemented by in-memory tests"); },
       getTargetMappingRevision: async () => store.mappingRevision,
+      listTargetAssignmentRules: async () => [],
     } satisfies ReferenceRepository,
     targets: {
       getById: async (id) => store.targets.get(id) ?? null,
