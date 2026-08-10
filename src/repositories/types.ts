@@ -849,6 +849,7 @@ export interface ClassificationConfigListQuery {
   readonly search?: string;
   readonly limit: number;
   readonly offset: number;
+  readonly includeUsage?: boolean;
   readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
 }
 

@@ -31,6 +31,7 @@ import type {
   UpdateClassificationRuleResult,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
+import { classificationObservationReadModelSql } from "./classification-observation-read-model.js";
 import { mapTargetClassificationProjection, type DatabaseRow } from "./row-mappers.js";
 
 function timestamp(value: unknown): string {
@@ -232,7 +233,7 @@ async function replaceRuleReviewCoverage(
             observation.scope, observation.normalized_source_value, observation.context_key,
             observation.status AS observation_status
      FROM classification_review_rule_coverage coverage
-     JOIN source_reference_observations observation ON observation.id = coverage.observation_id
+     JOIN ${classificationObservationReadModelSql} observation ON observation.id = coverage.observation_id
      JOIN reference_types type ON type.id = observation.reference_type_id
      WHERE coverage.rule_id = $1
        AND observation.active = TRUE
@@ -247,7 +248,7 @@ async function replaceRuleReviewCoverage(
        )
        SELECT observation.id, rule.id, rule.revision
        FROM source_reference_rules rule
-       JOIN source_reference_observations observation
+       JOIN ${classificationObservationReadModelSql} observation
          ON observation.reference_type_id = rule.reference_type_id
         AND (rule.source_id IS NULL OR rule.source_id = observation.source_id)
        JOIN reference_values value
@@ -275,7 +276,7 @@ async function replaceRuleReviewCoverage(
          observation_id, rule_id, rule_revision
        )
        SELECT observation.id, $1, $2
-       FROM source_reference_observations observation
+       FROM ${classificationObservationReadModelSql} observation
        WHERE observation.id = ANY($3::BIGINT[])
          AND observation.active = TRUE
          AND observation.status IN ('unresolved', 'ambiguous')
@@ -290,7 +291,7 @@ async function replaceRuleReviewCoverage(
             observation.processor_version, observation.scope, observation.normalized_source_value,
             observation.context_key, observation.status AS observation_status
      FROM classification_review_rule_coverage coverage
-     JOIN source_reference_observations observation ON observation.id = coverage.observation_id
+     JOIN ${classificationObservationReadModelSql} observation ON observation.id = coverage.observation_id
      JOIN reference_types type ON type.id = observation.reference_type_id
      WHERE coverage.rule_id = $1
        AND observation.active = TRUE
@@ -305,7 +306,7 @@ async function replaceRuleReviewCoverage(
   const effective = await client.query<DatabaseRow>(
     `SELECT DISTINCT observation.source_product_id
      FROM classification_review_rule_coverage coverage
-     JOIN source_reference_observations observation ON observation.id = coverage.observation_id
+     JOIN ${classificationObservationReadModelSql} observation ON observation.id = coverage.observation_id
      JOIN LATERAL classification_review_rule_resolutions(ARRAY[observation.id]) resolution
        ON resolution.rule_id = coverage.rule_id
      LEFT JOIN source_reference_mappings mapping
@@ -334,7 +335,7 @@ async function refreshDecisionReviewGroups(
     `SELECT DISTINCT observation.source_id, type.code AS type_code, observation.processor_version,
             observation.scope, observation.normalized_source_value, observation.context_key,
             observation.status AS observation_status
-     FROM source_reference_observations observation
+     FROM ${classificationObservationReadModelSql} observation
      JOIN reference_types type ON type.id = observation.reference_type_id
      WHERE observation.active = TRUE
        AND observation.status IN ('unresolved', 'ambiguous')
@@ -456,6 +457,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             OR item.context::TEXT ILIKE '%' || ${search} || '%')`;
       const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${filtered}`, parameters);
       const versions = add(processorVersions(query.currentProcessorVersions));
+      const includeUsage = add(query.includeUsage !== false);
       const limit = add(query.limit);
       const offset = add(query.offset);
       const result = await client.query<DatabaseRow>(
@@ -464,125 +466,145 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            ${filtered}
            ORDER BY item.updated_at DESC, item.kind, item.id DESC
            LIMIT ${limit} OFFSET ${offset}
+         ), product_states AS MATERIALIZED (
+           SELECT state.source_product_id, state.processor_version
+           FROM source_product_classification_states state
          ), observation_stats AS MATERIALIZED (
            SELECT item.kind, item.id AS config_id,
                   COUNT(DISTINCT observation.source_product_id)::INTEGER AS affected_product_count
            FROM page_items item
-           JOIN source_reference_observations observation ON observation.mapping_id = item.id
-           WHERE item.kind = 'mapping'
+           JOIN source_product_classification_links observation ON observation.mapping_id = item.id
+           JOIN product_states state ON state.source_product_id = observation.source_product_id
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'mapping'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
-                OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                OR state.processor_version = ${versions}::JSONB ->> item.source_id::TEXT)
            GROUP BY item.kind, item.id
            UNION ALL
            SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
-           JOIN source_reference_observations observation ON observation.rule_id = item.id
-           WHERE item.kind = 'rule'
+           JOIN source_product_classification_links observation ON observation.rule_id = item.id
+           JOIN product_states state ON state.source_product_id = observation.source_product_id
+           JOIN classification_candidates candidate ON candidate.id = observation.candidate_id
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'rule'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
-                OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                OR state.processor_version = ${versions}::JSONB ->> candidate.source_id::TEXT)
            GROUP BY item.kind, item.id
            UNION ALL
            SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
-           JOIN source_reference_observations observation
+           JOIN source_product_classification_links observation
              ON observation.resolved_reference_value_id = item.reference_value_id
-           WHERE item.kind = 'target_mapping'
+           JOIN product_states state ON state.source_product_id = observation.source_product_id
+           JOIN source_products product ON product.id = observation.source_product_id
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'target_mapping'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
-                OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                OR state.processor_version = ${versions}::JSONB ->> product.source_id::TEXT)
            GROUP BY item.kind, item.id
            UNION ALL
            SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
-           JOIN source_reference_observations observation ON observation.mapping_id = item.resolution_id
-           WHERE item.kind = 'projection'
+           JOIN source_product_classification_links observation ON observation.mapping_id = item.resolution_id
+           JOIN product_states state ON state.source_product_id = observation.source_product_id
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'projection'
              AND item.resolution_kind = 'mapping'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
-                OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                OR state.processor_version = ${versions}::JSONB ->> item.source_id::TEXT)
            GROUP BY item.kind, item.id
            UNION ALL
            SELECT item.kind, item.id, COUNT(DISTINCT observation.source_product_id)::INTEGER
            FROM page_items item
-           JOIN source_reference_observations observation ON observation.rule_id = item.resolution_id
-           WHERE item.kind = 'projection'
+           JOIN source_product_classification_links observation ON observation.rule_id = item.resolution_id
+           JOIN product_states state ON state.source_product_id = observation.source_product_id
+           JOIN classification_candidates candidate ON candidate.id = observation.candidate_id
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'projection'
              AND item.resolution_kind = 'rule'
              AND observation.active = TRUE
              AND (${versions}::JSONB = '{}'::JSONB
-                OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                OR state.processor_version = ${versions}::JSONB ->> candidate.source_id::TEXT)
            GROUP BY item.kind, item.id
          ), example_observations AS MATERIALIZED (
            SELECT item.kind, item.id AS config_id, example.*
            FROM page_items item
            JOIN LATERAL (
              SELECT observation.id AS observation_id, observation.source_product_id, observation.last_seen_at
-             FROM source_reference_observations observation
+             FROM source_product_classification_links observation
+             JOIN source_product_classification_states state ON state.source_product_id = observation.source_product_id
+             JOIN classification_candidates candidate ON candidate.id = observation.candidate_id
              WHERE observation.mapping_id = item.id
                AND observation.active = TRUE
                AND (${versions}::JSONB = '{}'::JSONB
-                  OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                  OR state.processor_version = ${versions}::JSONB ->> candidate.source_id::TEXT)
              ORDER BY observation.last_seen_at DESC, observation.id DESC
              LIMIT 5
            ) example ON TRUE
-           WHERE item.kind = 'mapping'
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'mapping'
            UNION ALL
            SELECT item.kind, item.id, example.*
            FROM page_items item
            JOIN LATERAL (
              SELECT observation.id, observation.source_product_id, observation.last_seen_at
-             FROM source_reference_observations observation
+             FROM source_product_classification_links observation
+             JOIN source_product_classification_states state ON state.source_product_id = observation.source_product_id
+             JOIN classification_candidates candidate ON candidate.id = observation.candidate_id
              WHERE observation.rule_id = item.id
                AND observation.active = TRUE
                AND (${versions}::JSONB = '{}'::JSONB
-                  OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                  OR state.processor_version = ${versions}::JSONB ->> candidate.source_id::TEXT)
              ORDER BY observation.last_seen_at DESC, observation.id DESC
              LIMIT 5
            ) example ON TRUE
-           WHERE item.kind = 'rule'
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'rule'
            UNION ALL
            SELECT item.kind, item.id, example.*
            FROM page_items item
            JOIN LATERAL (
              SELECT observation.id, observation.source_product_id, observation.last_seen_at
-             FROM source_reference_observations observation
+             FROM source_product_classification_links observation
+             JOIN source_product_classification_states state ON state.source_product_id = observation.source_product_id
+             JOIN source_products product ON product.id = observation.source_product_id
              WHERE observation.resolved_reference_value_id = item.reference_value_id
                AND observation.active = TRUE
                AND (${versions}::JSONB = '{}'::JSONB
-                  OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                  OR state.processor_version = ${versions}::JSONB ->> product.source_id::TEXT)
              ORDER BY observation.last_seen_at DESC, observation.id DESC
              LIMIT 5
            ) example ON TRUE
-           WHERE item.kind = 'target_mapping'
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'target_mapping'
            UNION ALL
            SELECT item.kind, item.id, example.*
            FROM page_items item
            JOIN LATERAL (
              SELECT observation.id, observation.source_product_id, observation.last_seen_at
-             FROM source_reference_observations observation
+             FROM source_product_classification_links observation
+             JOIN source_product_classification_states state ON state.source_product_id = observation.source_product_id
              WHERE observation.mapping_id = item.resolution_id
                AND observation.active = TRUE
                AND (${versions}::JSONB = '{}'::JSONB
-                  OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                  OR state.processor_version = ${versions}::JSONB ->> item.source_id::TEXT)
              ORDER BY observation.last_seen_at DESC, observation.id DESC
              LIMIT 5
            ) example ON TRUE
-           WHERE item.kind = 'projection' AND item.resolution_kind = 'mapping'
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'projection' AND item.resolution_kind = 'mapping'
            UNION ALL
            SELECT item.kind, item.id, example.*
            FROM page_items item
            JOIN LATERAL (
              SELECT observation.id, observation.source_product_id, observation.last_seen_at
-             FROM source_reference_observations observation
+             FROM source_product_classification_links observation
+             JOIN source_product_classification_states state ON state.source_product_id = observation.source_product_id
+             JOIN classification_candidates candidate ON candidate.id = observation.candidate_id
              WHERE observation.rule_id = item.resolution_id
                AND observation.active = TRUE
                AND (${versions}::JSONB = '{}'::JSONB
-                  OR observation.processor_version = ${versions}::JSONB ->> observation.source_id::TEXT)
+                  OR state.processor_version = ${versions}::JSONB ->> candidate.source_id::TEXT)
              ORDER BY observation.last_seen_at DESC, observation.id DESC
              LIMIT 5
            ) example ON TRUE
-           WHERE item.kind = 'projection' AND item.resolution_kind = 'rule'
+           WHERE ${includeUsage}::BOOLEAN AND item.kind = 'projection' AND item.resolution_kind = 'rule'
          ), observation_examples AS MATERIALIZED (
            SELECT example.kind, example.config_id,
                   JSONB_AGG(JSONB_BUILD_OBJECT(
@@ -591,11 +613,12 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                     'source_key', product.source_key,
                     'title', internal.data->>'title',
                     'sku', internal.data->>'sku',
-                    'evidence', observation.evidence,
+                    'evidence', evidence.evidence,
                     'target_snapshots', '[]'::JSONB
                   ) ORDER BY example.last_seen_at DESC, example.observation_id DESC) AS examples
            FROM example_observations example
-           JOIN source_reference_observations observation ON observation.id = example.observation_id
+           JOIN source_product_classification_links observation ON observation.id = example.observation_id
+           JOIN source_product_classification_evidence evidence ON evidence.id = observation.evidence_id
            JOIN source_products product ON product.id = example.source_product_id
            JOIN internal_products internal ON internal.source_product_id = example.source_product_id
            GROUP BY example.kind, example.config_id
@@ -790,7 +813,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         ), group_observations AS MATERIALIZED (
           SELECT observation.*
           FROM review_group review
-          JOIN source_reference_observations observation
+          JOIN ${classificationObservationReadModelSql} observation
             ON observation.source_id = review.source_id
            AND observation.reference_type_id = review.reference_type_id
            AND observation.processor_version = review.processor_version
@@ -831,7 +854,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           ), '[]'::JSONB)
         ) ORDER BY selected.last_seen_at DESC, selected.observation_id DESC), '[]'::JSONB) AS examples
         FROM selected_products selected
-        JOIN source_reference_observations observation ON observation.id = selected.observation_id
+        JOIN ${classificationObservationReadModelSql} observation ON observation.id = selected.observation_id
         JOIN source_products product ON product.id = selected.source_product_id
         JOIN internal_products internal ON internal.source_product_id = selected.source_product_id`,
         [reviewGroupId, processorVersions(currentProcessorVersions)],
@@ -896,7 +919,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            observation.source_value,
            observation.context,
            observation.evidence
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          JOIN source_products product ON product.id = observation.source_product_id
          LEFT JOIN internal_products internal ON internal.source_product_id = product.id
          WHERE observation.active = TRUE
@@ -971,7 +994,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         `WITH candidates AS (
            SELECT observation.source_value, observation.scope, observation.subject_kind,
                   observation.context, observation.evidence
-           FROM source_reference_observations observation
+           FROM ${classificationObservationReadModelSql} observation
            JOIN reference_types type ON type.id = observation.reference_type_id
            WHERE observation.active = TRUE
              AND observation.source_id = $1
@@ -1035,7 +1058,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         `WITH matched AS (
            SELECT observation.*, product.source_key,
                   internal.data->>'title' AS title, internal.data->>'sku' AS sku
-           FROM source_reference_observations observation
+           FROM ${classificationObservationReadModelSql} observation
            JOIN reference_types type ON type.id = observation.reference_type_id
            JOIN source_products product ON product.id = observation.source_product_id
            LEFT JOIN internal_products internal ON internal.source_product_id = product.id
@@ -1090,7 +1113,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
         `SELECT observation.id, source.code AS source_code, observation.source_value
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          JOIN sources source ON source.id = observation.source_id
          JOIN reference_types type ON type.id = observation.reference_type_id
          WHERE observation.active = TRUE
@@ -1235,7 +1258,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         }
         const affected = await client.query<DatabaseRow>(
           `SELECT DISTINCT source_product_id
-           FROM source_reference_observations
+           FROM ${classificationObservationReadModelSql} observation
            WHERE active = TRUE AND resolved_reference_value_id = $1`,
           [previous.reference_value_id],
         );
@@ -1488,7 +1511,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       try {
         const observationResult = await client.query<DatabaseRow>(
           `SELECT observation.*, type.id AS type_id
-           FROM source_reference_observations observation
+           FROM ${classificationObservationReadModelSql} observation
            JOIN reference_types type ON type.id = observation.reference_type_id
            WHERE observation.active = TRUE
              AND observation.source_id = $1
@@ -1661,7 +1684,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
 
         const affectedResult = await client.query<DatabaseRow>(
           `SELECT DISTINCT observation.source_product_id
-           FROM source_reference_observations observation
+           FROM ${classificationObservationReadModelSql} observation
            WHERE observation.active = TRUE
              AND observation.source_id = $1
              AND observation.reference_type_id = $2
@@ -1674,7 +1697,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         if (targetLinkChanged && referenceValueId !== null) {
           const sharedResult = await client.query<DatabaseRow>(
             `SELECT DISTINCT source_product_id
-             FROM source_reference_observations
+             FROM ${classificationObservationReadModelSql} observation
              WHERE active = TRUE AND resolved_reference_value_id = $1`,
             [referenceValueId],
           );
@@ -1845,7 +1868,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         if (previous === undefined) throw new EntityNotFoundError("Classification rule", input.ruleId);
         const previouslyAffected = await client.query<DatabaseRow>(
           `SELECT DISTINCT source_product_id
-           FROM source_reference_observations
+           FROM ${classificationObservationReadModelSql} observation
            WHERE active = TRUE AND rule_id = $1`,
           [input.ruleId],
         );
@@ -1925,7 +1948,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         if (previous === undefined) throw new EntityNotFoundError("Classification rule", input.ruleId);
         const previouslyAffected = await client.query<DatabaseRow>(
           `SELECT DISTINCT source_product_id
-           FROM source_reference_observations
+           FROM ${classificationObservationReadModelSql} observation
            WHERE active = TRUE AND rule_id = $1`,
           [input.ruleId],
         );
@@ -1995,7 +2018,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         if (previous === undefined) throw new EntityNotFoundError("Classification rule", input.ruleId);
         const previouslyAffected = await client.query<DatabaseRow>(
           `SELECT DISTINCT source_product_id
-           FROM source_reference_observations
+           FROM ${classificationObservationReadModelSql} observation
            WHERE active = TRUE AND rule_id = $1`,
           [input.ruleId],
         );
@@ -2146,7 +2169,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       `SELECT COUNT(*)::INTEGER AS observation_count,
               COUNT(DISTINCT source_product_id)::INTEGER AS product_count,
               COALESCE(JSONB_AGG(DISTINCT source_product_id::TEXT), '[]'::JSONB) AS source_product_ids
-       FROM source_reference_observations
+       FROM ${classificationObservationReadModelSql} observation
        WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1`,
       [mapping.reference_value_id],
     );
@@ -2163,7 +2186,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
               ), '[]'::JSONB) AS current_terms
        FROM (
          SELECT DISTINCT source_product_id
-         FROM source_reference_observations
+         FROM ${classificationObservationReadModelSql} observation
          WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1
        ) affected
        JOIN source_products product ON product.id = affected.source_product_id
@@ -2236,7 +2259,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     const stats = await client.query<DatabaseRow>(
       `WITH affected AS (
          SELECT DISTINCT observation.id AS observation_id, observation.source_product_id
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          WHERE observation.active = TRUE
            AND observation.status = 'resolved'
            AND $1::BIGINT IS NOT NULL
@@ -2253,7 +2276,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     const examplesResult = await client.query<DatabaseRow>(
       `WITH affected AS (
          SELECT DISTINCT observation.source_product_id
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          WHERE observation.active = TRUE
            AND observation.status = 'resolved'
            AND ${resolutionFilter}
@@ -2295,14 +2318,14 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     const conflictResult = await client.query<DatabaseRow>(
       `WITH affected AS (
          SELECT DISTINCT observation.source_product_id
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          WHERE observation.active = TRUE
            AND observation.status = 'resolved'
            AND ${resolutionFilter}
        ), existing_outputs AS (
          SELECT observation.source_product_id, target_mapping.dictionary_value_id
          FROM affected
-         JOIN source_reference_observations observation
+         JOIN ${classificationObservationReadModelSql} observation
            ON observation.source_product_id = affected.source_product_id
           AND observation.active = TRUE
           AND observation.status = 'resolved'
@@ -2314,7 +2337,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
          UNION ALL
          SELECT observation.source_product_id, projection.dictionary_value_id
          FROM affected
-         JOIN source_reference_observations observation
+         JOIN ${classificationObservationReadModelSql} observation
            ON observation.source_product_id = affected.source_product_id
           AND observation.active = TRUE
           AND observation.status = 'resolved'

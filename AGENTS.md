@@ -799,7 +799,7 @@ Parser commits `9750929` и `aad85ae` развёрнуты на production с м
 - `source_product_classification_links` хранит короткую связь товара с кандидатом, исходное написание, subject, статус и конкретное mapping/rule-решение;
 - `source_product_classification_evidence` дедуплицирует evidence внутри товара. Evidence не перенесён в общую запись кандидата, потому что правила могут зависеть от `evidence.*` конкретного товара;
 - `source_product_classification_states` хранит processor/classifier versions и classification fingerprint один раз на товар;
-- `source_reference_observations` сохранено как read-only совместимое view, поэтому административные запросы и функции read-model продолжают использовать прежний контракт;
+- legacy-view `source_reference_observations` удалено следующей миграцией; PostgreSQL-функции обслуживания используют явно названное `classification_observation_read_model`, а application repositories читают нормализованные таблицы напрямую;
 - `classification_review_groups` намеренно оставлена денормализованной быстрой проекцией очереди, а не вторым источником истины.
 
 Миграция выполняется одной транзакцией под `SHARE` lock исходной таблицы, сохраняет observation IDs и перевязывает FK `classification_review_rule_coverage` и `target_term_creation_history`. До миграции создан recovery dump `/srv/slds-parser/state/audits/2026-08-10-classification-normalization/before.dump`, размер `52 MB`, SHA-256 `0e4e7cd3d512caf5603f0e93c89ae47a11d483c50903a2d9625a5ec8a12f89ff`.

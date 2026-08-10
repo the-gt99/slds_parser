@@ -87,7 +87,7 @@ interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
 interface ConfigParams { readonly kind: string; readonly configId: string }
 interface TargetMappingParams { readonly mappingId: string }
-interface ConfigQuery { readonly kind?: string; readonly configId?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
+interface ConfigQuery { readonly kind?: string; readonly configId?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly usage?: string; readonly limit?: string; readonly offset?: string }
 interface RuleParams { readonly ruleId: string }
 interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
@@ -514,7 +514,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get<{ Querystring: ConfigQuery }>("/api/classifier/configuration", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);
     if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
-    return dependencies.classifier.listConfiguration({
+    const includeUsage = request.query.usage !== "none";
+    const result = await dependencies.classifier.listConfiguration({
       ...(configKind(request.query.kind) === undefined ? {} : { kind: configKind(request.query.kind)! }),
       ...(request.query.configId === undefined || request.query.configId === "" ? {} : { configId: entityId(request.query.configId, "configId") }),
       ...(request.query.sourceId === undefined || request.query.sourceId === "" ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
@@ -522,9 +523,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
       ...(configStatus(request.query.status) === undefined ? {} : { status: configStatus(request.query.status)! }),
       ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      includeUsage,
       limit,
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
     });
+    return { ...result, usageIncluded: includeUsage };
   });
 
   server.get<{ Params: ConfigParams }>("/api/classifier/configuration/:kind/:configId/history", { preHandler: requireAdmin }, async (request) => ({

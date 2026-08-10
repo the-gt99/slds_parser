@@ -146,6 +146,7 @@ export class DatabaseRetentionService {
            )
            ORDER BY evidence.id
            LIMIT $1
+           FOR UPDATE OF evidence SKIP LOCKED
          )
          DELETE FROM source_product_classification_evidence evidence USING orphaned
          WHERE evidence.id = orphaned.id
@@ -164,6 +165,7 @@ export class DatabaseRetentionService {
            )
            ORDER BY candidate.id
            LIMIT $1
+           FOR UPDATE OF candidate SKIP LOCKED
          )
          DELETE FROM classification_candidates candidate USING orphaned
          WHERE candidate.id = orphaned.id

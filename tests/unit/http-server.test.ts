@@ -110,9 +110,33 @@ describe("HTTP server", () => {
       kind: "rule",
       configId: "8",
       status: "active",
+      includeUsage: true,
       limit: 25,
       offset: 50,
     }));
+    expect(response.json()).toEqual({ items: [], total: 0, sources: [], targets: [], types: [], usageIncluded: true });
+    await server.close();
+  });
+
+  it("can omit expensive classifier configuration usage statistics", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      listConfiguration: vi.fn().mockResolvedValue({ items: [], total: 0, sources: [], targets: [], types: [] }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/classifier/configuration?kind=mapping&usage=none",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(classifier.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "mapping",
+      includeUsage: false,
+    }));
+    expect(response.json()).toEqual({ items: [], total: 0, sources: [], targets: [], types: [], usageIncluded: false });
     await server.close();
   });
 

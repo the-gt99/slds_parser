@@ -568,7 +568,7 @@ function conditionText(conditions) {
   return (conditions || []).map((condition) => `${ruleFieldLabel(condition.field)} ${operators[condition.operator] || condition.operator} «${condition.value}»`).join("; ");
 }
 
-function renderConfig(items) {
+function renderConfig(items, usageIncluded) {
   const headers = {
     mapping: ["Исходное значение", "Внутреннее значение", "WordPress назначения", "Статус", "Применено", "Обновлено"],
     rule: ["Правило", "Внутреннее значение", "Условия", "WordPress назначения", "Статус", "Применено", "Обновлено"],
@@ -576,10 +576,13 @@ function renderConfig(items) {
     projection: ["Решение классификатора", "Дополнительное поле WordPress", "Статус", "Применено", "Обновлено"],
   };
   headings(headers[state.configKind]);
-  state.configItems = items;
+  state.configItems = items.map((item) => ({
+    ...item,
+    usageLoaded: usageIncluded ?? item.usageLoaded ?? true,
+  }));
   const body = byId("table-body");
   body.replaceChildren();
-  for (const item of items) {
+  for (const item of state.configItems) {
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
     tr.addEventListener("click", () => selectConfig(item));
@@ -603,14 +606,48 @@ function renderConfig(items) {
     pill.className = `config-pill ${item.status}`;
     pill.textContent = configStatus(item.status);
     cell(tr, pill);
-    cell(tr, String(item.affectedProductCount ?? 0));
+    cell(tr, item.usageLoaded ? String(item.affectedProductCount ?? 0) : "…");
     cell(tr, date(item.updatedAt));
     body.append(tr);
   }
 }
 
-function selectConfig(item) {
-  openConfigDetails(item);
+async function selectConfig(item) {
+  if (item.usageLoaded) {
+    openConfigDetails(item);
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ kind: item.kind, configId: item.id, limit: "1", offset: "0" });
+    const response = await api(`/api/classifier/configuration?${params}`);
+    const detailed = response.items?.[0];
+    if (detailed) {
+      detailed.usageLoaded = true;
+      const index = state.configItems.findIndex((current) => current.kind === detailed.kind && current.id === detailed.id);
+      if (index >= 0) state.configItems[index] = detailed;
+      openConfigDetails(detailed);
+      return;
+    }
+    showToast("Настройка больше не найдена");
+  } catch (error) {
+    showToast(`Не удалось загрузить статистику настройки: ${error.message}`);
+  }
+}
+
+async function hydrateConfigUsage(params, expectedItems) {
+  try {
+    const response = await api(`/api/classifier/configuration?${params}`);
+    const expectedKeys = expectedItems.map((item) => `${item.kind}:${item.id}`).join(",");
+    const currentKeys = state.configItems.map((item) => `${item.kind}:${item.id}`).join(",");
+    if (currentKeys !== expectedKeys) return;
+    const usage = new Map((response.items || []).map((item) => [`${item.kind}:${item.id}`, item]));
+    renderConfig(state.configItems.map((item) => {
+      const loaded = usage.get(`${item.kind}:${item.id}`);
+      return loaded ? { ...item, affectedProductCount: loaded.affectedProductCount, examples: loaded.examples, usageLoaded: true } : item;
+    }));
+  } catch {
+    // Список уже доступен; статистику можно повторно запросить открытием записи.
+  }
 }
 
 function configOutputs(outputs) {
@@ -1514,6 +1551,7 @@ async function load() {
   byId("table-section").hidden = true;
   try {
     let data;
+    let configUsageParams = null;
     if (mode === "operations") {
       data = await api("/api/operations");
     } else if (mode === "runtime") {
@@ -1544,6 +1582,11 @@ async function load() {
           const value = byId(id).value;
           if (value) params.set(key, value);
         }
+        if (!(state.configDeepLink && !state.configDeepLink.opened)) {
+          params.set("usage", "none");
+          configUsageParams = new URLSearchParams(params);
+          configUsageParams.delete("usage");
+        }
         data = await api(`/api/classifier/configuration?${params}`);
         if (byId("source").options.length === 1) for (const source of data.sources || []) byId("source").append(new Option(`${source.name} · ${source.code}`, source.id));
         if (byId("classification").options.length === 1) for (const type of data.types || []) byId("classification").append(new Option(type.name, type.code));
@@ -1570,7 +1613,8 @@ async function load() {
     else if (mode === "operations") renderOperations(items);
     else if (mode === "jobs") renderJobs(data);
     else if (mode === "classifierConfig") {
-      renderConfig(items);
+      renderConfig(items, data.usageIncluded);
+      if (configUsageParams) void hydrateConfigUsage(configUsageParams, items);
       if (state.configDeepLink && !state.configDeepLink.opened) {
         const linked = items.find((item) => item.kind === state.configKind && item.id === state.configDeepLink.id);
         if (linked) {

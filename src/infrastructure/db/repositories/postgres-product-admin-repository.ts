@@ -24,6 +24,7 @@ import type {
   ProductTargetSnapshotRecord,
 } from "../../../repositories/index.js";
 import type { SqlPool } from "../sql-executor.js";
+import { classificationObservationReadModelSql } from "./classification-observation-read-model.js";
 import {
   mapInternalProduct,
   mapJob,
@@ -352,7 +353,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                        OR (observation.rule_id IS NOT NULL AND projection.rule_id = observation.rule_id)
                   ) output
                 ), '[]'::JSONB) AS outputs
-         FROM source_reference_observations observation
+         FROM ${classificationObservationReadModelSql} observation
          JOIN reference_types type ON type.id = observation.reference_type_id
          LEFT JOIN reference_values value ON value.id = observation.resolved_reference_value_id
          WHERE observation.source_product_id = $1 AND observation.active = TRUE

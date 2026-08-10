@@ -400,10 +400,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("item.id = $2");
     expect(executor.calls[0]?.values.slice(0, 2)).toEqual(["rule", "8"]);
     expect(executor.calls[1]?.text).not.toContain("current_products AS MATERIALIZED");
-    expect(executor.calls[1]?.text).toContain("observation.processor_version");
+    expect(executor.calls[1]?.text).toContain("state.processor_version");
+    expect(executor.calls[1]?.text).toContain("source_product_classification_links");
+    expect(executor.calls[1]?.text).not.toContain("source_reference_observations");
     expect(executor.calls[1]?.text).toContain("observation_stats AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("example_observations AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("JOIN LATERAL");
+    expect(executor.calls[1]?.text).toContain("$9::BOOLEAN");
+    expect(executor.calls[1]?.values[8]).toBe(true);
     expect(executor.calls[1]?.text).not.toContain("matched_observations AS MATERIALIZED");
   });
 
@@ -504,6 +508,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[4]?.text).toContain("active = FALSE");
     expect(executor.calls[5]?.text).toContain("source_product_classification_evidence");
     expect(executor.calls[6]?.text).toContain("classification_candidates");
+    expect(executor.calls[5]?.text).toContain("FOR UPDATE OF evidence SKIP LOCKED");
+    expect(executor.calls[6]?.text).toContain("FOR UPDATE OF candidate SKIP LOCKED");
   });
 
   it("claims only an explicitly selected pending processing job", async () => {

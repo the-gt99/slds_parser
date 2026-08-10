@@ -168,7 +168,7 @@ WordPress importer скачивает готовые WebP по публичны�
 - `source_product_classification_links` — компактные связи товаров с кандидатами, индивидуальным статусом и использованным решением;
 - `source_product_classification_evidence` — наборы evidence, хранящиеся один раз на товар вместо копии в каждом кандидате;
 - `source_product_classification_states` — версия процессора, классификатора и fingerprint один раз на товар;
-- `source_reference_observations` — совместимое read-only представление нормализованных связей для запросов классификатора;
+- `classification_observation_read_model` — явное read-only представление для PostgreSQL-функций обслуживания очереди; application repositories собирают нужные данные напрямую из нормализованных таблиц;
 - `source_reference_decision_history` — история будущих действий интерфейса над mappings и правилами.
 - `classification_review_rule_coverage` — ещё не применённые к товарам совпадения активных правил;
 - `classification_review_groups` — быстрая проекция очереди классификатора со счётчиками состояний «требует решения» и «ждёт обработки».
