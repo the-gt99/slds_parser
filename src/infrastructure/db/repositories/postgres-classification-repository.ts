@@ -132,13 +132,13 @@ export class PostgresClassificationRepository implements ClassificationRepositor
     );
     await this.executor.query(
       `DELETE FROM classification_review_rule_coverage coverage
-       USING source_reference_observations observation
+       USING source_product_classification_links observation
        WHERE observation.id = coverage.observation_id
          AND observation.source_product_id = $1`,
       [input.sourceProductId],
     );
     await this.executor.query(
-      `UPDATE source_reference_observations
+      `UPDATE source_product_classification_links
        SET active = FALSE, updated_at = NOW()
        WHERE source_product_id = $1 AND active = TRUE`,
       [input.sourceProductId],
@@ -163,10 +163,78 @@ export class PostgresClassificationRepository implements ClassificationRepositor
       matched_rule_ids: observation.matchedRuleIds ?? [],
     }));
 
-    if (rows.length > 0) await this.executor.query(
+    await this.executor.query(
       `WITH incoming AS (
         SELECT *
         FROM JSONB_TO_RECORDSET($6::JSONB) AS item(
+          type_code TEXT,
+          scope TEXT,
+          normalized_source_value TEXT,
+          context JSONB,
+          context_key TEXT,
+          evidence JSONB
+        )
+      ), typed AS (
+        SELECT incoming.*, type.id AS reference_type_id
+        FROM incoming
+        JOIN reference_types type ON type.code = incoming.type_code
+      ), inserted_candidates AS (
+        INSERT INTO classification_candidates (
+          source_id,
+          reference_type_id,
+          scope,
+          normalized_source_value,
+          context,
+          context_key
+        )
+        SELECT DISTINCT
+          $1,
+          reference_type_id,
+          scope,
+          normalized_source_value,
+          context,
+          context_key
+        FROM typed
+        ON CONFLICT (
+          source_id,
+          reference_type_id,
+          scope,
+          normalized_source_value,
+          context_key
+        ) DO NOTHING
+        RETURNING id
+      ), inserted_evidence AS (
+        INSERT INTO source_product_classification_evidence (
+          source_product_id,
+          evidence_hash,
+          evidence
+        )
+        SELECT DISTINCT
+          $2,
+          ENCODE(DIGEST(evidence::TEXT, 'sha256'), 'hex'),
+          evidence
+        FROM incoming
+        ON CONFLICT (source_product_id, evidence_hash) DO NOTHING
+        RETURNING id
+      )
+      INSERT INTO source_product_classification_states (
+        source_product_id,
+        processor_version,
+        classifier_version,
+        classification_fingerprint
+      ) VALUES ($2, $3, $4, $5)
+      ON CONFLICT (source_product_id) DO UPDATE SET
+        processor_version = EXCLUDED.processor_version,
+        classifier_version = EXCLUDED.classifier_version,
+        classification_fingerprint = EXCLUDED.classification_fingerprint,
+        updated_at = NOW()`,
+      [input.sourceId, input.sourceProductId, input.processorVersion, input.classifierVersion, input.fingerprint, JSON.stringify(rows)],
+    );
+
+    if (rows.length > 0) await this.executor.query(
+      `WITH incoming AS (
+        SELECT *
+        FROM JSONB_TO_RECORDSET($3::JSONB) AS item(
           candidate_key TEXT,
           type_code TEXT,
           scope TEXT,
@@ -186,82 +254,73 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           matched_rule_ids JSONB
         )
       ), typed AS (
-        SELECT incoming.*, type.id AS reference_type_id
+        SELECT
+          incoming.*,
+          type.id AS reference_type_id,
+          candidate.id AS candidate_id,
+          evidence_record.id AS evidence_id
         FROM incoming
         JOIN reference_types type ON type.code = incoming.type_code
+        JOIN classification_candidates candidate
+          ON candidate.source_id = $1
+         AND candidate.reference_type_id = type.id
+         AND candidate.scope = incoming.scope
+         AND candidate.normalized_source_value = incoming.normalized_source_value
+         AND candidate.context_key = incoming.context_key
+         AND candidate.context = incoming.context
+        JOIN source_product_classification_evidence evidence_record
+          ON evidence_record.source_product_id = $2
+         AND evidence_record.evidence_hash = ENCODE(DIGEST(incoming.evidence::TEXT, 'sha256'), 'hex')
+         AND evidence_record.evidence = incoming.evidence
       ), upserted AS (
-        INSERT INTO source_reference_observations (
-        source_id,
-        source_product_id,
-        candidate_key,
-        reference_type_id,
-        scope,
-        subject_kind,
-        subject_key,
-        source_value,
-        normalized_source_value,
-        context,
-        context_key,
-        evidence,
-        status,
-        issue_reason,
-        resolved_reference_value_id,
-        mapping_id,
-        rule_id,
-        resolution_revision,
-        processor_version,
-        classifier_version,
-        classification_fingerprint,
-        active
-      )
-      SELECT
-        $1,
-        $2,
-        candidate_key,
-        reference_type_id,
-        scope,
-        subject_kind,
-        subject_key,
-        source_value,
-        normalized_source_value,
-        context,
-        context_key,
-        evidence,
-        status,
-        issue_reason,
-        resolved_reference_value_id,
-        mapping_id,
-        rule_id,
-        resolution_revision,
-        $3,
-        $4,
-        $5,
-        TRUE
-      FROM typed
-      ON CONFLICT (source_product_id, candidate_key) DO UPDATE SET
-        source_id = EXCLUDED.source_id,
-        reference_type_id = EXCLUDED.reference_type_id,
-        scope = EXCLUDED.scope,
-        subject_kind = EXCLUDED.subject_kind,
-        subject_key = EXCLUDED.subject_key,
-        source_value = EXCLUDED.source_value,
-        normalized_source_value = EXCLUDED.normalized_source_value,
-        context = EXCLUDED.context,
-        context_key = EXCLUDED.context_key,
-        evidence = EXCLUDED.evidence,
-        status = EXCLUDED.status,
-        issue_reason = EXCLUDED.issue_reason,
-        resolved_reference_value_id = EXCLUDED.resolved_reference_value_id,
-        mapping_id = EXCLUDED.mapping_id,
-        rule_id = EXCLUDED.rule_id,
-        resolution_revision = EXCLUDED.resolution_revision,
-        processor_version = EXCLUDED.processor_version,
-        classifier_version = EXCLUDED.classifier_version,
-        classification_fingerprint = EXCLUDED.classification_fingerprint,
-        active = TRUE,
-        last_seen_at = NOW(),
-        updated_at = NOW()
-      RETURNING id, candidate_key, status
+        INSERT INTO source_product_classification_links (
+          source_product_id,
+          candidate_key,
+          candidate_id,
+          evidence_id,
+          subject_kind,
+          subject_key,
+          source_value,
+          status,
+          issue_reason,
+          resolved_reference_value_id,
+          mapping_id,
+          rule_id,
+          resolution_revision,
+          active
+        )
+        SELECT
+          $2,
+          candidate_key,
+          candidate_id,
+          evidence_id,
+          subject_kind,
+          subject_key,
+          source_value,
+          status,
+          issue_reason,
+          resolved_reference_value_id,
+          mapping_id,
+          rule_id,
+          resolution_revision,
+          TRUE
+        FROM typed
+        ON CONFLICT (source_product_id, candidate_key) DO UPDATE SET
+          candidate_id = EXCLUDED.candidate_id,
+          evidence_id = EXCLUDED.evidence_id,
+          subject_kind = EXCLUDED.subject_kind,
+          subject_key = EXCLUDED.subject_key,
+          source_value = EXCLUDED.source_value,
+          status = EXCLUDED.status,
+          issue_reason = EXCLUDED.issue_reason,
+          resolved_reference_value_id = EXCLUDED.resolved_reference_value_id,
+          mapping_id = EXCLUDED.mapping_id,
+          rule_id = EXCLUDED.rule_id,
+          resolution_revision = EXCLUDED.resolution_revision,
+          active = TRUE,
+          last_seen_at = NOW(),
+          updated_at = NOW()
+        RETURNING id, candidate_key, status
       )
       INSERT INTO classification_review_rule_coverage (
         observation_id, rule_id, rule_revision
@@ -278,7 +337,7 @@ export class PostgresClassificationRepository implements ClassificationRepositor
       ON CONFLICT (observation_id, rule_id) DO UPDATE SET
         rule_revision = EXCLUDED.rule_revision,
         updated_at = NOW()`,
-      [input.sourceId, input.sourceProductId, input.processorVersion, input.classifierVersion, input.fingerprint, JSON.stringify(rows)],
+      [input.sourceId, input.sourceProductId, JSON.stringify(rows)],
     );
 
     const currentContributions = await this.executor.query<DatabaseRow>(

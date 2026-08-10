@@ -164,7 +164,11 @@ WordPress importer скачивает готовые WebP по публичны�
 
 - `source_reference_mappings` — точные подтверждённые либо игнорируемые решения с контекстом, revision и аудитом;
 - `source_reference_rules` — общие или source-specific контекстные правила;
-- `source_reference_observations` — актуальные кандидаты каждого товара, их состояние и использованное решение;
+- `classification_candidates` — уникальные source-значения классификации с типом, scope и контекстом решения;
+- `source_product_classification_links` — компактные связи товаров с кандидатами, индивидуальным статусом и использованным решением;
+- `source_product_classification_evidence` — наборы evidence, хранящиеся один раз на товар вместо копии в каждом кандидате;
+- `source_product_classification_states` — версия процессора, классификатора и fingerprint один раз на товар;
+- `source_reference_observations` — совместимое read-only представление нормализованных связей для запросов классификатора;
 - `source_reference_decision_history` — история будущих действий интерфейса над mappings и правилами.
 - `classification_review_rule_coverage` — ещё не применённые к товарам совпадения активных правил;
 - `classification_review_groups` — быстрая проекция очереди классификатора со счётчиками состояний «требует решения» и «ждёт обработки».

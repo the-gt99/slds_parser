@@ -272,10 +272,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
     });
 
     expect(executor.calls[0]?.text).toContain("classification_review_product_contributions");
-    expect(executor.calls[3]?.text).toContain("INSERT INTO classification_review_rule_coverage");
+    expect(executor.calls[3]?.text).toContain("INSERT INTO classification_candidates");
+    expect(executor.calls[3]?.text).toContain("INSERT INTO source_product_classification_evidence");
+    expect(executor.calls[3]?.text).toContain("INSERT INTO source_product_classification_states");
     expect(executor.calls[3]?.values[2]).toBe("2.9.0");
-    expect(executor.calls[3]?.values[5]).toContain('"matched_rule_ids":["5","6"]');
-    expect(executor.calls[5]?.text).toContain("apply_classification_review_product_contributions");
+    expect(executor.calls[4]?.text).toContain("INSERT INTO source_product_classification_links");
+    expect(executor.calls[4]?.text).toContain("INSERT INTO classification_review_rule_coverage");
+    expect(executor.calls[4]?.values[2]).toContain('"matched_rule_ids":["5","6"]');
+    expect(executor.calls[6]?.text).toContain("apply_classification_review_product_contributions");
   });
 
   it("lists review groups without scanning observations for examples", async () => {
@@ -491,11 +495,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
       processingAttempts: 1,
       operationExecutions: 7,
       inactiveObservations: 0,
+      orphanedClassificationEvidence: 0,
+      orphanedClassificationCandidates: 0,
     });
     expect(executor.calls[0]?.text).toContain("status = 'completed'");
     expect(executor.calls[0]?.text).toContain("LIMIT $2");
     expect(executor.calls[3]?.text).toContain("deleted_operations AS");
     expect(executor.calls[4]?.text).toContain("active = FALSE");
+    expect(executor.calls[5]?.text).toContain("source_product_classification_evidence");
+    expect(executor.calls[6]?.text).toContain("classification_candidates");
   });
 
   it("claims only an explicitly selected pending processing job", async () => {

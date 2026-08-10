@@ -14,6 +14,8 @@ export interface DatabaseRetentionResult {
   readonly processingAttempts: number;
   readonly operationExecutions: number;
   readonly inactiveObservations: number;
+  readonly orphanedClassificationEvidence: number;
+  readonly orphanedClassificationCandidates: number;
 }
 
 interface HistoryCleanupRow extends Record<string, unknown> {
@@ -30,6 +32,20 @@ async function deleteInBatches(
   let total = 0;
   while (true) {
     const result = await client.query(sql, [cutoff.toISOString(), batchSize]);
+    const deleted = result.rowCount ?? result.rows.length;
+    total += deleted;
+    if (deleted < batchSize) return total;
+  }
+}
+
+async function deleteOrphansInBatches(
+  client: SqlClient,
+  sql: string,
+  batchSize: number,
+): Promise<number> {
+  let total = 0;
+  while (true) {
+    const result = await client.query(sql, [batchSize]);
     const deleted = result.rowCount ?? result.rows.length;
     total += deleted;
     if (deleted < batchSize) return total;
@@ -106,19 +122,64 @@ export class DatabaseRetentionService {
       const inactiveObservations = await deleteInBatches(
         client,
         `WITH expired AS MATERIALIZED (
-           SELECT id FROM source_reference_observations
+           SELECT id FROM source_product_classification_links
            WHERE active = FALSE AND updated_at < $1::TIMESTAMPTZ
            ORDER BY updated_at, id
            LIMIT $2
          )
-         DELETE FROM source_reference_observations observation USING expired
+         DELETE FROM source_product_classification_links observation USING expired
          WHERE observation.id = expired.id
          RETURNING observation.id`,
         options.inactiveObservationsBefore,
         options.batchSize,
       );
 
-      return { completedJobs, failedJobs, processingAttempts, operationExecutions, inactiveObservations };
+      const orphanedClassificationEvidence = await deleteOrphansInBatches(
+        client,
+        `WITH orphaned AS MATERIALIZED (
+           SELECT evidence.id
+           FROM source_product_classification_evidence evidence
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM source_product_classification_links observation
+             WHERE observation.evidence_id = evidence.id
+           )
+           ORDER BY evidence.id
+           LIMIT $1
+         )
+         DELETE FROM source_product_classification_evidence evidence USING orphaned
+         WHERE evidence.id = orphaned.id
+         RETURNING evidence.id`,
+        options.batchSize,
+      );
+      const orphanedClassificationCandidates = await deleteOrphansInBatches(
+        client,
+        `WITH orphaned AS MATERIALIZED (
+           SELECT candidate.id
+           FROM classification_candidates candidate
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM source_product_classification_links observation
+             WHERE observation.candidate_id = candidate.id
+           )
+           ORDER BY candidate.id
+           LIMIT $1
+         )
+         DELETE FROM classification_candidates candidate USING orphaned
+         WHERE candidate.id = orphaned.id
+         RETURNING candidate.id`,
+        options.batchSize,
+      );
+
+      return {
+        completedJobs,
+        failedJobs,
+        processingAttempts,
+        operationExecutions,
+        inactiveObservations,
+        orphanedClassificationEvidence,
+        orphanedClassificationCandidates,
+      };
     } finally {
       client.release();
     }
