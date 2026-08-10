@@ -5,6 +5,11 @@ const state = {
   csrfToken: null,
   queue: [],
   queueTotal: 0,
+  queueOffset: 0,
+  queueHasMore: false,
+  queueLoading: false,
+  queueLoadError: null,
+  queueRequestId: 0,
   selected: null,
   targets: [],
   mappingMode: "wordpress",
@@ -62,6 +67,7 @@ let toastTimer;
 let queueSearchTimer;
 let mappingSearchTimer;
 let projectionSearchTimer;
+const queuePageSize = 200;
 
 function showToast(message) {
   const toast = byId("toast");
@@ -198,8 +204,8 @@ async function loadTargets() {
   return state.targets;
 }
 
-function queueUrl() {
-  const parameters = new URLSearchParams({ limit: "200" });
+function queueUrl(offset = 0) {
+  const parameters = new URLSearchParams({ limit: String(queuePageSize), offset: String(offset) });
   const search = byId("queue-search").value.trim();
   const type = byId("type-filter").value;
   const status = byId("status-filter").value;
@@ -212,12 +218,21 @@ function queueUrl() {
 }
 
 async function loadQueue({ preserveSelection = false } = {}) {
+  const requestId = ++state.queueRequestId;
   const list = byId("queue-list");
+  state.queueLoading = true;
+  state.queueLoadError = null;
+  state.queueHasMore = false;
+  state.queueOffset = 0;
   list.replaceChildren(loading("Загружаем очередь…"));
   try {
-    const response = await api(queueUrl());
+    const response = await api(queueUrl(0));
+    if (requestId !== state.queueRequestId) return;
     state.queue = response.items ?? [];
     state.queueTotal = Number(response.total);
+    state.queueOffset = state.queue.length;
+    state.queueHasMore = state.queueOffset < state.queueTotal;
+    state.queueLoading = false;
     for (const item of state.queue) state.typeNames.set(item.typeCode, item.typeName || item.typeCode);
     populateTypeFilter();
     if (preserveSelection && state.selected) {
@@ -230,8 +245,44 @@ async function loadQueue({ preserveSelection = false } = {}) {
       void loadReviewExamples(state.selected);
     }
   } catch (error) {
+    if (requestId !== state.queueRequestId) return;
+    state.queueLoading = false;
     list.replaceChildren(emptyText(error.message));
   }
+}
+
+async function loadNextQueuePage() {
+  if (state.queueLoading || !state.queueHasMore || state.queueLoadError) return;
+  const requestId = state.queueRequestId;
+  state.queueLoading = true;
+  renderQueueLoadState();
+  try {
+    const response = await api(queueUrl(state.queueOffset));
+    if (requestId !== state.queueRequestId) return;
+    const received = response.items ?? [];
+    const known = new Set(state.queue.map((item) => item.reviewGroupId));
+    const added = received.filter((item) => !known.has(item.reviewGroupId));
+    state.queue.push(...added);
+    state.queueOffset += received.length;
+    state.queueTotal = Number(response.total);
+    state.queueHasMore = received.length > 0 && state.queueOffset < state.queueTotal;
+    for (const item of added) state.typeNames.set(item.typeCode, item.typeName || item.typeCode);
+    populateTypeFilter();
+    appendQueueItems(added);
+  } catch (error) {
+    if (requestId !== state.queueRequestId) return;
+    state.queueLoadError = error.message;
+  } finally {
+    if (requestId === state.queueRequestId) {
+      state.queueLoading = false;
+      renderQueueLoadState();
+    }
+  }
+}
+
+function maybeLoadNextQueuePage() {
+  const list = byId("queue-list");
+  if (list.scrollHeight - list.scrollTop - list.clientHeight < 320) void loadNextQueuePage();
 }
 
 function populateTypeFilter() {
@@ -266,23 +317,64 @@ function renderQueue() {
     showEmptyDetail();
     return;
   }
-  for (const item of state.queue) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `queue-item${state.selected && decisionKey(state.selected) === decisionKey(item) ? " active" : ""}`;
-    const title = document.createElement("span");
-    title.className = "queue-item-title";
-    title.textContent = item.sourceValue;
-    const meta = document.createElement("span");
-    meta.className = "queue-item-meta";
-    const kind = document.createElement("span");
-    kind.textContent = `${typeName(item)} · ${item.sourceCode}`;
-    const count = document.createElement("span");
-    count.textContent = `${item.productCount} тов.`;
-    meta.append(kind, count);
-    button.append(title, meta);
-    button.addEventListener("click", () => selectQueueItem(item));
-    list.append(button);
+  appendQueueItems(state.queue);
+}
+
+function queueItemButton(item) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `queue-item${state.selected && decisionKey(state.selected) === decisionKey(item) ? " active" : ""}`;
+  button.dataset.reviewGroupId = item.reviewGroupId;
+  const title = document.createElement("span");
+  title.className = "queue-item-title";
+  title.textContent = item.sourceValue;
+  const meta = document.createElement("span");
+  meta.className = "queue-item-meta";
+  const kind = document.createElement("span");
+  kind.textContent = `${typeName(item)} · ${item.sourceCode}`;
+  const count = document.createElement("span");
+  count.textContent = `${item.productCount} тов.`;
+  meta.append(kind, count);
+  button.append(title, meta);
+  button.addEventListener("click", () => selectQueueItem(item));
+  return button;
+}
+
+function appendQueueItems(items) {
+  const list = byId("queue-list");
+  list.querySelector(".queue-load-state")?.remove();
+  const fragment = document.createDocumentFragment();
+  for (const item of items) fragment.append(queueItemButton(item));
+  list.append(fragment);
+  renderQueueLoadState();
+}
+
+function renderQueueLoadState() {
+  const list = byId("queue-list");
+  list.querySelector(".queue-load-state")?.remove();
+  if (!state.queueLoading && !state.queueLoadError) return;
+  const tail = document.createElement("div");
+  tail.className = "queue-load-state";
+  if (state.queueLoadError) {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "button quiet";
+    retry.textContent = "Повторить загрузку";
+    retry.title = state.queueLoadError;
+    retry.addEventListener("click", () => {
+      state.queueLoadError = null;
+      void loadNextQueuePage();
+    });
+    tail.append(retry);
+  } else {
+    tail.append(loading("Загружаем ещё…"));
+  }
+  list.append(tail);
+}
+
+function updateQueueSelection() {
+  for (const button of byId("queue-list").querySelectorAll(".queue-item")) {
+    button.classList.toggle("active", button.dataset.reviewGroupId === state.selected?.reviewGroupId);
   }
 }
 
@@ -296,7 +388,7 @@ function selectQueueItem(item) {
   state.selectedProjectionTerm = null;
   state.projectionPreview = null;
   state.resolved = false;
-  renderQueue();
+  updateQueueSelection();
   renderDetail();
   void loadReviewExamples(item);
   if (item.status !== "waiting_apply") {
@@ -1146,11 +1238,13 @@ byId("refresh-button").addEventListener("click", () => loadQueue({ preserveSelec
 byId("sync-button").addEventListener("click", syncWordPress);
 byId("queue-search").addEventListener("input", () => {
   clearQueueDeepLink();
+  state.queueRequestId += 1;
   clearTimeout(queueSearchTimer);
   queueSearchTimer = setTimeout(() => loadQueue(), 280);
 });
 byId("type-filter").addEventListener("change", () => { clearQueueDeepLink(); loadQueue(); });
 byId("status-filter").addEventListener("change", () => { clearQueueDeepLink(); loadQueue(); });
+byId("queue-list").addEventListener("scroll", maybeLoadNextQueuePage, { passive: true });
 byId("mapping-search").addEventListener("input", () => {
   resetDecisionPreview();
   clearTimeout(mappingSearchTimer);

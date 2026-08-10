@@ -90,16 +90,21 @@ integration("classification observation normalization migration", () => {
     expect(migrated.rows).toEqual(previous.rows);
 
     await client.query(await readFile(path.join(migrationsDirectory, "034_remove_legacy_classification_observation_view.sql"), "utf8"));
+    await client.query(await readFile(path.join(migrationsDirectory, "035_optimize_classification_review_search.sql"), "utf8"));
     await client.query("SELECT rebuild_classification_review_read_model()");
     const finalRelations = await client.query(`
       SELECT
         TO_REGCLASS('${schema}.source_reference_observations')::TEXT AS legacy,
         TO_REGCLASS('${schema}.classification_observation_read_model')::TEXT AS read_model,
+        TO_REGCLASS('${schema}.classification_review_groups_source_value_trgm_idx')::TEXT AS search_index,
+        TO_REGCLASS('${schema}.classification_review_groups_source_value_prefix_idx')::TEXT AS prefix_index,
         (SELECT COUNT(*)::INTEGER FROM classification_observation_read_model) AS observations
     `);
     expect(finalRelations.rows[0]).toEqual({
       legacy: null,
       read_model: "classification_observation_read_model",
+      search_index: "classification_review_groups_source_value_trgm_idx",
+      prefix_index: "classification_review_groups_source_value_prefix_idx",
       observations: 2,
     });
   }, 120_000);

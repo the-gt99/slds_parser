@@ -294,6 +294,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("FROM classification_review_groups review");
     expect(sql).toContain("review_page.id AS review_group_id");
     expect(sql).toContain("LIMIT $7 OFFSET $8");
+    expect(sql).toContain("review.id DESC");
     expect(sql).not.toContain("source_reference_observations");
     expect(sql).not.toContain("classification_review_rule_resolutions");
   });
@@ -315,6 +316,24 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("FROM classification_review_groups review");
     expect(executor.calls[0]?.text).toContain("review.context_key = $6");
     expect(executor.calls[0]?.values).toEqual(["1", "category", "unresolved", "sneakers", "{}", "context-women"]);
+  });
+
+  it("uses indexed substring search and indexed prefixes for short values", async () => {
+    const substringExecutor = new FakeExecutor([[]]);
+    await new PostgresClassificationAdminRepository(pool(substringExecutor)).listReviewQueue({
+      search: "fly",
+      limit: 200,
+      offset: 0,
+    });
+    expect(substringExecutor.calls[0]?.text).toContain("review.source_value ILIKE '%' || $4::TEXT || '%'");
+
+    const prefixExecutor = new FakeExecutor([[{ total: "1" }]]);
+    await new PostgresClassificationAdminRepository(pool(prefixExecutor)).countReviewQueue({
+      search: "dc",
+      limit: 200,
+      offset: 0,
+    });
+    expect(prefixExecutor.calls[0]?.text).toContain("LOWER(review.source_value) LIKE LOWER($4::TEXT) || '%'");
   });
 
   it("loads examples only for one materialized review group", async () => {

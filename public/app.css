@@ -277,6 +277,8 @@ h3 { font-size: 17px; line-height: 1.3; }
 .search-field input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
 .search-field.large { min-height: 48px; }
 .queue-list { min-height: 0; flex: 1; overflow-y: auto; padding: 0 9px 16px; }
+.queue-load-state { display: grid; min-height: 58px; place-items: center; padding: 8px 13px; }
+.queue-load-state .loading { padding: 12px; }
 .queue-empty { padding: 44px 22px; text-align: center; color: var(--muted); line-height: 1.5; }
 .queue-item {
   width: 100%;
