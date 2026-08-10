@@ -102,7 +102,7 @@
           <section class="section examples-section">
             <div class="section-title">
               <h3>Где встретилось</h3>
-              <span id="product-count" class="count-pill"></span>
+              <button id="product-count" class="count-pill count-button" type="button" aria-label="Показать все товары"></button>
             </div>
             <div id="examples-list" class="examples-list"></div>
           </section>
@@ -298,7 +298,10 @@
       </label>
       <div class="conditions-heading">
         <strong>Условия</strong>
-        <button id="add-condition" class="button quiet small-button" type="button">+ Условие</button>
+        <div class="conditions-heading-actions">
+          <span id="rule-fields-loading" class="inline-loading" hidden>Загружаем дополнительные поля…</span>
+          <button id="add-condition" class="button quiet small-button" type="button">+ Условие</button>
+        </div>
       </div>
       <div id="conditions-list" class="conditions-list"></div>
       <div id="rule-preview" class="rule-preview" hidden></div>
@@ -311,6 +314,29 @@
         </div>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="review-products-dialog" class="dialog dialog-wide review-products-dialog">
+    <div class="dialog-scroll">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Где встретилось</p>
+          <h2 id="review-products-title">Товары</h2>
+        </div>
+        <button class="icon-button close-review-products" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <p id="review-products-context" class="dialog-intro"></p>
+      <label class="search-field large">
+        <span aria-hidden="true">⌕</span>
+        <input id="review-products-search" type="search" placeholder="Название, SKU или ID товара">
+      </label>
+      <div id="review-products-summary" class="review-products-summary muted"></div>
+      <div id="review-products-list" class="review-products-list"></div>
+      <button id="review-products-more" class="button quiet wide" type="button" hidden>Показать ещё</button>
+      <div class="dialog-actions sticky-dialog-actions">
+        <button class="button quiet close-review-products" type="button">Закрыть</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="assignment-dialog" class="dialog">

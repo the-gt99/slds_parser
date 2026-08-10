@@ -7,7 +7,8 @@ import type {
   ClassificationReferenceValueOption,
   ClassificationReferenceCatalogQuery,
   ClassificationReferenceCatalogResult,
-  ClassificationReviewExample,
+  ClassificationReviewExamplesQuery,
+  ClassificationReviewExamplesResult,
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
@@ -35,10 +36,7 @@ export interface ClassificationAdminRepository {
   listConfiguration(query: ClassificationConfigListQuery): Promise<ClassificationConfigListResult>;
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]>;
   countReviewQueue(query: ClassificationReviewQuery): Promise<number>;
-  listReviewExamples(
-    reviewGroupId: string,
-    currentProcessorVersions?: Readonly<Record<string, string>>,
-  ): Promise<readonly ClassificationReviewExample[]>;
+  listReviewExamples(query: ClassificationReviewExamplesQuery): Promise<ClassificationReviewExamplesResult>;
   listReferenceValues(
     typeCode: string,
     search: string | undefined,

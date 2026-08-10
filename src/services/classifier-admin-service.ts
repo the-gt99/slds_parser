@@ -180,9 +180,15 @@ export class ClassifierAdminService {
     return this.adminRepository.countReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
   }
 
-  listReviewExamples(reviewGroupId: EntityId) {
+  listReviewExamples(reviewGroupId: EntityId, query: { readonly search?: string; readonly limit: number; readonly offset: number }) {
     validateText(reviewGroupId, "reviewGroupId", 64);
-    return this.adminRepository.listReviewExamples(reviewGroupId, this.currentProcessorVersions);
+    return this.adminRepository.listReviewExamples({
+      reviewGroupId,
+      ...(query.search === undefined ? {} : { search: query.search }),
+      limit: query.limit,
+      offset: query.offset,
+      currentProcessorVersions: this.currentProcessorVersions,
+    });
   }
 
   listConfiguration(query: ClassificationConfigListQuery) {

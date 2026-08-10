@@ -737,6 +737,19 @@ export interface ClassificationReviewExample {
   }[];
 }
 
+export interface ClassificationReviewExamplesQuery {
+  readonly reviewGroupId: EntityId;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+  readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
+}
+
+export interface ClassificationReviewExamplesResult {
+  readonly items: readonly ClassificationReviewExample[];
+  readonly total: number;
+}
+
 export interface ClassificationReviewItem extends ClassificationDecisionKey {
   readonly reviewGroupId: EntityId;
   readonly sourceCode: string;

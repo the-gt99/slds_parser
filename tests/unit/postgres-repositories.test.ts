@@ -341,8 +341,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("loads examples only for one materialized review group", async () => {
-    const executor = new FakeExecutor([[{ examples: [] }]]);
-    await new PostgresClassificationAdminRepository(pool(executor)).listReviewExamples("42", { "1": "2.9.0" });
+    const executor = new FakeExecutor([[{ examples: [], total: "90" }]]);
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).listReviewExamples({
+      reviewGroupId: "42",
+      search: "Vans",
+      limit: 50,
+      offset: 100,
+      currentProcessorVersions: { "1": "2.9.0" },
+    });
 
     const call = executor.calls[0];
     const sql = call?.text ?? "";
@@ -350,8 +356,32 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("group_observations AS MATERIALIZED");
     expect(sql).not.toContain("classification_review_rule_resolutions");
     expect(sql).not.toContain("source_reference_mappings");
-    expect(sql).toContain("LIMIT 3");
-    expect(call?.values).toEqual(["42", '{"1":"2.9.0"}']);
+    expect(sql).toContain("matching_products AS MATERIALIZED");
+    expect(sql).toContain("product.id::TEXT = $3");
+    expect(sql).toContain("LIMIT $4 OFFSET $5");
+    expect(sql).toContain("COUNT(*)::INTEGER FROM matching_products");
+    expect(sql).toContain("snapshot.payload->'product'->'taxonomies'");
+    expect(call?.values).toEqual(["42", '{"1":"2.9.0"}', "Vans", 50, 100]);
+    expect(result).toEqual({ items: [], total: 90 });
+  });
+
+  it("lists rule fields without aggregating every observed value", async () => {
+    const executor = new FakeExecutor([[
+      { field: "sourceValue", examples: [] },
+      { field: "context.brand", examples: [] },
+    ]]);
+    const fields = await new PostgresClassificationAdminRepository(pool(executor))
+      .listRuleConditionFields("1", "model", "2.9.0");
+
+    const call = executor.calls[0]!;
+    expect(call.text).toContain("current_evidence AS MATERIALIZED");
+    expect(call.text).toContain("JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')");
+    expect(call.text).not.toContain("ARRAY_AGG(DISTINCT value");
+    expect(call.values).toEqual(["1", "model", "2.9.0"]);
+    expect(fields).toEqual([
+      { field: "sourceValue", exampleValues: [] },
+      { field: "context.brand", exampleValues: [] },
+    ]);
   });
 
   it("prefilters rule candidates with normalized SQL conditions", async () => {

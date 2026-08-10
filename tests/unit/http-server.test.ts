@@ -52,7 +52,7 @@ describe("HTTP server", () => {
     const classifier = {
       listReviewQueue: vi.fn().mockResolvedValue([]),
       countReviewQueue: vi.fn().mockResolvedValue(321),
-      listReviewExamples: vi.fn().mockResolvedValue([]),
+      listReviewExamples: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     } as unknown as ClassifierAdminService;
     const server = createHttpServer({
       ...dependencies(database),
@@ -72,7 +72,7 @@ describe("HTTP server", () => {
     });
     const examples = await server.inject({
       method: "GET",
-      url: "/api/classifier/queue/42/examples",
+      url: "/api/classifier/queue/42/examples?search=air&limit=50&offset=100",
       headers: { authorization: `Bearer ${adminToken}` },
     });
 
@@ -80,6 +80,7 @@ describe("HTTP server", () => {
     expect(authorized.statusCode).toBe(200);
     expect(waiting.statusCode).toBe(200);
     expect(examples.statusCode).toBe(200);
+    expect(examples.json()).toEqual({ items: [], total: 0 });
     expect(authorized.json()).toEqual({ items: [], total: 321 });
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: "1",
@@ -90,7 +91,7 @@ describe("HTTP server", () => {
     }));
     expect(classifier.listReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
     expect(classifier.countReviewQueue).toHaveBeenCalledWith(expect.objectContaining({ status: "waiting_apply" }));
-    expect(classifier.listReviewExamples).toHaveBeenCalledWith("42");
+    expect(classifier.listReviewExamples).toHaveBeenCalledWith("42", { search: "air", limit: 50, offset: 100 });
     await server.close();
   });
 

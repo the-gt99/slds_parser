@@ -14,6 +14,8 @@ import type {
   ClassificationReferenceCatalogQuery,
   ClassificationReferenceCatalogResult,
   ClassificationReviewExample,
+  ClassificationReviewExamplesQuery,
+  ClassificationReviewExamplesResult,
   ClassificationReviewItem,
   ClassificationReviewQuery,
   ClassificationRuleCandidateRecord,
@@ -783,10 +785,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
     });
   }
 
-  async listReviewExamples(
-    reviewGroupId: string,
-    currentProcessorVersions?: Readonly<Record<string, string>>,
-  ): Promise<readonly ClassificationReviewExample[]> {
+  async listReviewExamples(query: ClassificationReviewExamplesQuery): Promise<ClassificationReviewExamplesResult> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
         `WITH review_group AS MATERIALIZED (
@@ -815,36 +814,63 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             observation.last_seen_at
           FROM group_observations observation
           ORDER BY observation.source_product_id, observation.last_seen_at DESC, observation.id DESC
-        ), selected_products AS MATERIALIZED (
-          SELECT distinct_product.*
+        ), matching_products AS MATERIALIZED (
+          SELECT distinct_product.*, product.source_key,
+                 internal.data->>'title' AS title,
+                 internal.data->>'sku' AS sku
           FROM distinct_products distinct_product
-          ORDER BY distinct_product.last_seen_at DESC, distinct_product.observation_id DESC
-          LIMIT 3
+          JOIN source_products product ON product.id = distinct_product.source_product_id
+          JOIN internal_products internal ON internal.source_product_id = distinct_product.source_product_id
+          WHERE $3::TEXT = ''
+             OR product.id::TEXT = $3
+             OR product.source_key ILIKE '%' || $3 || '%'
+             OR COALESCE(internal.data->>'title', '') ILIKE '%' || $3 || '%'
+             OR COALESCE(internal.data->>'sku', '') ILIKE '%' || $3 || '%'
+        ), selected_products AS MATERIALIZED (
+          SELECT matching_product.*
+          FROM matching_products matching_product
+          ORDER BY matching_product.last_seen_at DESC, matching_product.observation_id DESC
+          LIMIT $4 OFFSET $5
         )
-        SELECT COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT(
-          'observation_id', observation.id,
-          'source_product_id', product.id,
-          'source_key', product.source_key,
-          'title', internal.data->>'title',
-          'sku', internal.data->>'sku',
-          'evidence', observation.evidence,
-          'target_snapshots', COALESCE((
+        SELECT
+          (SELECT COUNT(*)::INTEGER FROM matching_products) AS total,
+          COALESCE((
             SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
-              'target_id', snapshot.target_id::TEXT,
-              'external_id', snapshot.external_id,
-              'snapshot', snapshot.payload
-            ) ORDER BY snapshot.target_id)
-            FROM target_product_snapshots snapshot
-            WHERE snapshot.source_product_id = selected.source_product_id
-          ), '[]'::JSONB)
-        ) ORDER BY selected.last_seen_at DESC, selected.observation_id DESC), '[]'::JSONB) AS examples
-        FROM selected_products selected
-        JOIN ${classificationObservationReadModelSql} observation ON observation.id = selected.observation_id
-        JOIN source_products product ON product.id = selected.source_product_id
-        JOIN internal_products internal ON internal.source_product_id = selected.source_product_id`,
-        [reviewGroupId, processorVersions(currentProcessorVersions)],
+              'observation_id', observation.id,
+              'source_product_id', selected.source_product_id,
+              'source_key', selected.source_key,
+              'title', selected.title,
+              'sku', selected.sku,
+              'evidence', observation.evidence,
+              'target_snapshots', COALESCE((
+                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                  'target_id', snapshot.target_id::TEXT,
+                  'external_id', snapshot.external_id,
+                  'snapshot', JSONB_BUILD_OBJECT(
+                    'product', JSONB_BUILD_OBJECT(
+                      'taxonomies', COALESCE(snapshot.payload->'product'->'taxonomies', '{}'::JSONB)
+                    )
+                  )
+                ) ORDER BY snapshot.target_id)
+                FROM target_product_snapshots snapshot
+                WHERE snapshot.source_product_id = selected.source_product_id
+              ), '[]'::JSONB)
+            ) ORDER BY selected.last_seen_at DESC, selected.observation_id DESC)
+            FROM selected_products selected
+            JOIN ${classificationObservationReadModelSql} observation ON observation.id = selected.observation_id
+          ), '[]'::JSONB) AS examples`,
+        [
+          query.reviewGroupId,
+          processorVersions(query.currentProcessorVersions),
+          query.search?.trim() ?? "",
+          query.limit,
+          query.offset,
+        ],
       );
-      return reviewExamples(result.rows[0]?.examples);
+      return {
+        items: reviewExamples(result.rows[0]?.examples),
+        total: Number(result.rows[0]?.total ?? 0),
+      };
     });
   }
 
@@ -976,31 +1002,35 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
   ): Promise<readonly ClassificationRuleConditionFieldOption[]> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
-        `WITH candidates AS (
-           SELECT observation.source_value, observation.scope, observation.subject_kind,
-                  observation.context, observation.evidence
-           FROM ${classificationObservationReadModelSql} observation
-           JOIN reference_types type ON type.id = observation.reference_type_id
-           WHERE observation.active = TRUE
-             AND observation.source_id = $1
-             AND type.code = $2
-              AND ($3::TEXT IS NULL OR observation.processor_version = $3)
+        `WITH type_definition AS MATERIALIZED (
+           SELECT id FROM reference_types WHERE code = $2
+         ), current_evidence AS MATERIALIZED (
+           SELECT DISTINCT link.evidence_id
+           FROM classification_candidates candidate
+           JOIN type_definition type ON type.id = candidate.reference_type_id
+           JOIN source_product_classification_links link ON link.candidate_id = candidate.id
+           JOIN source_product_classification_states state ON state.source_product_id = link.source_product_id
+           WHERE candidate.source_id = $1
+             AND link.active = TRUE
+             AND ($3::TEXT IS NULL OR state.processor_version = $3)
          ), fields AS (
-           SELECT 'sourceValue'::TEXT AS field, source_value AS value FROM candidates
-           UNION ALL SELECT 'scope', scope FROM candidates
-           UNION ALL SELECT 'subjectKind', subject_kind FROM candidates
-           UNION ALL
-           SELECT 'context.' || entry.key, entry.value #>> '{}'
-           FROM candidates CROSS JOIN LATERAL JSONB_EACH(candidates.context) entry
-           WHERE JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')
-           UNION ALL
-           SELECT 'evidence.' || entry.key, entry.value #>> '{}'
-           FROM candidates CROSS JOIN LATERAL JSONB_EACH(candidates.evidence) entry
+           SELECT UNNEST(ARRAY['sourceValue', 'scope', 'subjectKind'])::TEXT AS field
+           UNION
+           SELECT 'context.' || entry.key
+           FROM classification_candidates candidate
+           JOIN type_definition type ON type.id = candidate.reference_type_id
+           CROSS JOIN LATERAL JSONB_EACH(candidate.context) entry
+           WHERE candidate.source_id = $1
+             AND JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')
+           UNION
+           SELECT 'evidence.' || entry.key
+           FROM current_evidence current
+           JOIN source_product_classification_evidence evidence ON evidence.id = current.evidence_id
+           CROSS JOIN LATERAL JSONB_EACH(evidence.evidence) entry
            WHERE JSONB_TYPEOF(entry.value) IN ('string', 'number', 'boolean')
          )
-         SELECT field, (ARRAY_AGG(DISTINCT value ORDER BY value) FILTER (WHERE value <> ''))[1:8] AS examples
+         SELECT field, ARRAY[]::TEXT[] AS examples
          FROM fields
-         GROUP BY field
          ORDER BY CASE field WHEN 'sourceValue' THEN 0 WHEN 'scope' THEN 1 WHEN 'subjectKind' THEN 2 ELSE 3 END, field`,
         [sourceId, typeCode, currentProcessorVersion ?? null],
       );

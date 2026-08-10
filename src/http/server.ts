@@ -59,6 +59,12 @@ interface ReviewExamplesParams {
   readonly reviewGroupId: string;
 }
 
+interface ReviewExamplesQuery {
+  readonly search?: string;
+  readonly limit?: string;
+  readonly offset?: string;
+}
+
 interface ReferenceQuery {
   readonly typeCode?: string;
   readonly search?: string;
@@ -510,14 +516,21 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     return { items, total };
   });
 
-  server.get<{ Params: ReviewExamplesParams }>(
+  server.get<{ Params: ReviewExamplesParams; Querystring: ReviewExamplesQuery }>(
     "/api/classifier/queue/:reviewGroupId/examples",
     { preHandler: requireAdmin },
-    async (request) => ({
-      items: await dependencies.classifier.listReviewExamples(
+    async (request) => {
+      const limit = positiveInteger(request.query.limit, 3, 100);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 100");
+      return dependencies.classifier.listReviewExamples(
         entityId(request.params.reviewGroupId, "reviewGroupId"),
-      ),
-    }),
+        {
+          ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+          limit,
+          offset: positiveInteger(request.query.offset, 0, 1_000_000),
+        },
+      );
+    },
   );
 
   server.get<{ Querystring: ReferenceQuery }>("/api/classifier/reference-values", { preHandler: requireAdmin }, async (request) => {
