@@ -89,6 +89,18 @@ export interface ProjectionCommand {
   readonly reason?: string;
 }
 
+export interface ReferenceProjectionCommand {
+  readonly targetId: EntityId;
+  readonly referenceValueId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly reason?: string;
+}
+
+export interface ReferenceTargetMappingCommand extends ReferenceProjectionCommand {
+  readonly typeCode: string;
+}
+
 function validateText(value: string, field: string, maximum: number): string {
   const trimmed = value.trim();
   if (trimmed === "" || trimmed.length > maximum) {
@@ -258,7 +270,7 @@ export class ClassifierAdminService {
       referenceValueId: resolution.previewReferenceValueId,
       revision: "preview",
     };
-    const proposedScore = classificationRuleScore(draft.sourceId, proposed);
+    const proposedScore = classificationRuleScore(proposed);
     let ambiguousObservations = 0;
     let shadowedObservations = 0;
     const matchedProductIds = new Set<EntityId>();
@@ -293,7 +305,7 @@ export class ClassifierAdminService {
       }
       const existingMatches = existingRules
         .filter((rule) => matchesClassificationRule(item.candidate, rule.conditions))
-        .map((rule) => ({ rule, score: classificationRuleScore(item.sourceId, rule) }))
+        .map((rule) => ({ rule, score: classificationRuleScore(rule) }))
         .sort((left, right) => compareClassificationRuleScore(right.score, left.score));
       const existingBestScore = existingMatches[0]?.score;
       const comparison = existingBestScore === undefined
@@ -411,7 +423,7 @@ export class ClassifierAdminService {
     const rule = await this.adminRepository.getRule(ruleId);
     if (rule === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
     const matchedObservationIds = new Set<EntityId>();
-    const affectedSourceProductIds = enabled && rule.sourceId !== null
+    const affectedSourceProductIds = enabled
       ? (await this.previewRule({
           sourceId: rule.sourceId,
           typeCode: rule.typeCode,
@@ -420,9 +432,7 @@ export class ClassifierAdminService {
           conditions: rule.conditions,
           referenceValueId: rule.referenceValueId,
         }, ruleId, matchedObservationIds)).affectedSourceProductIds
-      : rule.sourceId === null
-        ? []
-        : await this.ruleAffectedProducts(ruleId);
+      : await this.ruleAffectedProducts(ruleId);
     return this.adminRepository.setRuleEnabled({
       ruleId, enabled, actor, affectedSourceProductIds,
       matchedObservationIds: [...matchedObservationIds],
@@ -520,10 +530,55 @@ export class ClassifierAdminService {
     });
   }
 
+  async createTargetValueMapping(command: ReferenceTargetMappingCommand, actor = this.actor) {
+    this.requireProjectionDependencies();
+    validateText(command.targetId, "targetId", 64);
+    validateText(command.referenceValueId, "referenceValueId", 64);
+    validateText(command.dictionaryValueId, "dictionaryValueId", 64);
+    validateText(command.targetScope, "targetScope", 200);
+    if (!/^[a-z][a-z0-9_]*$/u.test(command.typeCode)) throw new IntegrationContractError("Invalid classification type code");
+    const target = await this.target(command.targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const capability = capabilitiesForTarget(target, provider.classificationCapabilities)
+      .find((item) => item.typeCode === command.typeCode && item.targetScope === command.targetScope);
+    if (capability === undefined) throw new IntegrationContractError(`Target scope ${command.targetScope} is not valid for ${command.typeCode}`);
+    const dictionary = await this.targetDictionaries!.getValue(command.targetId, command.dictionaryValueId);
+    if (dictionary === null || dictionary.entityType !== capability.entityType) throw new IntegrationContractError(`Dictionary value cannot be used for ${command.targetScope}`);
+    return this.adminRepository.createTargetValueMapping({
+      ...command, targetCardinality: capability.cardinality, actor,
+    });
+  }
+
+  listReferenceCatalog(query: { readonly typeCode?: string; readonly search?: string; readonly limit: number; readonly offset: number }) {
+    return this.adminRepository.listReferenceCatalog(query);
+  }
+
+  async listReferenceProjections(targetId: EntityId, referenceValueId: EntityId) {
+    validateText(targetId, "targetId", 64);
+    validateText(referenceValueId, "referenceValueId", 64);
+    return this.adminRepository.listReferenceProjections(targetId, referenceValueId);
+  }
+
+  async previewReferenceProjection(command: ReferenceProjectionCommand) {
+    return this.adminRepository.previewReferenceProjection(await this.validatedReferenceProjectionCommand(command, this.actor));
+  }
+
+  async createReferenceProjection(command: ReferenceProjectionCommand, actor = this.actor) {
+    return this.adminRepository.createReferenceProjection(await this.validatedReferenceProjectionCommand(command, actor));
+  }
+
+  async deactivateReferenceProjection(targetId: EntityId, projectionId: EntityId, actor = this.actor, reason?: string) {
+    this.requireProjectionDependencies();
+    validateText(targetId, "targetId", 64);
+    validateText(projectionId, "projectionId", 64);
+    return this.adminRepository.deactivateReferenceProjection({
+      targetId, projectionId, actor, ...(reason === undefined ? {} : { reason }),
+    });
+  }
+
   private async ruleAffectedProducts(ruleId: EntityId): Promise<readonly EntityId[]> {
     const rule = await this.adminRepository.getRule(ruleId);
     if (rule === null) throw new IntegrationContractError(`Classification rule does not exist: ${ruleId}`);
-    if (rule.sourceId === null) return [];
     const candidates = await this.adminRepository.listRuleCandidates(
       rule.sourceId,
       rule.typeCode,
@@ -599,6 +654,32 @@ export class ClassifierAdminService {
       targetId: command.targetId,
       resolutionKind: command.resolutionKind,
       resolutionId: command.resolutionId,
+      targetScope: command.targetScope,
+      dictionaryValueId: command.dictionaryValueId,
+      targetCardinality: capability.cardinality,
+      actor,
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
+    };
+  }
+
+  private async validatedReferenceProjectionCommand(command: ReferenceProjectionCommand, actor: string) {
+    this.requireProjectionDependencies();
+    validateText(command.targetId, "targetId", 64);
+    validateText(command.referenceValueId, "referenceValueId", 64);
+    validateText(command.targetScope, "targetScope", 200);
+    validateText(command.dictionaryValueId, "dictionaryValueId", 64);
+    const target = await this.target(command.targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const capability = capabilitiesForTarget(target, provider.classificationCapabilities)
+      .find((item) => item.targetScope === command.targetScope);
+    if (capability === undefined) throw new IntegrationContractError(`Target scope is not supported: ${command.targetScope}`);
+    const dictionary = await this.targetDictionaries!.getValue(command.targetId, command.dictionaryValueId);
+    if (dictionary === null || dictionary.entityType !== capability.entityType) {
+      throw new IntegrationContractError(`Dictionary value cannot be used for ${command.targetScope}`);
+    }
+    return {
+      targetId: command.targetId,
+      referenceValueId: command.referenceValueId,
       targetScope: command.targetScope,
       dictionaryValueId: command.dictionaryValueId,
       targetCardinality: capability.cardinality,

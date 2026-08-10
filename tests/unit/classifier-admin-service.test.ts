@@ -47,6 +47,7 @@ function repositories(
     countReviewQueue: vi.fn(),
     listReviewExamples: vi.fn(),
     listReferenceValues: vi.fn(),
+    listReferenceCatalog: vi.fn(),
     listRuleCandidates: vi.fn().mockResolvedValue(candidates),
     getRule: vi.fn(),
     listRuleConditionFields: vi.fn(),
@@ -62,6 +63,7 @@ function repositories(
     getTargetValueMapping: vi.fn(),
     previewTargetValueMapping: vi.fn(),
     updateTargetValueMapping: vi.fn(),
+    createTargetValueMapping: vi.fn(),
     setTargetValueMappingEnabled: vi.fn(),
     listTargetProjections: vi.fn(),
     getTargetProjection: vi.fn(),
@@ -69,6 +71,10 @@ function repositories(
     createTargetProjection: vi.fn(),
     updateTargetProjection: vi.fn(),
     deactivateTargetProjection: vi.fn(),
+    listReferenceProjections: vi.fn(),
+    previewReferenceProjection: vi.fn(),
+    createReferenceProjection: vi.fn(),
+    deactivateReferenceProjection: vi.fn(),
   } satisfies ClassificationAdminRepository;
   const classification = {
     listReferenceTypes: vi.fn(),
@@ -189,13 +195,13 @@ describe("ClassifierAdminService", () => {
     }));
   });
 
-  it("delegates global rule reactivation to the repository-wide matcher", async () => {
+  it("previews a source rule before reactivation", async () => {
     const deps = repositories([]);
     deps.admin.getRule.mockResolvedValue({
       id: "10",
-      sourceId: null,
+      sourceId: "1",
       typeCode: "tag",
-      name: "Global",
+      name: "GOAT lifestyle",
       priority: 10,
       conditions: [{ field: "sourceValue", operator: "equals", value: "Lifestyle" }],
       referenceValueId: "500",
@@ -206,7 +212,9 @@ describe("ClassifierAdminService", () => {
 
     await service.setRuleEnabled("10", true);
 
-    expect(deps.admin.listRuleCandidates).not.toHaveBeenCalled();
+    expect(deps.admin.listRuleCandidates).toHaveBeenCalledWith("1", "tag", undefined, [
+      { field: "sourceValue", operator: "equals", value: "Lifestyle" },
+    ]);
     expect(deps.admin.setRuleEnabled).toHaveBeenCalledWith(expect.objectContaining({
       ruleId: "10",
       enabled: true,

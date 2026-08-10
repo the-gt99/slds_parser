@@ -64,6 +64,7 @@ interface ReferenceQuery {
   readonly search?: string;
   readonly limit?: string;
 }
+interface ReferenceCatalogQuery { readonly typeCode?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface RuleFieldsQuery { readonly sourceId?: string; readonly typeCode?: string }
 
 interface TargetParams { readonly targetId: string }
@@ -85,9 +86,10 @@ interface PreviewQuery { readonly targetId?: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
+interface ReferenceProjectionQuery { readonly targetId?: string; readonly referenceValueId?: string }
 interface ConfigParams { readonly kind: string; readonly configId: string }
 interface TargetMappingParams { readonly mappingId: string }
-interface ConfigQuery { readonly kind?: string; readonly configId?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly usage?: string; readonly limit?: string; readonly offset?: string }
+interface ConfigQuery { readonly kind?: string; readonly configId?: string; readonly referenceValueId?: string; readonly sourceId?: string; readonly targetId?: string; readonly typeCode?: string; readonly status?: string; readonly search?: string; readonly usage?: string; readonly limit?: string; readonly offset?: string }
 interface RuleParams { readonly ruleId: string }
 interface RuleStatusBody { readonly reason?: unknown }
 interface SyncBody { readonly entityTypes?: readonly string[] }
@@ -234,6 +236,23 @@ function projectionBody(value: unknown) {
     dictionaryValueId: entityId(body.dictionaryValueId, "dictionaryValueId"),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
+}
+function referenceProjectionBody(value: unknown) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  const body = value as Record<string, unknown>;
+  return {
+    targetId: entityId(body.targetId, "targetId"),
+    referenceValueId: entityId(body.referenceValueId, "referenceValueId"),
+    targetScope: requiredString(body.targetScope, "targetScope"),
+    dictionaryValueId: entityId(body.dictionaryValueId, "dictionaryValueId"),
+    ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
+  };
+}
+
+function referenceTargetMappingBody(value: unknown) {
+  const body = referenceProjectionBody(value);
+  const record = value as Record<string, unknown>;
+  return { ...body, typeCode: requiredString(record.typeCode, "typeCode") };
 }
 
 function projectionReason(value: unknown): string | undefined {
@@ -522,6 +541,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     const result = await dependencies.classifier.listConfiguration({
       ...(configKind(request.query.kind) === undefined ? {} : { kind: configKind(request.query.kind)! }),
       ...(request.query.configId === undefined || request.query.configId === "" ? {} : { configId: entityId(request.query.configId, "configId") }),
+      ...(request.query.referenceValueId === undefined || request.query.referenceValueId === "" ? {} : { referenceValueId: entityId(request.query.referenceValueId, "referenceValueId") }),
       ...(request.query.sourceId === undefined || request.query.sourceId === "" ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
       ...(request.query.targetId === undefined || request.query.targetId === "" ? {} : { targetId: entityId(request.query.targetId, "targetId") }),
       ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
@@ -532,6 +552,17 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
     });
     return { ...result, usageIncluded: includeUsage };
+  });
+
+  server.get<{ Querystring: ReferenceCatalogQuery }>("/api/classifier/reference-catalog", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 200);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+    return dependencies.classifier.listReferenceCatalog({
+      ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      limit,
+      offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
   });
 
   server.get<{ Params: ConfigParams }>("/api/classifier/configuration/:kind/:configId/history", { preHandler: requireAdmin }, async (request) => ({
@@ -643,6 +674,38 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.post("/api/classifier/projections", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
     projection: await dependencies.classifier.createTargetProjection(projectionBody(request.body), actor(request)),
   }));
+
+  server.post("/api/classifier/target-mappings", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
+    mapping: await dependencies.classifier.createTargetValueMapping(referenceTargetMappingBody(request.body), actor(request)),
+  }));
+
+  server.get<{ Querystring: ReferenceProjectionQuery }>("/api/classifier/reference-projections", { preHandler: requireAdmin }, async (request) => ({
+    items: await dependencies.classifier.listReferenceProjections(
+      entityId(request.query.targetId, "targetId"),
+      entityId(request.query.referenceValueId, "referenceValueId"),
+    ),
+  }));
+
+  server.post("/api/classifier/reference-projections/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({
+    preview: await dependencies.classifier.previewReferenceProjection(referenceProjectionBody(request.body)),
+  }));
+
+  server.post("/api/classifier/reference-projections", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => reply.code(201).send({
+    projection: await dependencies.classifier.createReferenceProjection(referenceProjectionBody(request.body), actor(request)),
+  }));
+
+  server.post<{ Params: ProjectionParams }>(
+    "/api/targets/:targetId/reference-projections/:projectionId/deactivate",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      projection: await dependencies.classifier.deactivateReferenceProjection(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.projectionId, "projectionId"),
+        actor(request),
+        projectionReason(request.body),
+      ),
+    }),
+  );
 
   server.patch<{ Params: ProjectionParams }>(
     "/api/targets/:targetId/classification-projections/:projectionId",

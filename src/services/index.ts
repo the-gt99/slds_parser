@@ -7,6 +7,8 @@ export {
   type ClassificationRuleDraft,
   type ClassificationRulePreview,
   type ClassificationRulePreviewExample,
+  type ReferenceProjectionCommand,
+  type ReferenceTargetMappingCommand,
 } from "./classifier-admin-service.js";
 export {
   classificationRuleScore,

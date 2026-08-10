@@ -91,20 +91,27 @@ integration("classification observation normalization migration", () => {
 
     await client.query(await readFile(path.join(migrationsDirectory, "034_remove_legacy_classification_observation_view.sql"), "utf8"));
     await client.query(await readFile(path.join(migrationsDirectory, "035_optimize_classification_review_search.sql"), "utf8"));
+    await client.query(await readFile(path.join(migrationsDirectory, "036_target_reference_projections.sql"), "utf8"));
+    await client.query(await readFile(path.join(migrationsDirectory, "037_require_rule_source.sql"), "utf8"));
     await client.query("SELECT rebuild_classification_review_read_model()");
     const finalRelations = await client.query(`
       SELECT
         TO_REGCLASS('${schema}.source_reference_observations')::TEXT AS legacy,
         TO_REGCLASS('${schema}.classification_observation_read_model')::TEXT AS read_model,
+        TO_REGCLASS('${schema}.target_reference_projections')::TEXT AS reference_projections,
         TO_REGCLASS('${schema}.classification_review_groups_source_value_trgm_idx')::TEXT AS search_index,
         TO_REGCLASS('${schema}.classification_review_groups_source_value_prefix_idx')::TEXT AS prefix_index,
+        (SELECT attnotnull FROM pg_attribute
+         WHERE attrelid = '${schema}.source_reference_rules'::REGCLASS AND attname = 'source_id') AS rule_source_required,
         (SELECT COUNT(*)::INTEGER FROM classification_observation_read_model) AS observations
     `);
     expect(finalRelations.rows[0]).toEqual({
       legacy: null,
       read_model: "classification_observation_read_model",
+      reference_projections: "target_reference_projections",
       search_index: "classification_review_groups_source_value_trgm_idx",
       prefix_index: "classification_review_groups_source_value_prefix_idx",
+      rule_source_required: true,
       observations: 2,
     });
   }, 120_000);

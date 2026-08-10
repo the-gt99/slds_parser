@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>SLDS · Классификатор</title>
+  <title>SLDS · Классификация</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
@@ -14,7 +14,7 @@
       <div class="brand-mark" aria-hidden="true">S</div>
       <div>
         <p class="eyebrow">SLDS Parser</p>
-        <h1>Классификатор</h1>
+        <h1>Классификация</h1>
         <p class="muted">Войдите, чтобы разбирать неизвестные значения товаров.</p>
       </div>
       <label class="field">
@@ -36,7 +36,7 @@
         <div class="brand-mark small" aria-hidden="true">S</div>
         <div>
           <p class="eyebrow">SLDS Parser</p>
-          <h1>Классификатор</h1>
+          <h1>Классификация</h1>
         </div>
       </div>
       <div class="topbar-actions">
@@ -47,9 +47,16 @@
       </div>
     </header>
 
-    <nav class="admin-nav" aria-label="Основные разделы"><a class="active" aria-current="page" href="/classifier">Классификатор</a><a href="/classifier-config">Настройки классификации</a><a href="/content-templates">Шаблоны контента</a><a href="/products">Товары</a><a href="/operations">Операции</a><a href="/runtime">Парсер</a><a href="/jobs">Очередь и ошибки</a><a href="/wordpress-snapshots">Снимки WordPress</a><a href="/proxies">Прокси</a></nav>
+    <nav class="admin-nav" aria-label="Основные разделы"><a class="active" aria-current="page" href="/classifier">Классификация</a><a href="/content-templates">Шаблоны контента</a><a href="/products">Товары</a><a href="/operations">Операции</a><a href="/runtime">Парсер</a><a href="/jobs">Очередь и ошибки</a><a href="/wordpress-snapshots">Снимки WordPress</a><a href="/proxies">Прокси</a></nav>
 
-    <main class="workspace">
+    <nav class="classification-nav" aria-label="Разделы классификации">
+      <button class="classification-nav-item active" data-classification-view="queue" type="button">Требуют решения <span id="queue-nav-count">0</span></button>
+      <button class="classification-nav-item" data-classification-view="references" type="button">Внутренние значения</button>
+      <button class="classification-nav-item" data-classification-view="rules" type="button">Правила</button>
+      <button class="classification-nav-item" data-classification-view="wordpress" type="button">WordPress</button>
+    </nav>
+
+    <main id="classification-view-queue" class="workspace classification-view">
       <aside class="queue-panel">
         <div class="queue-heading">
           <div>
@@ -175,6 +182,48 @@
         </div>
       </section>
     </main>
+
+    <main id="classification-view-references" class="catalog-workspace classification-view" hidden>
+      <section class="catalog-panel">
+        <div class="catalog-heading"><div><p class="eyebrow">Единый смысл</p><h2>Внутренние значения</h2></div><span id="reference-count" class="count-pill">0</span></div>
+        <div class="catalog-filters">
+          <label class="search-field"><span aria-hidden="true">⌕</span><input id="reference-search" type="search" placeholder="Название или код"></label>
+          <select id="reference-type" aria-label="Тип внутреннего значения"><option value="">Все типы</option></select>
+        </div>
+        <div id="reference-list" class="catalog-list"></div>
+        <button id="reference-more" class="button quiet wide" type="button" hidden>Показать ещё</button>
+      </section>
+      <section id="reference-detail" class="catalog-detail">
+        <div class="empty-state"><div class="empty-icon">↗</div><h2>Выберите внутреннее значение</h2><p>Здесь будет вся цепочка: как значение распознаётся и куда отправляется.</p></div>
+      </section>
+    </main>
+
+    <main id="classification-view-rules" class="catalog-page classification-view" hidden>
+      <section class="catalog-toolbar">
+        <div><p class="eyebrow">Распознавание</p><h2>Правила</h2><p class="muted">Одно правило определяет внутренний смысл сразу для группы похожих товаров.</p></div>
+        <button id="new-rule-button" class="button primary" type="button">+ Создать правило</button>
+      </section>
+      <form id="rule-list-filters" class="catalog-filters catalog-filters-wide">
+        <label class="search-field"><span aria-hidden="true">⌕</span><input id="rule-list-search" type="search" placeholder="Название, условие или результат"></label>
+        <select id="rule-list-source"><option value="">Все источники</option></select>
+        <select id="rule-list-type"><option value="">Все типы</option></select>
+        <select id="rule-list-status"><option value="">Любой статус</option><option value="active">Активные</option><option value="inactive">Отключённые</option></select>
+      </form>
+      <section class="section catalog-table-section"><div id="rule-list" class="rule-catalog-list"></div><button id="rule-more" class="button quiet wide" type="button" hidden>Показать ещё</button></section>
+    </main>
+
+    <main id="classification-view-wordpress" class="catalog-page classification-view" hidden>
+      <section class="catalog-toolbar">
+        <div><p class="eyebrow">Справочник target</p><h2>WordPress</h2><p id="wordpress-sync-state" class="muted">Здесь показаны реальные термины, полученные с target.</p></div>
+        <button id="wordpress-sync-button" class="button secondary" type="button">Обновить справочники</button>
+      </section>
+      <div class="catalog-filters catalog-filters-wide">
+        <select id="wordpress-target" aria-label="Target"></select>
+        <select id="wordpress-entity" aria-label="Раздел WordPress"></select>
+        <label class="search-field"><span aria-hidden="true">⌕</span><input id="wordpress-search" type="search" placeholder="Название, slug или ID"></label>
+      </div>
+      <section class="section catalog-table-section"><div id="wordpress-list" class="wordpress-catalog-list"></div><button id="wordpress-more" class="button quiet wide" type="button" hidden>Показать ещё</button></section>
+    </main>
   </div>
 
   <dialog id="create-term-dialog" class="dialog">
@@ -228,15 +277,24 @@
       <div class="dialog-header">
         <div>
           <p class="eyebrow">Расширенный режим</p>
-          <h2>Правило классификации</h2>
+          <h2 id="rule-dialog-title">Правило распознавания</h2>
         </div>
         <button class="icon-button close-rule" type="button" aria-label="Закрыть">×</button>
       </div>
-      <p class="dialog-intro">Все условия должны выполниться одновременно. Правило можно создать прямо из выбранного результата: точное сопоставление для текущего контекста при этом не сохраняется. Проверка только показывает влияние, а отдельная кнопка создаёт правило.</p>
+      <p class="dialog-intro">Все условия должны выполниться одновременно. Сначала проверьте, какие товары затронет изменение, затем сохраните правило.</p>
+      <div id="rule-origin-fields" class="projection-controls" hidden>
+        <label class="field"><span>Источник</span><select id="rule-source"></select></label>
+        <label class="field"><span>Результат</span><select id="rule-reference"></select></label>
+      </div>
       <div id="rule-result" class="rule-result"></div>
       <label class="field">
         <span>Название правила</span>
         <input id="rule-name" required maxlength="200">
+      </label>
+      <label class="field">
+        <span>Приоритет</span>
+        <input id="rule-priority" type="number" min="-10000" max="10000" step="1" value="100" required>
+        <small>Чем выше число, тем раньше рассматривается правило одинаковой специфичности.</small>
       </label>
       <div class="conditions-heading">
         <strong>Условия</strong>
@@ -249,9 +307,22 @@
         <button class="button quiet close-rule" type="button">Отмена</button>
         <div>
           <button id="preview-rule" class="button secondary" type="button">Проверить</button>
-          <button id="create-rule" class="button primary" type="submit" disabled>Создать правило</button>
+          <button id="create-rule" class="button primary" type="submit" disabled>Сохранить правило</button>
         </div>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="assignment-dialog" class="dialog">
+    <form id="assignment-form" method="dialog">
+      <div class="dialog-header"><div><p class="eyebrow">WordPress</p><h2 id="assignment-title">Дополнительное назначение</h2></div><button class="icon-button close-assignment" type="button">×</button></div>
+      <p id="assignment-reference" class="dialog-intro"></p>
+      <label class="field"><span>Куда добавить</span><select id="assignment-scope"></select></label>
+      <label class="field"><span>Найти термин WordPress</span><input id="assignment-search" type="search" placeholder="Название термина"></label>
+      <div id="assignment-results" class="mapping-results"></div>
+      <div id="assignment-preview" class="rule-preview" hidden></div>
+      <p id="assignment-error" class="form-error" hidden></p>
+      <div class="dialog-actions"><button class="button quiet close-assignment" type="button">Отмена</button><button id="assignment-check" class="button secondary" type="button" disabled>Проверить</button><button id="assignment-save" class="button primary" type="submit" disabled>Добавить назначение</button></div>
     </form>
   </dialog>
 

@@ -28,10 +28,33 @@ const state = {
   queueContextKey: null,
   pendingQueueSelection: null,
   selectedExamplesRequest: 0,
+  classificationView: "queue",
+  configMeta: { sources: [], types: [] },
+  references: [],
+  referenceTotal: 0,
+  referenceOffset: 0,
+  selectedReference: null,
+  rules: [],
+  ruleTotal: 0,
+  ruleOffset: 0,
+  editingRule: null,
+  ruleEditorContext: null,
+  ruleEditorFields: ["sourceValue", "scope", "subjectKind"],
+  wordpressValues: [],
+  wordpressOffset: 0,
+  assignmentReference: null,
+  assignmentTerm: null,
+  assignmentPreview: null,
+  assignmentMode: "additional",
+  assignmentOutput: null,
+  pendingReferenceId: null,
+  pendingRuleId: null,
+  pendingReferenceAction: null,
 };
 
 function applyQueueDeepLink() {
   const params = new URLSearchParams(location.search);
+  if ((params.get("view") && params.get("view") !== "queue") || location.pathname.includes("classifier-config")) return;
   const typeCode = params.get("typeCode") || "";
   const status = params.get("status") || "";
   const search = params.get("search") || "";
@@ -67,6 +90,7 @@ let toastTimer;
 let queueSearchTimer;
 let mappingSearchTimer;
 let projectionSearchTimer;
+let catalogSearchTimer;
 const queuePageSize = 200;
 
 function showToast(message) {
@@ -183,7 +207,8 @@ async function logout() {
 
 async function loadDashboard() {
   byId("queue-list").replaceChildren(loading("Загружаем очередь…"));
-  const [targets] = await Promise.all([loadTargets(), loadQueue()]);
+  const [targets] = await Promise.all([loadTargets(), loadQueue(), loadClassificationMetadata()]);
+  populateCatalogFilters();
   if (state.pendingQueueSelection) {
     const requested = state.pendingQueueSelection;
     const item = state.queue.find((entry) =>
@@ -193,7 +218,23 @@ async function loadDashboard() {
     state.pendingQueueSelection = null;
     if (item) selectQueueItem(item);
   }
+  const routeParams = new URLSearchParams(location.search);
+  state.pendingReferenceId = routeParams.get("referenceId");
+  state.pendingRuleId = routeParams.get("ruleId") || (location.pathname.includes("classifier-config") && routeParams.get("kind") === "rule" ? routeParams.get("configId") : null);
+  state.pendingReferenceAction = routeParams.get("action");
+  if (routeParams.get("search") && (routeParams.get("view") === "references" || location.pathname.includes("classifier-config"))) byId("reference-search").value = routeParams.get("search");
+  const requestedView = location.pathname.includes("classifier-config")
+    ? (new URLSearchParams(location.search).get("kind") === "rule" ? "rules" : "references")
+    : new URLSearchParams(location.search).get("view") || "queue";
+  await switchClassificationView(["queue", "references", "rules", "wordpress"].includes(requestedView) ? requestedView : "queue", false);
   return targets;
+}
+
+async function loadClassificationMetadata() {
+  const response = await api("/api/classifier/configuration?kind=rule&usage=none&limit=1&offset=0");
+  state.configMeta = { sources: response.sources ?? [], types: response.types ?? [] };
+  for (const type of state.configMeta.types) state.typeNames.set(type.code, type.name);
+  populateCatalogFilters();
 }
 
 async function loadTargets() {
@@ -310,6 +351,7 @@ function renderQueue() {
     ? "Ждут обработки"
     : "Ожидают решения";
   byId("queue-count").textContent = state.queueTotal.toLocaleString("ru-RU");
+  byId("queue-nav-count").textContent = state.queueTotal.toLocaleString("ru-RU");
   if (state.queue.length === 0) {
     list.append(emptyText("В этой выборке ничего не ожидает решения."));
     state.selected = null;
@@ -429,7 +471,7 @@ function renderDetail() {
   badges.replaceChildren(
     badge(typeName(item)),
     badge(item.sourceCode),
-    badge(waiting ? "Ждёт обработки" : item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
+    badge(waiting ? "Ждёт пересчёта" : item.status === "ambiguous" ? "Конфликт правил" : "Не сопоставлено", item.status === "ambiguous"),
   );
   renderExamples(item, item.examples ?? []);
   byId("ignore-button").hidden = waiting;
@@ -682,10 +724,10 @@ async function nextItem() {
   if (state.queue[0]) selectQueueItem(state.queue[0]);
 }
 
-async function syncWordPress() {
-  const target = activeTarget();
+async function syncWordPress(triggerButton = null, selectedTarget = null) {
+  const target = selectedTarget ?? activeTarget();
   if (!target?.dictionary?.configured) return;
-  const button = byId("sync-button");
+  const button = triggerButton instanceof HTMLButtonElement ? triggerButton : byId("sync-button");
   button.disabled = true;
   button.textContent = "Обновляем…";
   try {
@@ -783,27 +825,56 @@ function slugify(value) {
     .normalize("NFKD").replace(/[\u0300-\u036f]/gu, "").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
 }
 
-function openRuleDialog() {
+async function openRuleDialog(options = {}) {
   const item = state.selected;
-  if (!item) return;
-  const selectedTargetScope = targetScope(item);
-  const canUseSelectedTarget = Boolean(state.mappingMode === "wordpress" && state.selectedMapping !== null && activeTarget() !== null && selectedTargetScope);
-  if (!state.currentReferenceId && !canUseSelectedTarget) {
+  const editing = options.rule ?? null;
+  const reference = options.reference ?? null;
+  if (!item && !editing && !reference) return;
+  const selectedTargetScope = item ? targetScope(item) : null;
+  const canUseSelectedTarget = Boolean(item && state.mappingMode === "wordpress" && state.selectedMapping !== null && activeTarget() !== null && selectedTargetScope);
+  const referenceValueId = editing?.referenceValueId ?? reference?.id ?? state.currentReferenceId;
+  if (!referenceValueId && !canUseSelectedTarget) {
     showToast("Сначала выберите результат правила во внутреннем справочнике или WordPress.");
     return;
   }
+  const sourceId = editing?.sourceId ?? options.sourceId ?? item?.sourceId ?? state.configMeta.sources[0]?.id;
+  const typeCode = editing?.typeCode ?? reference?.typeCode ?? item?.typeCode;
+  if (!sourceId || !typeCode) {
+    showToast("Для правила нужно выбрать источник и тип значения.");
+    return;
+  }
+  state.editingRule = editing;
+  state.ruleEditorContext = { sourceId, typeCode, referenceValueId, targetLink: canUseSelectedTarget ? {
+    targetId: activeTarget().id, targetScope: selectedTargetScope, dictionaryValueId: state.selectedMapping.id,
+  } : null };
   state.rulePreview = null;
-  byId("rule-name").value = `${typeName(item)}: ${item.sourceValue}`;
+  byId("rule-dialog-title").textContent = editing ? "Изменить правило" : "Новое правило распознавания";
+  byId("rule-name").value = editing?.ruleName ?? `${typeName(typeCode)}: ${item?.sourceValue ?? reference?.name ?? "новое правило"}`;
+  byId("rule-priority").value = String(editing?.priority ?? 100);
   byId("rule-preview").hidden = true;
   byId("create-rule").disabled = true;
   clearError(byId("rule-error"));
   const result = byId("rule-result");
-  const selectedName = state.selectedMapping?.name;
+  const selectedName = editing?.referenceName ?? reference?.name ?? state.selectedMapping?.name;
   result.textContent = canUseSelectedTarget
-    ? `Результат правила: ${selectedName} · ${selectedTargetScope}. Точное сопоставление «${item.sourceValue}» создано не будет.`
-    : `Результат правила: ${selectedName ?? `внутреннее значение #${state.currentReferenceId}`}.`;
-  const conditions = suggestedConditions(item);
-  renderConditions(conditions.length ? conditions : [{ field: "sourceValue", operator: "equals", value: item.sourceValue }]);
+    ? `Результат: ${selectedName} · ${selectedTargetScope}. Система создаст внутреннее значение и основную связь автоматически.`
+    : `Результат: ${selectedName ?? `внутреннее значение #${referenceValueId}`}.`;
+  const origin = byId("rule-origin-fields");
+  origin.hidden = Boolean(item && !editing && !reference);
+  const sourceSelect = byId("rule-source");
+  sourceSelect.replaceChildren(...state.configMeta.sources.map((source) => new Option(source.name, source.id, false, source.id === sourceId)));
+  sourceSelect.disabled = Boolean(editing);
+  const referenceSelect = byId("rule-reference");
+  referenceSelect.replaceChildren(new Option(selectedName ?? `#${referenceValueId}`, referenceValueId ?? ""));
+  referenceSelect.disabled = true;
+  try {
+    const fields = await api(`/api/classifier/rule-fields?${new URLSearchParams({ sourceId, typeCode })}`);
+    state.ruleEditorFields = ["sourceValue", "scope", "subjectKind", ...(fields.items ?? []).map((field) => field.field)];
+  } catch {
+    state.ruleEditorFields = ["sourceValue", "scope", "subjectKind", ...(editing?.conditions ?? []).map((condition) => condition.field)];
+  }
+  const conditions = editing?.conditions ?? (item ? suggestedConditions(item) : []);
+  renderConditions(conditions.length ? conditions : [{ field: "sourceValue", operator: "equals", value: item?.sourceValue ?? "" }]);
   byId("rule-dialog").showModal();
 }
 
@@ -830,7 +901,7 @@ function suggestedConditions(item) {
 
 function availableRuleFields() {
   const item = state.selected;
-  const fields = ["sourceValue", "scope", "subjectKind"];
+  const fields = [...state.ruleEditorFields];
   for (const key of Object.keys(item?.context ?? {})) fields.push(`context.${key}`);
   for (const key of Object.keys(item?.examples?.[0]?.evidence ?? {})) fields.push(`evidence.${key}`);
   return [...new Set(fields)];
@@ -875,28 +946,21 @@ function resetRulePreview() {
 }
 
 function ruleDraft() {
-  const item = state.selected;
+  const context = state.ruleEditorContext;
   const conditions = [...byId("conditions-list").querySelectorAll(".condition-row")].map((row) => ({
     field: row.querySelector(".condition-field").value,
     operator: row.querySelector(".condition-operator").value,
     value: row.querySelector(".condition-value").value,
   }));
   const result = {
-    sourceId: item.sourceId,
-    typeCode: item.typeCode,
+    sourceId: context.sourceId,
+    typeCode: context.typeCode,
     name: byId("rule-name").value.trim(),
-    priority: 100,
+    priority: Number(byId("rule-priority").value),
     conditions,
   };
-  if (state.currentReferenceId) result.referenceValueId = state.currentReferenceId;
-  else {
-    const target = activeTarget();
-    result.targetLink = {
-      targetId: target.id,
-      targetScope: targetScope(item),
-      dictionaryValueId: state.selectedMapping.id,
-    };
-  }
+  if (context.referenceValueId) result.referenceValueId = context.referenceValueId;
+  else result.targetLink = context.targetLink;
   return result;
 }
 
@@ -963,13 +1027,19 @@ async function createRule(event) {
   const button = byId("create-rule");
   button.disabled = true;
   try {
-    const response = await api("/api/classifier/rules", { method: "POST", body: ruleDraft() });
-    state.currentReferenceId = response.rule.referenceValueId;
-    state.currentResolution = { kind: "rule", id: response.rule.ruleId };
+    const editing = state.editingRule;
+    const response = await api(editing ? `/api/classifier/rules/${editing.id}` : "/api/classifier/rules", { method: editing ? "PATCH" : "POST", body: ruleDraft() });
+    state.currentReferenceId = response.rule.referenceValueId ?? state.ruleEditorContext.referenceValueId;
+    state.currentResolution = { kind: "rule", id: response.rule.ruleId ?? editing?.id };
     byId("rule-dialog").close();
-    renderProjectionSection();
-    await loadProjections();
-    showToast(`Правило создано без точного сопоставления. На обработку поставлено товаров: ${response.rule.affectedProductCount}. Счётчик «применено» обновится после обработки очереди.`);
+    if (state.classificationView === "queue") {
+      renderProjectionSection();
+      await loadProjections();
+    } else {
+      await loadRules();
+      if (state.selectedReference) await selectReference(state.selectedReference);
+    }
+    showToast(`${editing ? "Правило изменено" : "Правило создано"}. На пересчёт поставлено товаров: ${response.rule.affectedProductCount}.`);
   } catch (error) {
     showError(byId("rule-error"), error.message);
     button.disabled = false;
@@ -979,10 +1049,10 @@ async function createRule(event) {
 function renderProjectionSection() {
   const section = byId("projection-section");
   const target = activeTarget();
-  const resolution = state.currentResolution;
-  section.hidden = !target?.dictionary?.configured || !resolution;
+  const referenceId = state.currentReferenceId;
+  section.hidden = !target?.dictionary?.configured || !referenceId;
   if (section.hidden) return;
-  byId("projection-origin").textContent = `${resolution.kind} #${resolution.id}`;
+  byId("projection-origin").textContent = `внутреннее #${referenceId}`;
   const select = byId("projection-scope");
   const current = select.value;
   select.replaceChildren();
@@ -1017,13 +1087,13 @@ function projectionEntity() {
 
 async function loadProjections() {
   const target = activeTarget();
-  const resolution = state.currentResolution;
+  const referenceId = state.currentReferenceId;
   const list = byId("projection-list");
-  if (!target || !resolution) return;
+  if (!target || !referenceId) return;
   list.replaceChildren(loading("Загружаем дополнительные назначения…"));
   try {
-    const params = new URLSearchParams({ targetId: target.id, resolutionKind: resolution.kind, resolutionId: resolution.id });
-    const response = await api(`/api/classifier/projections?${params}`);
+    const params = new URLSearchParams({ targetId: target.id, referenceValueId: referenceId });
+    const response = await api(`/api/classifier/reference-projections?${params}`);
     renderProjectionList(response.items ?? []);
   } catch (error) {
     list.replaceChildren(emptyText(error.message));
@@ -1113,23 +1183,21 @@ function renderProjectionResults() {
 
 function projectionBody() {
   const target = activeTarget();
-  const resolution = state.currentResolution;
   return {
     targetId: target.id,
-    resolutionKind: resolution.kind,
-    resolutionId: resolution.id,
+    referenceValueId: state.currentReferenceId,
     targetScope: byId("projection-scope").value,
     dictionaryValueId: state.selectedProjectionTerm.id,
   };
 }
 
 async function previewProjection() {
-  if (!state.selectedProjectionTerm || !state.currentResolution) return;
+  if (!state.selectedProjectionTerm || !state.currentReferenceId) return;
   const button = byId("preview-projection");
   button.disabled = true;
   clearError(byId("projection-error"));
   try {
-    const response = await api("/api/classifier/projections/preview", { method: "POST", body: projectionBody() });
+    const response = await api("/api/classifier/reference-projections/preview", { method: "POST", body: projectionBody() });
     state.projectionPreview = response.preview;
     renderProjectionPreview(response.preview);
     byId("create-projection").disabled = Boolean(response.preview.duplicate) || (response.preview.cardinalityConflicts?.length || 0) > 0;
@@ -1140,8 +1208,7 @@ async function previewProjection() {
   }
 }
 
-function renderProjectionPreview(preview) {
-  const box = byId("projection-preview");
+function renderProjectionPreview(preview, box = byId("projection-preview")) {
   box.replaceChildren();
   const stats = document.createElement("div");
   stats.className = "preview-stats";
@@ -1190,7 +1257,7 @@ async function createProjection() {
   const button = byId("create-projection");
   button.disabled = true;
   try {
-    const response = await api("/api/classifier/projections", { method: "POST", body: projectionBody() });
+    const response = await api("/api/classifier/reference-projections", { method: "POST", body: projectionBody() });
     showToast(`Дополнительное назначение сохранено. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
     await loadProjections();
   } catch (error) {
@@ -1204,12 +1271,484 @@ async function deactivateProjection(projectionId) {
   const target = activeTarget();
   if (!target) return;
   try {
-    const response = await api(`/api/targets/${target.id}/classification-projections/${projectionId}/deactivate`, { method: "POST", body: {} });
+    const response = await api(`/api/targets/${target.id}/reference-projections/${projectionId}/deactivate`, { method: "POST", body: {} });
     showToast(`Дополнительное назначение отключено. На обработку поставлено товаров: ${response.projection.affectedProductCount}.`);
     await loadProjections();
   } catch (error) {
     showToast(error.message);
   }
+}
+
+function populateCatalogFilters() {
+  const typeSelects = [byId("reference-type"), byId("rule-list-type")];
+  for (const select of typeSelects) {
+    if (!select) continue;
+    const current = select.value;
+    const first = select.options[0]?.textContent ?? "Все типы";
+    select.replaceChildren(new Option(first, ""), ...state.configMeta.types.map((type) => new Option(type.name, type.code)));
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+  const source = byId("rule-list-source");
+  if (source) source.replaceChildren(new Option("Все источники", ""), ...state.configMeta.sources.map((item) => new Option(item.name, item.id)));
+  const target = byId("wordpress-target");
+  if (target) {
+    target.replaceChildren(...state.targets.map((item) => new Option(item.name, item.id)));
+    populateWordPressEntities();
+  }
+}
+
+async function switchClassificationView(view, updateUrl = true) {
+  state.classificationView = view;
+  for (const panel of document.querySelectorAll(".classification-view")) panel.hidden = panel.id !== `classification-view-${view}`;
+  for (const button of document.querySelectorAll("[data-classification-view]")) button.classList.toggle("active", button.dataset.classificationView === view);
+  byId("refresh-button").hidden = view !== "queue";
+  byId("sync-button").hidden = true;
+  if (updateUrl) history.replaceState(null, "", `/classifier${view === "queue" ? "" : `?view=${view}`}`);
+  if (view === "references") await loadReferences(true);
+  if (view === "rules") await loadRules(true);
+  if (view === "wordpress") {
+    populateCatalogFilters();
+    await loadWordPressValues(true);
+  }
+}
+
+async function loadReferences(reset = true) {
+  if (reset) {
+    state.referenceOffset = 0;
+    state.references = [];
+    byId("reference-list").replaceChildren(loading("Загружаем внутренние значения…"));
+  }
+  const params = new URLSearchParams({ limit: "50", offset: String(state.referenceOffset) });
+  const search = byId("reference-search").value.trim();
+  const typeCode = byId("reference-type").value;
+  if (search) params.set("search", search);
+  if (typeCode) params.set("typeCode", typeCode);
+  try {
+    const response = await api(`/api/classifier/reference-catalog?${params}`);
+    state.referenceTotal = Number(response.total ?? 0);
+    state.references.push(...(response.items ?? []));
+    state.referenceOffset = state.references.length;
+    renderReferences();
+    if (state.pendingReferenceId) {
+      const selected = state.references.find((item) => item.id === state.pendingReferenceId);
+      if (selected) {
+        const action = state.pendingReferenceAction;
+        state.pendingReferenceId = null;
+        state.pendingReferenceAction = null;
+        await selectReference(selected);
+        if (action === "assignment") openAssignmentDialog(selected);
+      }
+    }
+  } catch (error) {
+    byId("reference-list").replaceChildren(emptyText(error.message));
+  }
+}
+
+function renderReferences() {
+  const list = byId("reference-list");
+  list.replaceChildren();
+  byId("reference-count").textContent = String(state.referenceTotal);
+  for (const item of state.references) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `catalog-item${state.selectedReference?.id === item.id ? " active" : ""}`;
+    const title = document.createElement("strong");
+    title.textContent = item.name;
+    const meta = document.createElement("span");
+    meta.textContent = `${item.typeName} · ${item.productCount} товаров`;
+    const flow = document.createElement("span");
+    flow.className = "catalog-item-flow";
+    flow.textContent = `${item.mappingCount} точных · ${item.ruleCount} правил · ${item.outputs.length} назначений`;
+    button.append(title, meta, flow);
+    button.addEventListener("click", () => selectReference(item));
+    list.append(button);
+  }
+  if (!state.references.length) list.append(emptyText("Внутренние значения не найдены."));
+  byId("reference-more").hidden = state.referenceOffset >= state.referenceTotal;
+}
+
+function configUrl(kind, reference) {
+  return `/api/classifier/configuration?${new URLSearchParams({ kind, referenceValueId: reference.id, usage: "none", limit: "200", offset: "0" })}`;
+}
+
+async function selectReference(reference) {
+  state.selectedReference = reference;
+  renderReferences();
+  const detail = byId("reference-detail");
+  detail.replaceChildren(loading("Собираем полную цепочку…"));
+  try {
+    const [mappings, rules, legacy] = await Promise.all([
+      api(configUrl("mapping", reference)), api(configUrl("rule", reference)), api(configUrl("projection", reference)),
+    ]);
+    renderReferenceDetail(reference, {
+      mappings: (mappings.items ?? []).filter((item) => item.referenceValueId === reference.id),
+      rules: (rules.items ?? []).filter((item) => item.referenceValueId === reference.id),
+      legacy: (legacy.items ?? []).filter((item) => item.referenceValueId === reference.id),
+    });
+  } catch (error) {
+    detail.replaceChildren(emptyText(error.message));
+  }
+}
+
+function referenceSection(titleText, hint) {
+  const section = document.createElement("section");
+  section.className = "section reference-block";
+  const heading = document.createElement("div");
+  heading.className = "section-title";
+  const copy = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = titleText;
+  copy.append(title);
+  if (hint) {
+    const text = document.createElement("p");
+    text.className = "muted";
+    text.textContent = hint;
+    copy.append(text);
+  }
+  heading.append(copy);
+  section.append(heading);
+  return { section, heading };
+}
+
+function renderReferenceDetail(reference, relations) {
+  const detail = byId("reference-detail");
+  detail.replaceChildren();
+  const header = document.createElement("header");
+  header.className = "reference-detail-header";
+  const copy = document.createElement("div");
+  const badges = document.createElement("div");
+  badges.className = "badges";
+  badges.append(badge(reference.typeName), badge(`${reference.productCount} товаров`));
+  const title = document.createElement("h2");
+  title.textContent = reference.name;
+  const code = document.createElement("p");
+  code.className = "muted";
+  code.textContent = `Внутренний код: ${reference.code}`;
+  copy.append(badges, title, code);
+  const addRule = document.createElement("button");
+  addRule.type = "button";
+  addRule.className = "button secondary";
+  addRule.textContent = "+ Правило распознавания";
+  addRule.addEventListener("click", () => openRuleDialog({ reference }));
+  header.append(copy, addRule);
+  detail.append(header);
+
+  const recognition = referenceSection("Как распознаётся", "Точные значения источников и общие контекстные правила приводят к этому внутреннему смыслу.");
+  const rows = document.createElement("div");
+  rows.className = "relation-list";
+  for (const item of relations.mappings) rows.append(relationRow(item.sourceValue, `${item.sourceCode} · точное значение`, item.status));
+  for (const item of relations.rules) {
+    const row = relationRow(item.ruleName, `${item.sourceCode ?? "Все источники"} · ${conditionSummary(item.conditions)}`, item.status, "Изменить");
+    row.querySelector("button")?.addEventListener("click", () => openRuleDialog({ rule: item }));
+    rows.append(row);
+  }
+  if (!rows.childElementCount) rows.append(emptyText("Способы распознавания пока не настроены."));
+  recognition.section.append(rows);
+  detail.append(recognition.section);
+
+  const output = referenceSection("Куда отправляется", "Основное назначение соответствует типу значения. Дополнительные назначения добавляют связанные термины WordPress.");
+  const addAssignment = document.createElement("button");
+  addAssignment.type = "button";
+  addAssignment.className = "button secondary small-button";
+  addAssignment.textContent = "+ Дополнительное назначение";
+  addAssignment.addEventListener("click", () => openAssignmentDialog(reference));
+  output.heading.append(addAssignment);
+  const outputRows = document.createElement("div");
+  outputRows.className = "relation-list";
+  for (const item of reference.outputs) {
+    const row = relationRow(item.label, `${item.kind === "primary" ? "Основное" : "Дополнительно"} · ${item.taxonomy || item.targetScope} · term #${item.externalId}`, "active", item.kind === "additional" ? "Отключить" : "Изменить");
+    if (item.kind === "additional") row.querySelector("button")?.addEventListener("click", () => deactivateReferenceAssignment(item));
+    else row.querySelector("button")?.addEventListener("click", () => openAssignmentDialog(reference, { mode: "primary", output: item }));
+    outputRows.append(row);
+  }
+  const expectedPrimary = allCapabilities().find((item) => item.typeCode === reference.typeCode);
+  const hasPrimary = reference.outputs.some((item) => item.kind === "primary" && item.targetId === activeTarget()?.id && item.targetScope === expectedPrimary?.targetScope);
+  if (expectedPrimary && !hasPrimary) {
+    const configure = document.createElement("button");
+    configure.type = "button";
+    configure.className = "button secondary small-button";
+    configure.textContent = "Настроить основное назначение";
+    configure.addEventListener("click", () => openAssignmentDialog(reference, { mode: "primary" }));
+    outputRows.append(configure);
+  }
+  if (!reference.outputs.length) outputRows.append(emptyText("WordPress-назначения не настроены."));
+  output.section.append(outputRows);
+  detail.append(output.section);
+
+  if (relations.legacy.length) {
+    const exceptions = referenceSection("Точечные исключения", "Старые назначения привязаны к конкретному решению. Они сохранены без автоматического обобщения.");
+    const exceptionRows = document.createElement("div");
+    exceptionRows.className = "relation-list";
+    for (const item of relations.legacy) exceptionRows.append(relationRow(item.targetLabel, `${item.ruleName || item.sourceValue} · ${item.targetTaxonomy || item.targetScope}`, item.status));
+    exceptions.section.append(exceptionRows);
+    detail.append(exceptions.section);
+  }
+}
+
+function relationRow(titleText, metaText, statusText, actionText = null) {
+  const row = document.createElement("div");
+  row.className = "relation-row";
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = titleText || "—";
+  const meta = document.createElement("span");
+  meta.textContent = metaText || "";
+  copy.append(title, meta);
+  const side = document.createElement("div");
+  side.className = "relation-actions";
+  side.append(badge(statusText === "active" ? "Активно" : statusText === "ignored" ? "Игнор" : "Отключено"));
+  if (actionText) {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "button quiet small-button";
+    action.textContent = actionText;
+    side.append(action);
+  }
+  row.append(copy, side);
+  return row;
+}
+
+function conditionSummary(conditions) {
+  return (conditions ?? []).map((item) => `${item.field} ${item.operator} «${item.value}»`).join("; ") || "без условий";
+}
+
+async function loadRules(reset = true) {
+  if (reset) {
+    state.ruleOffset = 0;
+    state.rules = [];
+    byId("rule-list").replaceChildren(loading("Загружаем правила…"));
+  }
+  const params = new URLSearchParams({ kind: "rule", limit: "50", offset: String(state.ruleOffset) });
+  if (state.pendingRuleId) params.set("configId", state.pendingRuleId);
+  const values = {
+    search: byId("rule-list-search").value.trim(), sourceId: byId("rule-list-source").value,
+    typeCode: byId("rule-list-type").value, status: byId("rule-list-status").value,
+  };
+  for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);
+  try {
+    const response = await api(`/api/classifier/configuration?${params}`);
+    state.ruleTotal = Number(response.total ?? 0);
+    state.rules.push(...(response.items ?? []));
+    state.ruleOffset = state.rules.length;
+    renderRuleCatalog();
+    if (state.pendingRuleId) {
+      const selected = state.rules.find((item) => item.id === state.pendingRuleId);
+      state.pendingRuleId = null;
+      if (selected) await openRuleDialog({ rule: selected });
+    }
+  } catch (error) {
+    byId("rule-list").replaceChildren(emptyText(error.message));
+  }
+}
+
+function renderRuleCatalog() {
+  const list = byId("rule-list");
+  list.replaceChildren();
+  for (const rule of state.rules) {
+    const row = document.createElement("article");
+    row.className = "rule-catalog-row";
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "rule-catalog-main";
+    const title = document.createElement("strong");
+    title.textContent = rule.ruleName;
+    const conditions = document.createElement("span");
+    conditions.textContent = conditionSummary(rule.conditions);
+    const result = document.createElement("span");
+    result.className = "catalog-item-flow";
+    result.textContent = `→ ${rule.referenceName} · ${rule.affectedProductCount} товаров`;
+    main.append(title, conditions, result);
+    main.addEventListener("click", () => openRuleDialog({ rule }));
+    const status = document.createElement("button");
+    status.type = "button";
+    status.className = `config-pill ${rule.status}`;
+    status.textContent = rule.status === "active" ? "Активно" : "Отключено";
+    status.title = rule.status === "active" ? "Отключить правило" : "Включить правило";
+    status.addEventListener("click", () => toggleRule(rule));
+    row.append(main, status);
+    list.append(row);
+  }
+  if (!state.rules.length) list.append(emptyText("Правила не найдены."));
+  byId("rule-more").hidden = state.ruleOffset >= state.ruleTotal;
+}
+
+async function toggleRule(rule) {
+  const action = rule.status === "active" ? "deactivate" : "reactivate";
+  try {
+    const response = await api(`/api/classifier/rules/${rule.id}/${action}`, { method: "POST", body: {} });
+    showToast(`Правило ${action === "deactivate" ? "отключено" : "включено"}. На пересчёт поставлено товаров: ${response.rule.affectedProductCount}.`);
+    await loadRules(true);
+  } catch (error) { showToast(error.message); }
+}
+
+function populateWordPressEntities() {
+  const target = state.targets.find((item) => item.id === byId("wordpress-target")?.value) ?? activeTarget();
+  const entity = byId("wordpress-entity");
+  if (!entity) return;
+  const current = entity.value;
+  entity.replaceChildren(...(target?.dictionary?.supportedEntityTypes ?? []).map((value) => new Option(targetEntityLabel(value), value)));
+  if ([...entity.options].some((option) => option.value === current)) entity.value = current;
+}
+
+function targetEntityLabel(value) {
+  return ({ brands: "Бренды", models: "Модели", tags: "Метки", sizes: "Размеры", shoe_heights: "Высота обуви", product_categories: "Категории", colors: "Цвета", materials: "Материалы", seasons: "Сезоны", activities: "Назначение" })[value] || value;
+}
+
+async function loadWordPressValues(reset = true) {
+  const targetId = byId("wordpress-target").value;
+  const entityType = byId("wordpress-entity").value;
+  if (!targetId || !entityType) return;
+  if (reset) {
+    state.wordpressOffset = 0;
+    state.wordpressValues = [];
+    byId("wordpress-list").replaceChildren(loading("Загружаем справочник WordPress…"));
+  }
+  const params = new URLSearchParams({ entityType, limit: "100", offset: String(state.wordpressOffset) });
+  const search = byId("wordpress-search").value.trim();
+  if (search) params.set("search", search);
+  try {
+    const response = await api(`/api/targets/${targetId}/dictionary?${params}`);
+    const items = response.items ?? [];
+    state.wordpressValues.push(...items);
+    state.wordpressOffset += items.length;
+    renderWordPressValues(items.length === 100);
+  } catch (error) { byId("wordpress-list").replaceChildren(emptyText(error.message)); }
+}
+
+function renderWordPressValues(hasMore) {
+  const list = byId("wordpress-list");
+  list.replaceChildren();
+  for (const item of state.wordpressValues) {
+    const row = document.createElement("div");
+    row.className = "wordpress-catalog-row";
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const taxonomy = document.createElement("span");
+    taxonomy.textContent = [item.taxonomy, item.slug].filter(Boolean).join(" · ") || "Без taxonomy";
+    const id = document.createElement("code");
+    id.textContent = `term #${item.externalId}`;
+    row.append(name, taxonomy, id);
+    list.append(row);
+  }
+  if (!state.wordpressValues.length) list.append(emptyText("Термины не найдены."));
+  byId("wordpress-more").hidden = !hasMore;
+}
+
+function openAssignmentDialog(reference, options = {}) {
+  const target = activeTarget();
+  if (!target) return;
+  state.assignmentReference = reference;
+  state.assignmentTerm = null;
+  state.assignmentPreview = null;
+  state.assignmentMode = options.mode ?? "additional";
+  state.assignmentOutput = options.output ?? null;
+  byId("assignment-title").textContent = state.assignmentMode === "primary" ? "Основное назначение" : "Дополнительное назначение";
+  byId("assignment-reference").textContent = state.assignmentMode === "primary"
+    ? `Выберите основное значение WordPress для внутреннего значения «${reference.name}».`
+    : `Внутреннее значение «${reference.name}» будет получать ещё один термин WordPress во всех случаях распознавания.`;
+  const scope = byId("assignment-scope");
+  const capabilities = state.assignmentMode === "primary" ? allCapabilities().filter((item) => item.typeCode === reference.typeCode) : allCapabilities();
+  scope.replaceChildren(...capabilities.map((item) => new Option(`${targetScopeLabel(item.targetScope)} · ${item.targetScope}`, item.targetScope, false, item.targetScope === state.assignmentOutput?.targetScope)));
+  scope.disabled = state.assignmentMode === "primary";
+  byId("assignment-search").value = state.assignmentOutput?.label ?? reference.name;
+  byId("assignment-preview").hidden = true;
+  byId("assignment-save").disabled = true;
+  clearError(byId("assignment-error"));
+  byId("assignment-dialog").showModal();
+  void loadAssignmentTerms();
+}
+
+async function loadAssignmentTerms() {
+  const target = activeTarget();
+  const capability = allCapabilities().find((item) => item.targetScope === byId("assignment-scope").value);
+  if (!target || !capability) return;
+  state.assignmentTerm = null;
+  state.assignmentPreview = null;
+  byId("assignment-check").disabled = true;
+  byId("assignment-save").disabled = true;
+  const results = byId("assignment-results");
+  results.replaceChildren(loading("Ищем термины…"));
+  try {
+    const params = new URLSearchParams({ entityType: capability.entityType, search: byId("assignment-search").value.trim(), limit: "100" });
+    const response = await api(`/api/targets/${target.id}/dictionary?${params}`);
+    results.replaceChildren();
+    for (const item of response.items ?? []) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mapping-result";
+      button.textContent = `${item.name} · term #${item.externalId}`;
+      button.addEventListener("click", () => {
+        state.assignmentTerm = item;
+        for (const node of results.children) node.classList.toggle("selected", node === button);
+        byId("assignment-check").disabled = false;
+        byId("assignment-save").disabled = true;
+      });
+      results.append(button);
+    }
+    if (!results.childElementCount) results.append(emptyText("Термины не найдены."));
+  } catch (error) { results.replaceChildren(emptyText(error.message)); }
+}
+
+function assignmentBody() {
+  return {
+    targetId: activeTarget().id, referenceValueId: state.assignmentReference.id,
+    targetScope: byId("assignment-scope").value, dictionaryValueId: state.assignmentTerm.id,
+  };
+}
+
+async function previewAssignment() {
+  if (!state.assignmentTerm) return;
+  try {
+    const previewUrl = state.assignmentMode === "primary" && state.assignmentOutput
+      ? `/api/classifier/target-mappings/${state.assignmentOutput.id}/preview`
+      : "/api/classifier/reference-projections/preview";
+    const previewBody = state.assignmentMode === "primary" && state.assignmentOutput
+      ? { dictionaryValueId: state.assignmentTerm.id }
+      : assignmentBody();
+    const response = await api(previewUrl, { method: "POST", body: previewBody });
+    state.assignmentPreview = response.preview;
+    renderProjectionPreview(response.preview, byId("assignment-preview"));
+    byId("assignment-save").disabled = (state.assignmentMode === "additional" && Boolean(response.preview.duplicate))
+      || (response.preview.cardinalityConflicts?.length ?? 0) > 0;
+  } catch (error) { showError(byId("assignment-error"), error.message); }
+}
+
+async function saveAssignment(event) {
+  event.preventDefault();
+  if (!state.assignmentPreview || !state.assignmentTerm) return;
+  try {
+    let url = "/api/classifier/reference-projections";
+    let method = "POST";
+    let body = assignmentBody();
+    if (state.assignmentMode === "primary") {
+      if (state.assignmentOutput) {
+        url = `/api/classifier/target-mappings/${state.assignmentOutput.id}`;
+        method = "PATCH";
+        body = { dictionaryValueId: state.assignmentTerm.id };
+      } else {
+        url = "/api/classifier/target-mappings";
+        body = { ...assignmentBody(), typeCode: state.assignmentReference.typeCode };
+      }
+    }
+    const response = await api(url, { method, body });
+    byId("assignment-dialog").close();
+    const result = state.assignmentMode === "primary" ? response.mapping : response.projection;
+    showToast(`Назначение сохранено. На пересчёт поставлено товаров: ${result.affectedProductCount}.`);
+    await loadReferences(true);
+    const refreshed = state.references.find((item) => item.id === state.assignmentReference.id);
+    if (refreshed) await selectReference(refreshed);
+  } catch (error) { showError(byId("assignment-error"), error.message); }
+}
+
+async function deactivateReferenceAssignment(item) {
+  try {
+    const referenceId = state.selectedReference?.id;
+    const response = await api(`/api/targets/${item.targetId}/reference-projections/${item.id}/deactivate`, { method: "POST", body: {} });
+    showToast(`Назначение отключено. На пересчёт поставлено товаров: ${response.projection.affectedProductCount}.`);
+    await loadReferences(true);
+    const refreshed = state.references.find((reference) => reference.id === referenceId);
+    if (refreshed) await selectReference(refreshed);
+  } catch (error) { showToast(error.message); }
 }
 
 function loading(text) {
@@ -1235,7 +1774,7 @@ function closeDialog(selector) {
 byId("login-form").addEventListener("submit", login);
 byId("logout-button").addEventListener("click", logout);
 byId("refresh-button").addEventListener("click", () => loadQueue({ preserveSelection: true }));
-byId("sync-button").addEventListener("click", syncWordPress);
+byId("sync-button").addEventListener("click", () => syncWordPress());
 byId("queue-search").addEventListener("input", () => {
   clearQueueDeepLink();
   state.queueRequestId += 1;
@@ -1282,8 +1821,64 @@ byId("add-condition").addEventListener("click", () => {
 byId("preview-rule").addEventListener("click", previewRule);
 byId("rule-form").addEventListener("submit", createRule);
 byId("rule-name").addEventListener("input", resetRulePreview);
+byId("rule-priority").addEventListener("input", resetRulePreview);
+byId("rule-source").addEventListener("change", async () => {
+  if (!state.ruleEditorContext) return;
+  state.ruleEditorContext.sourceId = byId("rule-source").value;
+  const current = [...byId("conditions-list").querySelectorAll(".condition-row")].map((row) => ({
+    field: row.querySelector(".condition-field").value,
+    operator: row.querySelector(".condition-operator").value,
+    value: row.querySelector(".condition-value").value,
+  }));
+  try {
+    const fields = await api(`/api/classifier/rule-fields?${new URLSearchParams({ sourceId: state.ruleEditorContext.sourceId, typeCode: state.ruleEditorContext.typeCode })}`);
+    state.ruleEditorFields = ["sourceValue", "scope", "subjectKind", ...(fields.items ?? []).map((field) => field.field)];
+  } catch { /* Existing condition fields remain available below. */ }
+  state.ruleEditorFields.push(...current.map((condition) => condition.field));
+  state.ruleEditorFields = [...new Set(state.ruleEditorFields)];
+  renderConditions(current);
+  resetRulePreview();
+});
+for (const button of document.querySelectorAll("[data-classification-view]")) {
+  button.addEventListener("click", () => { void switchClassificationView(button.dataset.classificationView); });
+}
+byId("reference-search").addEventListener("input", () => {
+  clearTimeout(catalogSearchTimer);
+  catalogSearchTimer = setTimeout(() => loadReferences(true), 280);
+});
+byId("reference-type").addEventListener("change", () => loadReferences(true));
+byId("reference-more").addEventListener("click", () => loadReferences(false));
+byId("rule-list-filters").addEventListener("input", () => {
+  clearTimeout(catalogSearchTimer);
+  catalogSearchTimer = setTimeout(() => loadRules(true), 280);
+});
+byId("rule-more").addEventListener("click", () => loadRules(false));
+byId("new-rule-button").addEventListener("click", async () => {
+  await switchClassificationView("references");
+  showToast("Выберите внутреннее значение и нажмите «+ Правило распознавания».");
+});
+byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); void loadWordPressValues(true); });
+byId("wordpress-entity").addEventListener("change", () => loadWordPressValues(true));
+byId("wordpress-search").addEventListener("input", () => {
+  clearTimeout(catalogSearchTimer);
+  catalogSearchTimer = setTimeout(() => loadWordPressValues(true), 280);
+});
+byId("wordpress-more").addEventListener("click", () => loadWordPressValues(false));
+byId("wordpress-sync-button").addEventListener("click", async () => {
+  const target = state.targets.find((item) => item.id === byId("wordpress-target").value) ?? activeTarget();
+  await syncWordPress(byId("wordpress-sync-button"), target);
+  await loadWordPressValues(true);
+});
+byId("assignment-scope").addEventListener("change", loadAssignmentTerms);
+byId("assignment-search").addEventListener("input", () => {
+  clearTimeout(catalogSearchTimer);
+  catalogSearchTimer = setTimeout(loadAssignmentTerms, 250);
+});
+byId("assignment-check").addEventListener("click", previewAssignment);
+byId("assignment-form").addEventListener("submit", saveAssignment);
 closeDialog(".close-dialog");
 closeDialog(".close-rule");
+closeDialog(".close-assignment");
 
 applyQueueDeepLink();
 

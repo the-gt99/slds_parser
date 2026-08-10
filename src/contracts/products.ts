@@ -267,10 +267,11 @@ export interface TargetReferenceResolutionInput {
 export interface TargetProjectionResolutionInput {
   readonly resolutionKind: ReferenceResolutionKind;
   readonly resolutionId: EntityId;
+  readonly referenceId: EntityId;
 }
 
 export interface TargetReferenceProjectionDTO {
-  readonly resolutionKind: ReferenceResolutionKind;
+  readonly resolutionKind: ReferenceResolutionKind | "reference";
   readonly resolutionId: EntityId;
   readonly targetScope: string;
   readonly externalValue: string;

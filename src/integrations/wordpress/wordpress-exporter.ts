@@ -429,6 +429,7 @@ async function taxonomyPayload(
     context.product.classification.resolved.map((reference) => ({
       resolutionKind: reference.resolutionKind,
       resolutionId: reference.resolutionId,
+      referenceId: reference.referenceValueId,
     })),
   );
   for (const projection of projections) {

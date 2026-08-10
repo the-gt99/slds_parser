@@ -5,6 +5,8 @@ import type {
   ClassificationConfigListQuery,
   ClassificationConfigListResult,
   ClassificationReferenceValueOption,
+  ClassificationReferenceCatalogQuery,
+  ClassificationReferenceCatalogResult,
   ClassificationReviewExample,
   ClassificationReviewItem,
   ClassificationReviewQuery,
@@ -15,9 +17,12 @@ import type {
   ClassificationConfigHistoryRecord,
   TargetValueMappingAdminRecord,
   TargetValueMappingCommand,
+  CreateTargetValueMappingCommand,
   TargetClassificationProjectionCommand,
   TargetClassificationProjectionPreview,
   TargetClassificationProjectionRecord,
+  TargetReferenceProjectionCommand,
+  TargetReferenceProjectionRecord,
   CreateClassificationRuleInput,
   CreateClassificationRuleResult,
   SaveClassificationDecisionInput,
@@ -39,6 +44,7 @@ export interface ClassificationAdminRepository {
     search: string | undefined,
     limit: number,
   ): Promise<readonly ClassificationReferenceValueOption[]>;
+  listReferenceCatalog(query: ClassificationReferenceCatalogQuery): Promise<ClassificationReferenceCatalogResult>;
   listRuleCandidates(
     sourceId: string,
     typeCode: string,
@@ -113,4 +119,22 @@ export interface ClassificationAdminRepository {
     readonly actor: string;
     readonly reason?: string;
   }): Promise<{ readonly preview: TargetClassificationProjectionPreview; readonly affectedProductCount: number }>;
+  listReferenceProjections(targetId: string, referenceValueId: string): Promise<readonly TargetReferenceProjectionRecord[]>;
+  previewReferenceProjection(input: TargetReferenceProjectionCommand): Promise<TargetClassificationProjectionPreview>;
+  createReferenceProjection(input: TargetReferenceProjectionCommand): Promise<{
+    readonly projection: TargetReferenceProjectionRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }>;
+  createTargetValueMapping(input: CreateTargetValueMappingCommand): Promise<{
+    readonly mapping: TargetValueMappingAdminRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }>;
+  deactivateReferenceProjection(input: {
+    readonly targetId: string;
+    readonly projectionId: string;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly affectedProductCount: number }>;
 }

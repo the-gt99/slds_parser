@@ -108,14 +108,14 @@ export class PostgresClassificationRepository implements ClassificationRepositor
         AND value.enabled = TRUE
       WHERE rule.enabled = TRUE
         AND rule.deleted_at IS NULL
-        AND (rule.source_id IS NULL OR rule.source_id = $1)
+        AND rule.source_id = $1
         AND type.code = ANY($2::text[])
       ORDER BY rule.priority DESC, JSONB_ARRAY_LENGTH(rule.conditions) DESC, rule.id`,
       [sourceId, typeCodes],
     );
     return result.rows.map((row) => ({
       id: String(row.id),
-      sourceId: row.source_id === null || row.source_id === undefined ? null : String(row.source_id),
+      sourceId: String(row.source_id),
       typeCode: String(row.type_code),
       name: String(row.name),
       priority: Number(row.priority),

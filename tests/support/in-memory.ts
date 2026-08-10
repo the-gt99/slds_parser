@@ -44,7 +44,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
         const decision = store.classificationDecisions.get(`${sourceId}/${input.typeCode}/${input.scope}/${input.normalizedSourceValue}/${input.contextKey}`);
         return decision === undefined ? [] : [{ candidateKey: input.candidateKey, ...decision }];
       }),
-      listActiveRules: async (sourceId, typeCodes) => store.classificationRules.filter((rule) => (rule.sourceId === null || rule.sourceId === sourceId) && typeCodes.includes(rule.typeCode)),
+      listActiveRules: async (sourceId, typeCodes) => store.classificationRules.filter((rule) => rule.sourceId === sourceId && typeCodes.includes(rule.typeCode)),
       saveProductResult: async (input) => {
         for (const key of [...store.classificationObservations.keys()]) if (key.startsWith(`${input.sourceProductId}/`)) store.classificationObservations.delete(key);
         for (const observation of input.observations) store.classificationObservations.set(`${input.sourceProductId}/${observation.candidate.key}`, observation);

@@ -37,7 +37,7 @@ interface PreparedCandidate {
 
 interface RuleMatch {
   readonly rule: ClassificationRuleRecord;
-  readonly score: readonly [number, number, number];
+  readonly score: readonly [number, number];
 }
 
 interface CandidateOutcome {
@@ -59,7 +59,6 @@ function optionalSubjectKey(candidate: ReferenceCandidateDTO): { readonly subjec
 }
 
 function matchingRules(
-  sourceId: EntityId,
   candidate: ReferenceCandidateDTO,
   rules: readonly ClassificationRuleRecord[],
 ): readonly RuleMatch[] {
@@ -70,7 +69,7 @@ function matchingRules(
     })
     .map((rule) => ({
       rule,
-      score: classificationRuleScore(sourceId, rule),
+      score: classificationRuleScore(rule),
     }))
     .sort((left, right) => compareClassificationRuleScore(right.score, left.score) || left.rule.id.localeCompare(right.rule.id));
 }
@@ -182,13 +181,9 @@ function mappingOutcome(
   };
 }
 
-function ruleOutcome(
-  sourceId: EntityId,
-  prepared: PreparedCandidate,
-  rules: readonly ClassificationRuleRecord[],
-): CandidateOutcome {
+function ruleOutcome(prepared: PreparedCandidate, rules: readonly ClassificationRuleRecord[]): CandidateOutcome {
   const { candidate } = prepared;
-  const matches = matchingRules(sourceId, candidate, rules);
+  const matches = matchingRules(candidate, rules);
   const bestScore = matches[0]?.score;
   const best = bestScore === undefined ? [] : matches.filter((match) => compareClassificationRuleScore(match.score, bestScore) === 0);
   const references = new Set(best.map(({ rule }) => rule.referenceValueId));
@@ -274,7 +269,7 @@ export class ProductClassifier {
     const mappings = new Map(mappingMatches.map((mapping) => [mapping.candidateKey, mapping]));
     const outcomes = prepared.map((candidate) => {
       const mapping = mappings.get(candidate.candidate.key);
-      return mapping === undefined ? ruleOutcome(sourceId, candidate, rules) : mappingOutcome(candidate, mapping);
+      return mapping === undefined ? ruleOutcome(candidate, rules) : mappingOutcome(candidate, mapping);
     });
     const resolved = outcomes.flatMap((outcome) => outcome.resolved === undefined ? [] : [outcome.resolved]);
     const ignored = outcomes.flatMap((outcome) => outcome.ignored === undefined ? [] : [outcome.ignored]);

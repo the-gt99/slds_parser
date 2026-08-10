@@ -359,7 +359,7 @@ function renderClassifications(item) {
       for (const output of activeOutputs) {
         const chip = document.createElement("a");
         chip.className = `classification-output ${output.kind}`;
-        chip.href = `/classifier-config?${new URLSearchParams({ kind: output.kind, configId: output.id })}`;
+        chip.href = `/classifier?${new URLSearchParams({ view: "references", referenceId: value.resolvedReferenceValueId || "", search: value.resolvedReferenceName || value.sourceValue })}`;
         chip.textContent = `${output.kind === "projection" ? "+ " : ""}${output.targetLabel} · ${output.targetTaxonomy || output.targetScope}`;
         outputs.append(chip);
       }
@@ -369,7 +369,9 @@ function renderClassifications(item) {
     if (pending?.resolutionKind && pending.resolutionId) {
       const details = document.createElement("a");
       details.className = "button quiet small-button";
-      details.href = `/classifier-config?${new URLSearchParams({ kind: pending.resolutionKind, configId: pending.resolutionId })}`;
+      details.href = `/classifier?${new URLSearchParams(pending.resolutionKind === "rule"
+        ? { view: "rules", ruleId: pending.resolutionId }
+        : { view: "references", referenceId: value.resolvedReferenceValueId || "", search: value.resolvedReferenceName || value.sourceValue })}`;
       details.textContent = "Открыть сохранённое решение";
       actions.append(details);
     } else if (!pending && (value.status === "unresolved" || value.status === "ambiguous")) {
@@ -388,14 +390,16 @@ function renderClassifications(item) {
     } else if (value.resolutionKind && value.resolutionId) {
       const details = document.createElement("a");
       details.className = "button quiet small-button";
-      details.href = `/classifier-config?${new URLSearchParams({ kind: value.resolutionKind, configId: value.resolutionId })}`;
+      details.href = `/classifier?${new URLSearchParams(value.resolutionKind === "rule"
+        ? { view: "rules", ruleId: value.resolutionId }
+        : { view: "references", referenceId: value.resolvedReferenceValueId || "", search: value.resolvedReferenceName || value.sourceValue })}`;
       details.textContent = "Изменить решение";
       const projection = document.createElement("a");
       projection.className = "button quiet small-button";
-      projection.href = `/classifier-config?${new URLSearchParams({
-        kind: value.resolutionKind,
-        configId: value.resolutionId,
-        action: "projection",
+      projection.href = `/classifier?${new URLSearchParams({
+        view: "references",
+        referenceId: value.resolvedReferenceValueId || "",
+        action: "assignment",
         targetScope: "product.tag",
         search: value.resolvedReferenceName || value.sourceValue,
       })}`;

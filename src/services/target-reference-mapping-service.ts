@@ -33,11 +33,11 @@ export class TargetReferenceMappingService {
     targetId: EntityId,
     resolutions: readonly TargetProjectionResolutionInput[],
   ): Promise<readonly TargetReferenceProjectionDTO[]> {
-    const unique = [...new Map(resolutions.map((item) => [`${item.resolutionKind}:${item.resolutionId}`, item])).values()];
+    const unique = [...new Map(resolutions.map((item) => [`${item.resolutionKind}:${item.resolutionId}:${item.referenceId}`, item])).values()];
     const projections = await this.references.resolveTargetProjections(targetId, unique);
     return projections.map((projection) => ({
-      resolutionKind: projection.resolutionKind,
-      resolutionId: projection.resolutionId,
+      resolutionKind: "referenceValueId" in projection ? "reference" as const : projection.resolutionKind,
+      resolutionId: "referenceValueId" in projection ? projection.referenceValueId : projection.resolutionId,
       targetScope: projection.targetScope,
       externalValue: projection.externalValue,
     }));

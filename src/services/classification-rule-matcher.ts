@@ -1,4 +1,4 @@
-import type { EntityId, ReferenceCandidateDTO } from "../contracts/index.js";
+import type { ReferenceCandidateDTO } from "../contracts/index.js";
 import { IntegrationContractError } from "../core/errors/index.js";
 import type {
   ClassificationRuleConditionRecord,
@@ -79,10 +79,9 @@ export function matchesClassificationRule(
 }
 
 export function classificationRuleScore(
-  sourceId: EntityId,
-  rule: Pick<ClassificationRuleRecord, "sourceId" | "priority" | "conditions">,
-): readonly [number, number, number] {
-  return [rule.priority, rule.sourceId === sourceId ? 1 : 0, rule.conditions.length];
+  rule: Pick<ClassificationRuleRecord, "priority" | "conditions">,
+): readonly [number, number] {
+  return [rule.priority, rule.conditions.length];
 }
 
 export function compareClassificationRuleScore(

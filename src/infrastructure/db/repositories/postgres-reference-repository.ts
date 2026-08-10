@@ -4,10 +4,11 @@ import type {
   ReferenceRepository,
   SaveTargetClassificationProjectionInput,
   TargetClassificationProjectionRecord,
+  TargetReferenceProjectionRecord,
   TargetValueMappingRecord,
 } from "../../../repositories/index.js";
 import type { SqlExecutor } from "../sql-executor.js";
-import { mapTargetClassificationProjection, mapTargetValueMapping, type DatabaseRow } from "./row-mappers.js";
+import { mapTargetClassificationProjection, mapTargetReferenceProjection, mapTargetValueMapping, type DatabaseRow } from "./row-mappers.js";
 
 export class PostgresReferenceRepository implements ReferenceRepository {
   constructor(private readonly executor: SqlExecutor) {}
@@ -22,15 +23,16 @@ export class PostgresReferenceRepository implements ReferenceRepository {
 
   async resolveTargetProjections(
     targetId: EntityId,
-    resolutions: readonly { readonly resolutionKind: "mapping" | "rule"; readonly resolutionId: EntityId }[],
-  ): Promise<readonly TargetClassificationProjectionRecord[]> {
+    resolutions: readonly { readonly resolutionKind: "mapping" | "rule"; readonly resolutionId: EntityId; readonly referenceId: EntityId }[],
+  ): Promise<readonly (TargetClassificationProjectionRecord | TargetReferenceProjectionRecord)[]> {
     if (resolutions.length === 0) return [];
-    const result = await this.executor.query<DatabaseRow>(
+    const [specific, canonical] = await Promise.all([
+      this.executor.query<DatabaseRow>(
       `WITH requested AS (
          SELECT resolution_kind, resolution_id
-         FROM JSONB_TO_RECORDSET($2::JSONB) AS item(resolution_kind TEXT, resolution_id BIGINT)
+         FROM JSONB_TO_RECORDSET($2::JSONB) AS item(resolution_kind TEXT, resolution_id BIGINT, reference_id BIGINT)
        )
-       SELECT projection.*, dictionary.external_id AS external_value,
+       SELECT DISTINCT projection.*, dictionary.external_id AS external_value,
               dictionary.name AS external_label
        FROM target_classification_projections projection
        JOIN target_dictionary_values dictionary
@@ -42,9 +44,27 @@ export class PostgresReferenceRepository implements ReferenceRepository {
          OR (requested.resolution_kind = 'rule' AND projection.rule_id = requested.resolution_id)
        WHERE projection.target_id = $1 AND projection.active = TRUE
        ORDER BY projection.id`,
-      [targetId, JSON.stringify(resolutions.map((item) => ({ resolution_kind: item.resolutionKind, resolution_id: item.resolutionId })))],
-    );
-    return result.rows.map(mapTargetClassificationProjection);
+      [targetId, JSON.stringify(resolutions.map((item) => ({ resolution_kind: item.resolutionKind, resolution_id: item.resolutionId, reference_id: item.referenceId })))],
+      ),
+      this.executor.query<DatabaseRow>(
+        `WITH requested AS (
+           SELECT DISTINCT reference_id
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS item(resolution_kind TEXT, resolution_id BIGINT, reference_id BIGINT)
+         )
+         SELECT projection.*, dictionary.external_id AS external_value,
+                dictionary.name AS external_label
+         FROM target_reference_projections projection
+         JOIN target_dictionary_values dictionary
+           ON dictionary.id = projection.dictionary_value_id
+          AND dictionary.target_id = projection.target_id
+          AND dictionary.active = TRUE
+         JOIN requested ON requested.reference_id = projection.reference_value_id
+         WHERE projection.target_id = $1 AND projection.active = TRUE
+         ORDER BY projection.id`,
+        [targetId, JSON.stringify(resolutions.map((item) => ({ resolution_kind: item.resolutionKind, resolution_id: item.resolutionId, reference_id: item.referenceId })))],
+      ),
+    ]);
+    return [...specific.rows.map(mapTargetClassificationProjection), ...canonical.rows.map(mapTargetReferenceProjection)];
   }
 
   async saveTargetProjection(input: SaveTargetClassificationProjectionInput): Promise<TargetClassificationProjectionRecord> {
@@ -99,6 +119,14 @@ export class PostgresReferenceRepository implements ReferenceRepository {
              projection.target_scope, projection.dictionary_value_id, projection.metadata,
              projection.revision, projection.updated_at, dictionary.external_id, dictionary.updated_at) ORDER BY projection.id)
            FROM target_classification_projections projection
+           JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+           WHERE projection.target_id = $1 AND projection.active = TRUE AND dictionary.active = TRUE
+         ), '[]'::JSONB),
+         'referenceProjections', COALESCE((
+           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(projection.id, projection.reference_value_id,
+             projection.target_scope, projection.dictionary_value_id, projection.metadata,
+             projection.revision, projection.updated_at, dictionary.external_id, dictionary.updated_at) ORDER BY projection.id)
+           FROM target_reference_projections projection
            JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
            WHERE projection.target_id = $1 AND projection.active = TRUE AND dictionary.active = TRUE
          ), '[]'::JSONB)

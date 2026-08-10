@@ -11,6 +11,8 @@ import type {
   ClassificationDecisionPreview,
   ClassificationDecisionKey,
   ClassificationReferenceValueOption,
+  ClassificationReferenceCatalogQuery,
+  ClassificationReferenceCatalogResult,
   ClassificationReviewExample,
   ClassificationReviewItem,
   ClassificationReviewQuery,
@@ -25,14 +27,17 @@ import type {
   TargetClassificationProjectionCommand,
   TargetClassificationProjectionPreview,
   TargetClassificationProjectionRecord,
+  TargetReferenceProjectionCommand,
+  TargetReferenceProjectionRecord,
   TargetValueMappingAdminRecord,
   TargetValueMappingCommand,
+  CreateTargetValueMappingCommand,
   UpdateClassificationRuleInput,
   UpdateClassificationRuleResult,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
 import { classificationObservationReadModelSql } from "./classification-observation-read-model.js";
-import { mapTargetClassificationProjection, type DatabaseRow } from "./row-mappers.js";
+import { mapTargetClassificationProjection, mapTargetReferenceProjection, type DatabaseRow } from "./row-mappers.js";
 
 function timestamp(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
@@ -257,7 +262,7 @@ async function replaceRuleReviewCoverage(
   client: SqlClient,
   ruleId: string,
   ruleRevision: string,
-  matchedObservationIds: readonly string[] | null,
+  matchedObservationIds: readonly string[],
 ): Promise<readonly string[]> {
   const previous = await client.query<DatabaseRow>(
     `SELECT observation.id, observation.source_id, type.code AS type_code, observation.processor_version,
@@ -272,36 +277,7 @@ async function replaceRuleReviewCoverage(
     [ruleId],
   );
   await client.query("DELETE FROM classification_review_rule_coverage WHERE rule_id = $1", [ruleId]);
-  if (matchedObservationIds === null) {
-    await client.query(
-      `INSERT INTO classification_review_rule_coverage (
-         observation_id, rule_id, rule_revision
-       )
-       SELECT observation.id, rule.id, rule.revision
-       FROM source_reference_rules rule
-       JOIN ${classificationObservationReadModelSql} observation
-         ON observation.reference_type_id = rule.reference_type_id
-        AND (rule.source_id IS NULL OR rule.source_id = observation.source_id)
-       JOIN reference_values value
-         ON value.id = rule.reference_value_id
-        AND value.enabled = TRUE
-       WHERE rule.id = $1
-         AND rule.revision = $2
-         AND rule.enabled = TRUE
-         AND rule.deleted_at IS NULL
-         AND observation.active = TRUE
-         AND observation.status IN ('unresolved', 'ambiguous')
-         AND classification_rule_matches_observation(
-           rule.conditions,
-           observation.source_value,
-           observation.scope,
-           observation.subject_kind,
-           observation.context,
-           observation.evidence
-         )`,
-      [ruleId, ruleRevision],
-    );
-  } else if (matchedObservationIds.length > 0) {
+  if (matchedObservationIds.length > 0) {
     await client.query(
       `INSERT INTO classification_review_rule_coverage (
          observation_id, rule_id, rule_revision
@@ -333,28 +309,7 @@ async function replaceRuleReviewCoverage(
     ...previous.rows.map(reviewGroupKey),
     ...current.rows.map(reviewGroupKey),
   ]);
-  if (matchedObservationIds !== null) return [];
-  const effective = await client.query<DatabaseRow>(
-    `SELECT DISTINCT observation.source_product_id
-     FROM classification_review_rule_coverage coverage
-     JOIN ${classificationObservationReadModelSql} observation ON observation.id = coverage.observation_id
-     JOIN LATERAL classification_review_rule_resolutions(ARRAY[observation.id]) resolution
-       ON resolution.rule_id = coverage.rule_id
-     LEFT JOIN source_reference_mappings mapping
-       ON mapping.source_id = observation.source_id
-      AND mapping.reference_type_id = observation.reference_type_id
-      AND mapping.scope = observation.scope
-      AND mapping.normalized_source_value = observation.normalized_source_value
-      AND mapping.context_key = observation.context_key
-      AND (mapping.status = 'ignored' OR EXISTS (
-        SELECT 1 FROM reference_values value
-        WHERE value.id = mapping.reference_value_id AND value.enabled = TRUE
-      ))
-     WHERE coverage.rule_id = $1
-       AND mapping.id IS NULL`,
-    [ruleId],
-  );
-  return effective.rows.map((row) => String(row.source_product_id));
+  return [];
 }
 
 async function refreshDecisionReviewGroups(
@@ -393,6 +348,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const filters = {
         kind: query.kind ?? "",
         configId: query.configId ?? null,
+        referenceValueId: query.referenceValueId ?? null,
         sourceId: query.sourceId ?? null,
         targetId: query.targetId ?? null,
         typeCode: query.typeCode ?? "",
@@ -401,6 +357,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       };
       const kind = add(filters.kind);
       const configId = add(filters.configId);
+      const referenceValueId = add(filters.referenceValueId);
       const sourceId = add(filters.sourceId);
       const targetId = add(filters.targetId);
       const typeCode = add(filters.typeCode);
@@ -431,7 +388,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
                rule.revision, rule.updated_by AS actor, NULL::TEXT AS reason, rule.created_at, rule.updated_at,
                'rule'::TEXT AS resolution_kind, rule.id AS resolution_id
         FROM source_reference_rules rule
-        LEFT JOIN sources source ON source.id = rule.source_id
+        JOIN sources source ON source.id = rule.source_id
         JOIN reference_types type ON type.id = rule.reference_type_id
         JOIN reference_values value ON value.id = rule.reference_value_id
         WHERE rule.deleted_at IS NULL
@@ -476,6 +433,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const filtered = `FROM (${union}) item
         WHERE (${kind}::TEXT = '' OR item.kind = ${kind})
           AND (${configId}::BIGINT IS NULL OR item.id = ${configId})
+          AND (${referenceValueId}::BIGINT IS NULL OR item.reference_value_id = ${referenceValueId})
           AND (${sourceId}::BIGINT IS NULL OR item.source_id = ${sourceId})
           AND (${targetId}::BIGINT IS NULL OR item.target_id = ${targetId})
           AND (${typeCode}::TEXT = '' OR item.type_code = ${typeCode})
@@ -999,7 +957,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       const row = result.rows[0];
       return row === undefined ? null : {
         id: String(row.id),
-        sourceId: nullableText(row.source_id),
+        sourceId: String(row.source_id),
         typeCode: String(row.type_code),
         name: String(row.name),
         priority: Number(row.priority),
@@ -1318,6 +1276,276 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         [targetId, resolutionId],
       );
       return result.rows.map(mapTargetClassificationProjection);
+    });
+  }
+
+  async createTargetValueMapping(input: CreateTargetValueMappingCommand): Promise<{
+    readonly mapping: TargetValueMappingAdminRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const preview = await this.previewReferenceProjectionWithClient(client, input);
+        if (input.targetCardinality === "single" && preview.cardinalityConflicts.length > 0) {
+          throw new IntegrationContractError(`Target scope ${input.targetScope} accepts one value`);
+        }
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_value_mappings
+           WHERE target_id = $1 AND reference_value_id = $2 AND target_scope = $3 FOR UPDATE`,
+          [input.targetId, input.referenceValueId, input.targetScope],
+        );
+        const previous = previousResult.rows[0];
+        const result = await client.query<DatabaseRow>(
+          `WITH selected_reference AS (
+             SELECT value.id FROM reference_values value JOIN reference_types type ON type.id = value.type_id
+             WHERE value.id = $2 AND value.enabled = TRUE AND type.code = $5
+           ), selected_dictionary AS (
+             SELECT * FROM target_dictionary_values WHERE id = $4 AND target_id = $1 AND active = TRUE
+           ), saved AS (
+             INSERT INTO target_value_mappings (
+               target_id, reference_value_id, target_scope, external_value, external_label,
+               metadata, dictionary_value_id, active, revision
+             )
+             SELECT $1, selected_reference.id, $3, selected_dictionary.external_id, selected_dictionary.name,
+                    JSONB_BUILD_OBJECT('entityType', selected_dictionary.entity_type, 'slug', selected_dictionary.slug,
+                      'taxonomy', selected_dictionary.taxonomy, 'attributeCode', selected_dictionary.attribute_code),
+                    selected_dictionary.id, TRUE, 1
+             FROM selected_reference CROSS JOIN selected_dictionary
+             ON CONFLICT (target_id, reference_value_id, target_scope)
+             DO UPDATE SET external_value = EXCLUDED.external_value, external_label = EXCLUDED.external_label,
+               metadata = EXCLUDED.metadata, dictionary_value_id = EXCLUDED.dictionary_value_id, active = TRUE,
+               revision = CASE WHEN target_value_mappings.dictionary_value_id = EXCLUDED.dictionary_value_id
+                 AND target_value_mappings.active THEN target_value_mappings.revision ELSE target_value_mappings.revision + 1 END,
+               updated_at = NOW()
+             RETURNING *
+           )
+           SELECT saved.*, $5::TEXT AS type_code FROM saved`,
+          [input.targetId, input.referenceValueId, input.targetScope, input.dictionaryValueId, input.typeCode],
+        );
+        const row = result.rows[0];
+        if (row === undefined) throw new EntityNotFoundError("Internal value or target dictionary value", `${input.referenceValueId}/${input.dictionaryValueId}`);
+        const mapping = mapTargetValueMappingAdmin(row);
+        const changed = previous === undefined || previous.active !== true || String(previous.dictionary_value_id) !== input.dictionaryValueId;
+        if (changed) {
+          await client.query(
+            `INSERT INTO target_value_mapping_history (mapping_id, action, previous_value, new_value, actor, reason)
+             VALUES ($1, 'link', $2::JSONB, $3::JSONB, $4, $5)`,
+            [mapping.id, previous === undefined ? null : JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
+          );
+        }
+        const affectedProductCount = changed ? await enqueueProducts(client, preview.affectedSourceProductIds) : 0;
+        await client.query("COMMIT");
+        return { mapping, preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async listReferenceCatalog(query: ClassificationReferenceCatalogQuery): Promise<ClassificationReferenceCatalogResult> {
+    return withClient(this.pool, async (client) => {
+      const parameters = [query.typeCode ?? "", query.search?.trim() ?? "", query.limit, query.offset];
+      const where = `value.enabled = TRUE AND type.enabled = TRUE
+        AND ($1::TEXT = '' OR type.code = $1)
+        AND ($2::TEXT = '' OR value.name ILIKE '%' || $2 || '%' OR value.code ILIKE '%' || $2 || '%')`;
+      const [items, total] = await Promise.all([
+        client.query<DatabaseRow>(
+          `SELECT value.id, type.code AS type_code, type.name AS type_name, value.code, value.name,
+                  value.parent_id, value.metadata,
+                  (SELECT COUNT(DISTINCT observation.source_product_id)::INTEGER
+                   FROM ${classificationObservationReadModelSql} observation
+                   WHERE observation.active = TRUE AND observation.status = 'resolved'
+                     AND observation.resolved_reference_value_id = value.id) AS product_count,
+                  (SELECT COUNT(*)::INTEGER FROM source_reference_mappings mapping
+                   WHERE mapping.reference_value_id = value.id AND mapping.status = 'confirmed') AS mapping_count,
+                  (SELECT COUNT(*)::INTEGER FROM source_reference_rules rule
+                   WHERE rule.reference_value_id = value.id AND rule.enabled = TRUE AND rule.deleted_at IS NULL) AS rule_count,
+                  COALESCE((
+                    SELECT JSONB_AGG(output ORDER BY output->>'kind', output->>'targetScope', output->>'label')
+                    FROM (
+                      SELECT JSONB_BUILD_OBJECT(
+                        'kind', 'primary', 'id', mapping.id::TEXT, 'targetId', mapping.target_id::TEXT,
+                        'targetCode', target.code, 'targetScope', mapping.target_scope,
+                        'dictionaryValueId', mapping.dictionary_value_id::TEXT,
+                        'externalId', mapping.external_value, 'label', mapping.external_label,
+                        'taxonomy', dictionary.taxonomy
+                      ) AS output
+                      FROM target_value_mappings mapping
+                      JOIN targets target ON target.id = mapping.target_id
+                      LEFT JOIN target_dictionary_values dictionary ON dictionary.id = mapping.dictionary_value_id
+                      WHERE mapping.reference_value_id = value.id AND mapping.active = TRUE
+                      UNION ALL
+                      SELECT JSONB_BUILD_OBJECT(
+                        'kind', 'additional', 'id', projection.id::TEXT, 'targetId', projection.target_id::TEXT,
+                        'targetCode', target.code, 'targetScope', projection.target_scope,
+                        'dictionaryValueId', projection.dictionary_value_id::TEXT,
+                        'externalId', dictionary.external_id, 'label', dictionary.name,
+                        'taxonomy', dictionary.taxonomy
+                      ) AS output
+                      FROM target_reference_projections projection
+                      JOIN targets target ON target.id = projection.target_id
+                      JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+                      WHERE projection.reference_value_id = value.id AND projection.active = TRUE AND dictionary.active = TRUE
+                    ) outputs
+                  ), '[]'::JSONB) AS outputs
+           FROM reference_values value
+           JOIN reference_types type ON type.id = value.type_id
+           WHERE ${where}
+           ORDER BY type.name, value.name, value.id
+           LIMIT $3 OFFSET $4`,
+          parameters,
+        ),
+        client.query<DatabaseRow>(
+          `SELECT COUNT(*)::INTEGER AS total FROM reference_values value
+           JOIN reference_types type ON type.id = value.type_id WHERE ${where}`,
+          parameters.slice(0, 2),
+        ),
+      ]);
+      return {
+        items: items.rows.map((row) => ({
+          id: String(row.id), typeCode: String(row.type_code), typeName: String(row.type_name),
+          code: String(row.code), name: String(row.name), parentId: nullableText(row.parent_id),
+          metadata: jsonObject(row.metadata), productCount: Number(row.product_count ?? 0),
+          mappingCount: Number(row.mapping_count ?? 0), ruleCount: Number(row.rule_count ?? 0),
+          outputs: Array.isArray(row.outputs) ? row.outputs.map((entry) => {
+            const output = jsonObject(entry);
+            return {
+              kind: output.kind === "additional" ? "additional" as const : "primary" as const,
+              id: String(output.id), targetId: String(output.targetId), targetCode: String(output.targetCode),
+              targetScope: String(output.targetScope), dictionaryValueId: String(output.dictionaryValueId),
+              externalId: String(output.externalId), label: String(output.label), taxonomy: nullableText(output.taxonomy),
+            };
+          }) : [],
+        })),
+        total: Number(total.rows[0]?.total ?? 0),
+      };
+    });
+  }
+
+  async listReferenceProjections(targetId: string, referenceValueId: string): Promise<readonly TargetReferenceProjectionRecord[]> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `SELECT projection.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+         FROM target_reference_projections projection
+         JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+         WHERE projection.target_id = $1
+           AND projection.reference_value_id = $2
+           AND projection.active = TRUE
+           AND dictionary.active = TRUE
+         ORDER BY projection.target_scope, dictionary.name, projection.id`,
+        [targetId, referenceValueId],
+      );
+      return result.rows.map(mapTargetReferenceProjection);
+    });
+  }
+
+  async previewReferenceProjection(input: TargetReferenceProjectionCommand): Promise<TargetClassificationProjectionPreview> {
+    return withClient(this.pool, (client) => this.previewReferenceProjectionWithClient(client, input));
+  }
+
+  async createReferenceProjection(input: TargetReferenceProjectionCommand): Promise<{
+    readonly projection: TargetReferenceProjectionRecord;
+    readonly preview: TargetClassificationProjectionPreview;
+    readonly affectedProductCount: number;
+  }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const preview = await this.previewReferenceProjectionWithClient(client, input);
+        if (preview.duplicate === null && input.targetCardinality === "single" && preview.cardinalityConflicts.length > 0) {
+          throw new IntegrationContractError(`Target scope ${input.targetScope} accepts one value`);
+        }
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_reference_projections
+           WHERE target_id = $1 AND reference_value_id = $2
+             AND target_scope = $3 AND dictionary_value_id = $4 FOR UPDATE`,
+          [input.targetId, input.referenceValueId, input.targetScope, input.dictionaryValueId],
+        );
+        const previous = previousResult.rows[0];
+        const result = await client.query<DatabaseRow>(
+          `WITH selected_reference AS (
+             SELECT id FROM reference_values WHERE id = $2 AND enabled = TRUE
+           ), selected_dictionary AS (
+             SELECT id FROM target_dictionary_values WHERE id = $4 AND target_id = $1 AND active = TRUE
+           ), saved AS (
+             INSERT INTO target_reference_projections (
+               target_id, reference_value_id, target_scope, dictionary_value_id, created_by
+             )
+             SELECT $1, selected_reference.id, $3, selected_dictionary.id, $5
+             FROM selected_reference CROSS JOIN selected_dictionary
+             ON CONFLICT (target_id, reference_value_id, target_scope, dictionary_value_id)
+             DO UPDATE SET active = TRUE,
+               revision = CASE WHEN target_reference_projections.active THEN target_reference_projections.revision ELSE target_reference_projections.revision + 1 END,
+               updated_at = NOW()
+             RETURNING *
+           )
+           SELECT saved.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+           FROM saved JOIN target_dictionary_values dictionary ON dictionary.id = saved.dictionary_value_id`,
+          [input.targetId, input.referenceValueId, input.targetScope, input.dictionaryValueId, input.actor],
+        );
+        const row = result.rows[0];
+        if (row === undefined) throw new EntityNotFoundError("Internal value or target dictionary value", `${input.referenceValueId}/${input.dictionaryValueId}`);
+        const projection = mapTargetReferenceProjection(row);
+        const changed = previous === undefined || previous.active !== true;
+        if (changed) {
+          await client.query(
+            `INSERT INTO target_reference_projection_history (
+               projection_id, action, previous_value, new_value, actor, reason
+             ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+            [projection.id, previous === undefined ? "create" : "reactivate", previous === undefined ? null : JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
+          );
+        }
+        const affectedProductCount = changed ? await enqueueProducts(client, preview.affectedSourceProductIds) : 0;
+        await client.query("COMMIT");
+        return { projection, preview, affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async deactivateReferenceProjection(input: {
+    readonly targetId: string;
+    readonly projectionId: string;
+    readonly actor: string;
+    readonly reason?: string;
+  }): Promise<{ readonly affectedProductCount: number }> {
+    return withClient(this.pool, async (client) => {
+      await client.query("BEGIN");
+      try {
+        const previousResult = await client.query<DatabaseRow>(
+          `SELECT * FROM target_reference_projections WHERE id = $1 AND target_id = $2 AND active = TRUE FOR UPDATE`,
+          [input.projectionId, input.targetId],
+        );
+        const previous = previousResult.rows[0];
+        if (previous === undefined) throw new EntityNotFoundError("Internal value assignment", input.projectionId);
+        const affected = await client.query<DatabaseRow>(
+          `SELECT DISTINCT source_product_id FROM ${classificationObservationReadModelSql} observation
+           WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1`,
+          [previous.reference_value_id],
+        );
+        const result = await client.query<DatabaseRow>(
+          `UPDATE target_reference_projections SET active = FALSE, revision = revision + 1, updated_at = NOW()
+           WHERE id = $1 RETURNING *`,
+          [input.projectionId],
+        );
+        await client.query(
+          `INSERT INTO target_reference_projection_history (
+             projection_id, action, previous_value, new_value, actor, reason
+           ) VALUES ($1, 'deactivate', $2::JSONB, $3::JSONB, $4, $5)`,
+          [input.projectionId, JSON.stringify(previous), JSON.stringify(result.rows[0]), input.actor, input.reason ?? null],
+        );
+        const affectedProductCount = await enqueueProducts(client, affected.rows.map((row) => String(row.source_product_id)));
+        await client.query("COMMIT");
+        return { affectedProductCount };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
     });
   }
 
@@ -1999,22 +2227,16 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             [input.ruleId, input.enabled ? "reactivate" : "deactivate", JSON.stringify(previous), JSON.stringify(rule), input.actor, input.reason ?? null],
           );
         }
-        let newlyMatchedProductIds: readonly string[] = [];
         if (!unchanged) {
-          newlyMatchedProductIds = await replaceRuleReviewCoverage(
+          await replaceRuleReviewCoverage(
             client,
             String(rule.id),
             String(rule.revision),
-            input.enabled
-              ? previous.source_id === null || previous.source_id === undefined
-                ? null
-                : input.matchedObservationIds
-              : [],
+            input.enabled ? input.matchedObservationIds : [],
           );
         }
         const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, [
           ...input.affectedSourceProductIds,
-          ...newlyMatchedProductIds,
           ...previouslyAffected.rows.map((row) => String(row.source_product_id)),
         ]);
         await client.query("COMMIT");
@@ -2368,6 +2590,18 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
            ON observation.source_product_id = affected.source_product_id
           AND observation.active = TRUE
           AND observation.status = 'resolved'
+         JOIN target_reference_projections projection
+           ON projection.target_id = $1
+          AND projection.target_scope = $3
+          AND projection.active = TRUE
+          AND projection.reference_value_id = observation.resolved_reference_value_id
+         UNION ALL
+         SELECT observation.source_product_id, projection.dictionary_value_id
+         FROM affected
+         JOIN ${classificationObservationReadModelSql} observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE
+          AND observation.status = 'resolved'
          JOIN target_classification_projections projection
            ON projection.target_id = $1
           AND projection.target_scope = $3
@@ -2396,6 +2630,101 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
       })),
       duplicate: duplicateResult.rows[0] === undefined ? null : mapTargetClassificationProjection(duplicateResult.rows[0]),
       cardinalityConflicts: conflictResult.rows.map((row) => String(row.source_product_id)),
+    };
+  }
+
+  private async previewReferenceProjectionWithClient(
+    client: SqlClient,
+    input: TargetReferenceProjectionCommand,
+  ): Promise<TargetClassificationProjectionPreview> {
+    const reference = await client.query<DatabaseRow>(
+      "SELECT id FROM reference_values WHERE id = $1 AND enabled = TRUE",
+      [input.referenceValueId],
+    );
+    if (reference.rows[0] === undefined) throw new EntityNotFoundError("Internal value", input.referenceValueId);
+    const dictionary = await client.query<DatabaseRow>(
+      "SELECT id FROM target_dictionary_values WHERE id = $1 AND target_id = $2 AND active = TRUE",
+      [input.dictionaryValueId, input.targetId],
+    );
+    if (dictionary.rows[0] === undefined) throw new EntityNotFoundError("Target dictionary value", input.dictionaryValueId);
+    const duplicate = await client.query<DatabaseRow>(
+      `SELECT projection.*, dictionary.external_id AS external_value, dictionary.name AS external_label
+       FROM target_reference_projections projection
+       JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+       WHERE projection.target_id = $1 AND projection.reference_value_id = $2
+         AND projection.target_scope = $3 AND projection.dictionary_value_id = $4
+         AND projection.active = TRUE`,
+      [input.targetId, input.referenceValueId, input.targetScope, input.dictionaryValueId],
+    );
+
+    const stats = await client.query<DatabaseRow>(
+      `SELECT COUNT(*)::INTEGER AS observation_count,
+              COUNT(DISTINCT source_product_id)::INTEGER AS product_count,
+              COALESCE(JSONB_AGG(DISTINCT source_product_id::TEXT), '[]'::JSONB) AS source_product_ids
+       FROM ${classificationObservationReadModelSql} observation
+       WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1`,
+      [input.referenceValueId],
+    );
+    const examples = await client.query<DatabaseRow>(
+      `SELECT product.id AS source_product_id, product.source_key,
+              internal.data->>'title' AS title, internal.data->>'sku' AS sku,
+              '[]'::JSONB AS current_terms
+       FROM (
+         SELECT DISTINCT source_product_id
+         FROM ${classificationObservationReadModelSql} observation
+         WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $1
+       ) affected
+       JOIN source_products product ON product.id = affected.source_product_id
+       LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+       ORDER BY product.id LIMIT 10`,
+      [input.referenceValueId],
+    );
+    const conflicts = input.targetCardinality === "multiple" ? { rows: [] as DatabaseRow[] } : await client.query<DatabaseRow>(
+      `WITH affected AS (
+         SELECT DISTINCT source_product_id
+         FROM ${classificationObservationReadModelSql} observation
+         WHERE active = TRUE AND status = 'resolved' AND resolved_reference_value_id = $2
+       ), outputs AS (
+         SELECT observation.source_product_id, mapping.dictionary_value_id
+         FROM affected
+         JOIN ${classificationObservationReadModelSql} observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE AND observation.status = 'resolved'
+         JOIN target_value_mappings mapping
+           ON mapping.target_id = $1 AND mapping.reference_value_id = observation.resolved_reference_value_id
+          AND mapping.target_scope = $3 AND mapping.active = TRUE
+         UNION ALL
+         SELECT observation.source_product_id, projection.dictionary_value_id
+         FROM affected
+         JOIN ${classificationObservationReadModelSql} observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE AND observation.status = 'resolved'
+         JOIN target_reference_projections projection
+           ON projection.target_id = $1 AND projection.reference_value_id = observation.resolved_reference_value_id
+          AND projection.target_scope = $3 AND projection.active = TRUE
+         UNION ALL
+         SELECT observation.source_product_id, projection.dictionary_value_id
+         FROM affected
+         JOIN ${classificationObservationReadModelSql} observation
+           ON observation.source_product_id = affected.source_product_id
+          AND observation.active = TRUE AND observation.status = 'resolved'
+         JOIN target_classification_projections projection
+           ON projection.target_id = $1 AND projection.target_scope = $3 AND projection.active = TRUE
+          AND (projection.mapping_id = observation.mapping_id OR projection.rule_id = observation.rule_id)
+       )
+       SELECT DISTINCT source_product_id FROM outputs WHERE dictionary_value_id <> $4 LIMIT 100`,
+      [input.targetId, input.referenceValueId, input.targetScope, input.dictionaryValueId],
+    );
+    return {
+      observationCount: Number(stats.rows[0]?.observation_count ?? 0),
+      productCount: Number(stats.rows[0]?.product_count ?? 0),
+      affectedSourceProductIds: stringArray(stats.rows[0]?.source_product_ids),
+      examples: examples.rows.map((row) => ({
+        sourceProductId: String(row.source_product_id), sourceKey: String(row.source_key),
+        title: nullableText(row.title), sku: nullableText(row.sku), currentTerms: stringArray(row.current_terms),
+      })),
+      duplicate: duplicate.rows[0] === undefined ? null : mapTargetReferenceProjection(duplicate.rows[0]),
+      cardinalityConflicts: conflicts.rows.map((row) => String(row.source_product_id)),
     };
   }
 }

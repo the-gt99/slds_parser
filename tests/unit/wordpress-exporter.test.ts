@@ -191,8 +191,8 @@ describe("WordPressExporter", () => {
       product_tag: { mode: "replace", term_ids: [892] },
     });
     expect(input.references.resolveProjections).toHaveBeenCalledWith([
-      { resolutionKind: "mapping", resolutionId: "21" },
-      { resolutionKind: "mapping", resolutionId: "22" },
+      { resolutionKind: "mapping", resolutionId: "21", referenceId: "11" },
+      { resolutionKind: "mapping", resolutionId: "22", referenceId: "12" },
     ]);
   });
 

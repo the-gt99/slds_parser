@@ -13,6 +13,7 @@ import type {
   TargetProductSnapshotRecord,
   TargetRecord,
   TargetClassificationProjectionRecord,
+  TargetReferenceProjectionRecord,
   TargetValueMappingRecord,
 } from "../../../repositories/index.js";
 
@@ -74,6 +75,20 @@ export function mapTargetClassificationProjection(row: DatabaseRow): TargetClass
     targetId: text(row, "target_id"),
     resolutionKind,
     resolutionId: text(row, resolutionKind === "mapping" ? "mapping_id" : "rule_id"),
+    targetScope: text(row, "target_scope"),
+    dictionaryValueId: text(row, "dictionary_value_id"),
+    externalValue: text(row, "external_value"),
+    externalLabel: text(row, "external_label"),
+    metadata: row.metadata as JsonObject,
+    revision: text(row, "revision"),
+  };
+}
+
+export function mapTargetReferenceProjection(row: DatabaseRow): TargetReferenceProjectionRecord {
+  return {
+    id: text(row, "id"),
+    targetId: text(row, "target_id"),
+    referenceValueId: text(row, "reference_value_id"),
     targetScope: text(row, "target_scope"),
     dictionaryValueId: text(row, "dictionary_value_id"),
     externalValue: text(row, "external_value"),

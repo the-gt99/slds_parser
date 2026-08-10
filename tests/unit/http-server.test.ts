@@ -103,7 +103,7 @@ describe("HTTP server", () => {
 
     const response = await server.inject({
       method: "GET",
-      url: "/api/classifier/configuration?kind=rule&configId=8&status=active&limit=25&offset=50",
+      url: "/api/classifier/configuration?kind=rule&configId=8&referenceValueId=42&status=active&limit=25&offset=50",
       headers: { authorization: `Bearer ${adminToken}` },
     });
 
@@ -111,6 +111,7 @@ describe("HTTP server", () => {
     expect(classifier.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({
       kind: "rule",
       configId: "8",
+      referenceValueId: "42",
       status: "active",
       includeUsage: true,
       limit: 25,
@@ -193,7 +194,7 @@ describe("HTTP server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
-    expect(response.body).toContain("SLDS · Классификатор");
+    expect(response.body).toContain("SLDS · Классификация");
     await server.close();
   });
 
@@ -462,6 +463,46 @@ describe("HTTP server", () => {
     expect(classifier.previewTargetProjection).toHaveBeenCalledWith(payload);
     expect(classifier.createTargetProjection).toHaveBeenCalledWith(payload, "admin");
     expect(targetDictionaries.createTermAndDecide).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("creates additional WordPress assignments from an internal value", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      previewReferenceProjection: vi.fn().mockResolvedValue({ observationCount: 8, productCount: 7, affectedSourceProductIds: ["1"], examples: [], duplicate: null, cardinalityConflicts: [] }),
+      createReferenceProjection: vi.fn().mockResolvedValue({ projection: { id: "2" }, affectedProductCount: 7 }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const headers = { cookie, "x-csrf-token": login.json().csrfToken };
+    const payload = { targetId: "10", referenceValueId: "42", targetScope: "product.tag", dictionaryValueId: "88" };
+
+    const preview = await server.inject({ method: "POST", url: "/api/classifier/reference-projections/preview", headers, payload });
+    const created = await server.inject({ method: "POST", url: "/api/classifier/reference-projections", headers, payload });
+
+    expect(preview.statusCode).toBe(200);
+    expect(created.statusCode).toBe(201);
+    expect(classifier.previewReferenceProjection).toHaveBeenCalledWith(payload);
+    expect(classifier.createReferenceProjection).toHaveBeenCalledWith(payload, "admin");
+    await server.close();
+  });
+
+  it("creates a primary WordPress assignment from an internal value", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      createTargetValueMapping: vi.fn().mockResolvedValue({ mapping: { id: "3" }, affectedProductCount: 7 }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const headers = { cookie, "x-csrf-token": login.json().csrfToken };
+    const payload = { targetId: "10", referenceValueId: "42", typeCode: "brand", targetScope: "attribute.pa_brand", dictionaryValueId: "88" };
+
+    const created = await server.inject({ method: "POST", url: "/api/classifier/target-mappings", headers, payload });
+
+    expect(created.statusCode).toBe(201);
+    expect(classifier.createTargetValueMapping).toHaveBeenCalledWith(payload, "admin");
     await server.close();
   });
 

@@ -174,11 +174,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
   it("resolves classification projections in one batch", async () => {
     const executor = new FakeExecutor([[
       { id: "51", target_id: "7", mapping_id: "21", rule_id: null, target_scope: "product.tag", dictionary_value_id: "61", external_value: "892", external_label: "Lifestyle", metadata: {}, revision: "1" },
+    ], [
+      { id: "52", target_id: "7", reference_value_id: "31", target_scope: "product.tag", dictionary_value_id: "62", external_value: "893", external_label: "Running", metadata: {}, revision: "1" },
     ]]);
-    const projections = await new PostgresReferenceRepository(executor).resolveTargetProjections("7", [{ resolutionKind: "mapping", resolutionId: "21" }]);
+    const projections = await new PostgresReferenceRepository(executor).resolveTargetProjections("7", [{ resolutionKind: "mapping", resolutionId: "21", referenceId: "31" }]);
     expect(projections[0]).toMatchObject({ resolutionKind: "mapping", resolutionId: "21", externalValue: "892" });
+    expect(projections[1]).toMatchObject({ referenceValueId: "31", externalValue: "893" });
     expect(executor.calls[0]?.text).toContain("JSONB_TO_RECORDSET");
     expect(executor.calls[0]?.values[1]).toContain('"resolution_kind":"mapping"');
+    expect(executor.calls[0]?.values[1]).toContain('"reference_id":"31"');
   });
 
   it("previews rule projections through observation rule_id columns", async () => {
@@ -444,8 +448,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[1]?.text).toContain("observation_stats AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("example_observations AS MATERIALIZED");
     expect(executor.calls[1]?.text).toContain("JOIN LATERAL");
-    expect(executor.calls[1]?.text).toContain("$9::BOOLEAN");
-    expect(executor.calls[1]?.values[8]).toBe(true);
+    expect(executor.calls[1]?.text).toContain("$10::BOOLEAN");
+    expect(executor.calls[1]?.values[9]).toBe(true);
     expect(executor.calls[1]?.text).not.toContain("matched_observations AS MATERIALIZED");
   });
 

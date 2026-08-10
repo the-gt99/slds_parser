@@ -62,12 +62,12 @@ describe("ProductClassifier", () => {
   it("separates Pegasus models by contextual rules instead of mapping the family", async () => {
     const store = new MemoryStore();
     store.classificationRules.push(
-      { id: "1", sourceId: null, typeCode: "model", name: "ACG Pegasus Trail", priority: 100, conditions: [
+      { id: "1", sourceId: "goat", typeCode: "model", name: "ACG Pegasus Trail", priority: 100, conditions: [
         { field: "evidence.brand", operator: "equals", value: "Nike" },
         { field: "evidence.family", operator: "equals", value: "Pegasus" },
         { field: "evidence.title", operator: "contains", value: "ACG Pegasus Trail" },
       ], referenceValueId: "model-acg", revision: "1" },
-      { id: "2", sourceId: null, typeCode: "model", name: "Air Pegasus 2005", priority: 100, conditions: [
+      { id: "2", sourceId: "goat", typeCode: "model", name: "Air Pegasus 2005", priority: 100, conditions: [
         { field: "evidence.brand", operator: "equals", value: "Nike" },
         { field: "evidence.family", operator: "equals", value: "Pegasus" },
         { field: "evidence.title", operator: "contains", value: "Air Pegasus 2005" },
@@ -85,12 +85,12 @@ describe("ProductClassifier", () => {
   it("separates Surge Golf and Surge 4 using contains and regex rules", async () => {
     const store = new MemoryStore();
     store.classificationRules.push(
-      { id: "3", sourceId: null, typeCode: "model", name: "Surge Golf", priority: 100, conditions: [
+      { id: "3", sourceId: "goat", typeCode: "model", name: "Surge Golf", priority: 100, conditions: [
         { field: "evidence.brand", operator: "equals", value: "Under Armour" },
         { field: "evidence.family", operator: "equals", value: "Surge" },
         { field: "evidence.title", operator: "contains", value: "Surge Golf" },
       ], referenceValueId: "model-golf", revision: "1" },
-      { id: "4", sourceId: null, typeCode: "model", name: "Surge 4", priority: 100, conditions: [
+      { id: "4", sourceId: "goat", typeCode: "model", name: "Surge 4", priority: 100, conditions: [
         { field: "evidence.brand", operator: "equals", value: "Under Armour" },
         { field: "evidence.family", operator: "equals", value: "Surge" },
         { field: "evidence.title", operator: "regex", value: "\\bSurge\\s+4\\b" },
@@ -123,8 +123,8 @@ describe("ProductClassifier", () => {
   it("does not guess when equally specific rules point to different values", async () => {
     const store = new MemoryStore();
     store.classificationRules.push(
-      { id: "5", sourceId: null, typeCode: "model", name: "First", priority: 10, conditions: [{ field: "evidence.family", operator: "equals", value: "Pegasus" }], referenceValueId: "first", revision: "1" },
-      { id: "6", sourceId: null, typeCode: "model", name: "Second", priority: 10, conditions: [{ field: "evidence.family", operator: "equals", value: "Pegasus" }], referenceValueId: "second", revision: "1" },
+      { id: "5", sourceId: "goat", typeCode: "model", name: "First", priority: 10, conditions: [{ field: "evidence.family", operator: "equals", value: "Pegasus" }], referenceValueId: "first", revision: "1" },
+      { id: "6", sourceId: "goat", typeCode: "model", name: "Second", priority: 10, conditions: [{ field: "evidence.family", operator: "equals", value: "Pegasus" }], referenceValueId: "second", revision: "1" },
     );
     const classifier = new ProductClassifier(createMemoryRepositories(store).classifications);
     const result = await classifier.classify("goat", productWith(modelCandidate("Nike Pegasus", "Nike", "Pegasus")));

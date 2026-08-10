@@ -346,6 +346,16 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                            projection.target_scope, dictionary.external_id AS target_external_id,
                            dictionary.name AS target_label, dictionary.taxonomy AS target_taxonomy,
                            CASE WHEN projection.active THEN 'active' ELSE 'inactive' END AS status
+                    FROM target_reference_projections projection
+                    JOIN targets target ON target.id = projection.target_id
+                    JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
+                    WHERE projection.reference_value_id = observation.resolved_reference_value_id
+                    UNION ALL
+                    SELECT 'projection'::TEXT AS kind, projection.id,
+                           projection.target_id, target.code AS target_code,
+                           projection.target_scope, dictionary.external_id AS target_external_id,
+                           dictionary.name AS target_label, dictionary.taxonomy AS target_taxonomy,
+                           CASE WHEN projection.active THEN 'active' ELSE 'inactive' END AS status
                     FROM target_classification_projections projection
                     JOIN targets target ON target.id = projection.target_id
                     JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id

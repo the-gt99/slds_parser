@@ -223,7 +223,7 @@ export interface ClassificationRuleConditionRecord {
 
 export interface ClassificationRuleRecord {
   readonly id: EntityId;
-  readonly sourceId: EntityId | null;
+  readonly sourceId: EntityId;
   readonly typeCode: string;
   readonly name: string;
   readonly priority: number;
@@ -293,7 +293,7 @@ export interface TargetClassificationProjectionPreview {
   readonly productCount: number;
   readonly affectedSourceProductIds: readonly EntityId[];
   readonly examples: readonly TargetClassificationProjectionPreviewExample[];
-  readonly duplicate: TargetClassificationProjectionRecord | null;
+  readonly duplicate: TargetClassificationProjectionRecord | TargetReferenceProjectionRecord | null;
   readonly cardinalityConflicts: readonly EntityId[];
 }
 
@@ -842,6 +842,7 @@ export type ClassificationConfigStatus = "active" | "inactive" | "ignored";
 export interface ClassificationConfigListQuery {
   readonly kind?: ClassificationConfigKind;
   readonly configId?: EntityId;
+  readonly referenceValueId?: EntityId;
   readonly sourceId?: EntityId;
   readonly targetId?: EntityId;
   readonly typeCode?: string;
@@ -851,6 +852,61 @@ export interface ClassificationConfigListQuery {
   readonly offset: number;
   readonly includeUsage?: boolean;
   readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
+}
+
+export interface ClassificationReferenceCatalogItem extends ClassificationReferenceValueOption {
+  readonly typeName: string;
+  readonly productCount: number;
+  readonly mappingCount: number;
+  readonly ruleCount: number;
+  readonly outputs: readonly {
+    readonly kind: "primary" | "additional";
+    readonly id: EntityId;
+    readonly targetId: EntityId;
+    readonly targetCode: string;
+    readonly targetScope: string;
+    readonly dictionaryValueId: EntityId;
+    readonly externalId: string;
+    readonly label: string;
+    readonly taxonomy: string | null;
+  }[];
+}
+
+export interface ClassificationReferenceCatalogQuery {
+  readonly typeCode?: string;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ClassificationReferenceCatalogResult {
+  readonly items: readonly ClassificationReferenceCatalogItem[];
+  readonly total: number;
+}
+
+export interface TargetReferenceProjectionRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly referenceValueId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly externalValue: string;
+  readonly externalLabel: string;
+  readonly metadata: JsonObject;
+  readonly revision: string;
+  readonly active?: boolean;
+  readonly createdAt?: Timestamp;
+  readonly updatedAt?: Timestamp;
+}
+
+export interface TargetReferenceProjectionCommand {
+  readonly targetId: EntityId;
+  readonly referenceValueId: EntityId;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly targetCardinality: "single" | "multiple";
+  readonly actor: string;
+  readonly reason?: string;
 }
 
 export interface ClassificationConfigOutput {
@@ -941,6 +997,17 @@ export interface TargetValueMappingAdminRecord extends TargetValueMappingRecord 
 export interface TargetValueMappingCommand {
   readonly mappingId: EntityId;
   readonly dictionaryValueId: EntityId;
+  readonly actor: string;
+  readonly reason?: string;
+}
+
+export interface CreateTargetValueMappingCommand {
+  readonly targetId: EntityId;
+  readonly referenceValueId: EntityId;
+  readonly typeCode: string;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId;
+  readonly targetCardinality: "single" | "multiple";
   readonly actor: string;
   readonly reason?: string;
 }
