@@ -76,7 +76,7 @@ const matchedProductsSql = `WITH conditions AS MATERIALIZED (
     )
 )
 SELECT (SELECT COUNT(*)::INTEGER FROM matched) AS product_count,
-  COALESCE((SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example.source_product_id) FROM (
+  COALESCE((SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example."sourceProductId"::BIGINT) FROM (
     SELECT source_product_id::TEXT AS "sourceProductId", title, sku FROM matched ORDER BY source_product_id DESC LIMIT 10
   ) example), '[]'::JSONB) AS examples`;
 
