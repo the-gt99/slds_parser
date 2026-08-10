@@ -814,6 +814,8 @@ Parser commit `1d60eba` развёрнут на production с миграцией
 
 Parser commit `405703c` исправил верхний счётчик очереди классификатора: раньше интерфейс показывал длину страницы с жёстким лимитом `200`, теперь API параллельно возвращает точный `total` из `classification_review_groups` по тем же source/type/status/search/context и processor-version фильтрам. Production smoke вернул `items=200, total=187011` для общей очереди и `items=200, total=245` для типа brand; ответы заняли `671 ms` и `211 ms`. Число меняется вместе с фильтрами и форматируется в интерфейсе по русской локали.
 
+Parser commit `b79aab5` развёрнут с миграцией `035_optimize_classification_review_search.sql`. Поиск выполняется сервером по всем группам очереди: запросы от трёх символов ищут подстроку через GIN trigram index, одно- и двухсимвольные запросы ищут быстрый префикс через expression B-tree index. Сортировка дополнена уникальным `review.id`, а интерфейс при приближении к низу списка подгружает следующие `200` строк, дедуплицирует пересечения и игнорирует устаревшие ответы предыдущего поиска. Production smoke: страницы `offset=0/200` по `200` строк без пересечений; `knit` нашёл `971` значение за `63 ms`, `Dc` — `152` за `48 ms`. `EXPLAIN ANALYZE` подтвердил оба индекса без sequential scan: `7.6 ms` для trigram и `5.5 ms` для prefix. Интеграционный тест миграций `001–035` прошёл в отдельной случайной схеме production PostgreSQL; локально и на production прошли typecheck, `289` тестов, build и JavaScript checks. API/worker active без restart/errors, новых failed jobs нет, target `slamdunk=false`, active export jobs `0`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
