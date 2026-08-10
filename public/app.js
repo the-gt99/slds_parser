@@ -1472,6 +1472,8 @@ function populateCatalogFilters() {
 
 async function switchClassificationView(view, updateUrl = true) {
   state.classificationView = view;
+  byId("app-view").classList.toggle("document-scroll", view === "rules" || view === "wordpress");
+  window.scrollTo(0, 0);
   for (const panel of document.querySelectorAll(".classification-view")) panel.hidden = panel.id !== `classification-view-${view}`;
   for (const button of document.querySelectorAll("[data-classification-view]")) button.classList.toggle("active", button.dataset.classificationView === view);
   byId("refresh-button").hidden = view !== "queue";

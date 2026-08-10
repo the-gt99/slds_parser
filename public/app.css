@@ -624,6 +624,13 @@ h3 { font-size: 17px; line-height: 1.3; }
   grid-template-rows: 72px auto auto minmax(0, 1fr);
   overflow: hidden;
 }
+.classification-shell.document-scroll {
+  height: auto;
+  min-height: 100vh;
+  grid-template-rows: 72px auto auto auto;
+  overflow: visible;
+}
+.classification-shell.document-scroll .catalog-page { overflow: visible; }
 .classification-nav {
   display: flex;
   align-items: flex-end;
