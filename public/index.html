@@ -30,7 +30,7 @@
     </form>
   </div>
 
-  <div id="app-view" class="app-shell" hidden>
+  <div id="app-view" class="app-shell classification-shell" hidden>
     <header class="topbar">
       <div class="brand-line">
         <div class="brand-mark small" aria-hidden="true">S</div>
@@ -205,9 +205,9 @@
       </section>
       <form id="rule-list-filters" class="catalog-filters catalog-filters-wide">
         <label class="search-field"><span aria-hidden="true">⌕</span><input id="rule-list-search" type="search" placeholder="Название, условие или результат"></label>
-        <select id="rule-list-source"><option value="">Все источники</option></select>
-        <select id="rule-list-type"><option value="">Все типы</option></select>
-        <select id="rule-list-status"><option value="">Любой статус</option><option value="active">Активные</option><option value="inactive">Отключённые</option></select>
+        <select id="rule-list-source" aria-label="Источник"><option value="">Все источники</option></select>
+        <select id="rule-list-type" aria-label="Тип значения"><option value="">Все типы</option></select>
+        <select id="rule-list-status" aria-label="Статус правила"><option value="">Любой статус</option><option value="active">Активные</option><option value="inactive">Отключённые</option></select>
       </form>
       <section class="section catalog-table-section"><div id="rule-list" class="rule-catalog-list"></div><button id="rule-more" class="button quiet wide" type="button" hidden>Показать ещё</button></section>
     </main>
@@ -217,7 +217,7 @@
         <div><p class="eyebrow">Справочник target</p><h2>WordPress</h2><p id="wordpress-sync-state" class="muted">Здесь показаны реальные термины, полученные с target.</p></div>
         <button id="wordpress-sync-button" class="button secondary" type="button">Обновить справочники</button>
       </section>
-      <div class="catalog-filters catalog-filters-wide">
+      <div id="wordpress-filters" class="catalog-filters catalog-filters-wide">
         <select id="wordpress-target" aria-label="Target"></select>
         <select id="wordpress-entity" aria-label="Раздел WordPress"></select>
         <label class="search-field"><span aria-hidden="true">⌕</span><input id="wordpress-search" type="search" placeholder="Название, slug или ID"></label>

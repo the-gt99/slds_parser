@@ -918,7 +918,11 @@ function conditionRow(condition = { field: "sourceValue", operator: "contains", 
   row.className = "condition-row";
   const field = document.createElement("select");
   field.className = "condition-field";
-  for (const value of availableRuleFields()) field.append(new Option(value, value, false, value === condition.field));
+  for (const value of availableRuleFields()) {
+    const option = new Option(conditionFieldLabel(value), value, false, value === condition.field);
+    option.title = value;
+    field.append(option);
+  }
   const operator = document.createElement("select");
   operator.className = "condition-operator";
   for (const [value, label] of [["equals", "равно"], ["contains", "содержит"], ["all_words", "все слова"], ["regex", "regex"]]) {
@@ -1289,10 +1293,19 @@ function populateCatalogFilters() {
     if ([...select.options].some((option) => option.value === current)) select.value = current;
   }
   const source = byId("rule-list-source");
-  if (source) source.replaceChildren(new Option("Все источники", ""), ...state.configMeta.sources.map((item) => new Option(item.name, item.id)));
+  if (source) {
+    source.replaceChildren(new Option("Все источники", ""), ...state.configMeta.sources.map((item) => new Option(item.name, item.id)));
+    const singleSource = state.configMeta.sources.length === 1;
+    source.hidden = singleSource;
+    if (singleSource) source.value = state.configMeta.sources[0].id;
+    byId("rule-list-filters")?.classList.toggle("single-source", singleSource);
+  }
   const target = byId("wordpress-target");
   if (target) {
     target.replaceChildren(...state.targets.map((item) => new Option(item.name, item.id)));
+    const singleTarget = state.targets.length === 1;
+    target.hidden = singleTarget;
+    byId("wordpress-filters")?.classList.toggle("single-target", singleTarget);
     populateWordPressEntities();
   }
 }
@@ -1438,7 +1451,7 @@ function renderReferenceDetail(reference, relations) {
   rows.className = "relation-list";
   for (const item of relations.mappings) rows.append(relationRow(item.sourceValue, `${item.sourceCode} · точное значение`, item.status));
   for (const item of relations.rules) {
-    const row = relationRow(item.ruleName, `${item.sourceCode ?? "Все источники"} · ${conditionSummary(item.conditions)}`, item.status, "Изменить");
+    const row = relationRow(item.ruleName, `${item.sourceCode?.toUpperCase() ?? "Источник"} · ${conditionSummary(item.conditions)}`, item.status, "Изменить");
     row.querySelector("button")?.addEventListener("click", () => openRuleDialog({ rule: item }));
     rows.append(row);
   }
@@ -1509,7 +1522,38 @@ function relationRow(titleText, metaText, statusText, actionText = null) {
 }
 
 function conditionSummary(conditions) {
-  return (conditions ?? []).map((item) => `${item.field} ${item.operator} «${item.value}»`).join("; ") || "без условий";
+  return (conditions ?? []).map((item) => `${conditionFieldLabel(item.field)} ${conditionOperatorLabel(item.operator)} «${item.value}»`).join(" · ") || "Без условий";
+}
+
+const ruleFieldLabels = {
+  sourceValue: "Исходное значение",
+  scope: "Область",
+  subjectKind: "Сущность",
+  "context.brand": "Бренд",
+  "context.family": "Семейство модели",
+  "context.productType": "Тип товара",
+  "context.productCategory": "Категория товара",
+  "context.audience": "Аудитория",
+  "evidence.title": "Название товара",
+  "evidence.silhouette": "Силуэт",
+};
+
+const ruleOperatorLabels = {
+  equals: "равно",
+  contains: "содержит",
+  all_words: "содержит все слова",
+  regex: "соответствует выражению",
+};
+
+function conditionFieldLabel(field) {
+  if (ruleFieldLabels[field]) return ruleFieldLabels[field];
+  if (field.startsWith("context.")) return `Контекст: ${field.slice("context.".length)}`;
+  if (field.startsWith("evidence.")) return `Данные товара: ${field.slice("evidence.".length)}`;
+  return field;
+}
+
+function conditionOperatorLabel(operator) {
+  return ruleOperatorLabels[operator] ?? operator;
 }
 
 async function loadRules(reset = true) {
@@ -1553,7 +1597,7 @@ function renderRuleCatalog() {
     const title = document.createElement("strong");
     title.textContent = rule.ruleName;
     const conditions = document.createElement("span");
-    conditions.textContent = conditionSummary(rule.conditions);
+    conditions.textContent = `${typeName(rule.typeCode)} · ${conditionSummary(rule.conditions)}`;
     const result = document.createElement("span");
     result.className = "catalog-item-flow";
     result.textContent = `→ ${rule.referenceName} · ${rule.affectedProductCount} товаров`;
