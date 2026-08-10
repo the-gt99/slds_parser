@@ -8,6 +8,7 @@ const assets = new Map([
   ["/classifier", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/assets/app.css", { file: "app.css", type: "text/css; charset=utf-8" }],
   ["/assets/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/classifier-rule-suggestions.js", { file: "classifier-rule-suggestions.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/product.js", { file: "product.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/admin-list.js", { file: "admin-list.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/proxies.js", { file: "proxies.js", type: "text/javascript; charset=utf-8" }],

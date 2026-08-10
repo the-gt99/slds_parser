@@ -1,3 +1,5 @@
+import { suggestRuleConditions } from "/assets/classifier-rule-suggestions.js";
+
 const byId = (id) => document.getElementById(id);
 
 const state = {
@@ -873,30 +875,9 @@ async function openRuleDialog(options = {}) {
   } catch {
     state.ruleEditorFields = ["sourceValue", "scope", "subjectKind", ...(editing?.conditions ?? []).map((condition) => condition.field)];
   }
-  const conditions = editing?.conditions ?? (item ? suggestedConditions(item) : []);
+  const conditions = editing?.conditions ?? (item ? suggestRuleConditions(item) : []);
   renderConditions(conditions.length ? conditions : [{ field: "sourceValue", operator: "equals", value: item?.sourceValue ?? "" }]);
   byId("rule-dialog").showModal();
-}
-
-function suggestedConditions(item) {
-  const conditions = [];
-  if (item.typeCode === "category") {
-    conditions.push({ field: "sourceValue", operator: "equals", value: item.sourceValue });
-    for (const key of ["productType", "productCategory", "audience"]) {
-      if (typeof item.context?.[key] === "string" && item.context[key]) {
-        conditions.push({ field: `context.${key}`, operator: "equals", value: item.context[key] });
-      }
-    }
-    return conditions;
-  }
-  if (typeof item.context?.brand === "string" && item.context.brand) {
-    conditions.push({ field: "context.brand", operator: "equals", value: item.context.brand });
-  }
-  const title = item.examples?.[0]?.evidence?.title;
-  if (typeof title === "string" && title) {
-    conditions.push({ field: "evidence.title", operator: "contains", value: item.sourceValue });
-  }
-  return conditions;
 }
 
 function availableRuleFields() {
