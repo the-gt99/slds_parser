@@ -124,19 +124,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(listCall.text).toContain("review.source_external_id = $2::BIGINT::TEXT");
   });
 
-  it("records source freshness and requires it for export candidates", async () => {
-    const refreshExecutor = new FakeExecutor([[]]);
-    const repository = new PostgresExportControlRepository(pool(refreshExecutor));
-
-    await repository.markSourceRefreshed("21", "2026-08-11T12:00:00.000Z");
-
-    expect(refreshExecutor.calls[0]?.text).toContain("source_refreshed_at = $2::TIMESTAMPTZ");
-    expect(refreshExecutor.calls[0]?.values).toEqual(["21", "2026-08-11T12:00:00.000Z"]);
-
+  it("does not apply a source freshness TTL to approved export candidates", async () => {
     const candidateExecutor = new FakeExecutor([[]]);
     await new PostgresExportControlRepository(pool(candidateExecutor)).listExportCandidates({ targetId: "10", limit: 50 });
-    expect(candidateExecutor.calls[0]?.text).toContain("review.source_refreshed_at IS NOT NULL");
-    expect(candidateExecutor.calls[0]?.text).toContain("make_interval(secs => 900)");
+    expect(candidateExecutor.calls[0]?.text).not.toContain("source_refreshed_at");
+    expect(candidateExecutor.calls[0]?.text).not.toContain("make_interval");
   });
 
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
@@ -924,6 +916,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collection_concurrency: 15,
       process_concurrency: 10,
       preflight_concurrency: 4,
+      refresh_source_before_export: true,
       revision: "2",
       updated_by: "admin",
       updated_at: new Date("2026-08-11T12:00:00.000Z"),
@@ -931,6 +924,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       applied_collection_concurrency: 15,
       applied_process_concurrency: 10,
       applied_preflight_concurrency: 4,
+      applied_refresh_source_before_export: true,
       applied_worker_id: "production",
       applied_at: new Date("2026-08-11T12:01:00.000Z"),
     };
@@ -941,17 +935,20 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collectionConcurrency: 1,
       processConcurrency: 1,
       preflightConcurrency: 1,
+      refreshSourceBeforeExport: true,
     }, "production");
 
     expect(result).toMatchObject({
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      refreshSourceBeforeExport: true,
       revision: "2",
-      applied: { revision: "2", workerId: "production", preflightConcurrency: 4 },
+      applied: { revision: "2", workerId: "production", preflightConcurrency: 4, refreshSourceBeforeExport: true },
     });
     expect(executor.calls[1]?.text).toContain("ON CONFLICT (singleton) DO NOTHING");
     expect(executor.calls[3]?.text).toContain("applied_preflight_concurrency = preflight_concurrency");
+    expect(executor.calls[3]?.text).toContain("applied_refresh_source_before_export = refresh_source_before_export");
   });
 
   it("increments and audits a changed runtime worker settings revision", async () => {
@@ -960,6 +957,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collection_concurrency: 15,
       process_concurrency: 10,
       preflight_concurrency: 1,
+      refresh_source_before_export: true,
       revision: "7",
       updated_by: "environment",
       updated_at: new Date("2026-08-11T12:00:00.000Z"),
@@ -967,10 +965,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
       applied_collection_concurrency: 15,
       applied_process_concurrency: 10,
       applied_preflight_concurrency: 1,
+      applied_refresh_source_before_export: true,
       applied_worker_id: "production",
       applied_at: new Date("2026-08-11T12:00:00.000Z"),
     };
-    const updated = { ...current, preflight_concurrency: 4, revision: "8", updated_by: "admin" };
+    const updated = { ...current, preflight_concurrency: 4, refresh_source_before_export: false, revision: "8", updated_by: "admin" };
     const executor = new FakeExecutor([[], [current], [updated], [], []]);
     const repository = new PostgresRuntimeWorkerSettingsRepository(pool(executor));
 
@@ -978,14 +977,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      refreshSourceBeforeExport: false,
     }, "admin");
 
-    expect(result).toMatchObject({ revision: "8", preflightConcurrency: 4, applied: { revision: "7", preflightConcurrency: 1 } });
-    expect(executor.calls[2]?.values).toEqual([15, 10, 4, "8", "admin"]);
+    expect(result).toMatchObject({ revision: "8", preflightConcurrency: 4, refreshSourceBeforeExport: false, applied: { revision: "7", preflightConcurrency: 1, refreshSourceBeforeExport: true } });
+    expect(executor.calls[2]?.values).toEqual([15, 10, 4, false, "8", "admin"]);
     expect(executor.calls[3]?.values).toEqual([
       "8",
-      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 1 }),
-      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4 }),
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 1, refreshSourceBeforeExport: true }),
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4, refreshSourceBeforeExport: false }),
       "admin",
     ]);
   });

@@ -26,6 +26,7 @@ function runtimeSettings(overrides: Partial<RuntimeWorkerSettingsRecord> = {}): 
     collectionConcurrency: 15,
     processConcurrency: 10,
     preflightConcurrency: 4,
+    refreshSourceBeforeExport: true,
     revision: "2",
     updatedBy: "admin",
     updatedAt: "2026-08-11T12:00:00.000Z",
@@ -78,11 +79,12 @@ describe("RuntimeAdminService", () => {
 
   it("saves runtime concurrency and restarts an active worker explicitly", async () => {
     const database = { query: vi.fn() } as unknown as Pool;
-    const saved = runtimeSettings();
-    const applied = runtimeSettings({ applied: {
+    const saved = runtimeSettings({ refreshSourceBeforeExport: false });
+    const applied = runtimeSettings({ refreshSourceBeforeExport: false, applied: {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      refreshSourceBeforeExport: false,
       revision: "2",
       workerId: "production",
       appliedAt: "2026-08-11T12:01:00.000Z",
@@ -104,12 +106,14 @@ describe("RuntimeAdminService", () => {
       collectionConcurrency: "15",
       processConcurrency: "10",
       preflightConcurrency: "4",
+      refreshSourceBeforeExport: false,
     }, "admin", true);
 
     expect(workerSettings.save).toHaveBeenCalledWith({
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      refreshSourceBeforeExport: false,
     }, "admin");
     expect(command.mock.calls.map((call) => call[1][0])).toEqual(["show", "stop", "show", "start", "show"]);
     expect(result).toEqual({ settings: applied, worker: expect.objectContaining({ active: true, mainPid: "101" }) });

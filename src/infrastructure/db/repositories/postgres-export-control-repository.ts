@@ -1,6 +1,5 @@
 import type { EntityId, JsonObject } from "../../../contracts/index.js";
 import { IntegrationContractError } from "../../../core/errors/index.js";
-import { EXPORT_SOURCE_FRESHNESS_SECONDS } from "../../../core/export/source-freshness.js";
 import type {
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
@@ -39,14 +38,10 @@ function flags(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
-const sourceIsFreshSql = `review.source_refreshed_at IS NOT NULL
-  AND review.source_refreshed_at >= NOW() - make_interval(secs => ${EXPORT_SOURCE_FRESHNESS_SECONDS})`;
-
 const effectiveStatusSql = `CASE
   WHEN review.status = 'checking' THEN 'checking'
   WHEN review.status = 'stale'
-    OR review.configuration_revision <> revision.revision
-    OR (review.status = 'ready' AND NOT (${sourceIsFreshSql})) THEN 'stale'
+    OR review.configuration_revision <> revision.revision THEN 'stale'
   ELSE review.status
 END`;
 
@@ -58,13 +53,11 @@ function filterSql(
   const where: string[] = [];
   if (options.includeStatus && filter.status !== undefined) {
     if (filter.status === "stale") {
-      where.push(`(review.status = 'stale'
-        OR (review.status <> 'checking' AND review.configuration_revision <> revision.revision)
-        OR (review.status = 'ready' AND NOT (${sourceIsFreshSql})))`);
+      where.push("(review.status = 'stale' OR (review.status <> 'checking' AND review.configuration_revision <> revision.revision))");
     } else if (filter.status === "checking") {
       where.push("review.status = 'checking'");
     } else {
-      where.push(`review.status = ${add(filter.status)} AND review.configuration_revision = revision.revision${filter.status === "ready" ? ` AND ${sourceIsFreshSql}` : ""}`);
+      where.push(`review.status = ${add(filter.status)} AND review.configuration_revision = revision.revision`);
     }
   }
   if (filter.operation === "create") where.push("review.will_create = TRUE");
@@ -113,7 +106,6 @@ function mapListItem(row: DatabaseRow): ExportControlListItem {
     blockers: row.blockers as ExportControlListItem["blockers"],
     changeSummary: row.change_summary as JsonObject,
     error: nullableText(row, "error"),
-    sourceRefreshedAt: nullableTimestamp(row, "source_refreshed_at"),
     checkedAt: timestamp(row, "checked_at"),
     lastExportJob: lastJobId === null ? null : {
       id: lastJobId,
@@ -237,16 +229,13 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              AND ($2::BIGINT[] IS NULL OR internal.source_product_id = ANY($2::BIGINT[]))
              AND NOT EXISTS (
                SELECT 1 FROM jobs job
-               WHERE job.status IN ('pending', 'running', 'retry')
+               WHERE job.job_type = 'preflight_product'
+                 AND job.status IN ('pending', 'running', 'retry')
+                 AND job.payload->>'targetId' = $1::TEXT
                  AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
-                 AND (
-                   job.job_type IN ('collect_product', 'process_product')
-                   OR (job.job_type = 'preflight_product' AND job.payload->>'targetId' = $1::TEXT)
-                 )
              )
              AND CASE WHEN $3::BOOLEAN THEN COALESCE(review.status, '') <> 'checking'
                ELSE review.id IS NULL OR review.status IN ('stale', 'error')
-                 OR (review.status = 'ready' AND NOT (${sourceIsFreshSql}))
                  OR review.configuration_revision <> revision.revision
              END
            ORDER BY CASE WHEN $2::BIGINT[] IS NULL THEN 0 ELSE ARRAY_POSITION($2::BIGINT[], internal.source_product_id) END,
@@ -263,7 +252,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                   selected.source_code, selected.source_external_id, selected.title,
                   selected.image_url,
                   CONCAT_WS(' ', selected.source_product_id::TEXT, selected.source_external_id, selected.title),
-                  'checking', 'source_refresh', selected.content_hash,
+                  'checking', 'preflight', selected.content_hash,
                   selected.configuration_revision, NOW(), NOW()
            FROM selected
            ON CONFLICT (target_id, internal_product_id) DO UPDATE
@@ -271,8 +260,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                title = EXCLUDED.title,
                image_url = EXCLUDED.image_url,
                search_text = EXCLUDED.search_text,
-               status = 'checking', phase = 'source_refresh', error = NULL,
-               source_refreshed_at = NULL,
+               status = 'checking', phase = 'preflight', error = NULL,
                internal_content_hash = EXCLUDED.internal_content_hash,
                configuration_revision = EXCLUDED.configuration_revision,
                checked_at = NOW(), updated_at = NOW()
@@ -286,45 +274,6 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         internalProductId: text(row, "internal_product_id"),
       }));
     });
-  }
-
-  async markSourceRefreshed(sourceProductId: EntityId, refreshedAt: string): Promise<void> {
-    await queryPool(this.pool,
-      `UPDATE target_product_preflight_reviews
-       SET source_refreshed_at = $2::TIMESTAMPTZ, phase = 'processing', error = NULL,
-           updated_at = NOW()
-       WHERE source_product_id = $1
-         AND status = 'checking'`,
-      [sourceProductId, refreshedAt],
-    );
-  }
-
-  async listSourceRefreshedPreflightTargetIds(sourceProductId: EntityId): Promise<readonly EntityId[]> {
-    const result = await queryPool<DatabaseRow>(this.pool,
-      `SELECT target_id
-       FROM target_product_preflight_reviews review
-       WHERE source_product_id = $1
-         AND status = 'checking'
-         AND ${sourceIsFreshSql}
-       ORDER BY target_id`,
-      [sourceProductId],
-    );
-    return result.rows.map((row) => text(row, "target_id"));
-  }
-
-  async savePreparationError(input: {
-    readonly sourceProductId: EntityId;
-    readonly phase: "source_refresh" | "processing";
-    readonly error: string;
-  }): Promise<void> {
-    await queryPool(this.pool,
-      `UPDATE target_product_preflight_reviews
-       SET status = 'error', phase = $2, error = $3,
-           checked_at = NOW(), updated_at = NOW()
-       WHERE source_product_id = $1
-         AND status = 'checking'`,
-      [input.sourceProductId, input.phase, input.error],
-    );
   }
 
   async savePreflight(input: SaveExportControlPreflightInput): Promise<void> {
@@ -423,7 +372,6 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       `review.target_id = ${add(input.targetId)}`,
       "review.status = 'ready'",
       "review.configuration_revision = revision.revision",
-      sourceIsFreshSql,
       "review.payload_hash IS NOT NULL",
       "NOT EXISTS (SELECT 1 FROM jobs active_job WHERE active_job.job_type = 'export_product' AND active_job.status IN ('pending', 'running', 'retry') AND active_job.payload->>'targetId' = review.target_id::TEXT AND active_job.payload->>'internalProductId' = review.internal_product_id::TEXT)",
     ];
@@ -493,7 +441,6 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND review.payload_hash = requested.payload_hash
           AND review.target_id = $2
           AND review.status = 'ready'
-          AND ${sourceIsFreshSql}
          JOIN target_export_revisions revision
            ON revision.target_id = review.target_id
           AND revision.revision = review.configuration_revision

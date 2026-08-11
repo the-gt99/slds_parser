@@ -39,20 +39,5 @@ describe("JobDispatcher", () => {
       error: "lookup failed",
     });
   });
-  it("records a terminal export-refresh failure", async () => {
-    const exportControl = { savePreparationError: vi.fn().mockResolvedValue(undefined) };
-    const repositories = createMemoryRepositories(new MemoryStore());
-    const dispatcher = new JobDispatcher({} as never, {} as never, {} as never,
-      repositories.sourceRuns, undefined, exportControl as never);
-    const value = job("collect_product", { sourceProductId: "1", refreshForExport: true, enqueueProcessing: true });
-
-    await dispatcher.handleTerminalFailure(value, new Error("GOAT unavailable"));
-
-    expect(exportControl.savePreparationError).toHaveBeenCalledWith({
-      sourceProductId: "1",
-      phase: "source_refresh",
-      error: "GOAT unavailable",
-    });
-  });
   it("rejects an invalid payload", async () => { const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns); await expect(dispatcher.dispatch(job("process_product", { sourceProductId: 1, force: false }))).rejects.toBeInstanceOf(InvalidJobPayloadError); });
 });

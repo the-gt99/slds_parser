@@ -49,6 +49,7 @@ export interface RuntimeSettingsUpdateInput {
   readonly collectionConcurrency?: unknown;
   readonly processConcurrency?: unknown;
   readonly preflightConcurrency?: unknown;
+  readonly refreshSourceBeforeExport?: unknown;
 }
 
 export interface RuntimeSettingsUpdateResult {
@@ -91,6 +92,11 @@ function boundedInteger(value: unknown, name: string, maximum: number): number {
     throw new Error(`${name} must be an integer from 1 to ${maximum}`);
   }
   return parsed;
+}
+
+function booleanSetting(value: unknown, name: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${name} must be a boolean`);
+  return value;
 }
 
 const execFileAsync = promisify(execFile);
@@ -151,8 +157,9 @@ export class RuntimeAdminService {
       collectionConcurrency: boundedInteger(input.collectionConcurrency, "collectionConcurrency", 16),
       processConcurrency: boundedInteger(input.processConcurrency, "processConcurrency", 16),
       preflightConcurrency: boundedInteger(input.preflightConcurrency, "preflightConcurrency", 8),
+      refreshSourceBeforeExport: booleanSetting(input.refreshSourceBeforeExport, "refreshSourceBeforeExport"),
     }, actor);
-    this.record("info", `Worker settings saved by ${actor}: collection=${settings.collectionConcurrency}, processing=${settings.processConcurrency}, preflight=${settings.preflightConcurrency}, revision=${settings.revision}`);
+    this.record("info", `Worker settings saved by ${actor}: collection=${settings.collectionConcurrency}, processing=${settings.processConcurrency}, preflight=${settings.preflightConcurrency}, refreshSourceBeforeExport=${settings.refreshSourceBeforeExport}, revision=${settings.revision}`);
 
     let worker = await this.externalWorkerStatus();
     if (restart && worker?.active) {
@@ -225,6 +232,7 @@ export class RuntimeAdminService {
       collectionConcurrency: options.collectionConcurrency ?? 1,
       processConcurrency: options.processConcurrency ?? 1,
       preflightConcurrency: options.preflightConcurrency ?? 1,
+      refreshSourceBeforeExport: true,
     };
   }
 

@@ -168,7 +168,12 @@ export class GoatSourceAdapter implements SourceAdapter {
         await fetchProduct(); externalId = String(parsedProduct!.id);
         parts.push({ partKey: "product", rawPayload: rawProduct!, parsedPayload: parsedProduct!, adapterVersion: this.version });
       } else {
-        if (!externalId) { await fetchProduct(); externalId = String(parsedProduct!.id); }
+        if (!externalId) {
+          if (!requested.includes("product")) {
+            throw new IntegrationContractError("GOAT externalId is required to refresh offers without fetching the product card");
+          }
+          await fetchProduct(); externalId = String(parsedProduct!.id);
+        }
         const url = `https://www.goat.com/web-api/v1/product_variants/buy_bar_data?productTemplateId=${encodeURIComponent(externalId)}&countryCode=${encodeURIComponent(settings.countryCode)}`;
         const rawOffers = await this.#json(url, "offers", settings.requestDelayMs, lease);
         const offers = array(rawOffers, "offers");

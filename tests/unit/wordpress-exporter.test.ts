@@ -389,6 +389,73 @@ describe("WordPressExporter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("accepts live commerce changes after approval and writes them immediately", async () => {
+    const base: ExportContext = { ...context(), existingExternalId: "321" };
+    const approvedPayload = await buildWordPressUpsertPayload(base);
+    const liveVariants = base.product.variants.map((variant) => ({
+      ...variant,
+      price: { amount: "2693.00", currency: "USD" },
+      inventory: { availability: "available" as const, quantity: 1 },
+    }));
+    const liveContext: ExportContext = { ...base, liveVariants };
+    const livePayload = await buildWordPressUpsertPayload(liveContext);
+    const livePayloadHash = String(livePayload.payload_hash);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        operation: "product_upsert_lookup",
+        target_id: 321,
+        matched_by: "source_identity",
+        payload_hash: livePayloadHash,
+        variation_plan: [],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        job: {
+          job_id: 9,
+          status: "done",
+          payload_hash: livePayloadHash,
+          result: { operation: "updated", target_id: 321, matched_by: "source_identity" },
+        },
+      }), { status: 202 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.export({
+      ...liveContext,
+      approval: {
+        payloadHash: String(approvedPayload.payload_hash),
+        willCreate: false,
+        externalId: "321",
+        matchedBy: "source_identity",
+      },
+    })).resolves.toMatchObject({ externalId: "321", operation: "updated" });
+
+    const writeBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body)) as { payload: JsonObject };
+    const variations = writeBody.payload.variations as JsonObject;
+    expect((variations.items as readonly JsonObject[])[0]?.price).toEqual({ source_currency: "USD", source_minor_amount: "269300" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("still rejects a static product change when live variants are present", async () => {
+    const base: ExportContext = { ...context(), existingExternalId: "321" };
+    const approvedPayload = await buildWordPressUpsertPayload(base);
+    const fetchMock = vi.fn();
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.export({
+      ...base,
+      product: { ...base.product, title: "Changed after approval" },
+      liveVariants: base.product.variants,
+      approval: {
+        payloadHash: String(approvedPayload.payload_hash),
+        willCreate: false,
+        externalId: "321",
+        matchedBy: "source_identity",
+      },
+    })).rejects.toThrow("payload изменился");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rechecks WordPress identity immediately before an approved write", async () => {
     const base = context();
     const payload = await buildWordPressUpsertPayload(base);

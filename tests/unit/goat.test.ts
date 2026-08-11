@@ -43,6 +43,24 @@ describe("GOAT adapter and processor", () => {
     expect(collected.parts.map((part) => part.partKey)).toEqual(["offers", "product"]);
     expect((collected.parts[0]?.parsedPayload as JsonObject).offers).toEqual([]);
   });
+
+  it("does not fetch the product card while refreshing only offers", async () => {
+    const requests: string[] = [];
+    const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0), async (url) => {
+      requests.push(url);
+      return [];
+    });
+
+    await adapter.collectProduct({
+      source: source(),
+      product: { sourceKey: "test-shirt", slug: "test-shirt", externalId: "462323", metadata: {} },
+      requestedPartKeys: ["offers"],
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("product_variants/buy_bar_data");
+    expect(requests[0]).not.toContain("product_templates");
+  });
   it("extracts the exact image fields used by the old GOAT parser", async () => {
     const productPayload = {
       ...(jsonFixture("product.json") as JsonObject),
@@ -70,6 +88,7 @@ describe("GOAT adapter and processor", () => {
       { partKey: "offers", rawPayload: jsonFixture("offers.json"), parsedPayload: { market: "US", countryCode: "US", offers: jsonFixture("offers.json") }, adapterVersion: "1.0.0" },
     ] } satisfies ProcessingContext;
     const product = await processor.process(context);
+    await expect(processor.processExportRefresh(context)).resolves.toEqual({ variants: product.variants });
     expect(product.variants).toHaveLength(1);
     expect(product.variants[0]).toMatchObject({ sourceVariantKey: "product-100|US|103|new_no_defects|good_condition", size: { sourceValue: "103", displayValue: "S", system: "standard-clothing", audience: "unisex" }, price: { amount: "123.45", currency: "USD" }, inventory: { availability: "available", quantity: 1 }, attributes: { shoeCondition: "new_no_defects", boxCondition: "good_condition", stockStatus: "single_in_stock", instantShipPrice: { amount: "130.00" }, lastSoldPrice: { amount: "120.01" } } });
     expect(product.referenceCandidates).toEqual(expect.arrayContaining([

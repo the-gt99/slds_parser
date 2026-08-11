@@ -292,7 +292,7 @@ async function enqueuePreflight(sourceProductIds) {
       targetId: state.targetId,
       ...(sourceProductIds?.length ? { sourceProductIds } : { limit: Number(byId("preflight-limit").value) }),
     } });
-    showMessage(`Поставлено товаров на обновление цены, наличия и preflight: ${result.result.queuedCount}. Результаты будут появляться по мере обработки.`, "success");
+    showMessage(`Поставлено preflight-задач: ${result.result.queuedCount}. Результаты будут появляться по мере обработки.`, "success");
     if (sourceProductIds?.length) state.selected.clear();
     await load(true);
     await loadBatches();

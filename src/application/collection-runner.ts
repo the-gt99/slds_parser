@@ -2,7 +2,7 @@ import type { DiscoveredSourceProduct, SourceDTO, SourceProductDTO } from "../co
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { SourceAdapterRegistry } from "../core/registry/index.js";
 import { hashStableJson, stableJsonStringify } from "../core/utils/index.js";
-import type { ExportControlRepository, JobRepository, SourceProductRepository, SourceRepository, SourceRunRepository, UnitOfWork } from "../repositories/index.js";
+import type { SourceProductRepository, SourceRepository, SourceRunRepository, UnitOfWork } from "../repositories/index.js";
 import type { CollectProductPayload, DiscoverSourcePayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
 
@@ -10,7 +10,6 @@ export interface CollectionRunnerRepositories {
   readonly sources: SourceRepository;
   readonly sourceRuns: SourceRunRepository;
   readonly sourceProducts: SourceProductRepository;
-  readonly jobs: JobRepository;
 }
 
 const now = (): string => new Date().toISOString();
@@ -24,7 +23,6 @@ export class CollectionRunner {
     private readonly repositories: CollectionRunnerRepositories,
     private readonly unitOfWork: UnitOfWork,
     private readonly adapters: SourceAdapterRegistry,
-    private readonly exportControl?: ExportControlRepository,
   ) {}
 
   async discoverSource(payload: DiscoverSourcePayload): Promise<RunnerResult> {
@@ -73,35 +71,19 @@ export class CollectionRunner {
     const source = await this.repositories.sources.getById(product.sourceId);
     if (source === null) throw new EntityNotFoundError("Source", product.sourceId);
     const adapter = this.adapters.get(source.adapterCode);
-    if (payload.refreshForExport === true && this.exportControl === undefined) {
-      throw new IntegrationContractError("Export source refresh is not configured");
-    }
-    if (payload.refreshForExport === true && payload.enqueueProcessing === false) {
-      throw new IntegrationContractError("Export source refresh requires processing");
-    }
-    if (payload.refreshForExport === true && payload.requestedPartKeys !== undefined) {
-      throw new IntegrationContractError("Export source refresh part keys are owned by the source adapter");
-    }
-    const requestedPartKeys = payload.refreshForExport === true
-      ? adapter.exportRefreshPartKeys
-      : payload.requestedPartKeys;
-    if (payload.refreshForExport === true && (requestedPartKeys === undefined || requestedPartKeys.length === 0)) {
-      throw new IntegrationContractError(`Source adapter ${adapter.code} does not define export refresh parts`);
-    }
     const dto: SourceProductDTO = { id: product.id, sourceId: product.sourceId, sourceKey: product.sourceKey,
       ...(product.externalId === null ? {} : { externalId: product.externalId }), ...(product.slug === null ? {} : { slug: product.slug }),
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
-    const collected = await adapter.collectProduct({ source: sourceDto(source), product: dto, ...(requestedPartKeys === undefined ? {} : { requestedPartKeys }) });
+    const collected = await adapter.collectProduct({ source: sourceDto(source), product: dto, ...(payload.requestedPartKeys === undefined ? {} : { requestedPartKeys: payload.requestedPartKeys }) });
     if (collected.sourceKey !== product.sourceKey) throw new IntegrationContractError(`Collected sourceKey does not match product ${product.id}`);
     const parts = new Map<string, (typeof collected.parts)[number]>();
     for (const part of collected.parts) {
       if (parts.has(part.partKey)) throw new IntegrationContractError(`Duplicate collected part: ${part.partKey}`);
       parts.set(part.partKey, part);
     }
-    for (const requested of requestedPartKeys ?? []) {
+    for (const requested of payload.requestedPartKeys ?? []) {
       if (!parts.has(requested)) throw new IntegrationContractError(`Requested part is missing: ${requested}`);
     }
-    const fetchedAt = now();
     await this.unitOfWork.transaction(async (repositories) => {
       await repositories.sourceProducts.updateIdentity(product.id, {
         ...(collected.externalId === undefined ? {} : { externalId: collected.externalId }),
@@ -110,19 +92,14 @@ export class CollectionRunner {
       for (const part of parts.values()) {
         await repositories.sourceProducts.upsertPart({ sourceProductId: product.id, partKey: part.partKey,
           rawPayload: part.rawPayload, parsedPayload: part.parsedPayload, contentHash: hashStableJson(part.parsedPayload),
-          ...(part.sourceUpdatedAt === undefined ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), fetchedAt, adapterVersion: part.adapterVersion });
+          ...(part.sourceUpdatedAt === undefined ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), fetchedAt: now(), adapterVersion: part.adapterVersion });
+      }
+      if (payload.enqueueProcessing !== false) {
+        // ProcessingRunner owns the full input hash, including processor and operation versions.
+        // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
+        await repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
       }
     });
-    const exportRefreshPartKeys = adapter.exportRefreshPartKeys ?? [];
-    if (this.exportControl !== undefined && exportRefreshPartKeys.length > 0
-      && exportRefreshPartKeys.every((partKey) => parts.has(partKey))) {
-      await this.exportControl.markSourceRefreshed(product.id, fetchedAt);
-    }
-    if (payload.enqueueProcessing !== false) {
-      // ProcessingRunner owns the full input hash, including processor and operation versions.
-      // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
-      await this.repositories.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: product.id, force: false }, uniqueKey: `source-product:${product.id}:process` });
-    }
     return { status: "completed" };
   }
 }

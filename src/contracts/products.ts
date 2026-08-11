@@ -275,6 +275,10 @@ export interface TargetProjectionResolutionInput {
   readonly referenceId: EntityId;
 }
 
+export interface ExportRefreshDTO {
+  readonly variants: readonly ProductVariantDTO[];
+}
+
 export interface TargetReferenceProjectionDTO {
   readonly resolutionKind: ReferenceResolutionKind | "reference";
   readonly resolutionId: EntityId;
@@ -311,6 +315,8 @@ export interface ExportContext {
   readonly sourceProduct: SourceProductDTO;
   readonly target: TargetDTO;
   readonly product: UniversalProductDTO;
+  /** Commerce data fetched immediately before the target write. */
+  readonly liveVariants?: readonly ProductVariantDTO[];
   readonly references: TargetReferenceResolver;
   readonly contentTemplates?: readonly TargetContentTemplateDTO[];
   readonly existingExternalId?: string;

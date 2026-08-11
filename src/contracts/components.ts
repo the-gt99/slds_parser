@@ -3,6 +3,7 @@ import type {
   CollectProductInput,
   DiscoveryInput,
   DiscoveryResult,
+  ExportRefreshDTO,
   ExportContext,
   ExportResult,
   JsonValue,
@@ -14,7 +15,7 @@ import type {
 export interface SourceAdapter {
   readonly code: string;
   readonly version: string;
-  /** Source parts that must be refreshed and reprocessed before a target write. */
+  /** Source parts fetched inside the export attempt when live refresh is enabled. */
   readonly exportRefreshPartKeys?: readonly string[];
   discover(input: DiscoveryInput): Promise<DiscoveryResult>;
   collectProduct(input: CollectProductInput): Promise<CollectedSourceProduct>;
@@ -26,6 +27,8 @@ export interface SourceProcessor {
   /** Version of reference-candidate extraction used to filter classifier observations. */
   readonly classificationVersion: string;
   process(context: ProcessingContext): Promise<UniversalProductDTO>;
+  /** Extract target-write commerce data without running the processing pipeline. */
+  processExportRefresh?(context: ProcessingContext): Promise<ExportRefreshDTO>;
 }
 
 export interface ProductOperation {

@@ -34,18 +34,6 @@ export class JobDispatcher implements JobHandler {
 
   async handleTerminalFailure(job: JobRecord, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
-    if (job.jobType === "collect_product" && this.exportControl !== undefined) {
-      const payload = parseCollectProductPayload(job.payload);
-      if (payload.refreshForExport === true) {
-        await this.exportControl.savePreparationError({ sourceProductId: payload.sourceProductId, phase: "source_refresh", error: message });
-      }
-      return;
-    }
-    if (job.jobType === "process_product" && this.exportControl !== undefined) {
-      const payload = parseProcessProductPayload(job.payload);
-      await this.exportControl.savePreparationError({ sourceProductId: payload.sourceProductId, phase: "processing", error: message });
-      return;
-    }
     if (job.jobType === "preflight_product" && this.exportControl !== undefined) {
       const payload = parsePreflightProductPayload(job.payload);
       await this.exportControl.savePreflightError({

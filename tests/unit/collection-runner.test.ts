@@ -5,10 +5,10 @@ import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { SourceAdapterRegistry } from "../../src/core/registry/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord } from "../support/in-memory.js";
 
-function setup(adapter: SourceAdapter, exportControl?: ConstructorParameters<typeof CollectionRunner>[3]) {
+function setup(adapter: SourceAdapter) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord());
   const repositories = createMemoryRepositories(store); const registry = new SourceAdapterRegistry(); registry.register(adapter);
-  return { store, repositories, runner: new CollectionRunner(repositories, new MemoryUnitOfWork(store, repositories), registry, exportControl) };
+  return { store, repositories, runner: new CollectionRunner(repositories, new MemoryUnitOfWork(store, repositories), registry) };
 }
 
 describe("CollectionRunner", () => {
@@ -54,22 +54,6 @@ describe("CollectionRunner", () => {
 
     expect(store.parts.get("2/custom")?.parsedPayload).toEqual({ value: 1 });
     expect(store.jobs).toHaveLength(0);
-  });
-
-  it("refreshes only adapter-owned export parts before enqueueing processing", async () => {
-    const collectProduct = vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [{ partKey: "offers", rawPayload: {}, parsedPayload: { offers: [] }, adapterVersion: "1" }] });
-    const adapter: SourceAdapter = { code: "fake-adapter", version: "1", exportRefreshPartKeys: ["offers"], discover: vi.fn(), collectProduct };
-    const exportControl = { markSourceRefreshed: vi.fn().mockResolvedValue(undefined) };
-    const { runner, store } = setup(adapter, exportControl as never); seedProduct(store);
-
-    await runner.collectProduct({ sourceProductId: "2", refreshForExport: true, enqueueProcessing: true });
-
-    expect(collectProduct).toHaveBeenCalledWith(expect.objectContaining({ requestedPartKeys: ["offers"] }));
-    expect(exportControl.markSourceRefreshed).toHaveBeenCalledWith("2", expect.any(String));
-    expect([...store.jobs.values()]).toEqual([expect.objectContaining({
-      jobType: "process_product",
-      payload: { sourceProductId: "2", force: false },
-    })]);
   });
 
   it("rejects missing requested parts without overwriting old parts", async () => {

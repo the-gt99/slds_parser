@@ -118,6 +118,7 @@ interface RuntimeSettingsBody {
   readonly collectionConcurrency?: unknown;
   readonly processConcurrency?: unknown;
   readonly preflightConcurrency?: unknown;
+  readonly refreshSourceBeforeExport?: unknown;
   readonly restart?: unknown;
 }
 interface PreviewQuery { readonly targetId?: string }
@@ -1141,6 +1142,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
           collectionConcurrency: request.body?.collectionConcurrency,
           processConcurrency: request.body?.processConcurrency,
           preflightConcurrency: request.body?.preflightConcurrency,
+          refreshSourceBeforeExport: request.body?.refreshSourceBeforeExport,
         }, actor(request), request.body?.restart === true) };
       } catch (error) {
         throw new HttpInputError(error instanceof Error ? error.message : "Runtime settings cannot be saved");

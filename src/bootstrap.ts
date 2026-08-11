@@ -1,4 +1,4 @@
-import { CollectionRunner, ExportRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
@@ -75,13 +75,15 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const classifier = new ProductClassifier(repositories.classifications);
   const targetMappings = new TargetReferenceMappingService(repositories.references);
   const exportControl = new PostgresExportControlRepository(pool);
-  const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters, exportControl);
+  const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
   const operationPipeline = new ProductOperationPipeline(
     operations,
     new PostgresProductOperationHistoryRepository(pool),
   );
-  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier, exportControl);
-  const exportRunner = new ExportRunner(repositories, exporters, targetMappings, adapters);
+  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
+  const sourceRefresher = new ExportSourceRefresher(repositories.sourceProducts, unitOfWork, adapters, processors);
+  let refreshSourceBeforeExport = true;
+  const exportRunner = new ExportRunner(repositories, exporters, targetMappings, sourceRefresher, () => refreshSourceBeforeExport);
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
   const preflightRunner = wordpress === null
@@ -105,13 +107,21 @@ export function createApplication(environment: ApplicationEnvironment = process.
     options.workerLogError ?? console.error,
     proxyPool === undefined
       ? undefined
-      : async (jobTypes) => jobTypes.length === 1 && jobTypes[0] === "collect_product" ? proxyPool.reserveClaim() : { run: async (callback) => callback(), releaseUnused: async () => {} },
+      : async (jobTypes) => {
+        const needsGoatProxy = jobTypes.length === 1
+          && (jobTypes[0] === "collect_product" || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
+        return needsGoatProxy
+          ? proxyPool.reserveClaim()
+          : { run: async (callback) => callback(), releaseUnused: async () => {} };
+      },
     async () => {
       const settings = await runtimeWorkerSettings.loadAndMarkApplied({
         collectionConcurrency: workerOptions.collectionConcurrency ?? 1,
         processConcurrency: workerOptions.processConcurrency ?? 1,
         preflightConcurrency: workerOptions.preflightConcurrency ?? 1,
+        refreshSourceBeforeExport: true,
       }, workerOptions.workerId);
+      refreshSourceBeforeExport = settings.refreshSourceBeforeExport;
       return {
         collectionConcurrency: settings.collectionConcurrency,
         processConcurrency: settings.processConcurrency,
@@ -120,5 +130,5 @@ export function createApplication(environment: ApplicationEnvironment = process.
     },
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
-    exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };
+    sourceRefresher, exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };
 }

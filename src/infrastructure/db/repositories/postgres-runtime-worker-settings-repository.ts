@@ -16,6 +16,7 @@ function mapSettings(row: DatabaseRow): RuntimeWorkerSettingsRecord {
     collectionConcurrency: Number(row.collection_concurrency),
     processConcurrency: Number(row.process_concurrency),
     preflightConcurrency: Number(row.preflight_concurrency),
+    refreshSourceBeforeExport: row.refresh_source_before_export === true,
     revision: String(row.revision),
     updatedBy: String(row.updated_by),
     updatedAt: timestamp(row.updated_at),
@@ -23,6 +24,7 @@ function mapSettings(row: DatabaseRow): RuntimeWorkerSettingsRecord {
       collectionConcurrency: Number(row.applied_collection_concurrency),
       processConcurrency: Number(row.applied_process_concurrency),
       preflightConcurrency: Number(row.applied_preflight_concurrency),
+      refreshSourceBeforeExport: row.applied_refresh_source_before_export === true,
       revision: String(appliedRevision),
       workerId: String(row.applied_worker_id),
       appliedAt: timestamp(row.applied_at),
@@ -35,6 +37,7 @@ function jsonSettings(settings: WorkerConcurrencySettings): string {
     collectionConcurrency: settings.collectionConcurrency,
     processConcurrency: settings.processConcurrency,
     preflightConcurrency: settings.preflightConcurrency,
+    refreshSourceBeforeExport: settings.refreshSourceBeforeExport,
   });
 }
 
@@ -58,10 +61,11 @@ async function transaction<Result>(pool: SqlPool, callback: (client: SqlClient) 
 async function ensureRow(client: SqlClient, defaults: WorkerConcurrencySettings): Promise<void> {
   await client.query(
     `INSERT INTO runtime_worker_settings (
-       singleton, collection_concurrency, process_concurrency, preflight_concurrency, updated_by
-     ) VALUES (TRUE, $1, $2, $3, 'environment')
+       singleton, collection_concurrency, process_concurrency, preflight_concurrency,
+       refresh_source_before_export, updated_by
+     ) VALUES (TRUE, $1, $2, $3, $4, 'environment')
      ON CONFLICT (singleton) DO NOTHING`,
-    [defaults.collectionConcurrency, defaults.processConcurrency, defaults.preflightConcurrency],
+    [defaults.collectionConcurrency, defaults.processConcurrency, defaults.preflightConcurrency, defaults.refreshSourceBeforeExport],
   );
 }
 
@@ -90,7 +94,8 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
       const current = mapSettings(currentRow);
       if (current.collectionConcurrency === settings.collectionConcurrency
         && current.processConcurrency === settings.processConcurrency
-        && current.preflightConcurrency === settings.preflightConcurrency) {
+        && current.preflightConcurrency === settings.preflightConcurrency
+        && current.refreshSourceBeforeExport === settings.refreshSourceBeforeExport) {
         return current;
       }
 
@@ -100,12 +105,14 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
          SET collection_concurrency = $1,
              process_concurrency = $2,
              preflight_concurrency = $3,
-             revision = $4,
-             updated_by = $5,
+             refresh_source_before_export = $4,
+             revision = $5,
+             updated_by = $6,
              updated_at = NOW()
          WHERE singleton = TRUE
          RETURNING *`,
-        [settings.collectionConcurrency, settings.processConcurrency, settings.preflightConcurrency, nextRevision, actor],
+        [settings.collectionConcurrency, settings.processConcurrency, settings.preflightConcurrency,
+          settings.refreshSourceBeforeExport, nextRevision, actor],
       );
       const updated = result.rows[0];
       if (updated === undefined) throw new Error("Runtime worker settings were not updated");
@@ -129,6 +136,7 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
              applied_collection_concurrency = collection_concurrency,
              applied_process_concurrency = process_concurrency,
              applied_preflight_concurrency = preflight_concurrency,
+             applied_refresh_source_before_export = refresh_source_before_export,
              applied_worker_id = $1,
              applied_at = NOW()
          WHERE singleton = TRUE

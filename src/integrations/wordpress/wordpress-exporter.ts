@@ -526,7 +526,8 @@ async function buildWordPressPayload(
   if (context.product.images.length === 0) {
     throw new IntegrationContractError("WordPress export requires at least one processed product image");
   }
-  if (context.product.variants.length === 0) {
+  const outputVariants = context.liveVariants ?? context.product.variants;
+  if (outputVariants.length === 0) {
     throw new IntegrationContractError("WordPress export requires product variants until the sold-out contract is configured");
   }
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
@@ -535,13 +536,16 @@ async function buildWordPressPayload(
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
   const { taxonomies, missingRequired, taxonomyOrigins } = await taxonomyPayload(context, required, allowMissingRequired);
-  const needsConversion = converter !== undefined && context.product.variants.some(
+  const variantsForConversion = context.liveVariants === undefined
+    ? context.product.variants
+    : [...context.product.variants, ...context.liveVariants];
+  const needsConversion = converter !== undefined && variantsForConversion.some(
     (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
   );
   const conversionIdentity = needsConversion && converter !== undefined
     ? sizeConversionIdentity(taxonomies, context.target.config)
     : undefined;
-  const resolvedVariations = await Promise.all(context.product.variants.map(
+  const resolvedVariations = await Promise.all(outputVariants.map(
     (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
   ));
   const variations = resolvedVariations.map((variation) => variation.payload);
@@ -552,7 +556,12 @@ async function buildWordPressPayload(
   if (targetSizes.size !== variations.length) throw new IntegrationContractError("More than one product variant resolves to the same WordPress size");
   const targetId = context.existingExternalId === undefined ? 0 : positiveInteger(context.existingExternalId, "existingExternalId");
   const title = applyWordPressTitlePolicy(context.product.title, taxonomies, context.target.config);
-  const contentContext = wordpressContentContext(context.product, title, resolvedVariations);
+  const contentVariations = context.liveVariants === undefined
+    ? resolvedVariations
+    : await Promise.all(context.product.variants.map(
+      (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
+    ));
+  const contentContext = wordpressContentContext(context.product, title, contentVariations);
   const contentTemplates = context.contentTemplates ?? [];
   const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
   const managedFields = ["title", "slug", "sku"];
@@ -614,9 +623,14 @@ function retryableHttpStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+function withoutLiveVariants(context: ExportContext): ExportContext {
+  const { liveVariants: _liveVariants, ...storedContext } = context;
+  return storedContext;
+}
+
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.5.0";
+  readonly version = "1.6.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -680,7 +694,10 @@ export class WordPressExporter {
       if (!managedFields.includes("description") && context.approval.willCreate) {
         throw new IntegrationContractError("Нельзя создать товар без управляемого описания: для нового товара нечего сохранять без изменений");
       }
-      if (expectedPayloadHash !== context.approval.payloadHash) {
+      const approvedPayload = context.liveVariants === undefined
+        ? payload
+        : await this.buildPayload(withoutLiveVariants(context));
+      if (text(approvedPayload.payload_hash) !== context.approval.payloadHash) {
         throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
       }
       const current = await this.preflightPayload(payload);

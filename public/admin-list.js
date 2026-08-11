@@ -526,6 +526,7 @@ function runtimeSettingsInput() {
     collectionConcurrency: byId("runtime-collection-concurrency").value,
     processConcurrency: byId("runtime-process-concurrency").value,
     preflightConcurrency: byId("runtime-preflight-concurrency").value,
+    refreshSourceBeforeExport: byId("runtime-refresh-source-before-export").checked,
   };
 }
 
@@ -555,6 +556,9 @@ function renderRuntimeSettings(settings, worker) {
     control.disabled = !available;
     if (available && document.activeElement !== control) control.value = settings[field];
   }
+  const refreshControl = byId("runtime-refresh-source-before-export");
+  refreshControl.disabled = !available;
+  if (available && document.activeElement !== refreshControl) refreshControl.checked = settings.refreshSourceBeforeExport;
   byId("runtime-settings-save").disabled = !available;
   byId("runtime-settings-apply").disabled = !available || !worker?.active;
   if (!available) {
@@ -570,7 +574,7 @@ function renderRuntimeSettings(settings, worker) {
   byId("runtime-settings-status").className = `badge ${matchesApplied ? "status-completed" : "status-retry"}`;
   byId("runtime-settings-saved").textContent = `Сохранено: ревизия ${settings.revision} · ${settings.updatedBy} · ${date(settings.updatedAt)}`;
   byId("runtime-settings-applied").textContent = settings.applied
-    ? `Последний запуск: ревизия ${settings.applied.revision} · ${settings.applied.workerId} · ${date(settings.applied.appliedAt)}`
+    ? `Последний запуск: ревизия ${settings.applied.revision} · обновление перед экспортом ${settings.applied.refreshSourceBeforeExport ? "включено" : "выключено"} · ${settings.applied.workerId} · ${date(settings.applied.appliedAt)}`
     : "Worker ещё не запускался с настройками из интерфейса.";
 }
 
@@ -1474,7 +1478,7 @@ function configure() {
         <p class="muted runtime-note">Это единственный production worker. Он выполняет discovery, сбор, обработку и экспорт по настроенным на сервере потокам.</p>
       </section>
       <section class="section runtime-card">
-        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Потоки worker</h2></div><span id="runtime-settings-status" class="badge">-</span></div>
+        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Worker и экспорт</h2></div><span id="runtime-settings-status" class="badge">-</span></div>
         <div class="runtime-lane-settings">
           <label><span>Сбор товаров</span><input id="runtime-collection-concurrency" type="number" min="1" max="16" step="1"></label>
           <label><span>Обработка</span><input id="runtime-process-concurrency" type="number" min="1" max="16" step="1"></label>
@@ -1482,13 +1486,15 @@ function configure() {
           <div><span>Discovery</span><strong>1</strong></div>
           <div><span>Экспорт</span><strong>1</strong></div>
         </div>
+        <label class="confirm-check"><input id="runtime-refresh-source-before-export" type="checkbox"><span>Перед записью получать у источника актуальные цену, наличие и размеры</span></label>
+        <p class="muted runtime-note">Запрос выполняется один раз внутри той же export-задачи. Товар не возвращается в конец очереди и не проходит повторную обработку.</p>
         <p id="runtime-settings-saved" class="muted runtime-note">-</p>
         <p id="runtime-settings-applied" class="muted runtime-note">-</p>
         <div class="runtime-actions">
           <button id="runtime-settings-save" class="button secondary" type="button">Сохранить</button>
           <button id="runtime-settings-apply" class="button primary" type="button">Сохранить и перезапустить</button>
         </div>
-        <p class="muted runtime-note">Сбор ограничивается также доступными proxy sessions. Discovery и записывающий export намеренно выполняются последовательно.</p>
+        <p class="muted runtime-note">Сбор и включённое обновление перед экспортом ограничиваются доступными proxy sessions. Discovery и записывающий export намеренно выполняются последовательно.</p>
       </section>
       <section class="section runtime-card">
         <div class="section-title"><div><p class="eyebrow">GOAT</p><h2>Discovery</h2></div></div>

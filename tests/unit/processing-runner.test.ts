@@ -6,14 +6,14 @@ import type { ProductOperationHistoryRepository } from "../../src/repositories/i
 import { ProductClassifier } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
-async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository, exportControl?: ConstructorParameters<typeof ProcessingRunner>[5]) {
+async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord()); store.targets.set("10", targetRecord()); seedProduct(store);
   const repositories = createMemoryRepositories(store); await repositories.sourceProducts.upsertPart({ sourceProductId: "2", partKey: "details", rawPayload: {}, parsedPayload: { a: 1 }, contentHash: "part-hash", fetchedAt: "2026-01-01T00:00:00.000Z", adapterVersion: "1" });
   const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, classificationVersion: "c1", process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
   const transactionRepositories = history === undefined ? repositories : { ...repositories, productOperationHistory: history };
-  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, transactionRepositories), registry, new ProductOperationPipeline(operationRegistry, history), new ProductClassifier(repositories.classifications), exportControl) };
+  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, transactionRepositories), registry, new ProductOperationPipeline(operationRegistry, history), new ProductClassifier(repositories.classifications)) };
 }
 
 describe("ProcessingRunner", () => {
@@ -42,25 +42,6 @@ describe("ProcessingRunner", () => {
   it("does not enqueue exports when content is unchanged", async () => {
     const { runner, store } = await setup(); await runner.processProduct({ sourceProductId: "2", force: false }); store.jobs.clear();
     await runner.processProduct({ sourceProductId: "2", force: true }); expect(store.jobs).toHaveLength(0);
-  });
-  it("continues an unchanged product into preflight after a source refresh", async () => {
-    const exportControl = {
-      listSourceRefreshedPreflightTargetIds: vi.fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(["10"]),
-      savePreparationError: vi.fn().mockResolvedValue(undefined),
-    };
-    const { runner, store, process } = await setup("1", undefined, undefined, exportControl as never);
-    await runner.processProduct({ sourceProductId: "2", force: false });
-    store.jobs.clear();
-
-    await runner.processProduct({ sourceProductId: "2", force: false });
-
-    expect(process).toHaveBeenCalledOnce();
-    expect([...store.jobs.values()]).toEqual([expect.objectContaining({
-      jobType: "preflight_product",
-      payload: { sourceProductId: "2", targetId: "10" },
-    })]);
   });
   it("saves operation output and includes the operation version in input hash", async () => {
     const operation = (version: string): ProductOperation => ({ code: "normalize", version, execute: async (product) => ({ ...product, title: "Normalized" }) });

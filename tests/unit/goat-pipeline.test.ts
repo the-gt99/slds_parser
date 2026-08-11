@@ -25,7 +25,7 @@ describe("GOAT fixture pipeline", () => {
     const exporters = new TargetExporterRegistry();
     const classifier = new ProductClassifier(repositories.classifications);
     const targetMappings = new TargetReferenceMappingService(repositories.references);
-    const dispatcher = new JobDispatcher(new CollectionRunner(repositories, unit, adapters), new ProcessingRunner(repositories, unit, processors, new ProductOperationPipeline(new ProductOperationRegistry()), classifier), new ExportRunner(repositories, exporters, targetMappings, adapters), repositories.sourceRuns);
+    const dispatcher = new JobDispatcher(new CollectionRunner(repositories, unit, adapters), new ProcessingRunner(repositories, unit, processors, new ProductOperationPipeline(new ProductOperationRegistry()), classifier), new ExportRunner(repositories, exporters, targetMappings, { refresh: vi.fn().mockResolvedValue(null) } as never), repositories.sourceRuns);
     await repositories.jobs.enqueue({ jobType: "discover_source", payload: { sourceId: "1", runType: "smoke", coverage: "limited" }, uniqueKey: "goat-smoke" });
     const worker = new Worker(repositories.jobs, dispatcher, { workerId: "test", pollIntervalMs: 1, lockTimeoutMs: 100, maxJobAttempts: 3, retryBaseMs: 1, retryMaxMs: 10 });
     while (await worker.processNext()) {}
