@@ -256,6 +256,7 @@ function invalidatePreview(message = "Настройки изменились. �
   state.previewController?.abort();
   state.previewController = null;
   state.previewRequest++;
+  byId("preview-button").disabled = false;
   byId("preview-comparison").hidden = true;
   byId("preview-context-details").hidden = true;
   byId("preview-policy").hidden = true;
@@ -482,6 +483,7 @@ function changeField(field) {
   state.previewController?.abort();
   state.previewController = null;
   state.previewRequest++;
+  byId("preview-button").disabled = false;
   state.field = field;
   for (const tab of document.querySelectorAll(".template-field-tab")) tab.classList.toggle("active", tab.dataset.field === field);
   const profiles = latestProfiles(state.fields[field]);
@@ -496,7 +498,9 @@ async function changeTarget(targetId) {
     return;
   }
   state.previewController?.abort();
+  state.previewController = null;
   state.previewRequest++;
+  byId("preview-button").disabled = false;
   state.targetId = targetId;
   state.fields.description = { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null };
   state.fields.short_description = { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null };
