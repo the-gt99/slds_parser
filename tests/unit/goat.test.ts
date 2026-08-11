@@ -26,6 +26,13 @@ describe("GOAT sitemap", () => {
 });
 
 describe("GOAT adapter and processor", () => {
+  it("keeps the classification version stable across content-only DTO changes", () => {
+    const processor = new GoatSourceProcessor();
+
+    expect(processor.version).toBe("3.0.0");
+    expect(processor.classificationVersion).toBe("2.9.0");
+  });
+
   it("uses the card and offers URLs and returns every requested part", async () => {
     const calls: string[] = [];
     const adapter = new GoatSourceAdapter(async () => Buffer.alloc(0), async (url, expected) => { calls.push(url); return expected === "product" ? jsonFixture("product.json") : jsonFixture("offers-empty.json"); });

@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     const processors = new SourceProcessorRegistry();
     registerSourceProcessors(processors);
     const sources = await repositories.sources.listEnabled();
-    const currentProcessorVersions = Object.fromEntries(sources.map((source) => [source.id, processors.get(source.code).version]));
+    const currentProcessorVersions = Object.fromEntries(sources.map((source) => [source.id, processors.get(source.code).classificationVersion]));
     const classifier = new ClassifierAdminService(
       new PostgresClassificationAdminRepository(pool),
       repositories.classifications,

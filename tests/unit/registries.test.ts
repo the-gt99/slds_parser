@@ -30,6 +30,7 @@ const adapter: SourceAdapter = {
 const processor: SourceProcessor = {
   sourceCode: "source",
   version: "1.0.0",
+  classificationVersion: "1.0.0",
   process: vi.fn(),
 };
 

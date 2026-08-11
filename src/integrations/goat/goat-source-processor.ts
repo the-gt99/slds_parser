@@ -170,6 +170,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
   readonly version = "3.0.0";
+  readonly classificationVersion = "2.9.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");

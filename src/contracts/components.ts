@@ -21,6 +21,8 @@ export interface SourceAdapter {
 export interface SourceProcessor {
   readonly sourceCode: string;
   readonly version: string;
+  /** Version of reference-candidate extraction used to filter classifier observations. */
+  readonly classificationVersion: string;
   process(context: ProcessingContext): Promise<UniversalProductDTO>;
 }
 

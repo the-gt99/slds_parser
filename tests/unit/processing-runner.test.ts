@@ -9,7 +9,7 @@ import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, s
 async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord()); store.targets.set("10", targetRecord()); seedProduct(store);
   const repositories = createMemoryRepositories(store); await repositories.sourceProducts.upsertPart({ sourceProductId: "2", partKey: "details", rawPayload: {}, parsedPayload: { a: 1 }, contentHash: "part-hash", fetchedAt: "2026-01-01T00:00:00.000Z", adapterVersion: "1" });
-  const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, process };
+  const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, classificationVersion: "c1", process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
   const transactionRepositories = history === undefined ? repositories : { ...repositories, productOperationHistory: history };
@@ -23,10 +23,19 @@ describe("ProcessingRunner", () => {
     expect([...store.internals.values()][0]?.status).toBe("classified");
     expect([...store.jobs.values()][0]?.uniqueKey).toMatch(/internal-product:.*:target:10:export/);
   });
+  it("stores the DTO and classification candidate versions independently", async () => {
+    const { runner, repositories, store } = await setup("dto-2");
+    const save = vi.spyOn(repositories.classifications, "saveProductResult");
+
+    await runner.processProduct({ sourceProductId: "2", force: false });
+
+    expect([...store.internals.values()][0]?.processorVersion).toBe("dto-2");
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ processorVersion: "c1" }));
+  });
   it("skips unchanged input and version changes input hash", async () => {
     const first = await setup("1"); await first.runner.processProduct({ sourceProductId: "2", force: false }); const hash1 = [...first.store.internals.values()][0]!.inputHash;
     first.store.jobs.clear(); await first.runner.processProduct({ sourceProductId: "2", force: false }); expect(first.process).toHaveBeenCalledTimes(1);
-    const secondProcess = vi.fn().mockResolvedValue(validProduct()); const registry = new SourceProcessorRegistry(); registry.register({ sourceCode: "fake", version: "2", process: secondProcess });
+    const secondProcess = vi.fn().mockResolvedValue(validProduct()); const registry = new SourceProcessorRegistry(); registry.register({ sourceCode: "fake", version: "2", classificationVersion: "c1", process: secondProcess });
     const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), registry, new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications));
     await runner.processProduct({ sourceProductId: "2", force: false }); expect([...first.store.internals.values()][0]!.inputHash).not.toBe(hash1); expect(secondProcess).toHaveBeenCalledOnce();
   });

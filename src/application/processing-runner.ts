@@ -91,7 +91,7 @@ export class ProcessingRunner {
         await repositories.classifications.saveProductResult({
           sourceId: source.id,
           sourceProductId: product.id,
-          processorVersion: processor.version,
+          processorVersion: processor.classificationVersion,
           classifierVersion: this.classifier.version,
           fingerprint: data.classification.fingerprint,
           observations: classificationRun.observations,
