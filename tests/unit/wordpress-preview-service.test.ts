@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -100,10 +100,18 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   exporters.register(exporter);
   const mappings = {
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
-    resolveTargetProjections: vi.fn().mockResolvedValue([]),
+    resolveTargetProjections: vi.fn().mockResolvedValue(options.landingProjection ? [{
+      resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
+      provenance: { kind: "related_target_term", relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" },
+    }] : []),
     resolveTargetAssignments: vi.fn().mockResolvedValue([]),
   };
-  const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue([]) };
+  const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue(options.landingProjection ? [{
+    id: "90", targetId: "10", entityType: "tags", externalId: "2968", name: "Onitsuka Tiger",
+    slug: "onitsuka-tiger", parentExternalId: null, taxonomy: "product_tag", attributeCode: null,
+    remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
+    firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
+  }] : []) };
   const snapshotReader = options.remoteSnapshot ? {
     read: vi.fn().mockResolvedValue([{
       sourceExternalId: "100",
@@ -155,6 +163,20 @@ describe("WordPressPreviewService", () => {
     }));
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");
+  });
+
+  it("marks where an automatically added landing tag came from", async () => {
+    const { service } = setup(321, "source_identity", { landingProjection: true });
+
+    const result = await service.preview("2", "10");
+
+    expect(result.comparison?.taxonomies).toContainEqual(expect.objectContaining({
+      taxonomy: "product_tag",
+      added: [expect.objectContaining({
+        termId: 2968,
+        origins: [{ relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" }],
+      })],
+    }));
   });
 
   it("returns the current WordPress card and a draft when a required classification is missing", async () => {

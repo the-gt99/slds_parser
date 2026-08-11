@@ -99,6 +99,11 @@ export interface PreviewTerm {
   readonly termId: number;
   readonly name: string;
   readonly slug: string | null;
+  readonly origins?: readonly {
+    readonly relationCode: string;
+    readonly sourceTypeCode: string;
+    readonly sourceLabel: string;
+  }[];
 }
 
 function snapshotTermMap(value: unknown): Map<string, PreviewTerm> {
@@ -125,8 +130,16 @@ function dictionaryTermMap(values: readonly TargetDictionaryValueRecord[]): Map<
   }] as const]));
 }
 
-function termDetails(taxonomy: string, termId: number, snapshot: Map<string, PreviewTerm>, dictionary: Map<string, PreviewTerm>): PreviewTerm {
-  return snapshot.get(`${taxonomy}:${termId}`) ?? dictionary.get(`${taxonomy}:${termId}`) ?? { termId, name: `Термин #${termId}`, slug: null };
+function termDetails(
+  taxonomy: string,
+  termId: number,
+  snapshot: Map<string, PreviewTerm>,
+  dictionary: Map<string, PreviewTerm>,
+  origins: ReadonlyMap<string, PreviewTerm["origins"]>,
+): PreviewTerm {
+  const term = snapshot.get(`${taxonomy}:${termId}`) ?? dictionary.get(`${taxonomy}:${termId}`) ?? { termId, name: `Термин #${termId}`, slug: null };
+  const termOrigins = origins.get(`${taxonomy}:${termId}`);
+  return termOrigins === undefined ? term : { ...term, origins: termOrigins };
 }
 
 function taxonomyComparison(
@@ -134,6 +147,7 @@ function taxonomyComparison(
   current: Readonly<Record<string, readonly number[]>>,
   snapshotTerms: Map<string, PreviewTerm>,
   dictionaryTerms: Map<string, PreviewTerm>,
+  origins: ReadonlyMap<string, PreviewTerm["origins"]> = new Map(),
 ) {
   return [...new Set([...Object.keys(expected), ...Object.keys(current)])].sort().map((taxonomy) => {
     const managed = Object.hasOwn(expected, taxonomy);
@@ -141,7 +155,7 @@ function taxonomyComparison(
     const afterIds = managed ? expected[taxonomy] ?? [] : beforeIds;
     const before = new Set(beforeIds);
     const after = new Set(afterIds);
-    const terms = (ids: readonly number[]) => ids.map((id) => termDetails(taxonomy, id, snapshotTerms, dictionaryTerms));
+    const terms = (ids: readonly number[]) => ids.map((id) => termDetails(taxonomy, id, snapshotTerms, dictionaryTerms, origins));
     return {
       taxonomy,
       managed,
@@ -402,11 +416,25 @@ export class WordPressPreviewService {
     const dictionaryValues = this.targetDictionaries === undefined
       ? []
       : await this.targetDictionaries.listValuesByExternalIds(target.id, termIds);
+    const taxonomyOrigins = new Map<string, PreviewTerm["origins"]>();
+    for (const origin of draft.taxonomyOrigins) {
+      const key = `${origin.taxonomy}:${origin.termId}`;
+      const existing = taxonomyOrigins.get(key) ?? [];
+      if (!existing.some((item) => item.relationCode === origin.relationCode
+        && item.sourceTypeCode === origin.sourceTypeCode && item.sourceLabel === origin.sourceLabel)) {
+        taxonomyOrigins.set(key, [...existing, {
+          relationCode: origin.relationCode,
+          sourceTypeCode: origin.sourceTypeCode,
+          sourceLabel: origin.sourceLabel,
+        }]);
+      }
+    }
     const taxonomyRows = taxonomyComparison(
       expectedTaxonomies,
       actualTaxonomies,
       snapshotTermMap(current.taxonomies),
       dictionaryTermMap(dictionaryValues),
+      taxonomyOrigins,
     );
     const effectiveCategory = taxonomyRows.find((row) => row.taxonomy === "product_cat");
     const effectiveTaxonomies = {

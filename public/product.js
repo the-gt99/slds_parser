@@ -677,7 +677,16 @@ function termChips(terms, tone = "unchanged") {
   }
   for (const term of terms) {
     const chip = element("span", `preview-term ${tone}`, term.name || `Термин #${term.termId}`);
-    chip.title = `${term.slug || "без slug"} · term #${term.termId}`;
+    const originLabels = (term.origins || []).map((origin) => {
+      const source = origin.sourceTypeCode === "brand"
+        ? "бренда"
+        : origin.sourceTypeCode === "model" ? "модели" : origin.sourceTypeCode;
+      return origin.relationCode === "landing"
+        ? `посадочная из ${source} «${origin.sourceLabel}»`
+        : `${origin.relationCode} из ${source} «${origin.sourceLabel}»`;
+    });
+    for (const label of originLabels) chip.append(element("small", "preview-term-origin", label));
+    chip.title = [`${term.slug || "без slug"} · term #${term.termId}`, ...originLabels].join(" · ");
     box.append(chip);
   }
   return box;

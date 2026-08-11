@@ -80,4 +80,28 @@ describe("TargetReferenceMappingService", () => {
       resolutionKind: "reference", resolutionId: "31", targetScope: "product.tag", externalValue: "895",
     }]);
   });
+
+  it("keeps the origin of an automatically related target term", async () => {
+    const repository = createRepository();
+    const projection: TargetReferenceProjectionRecord = {
+      id: "303", targetId: "2", referenceValueId: "31", targetScope: "product.tag",
+      dictionaryValueId: "403", externalValue: "2968", externalLabel: "Onitsuka Tiger",
+      metadata: {
+        managedBy: "target_term_relation", relationCode: "landing",
+        sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
+      },
+      revision: "1",
+    };
+    vi.mocked(repository.resolveTargetProjections).mockResolvedValue([projection]);
+
+    await expect(new TargetReferenceMappingService(repository).resolveTargetProjections("2", [
+      { resolutionKind: "mapping", resolutionId: "21", referenceId: "31" },
+    ])).resolves.toEqual([expect.objectContaining({
+      externalValue: "2968",
+      provenance: {
+        kind: "related_target_term", relationCode: "landing",
+        sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
+      },
+    })]);
+  });
 });

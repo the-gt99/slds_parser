@@ -50,6 +50,8 @@ export interface TargetTermRelationCapability {
   readonly targetScope: string;
   readonly label: string;
   readonly canCreateRelated: boolean;
+  /** Path inside a synchronized dictionary value metadata object containing an existing related term external ID. */
+  readonly relatedExternalIdPath?: readonly string[];
 }
 
 export interface TargetClassificationCapability {

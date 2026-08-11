@@ -119,6 +119,20 @@ function processorVersions(value: Readonly<Record<string, string>> | undefined):
   return JSON.stringify(value ?? {});
 }
 
+function normalizedJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizedJson);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, normalizedJson(item)]));
+  }
+  return value;
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(normalizedJson(left)) === JSON.stringify(normalizedJson(right));
+}
+
 function reviewQueueFilter(query: ClassificationReviewQuery): {
   readonly sql: string;
   readonly parameters: unknown[];
@@ -1297,6 +1311,14 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
           ],
         );
         const row = result.rows[0]!;
+        const relatedProjectionChanged = await this.syncRelatedReferenceProjections(
+          client,
+          String(previous.target_id),
+          String(previous.reference_value_id),
+          input.relatedProjectionSyncs ?? [],
+          input.actor,
+          input.reason,
+        );
         if (!unchanged) {
           await client.query(
             `INSERT INTO target_value_mapping_history (
@@ -1305,7 +1327,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             [input.mappingId, previous.active === true ? "update" : "reactivate", JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
           );
         }
-        const affectedProductCount = unchanged ? 0 : await enqueueProducts(client, preview.affectedSourceProductIds);
+        const affectedProductCount = unchanged && !relatedProjectionChanged ? 0 : await enqueueProducts(client, preview.affectedSourceProductIds);
         await client.query("COMMIT");
         return { mapping: mapTargetValueMappingAdmin(row), preview, affectedProductCount };
       } catch (error) {
@@ -1435,6 +1457,14 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         if (row === undefined) throw new EntityNotFoundError("Internal value or target dictionary value", `${input.referenceValueId}/${input.dictionaryValueId}`);
         const mapping = mapTargetValueMappingAdmin(row);
         const changed = previous === undefined || previous.active !== true || String(previous.dictionary_value_id) !== input.dictionaryValueId;
+        const relatedProjectionChanged = await this.syncRelatedReferenceProjections(
+          client,
+          input.targetId,
+          input.referenceValueId,
+          input.relatedProjectionSyncs ?? [],
+          input.actor,
+          input.reason,
+        );
         if (changed) {
           await client.query(
             `INSERT INTO target_value_mapping_history (mapping_id, action, previous_value, new_value, actor, reason)
@@ -1442,7 +1472,7 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
             [mapping.id, previous === undefined ? null : JSON.stringify(previous), JSON.stringify(row), input.actor, input.reason ?? null],
           );
         }
-        const affectedProductCount = changed ? await enqueueProducts(client, preview.affectedSourceProductIds) : 0;
+        const affectedProductCount = changed || relatedProjectionChanged ? await enqueueProducts(client, preview.affectedSourceProductIds) : 0;
         await client.query("COMMIT");
         return { mapping, preview, affectedProductCount };
       } catch (error) {
@@ -2489,7 +2519,106 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         ],
       );
     }
-    return !unchanged;
+    const relatedProjectionChanged = await this.syncRelatedReferenceProjections(
+      client,
+      targetLink.targetId,
+      referenceValueId,
+      targetLink.relatedProjectionSyncs ?? [],
+      input.actor,
+      input.reason,
+    );
+    return !unchanged || relatedProjectionChanged;
+  }
+
+  private async syncRelatedReferenceProjections(
+    client: SqlClient,
+    targetId: string,
+    referenceValueId: string,
+    syncs: readonly {
+      readonly relationCode: string;
+      readonly sourceTargetScope: string;
+      readonly targetScope: string;
+      readonly dictionaryValueId: string | null;
+      readonly metadata: JsonObject;
+    }[],
+    actor: string,
+    reason?: string,
+  ): Promise<boolean> {
+    let changed = false;
+    for (const sync of syncs) {
+      const managedResult = await client.query<DatabaseRow>(
+        `SELECT * FROM target_reference_projections
+         WHERE target_id = $1 AND reference_value_id = $2 AND target_scope = $3
+           AND metadata->>'managedBy' = 'target_term_relation'
+           AND metadata->>'relationCode' = $4
+           AND metadata->>'sourceTargetScope' = $5
+         FOR UPDATE`,
+        [targetId, referenceValueId, sync.targetScope, sync.relationCode, sync.sourceTargetScope],
+      );
+      for (const previous of managedResult.rows) {
+        if (previous.active !== true || (sync.dictionaryValueId !== null && String(previous.dictionary_value_id) === sync.dictionaryValueId)) continue;
+        const deactivated = await client.query<DatabaseRow>(
+          `UPDATE target_reference_projections
+           SET active = FALSE, revision = revision + 1, updated_at = NOW()
+           WHERE id = $1 RETURNING *`,
+          [previous.id],
+        );
+        await client.query(
+          `INSERT INTO target_reference_projection_history (
+             projection_id, action, previous_value, new_value, actor, reason
+           ) VALUES ($1, 'deactivate', $2::JSONB, $3::JSONB, $4, $5)`,
+          [previous.id, JSON.stringify(previous), JSON.stringify(deactivated.rows[0]!), actor, reason ?? `Связанная метка ${sync.relationCode} изменилась`],
+        );
+        changed = true;
+      }
+      if (sync.dictionaryValueId === null) continue;
+
+      const previousResult = await client.query<DatabaseRow>(
+        `SELECT * FROM target_reference_projections
+         WHERE target_id = $1 AND reference_value_id = $2 AND target_scope = $3 AND dictionary_value_id = $4
+         FOR UPDATE`,
+        [targetId, referenceValueId, sync.targetScope, sync.dictionaryValueId],
+      );
+      const previous = previousResult.rows[0];
+      if (previous === undefined) {
+        const inserted = await client.query<DatabaseRow>(
+          `INSERT INTO target_reference_projections (
+             target_id, reference_value_id, target_scope, dictionary_value_id, metadata, created_by
+           ) VALUES ($1, $2, $3, $4, $5::JSONB, $6) RETURNING *`,
+          [targetId, referenceValueId, sync.targetScope, sync.dictionaryValueId, JSON.stringify(sync.metadata), actor],
+        );
+        const row = inserted.rows[0]!;
+        await client.query(
+          `INSERT INTO target_reference_projection_history (
+             projection_id, action, previous_value, new_value, actor, reason
+           ) VALUES ($1, 'create', NULL, $2::JSONB, $3, $4)`,
+          [row.id, JSON.stringify(row), actor, reason ?? `Автоматически добавлена связанная метка ${sync.relationCode}`],
+        );
+        changed = true;
+        continue;
+      }
+
+      const managed = jsonObject(previous.metadata).managedBy === "target_term_relation";
+      const metadataChanged = managed && !sameJson(jsonObject(previous.metadata), sync.metadata);
+      if (previous.active === true && !metadataChanged) continue;
+      const updated = await client.query<DatabaseRow>(
+        `UPDATE target_reference_projections
+         SET active = TRUE,
+             metadata = CASE WHEN $2::BOOLEAN THEN $3::JSONB ELSE metadata END,
+             revision = revision + 1,
+             updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [previous.id, managed, JSON.stringify(sync.metadata)],
+      );
+      await client.query(
+        `INSERT INTO target_reference_projection_history (
+           projection_id, action, previous_value, new_value, actor, reason
+         ) VALUES ($1, $2, $3::JSONB, $4::JSONB, $5, $6)`,
+        [previous.id, previous.active === true ? "update" : "reactivate", JSON.stringify(previous), JSON.stringify(updated.rows[0]!), actor, reason ?? `Синхронизирована связанная метка ${sync.relationCode}`],
+      );
+      changed = true;
+    }
+    return changed;
   }
 
   private async previewTargetValueMappingWithClient(

@@ -248,7 +248,25 @@ describe("ClassifierAdminService", () => {
 
   it("creates an opaque internal reference when a target term is linked directly", async () => {
     const deps = repositories([]);
-    const service = new ClassifierAdminService(deps.admin, deps.classification);
+    const provider: TargetDictionaryProvider = {
+      code: "wordpress", supportedEntityTypes: ["brands"], creatableEntityTypes: ["brands"],
+      classificationCapabilities: [{ typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "single" }],
+      termRelationCapabilities: [{
+        relationCode: "landing", sourceEntityType: "brands", relatedEntityType: "tags",
+        targetScope: "product.tag", label: "Посадочная бренда", canCreateRelated: true,
+        relatedExternalIdPath: ["rawMeta", "tag_id"],
+      }],
+      fetchPage: vi.fn(), createTerm: vi.fn(),
+    };
+    const providers = new TargetDictionaryProviderRegistry();
+    providers.register(provider);
+    const targets = {
+      listTargets: vi.fn().mockResolvedValue([{ id: "2", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
+      getValue: vi.fn().mockResolvedValue({ id: "3", targetId: "2", entityType: "brands", externalId: "4", name: "Nike", slug: null, parentExternalId: null, taxonomy: "pa_brand", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: { rawMeta: { tag_id: 2968 } }, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
+      listValuesByExternalIds: vi.fn().mockResolvedValue([{ id: "9", targetId: "2", entityType: "tags", externalId: "2968", name: "Nike", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }]), listValues: vi.fn(), replaceEntityValues: vi.fn(), upsertValue: vi.fn(),
+      startTermCreation: vi.fn(), completeTermCreation: vi.fn(), failTermCreation: vi.fn(),
+    } satisfies TargetDictionaryRepository;
+    const service = new ClassifierAdminService(deps.admin, deps.classification, targets, providers);
 
     await service.saveDecision({
       sourceId: "1",
@@ -263,6 +281,12 @@ describe("ClassifierAdminService", () => {
     expect(deps.admin.saveDecision).toHaveBeenCalledWith(expect.objectContaining({
       generatedReferenceCode: expect.stringMatching(/^ref-[0-9a-f-]+$/u),
       actor: "admin-api",
+      targetLink: expect.objectContaining({
+        relatedProjectionSyncs: [expect.objectContaining({
+          relationCode: "landing", targetScope: "product.tag", dictionaryValueId: "9",
+          metadata: expect.objectContaining({ sourceTypeCode: "brand", sourceLabel: "Nike" }),
+        })],
+      }),
     }));
   });
 

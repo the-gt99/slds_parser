@@ -46,7 +46,7 @@ function setup() {
   const classifier = {
     getDecisionContext: vi.fn().mockResolvedValue({ observationId: "55", sourceCode: "goat", sourceValue: "New model" }),
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "99", referenceValueId: "100", revision: "1", affectedProductCount: 3, affectedExportCount: 0 }),
-    createTargetProjection: vi.fn().mockResolvedValue({ projection: { id: "200" } }),
+    createReferenceProjection: vi.fn().mockResolvedValue({ projection: { id: "200" } }),
   } as unknown as ClassifierAdminService;
   return { provider, repository, classifier, service: new TargetDictionaryService(repository, registry, classifier) };
 }
@@ -204,8 +204,8 @@ describe("TargetDictionaryService", () => {
       relatedTerm: { relationCode: "landing", entityType: "tags", mode: "existing", externalId: "91" },
     });
 
-    expect(classifier.createTargetProjection).toHaveBeenCalledWith(expect.objectContaining({
-      resolutionKind: "mapping", resolutionId: "99", targetScope: "product.tag", dictionaryValueId: "89",
+    expect(classifier.createReferenceProjection).toHaveBeenCalledWith(expect.objectContaining({
+      referenceValueId: "100", targetScope: "product.tag", dictionaryValueId: "89",
     }), "admin-api");
   });
 });

@@ -86,8 +86,8 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     { typeCode: "season", entityType: "seasons", targetScope: "product.season", cardinality: "single" },
   ] as const;
   readonly termRelationCapabilities = [
-    { relationCode: "landing", sourceEntityType: "brands", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная бренда", canCreateRelated: true },
-    { relationCode: "landing", sourceEntityType: "models", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная модели", canCreateRelated: true },
+    { relationCode: "landing", sourceEntityType: "brands", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная бренда", canCreateRelated: true, relatedExternalIdPath: ["rawMeta", "tag_id"] },
+    { relationCode: "landing", sourceEntityType: "models", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная модели", canCreateRelated: true, relatedExternalIdPath: ["rawMeta", "tag_id"] },
   ] as const;
 
   constructor(private readonly config: WordPressTargetConfig) {}

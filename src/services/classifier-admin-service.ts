@@ -14,6 +14,9 @@ import type {
   ClassificationRuleConditionRecord,
   ClassificationRuleRecord,
   SaveClassificationDecisionResult,
+  SaveClassificationDecisionInput,
+  TargetDictionaryValueRecord,
+  TargetRelatedProjectionSync,
   TargetClassificationProjectionCommand,
   TargetDictionaryRepository,
   TargetRecord,
@@ -211,7 +214,7 @@ export class ClassifierAdminService {
     return this.adminRepository.listReferenceValues(typeCode, search, limit);
   }
 
-  saveDecision(
+  async saveDecision(
     command: ClassificationDecisionCommand,
     actor = this.actor,
   ): Promise<SaveClassificationDecisionResult> {
@@ -219,12 +222,13 @@ export class ClassifierAdminService {
     validateText(command.scope, "scope", 200);
     validateText(command.normalizedSourceValue, "normalizedSourceValue", 1_000);
     validateText(command.contextKey, "contextKey", 10_000);
-    if (command.targetLink !== undefined) {
-      validateText(command.targetLink.targetScope, "targetScope", 200);
-    }
+    const targetLink = command.targetLink === undefined
+      ? undefined
+      : await this.validatedTargetLink(command.typeCode, command.targetLink);
 
     return this.adminRepository.saveDecision({
       ...command,
+      ...(targetLink === undefined ? {} : { targetLink }),
       ...(command.action === "confirm" && command.referenceValueId === undefined && command.targetLink !== undefined
         ? { generatedReferenceCode: `ref-${randomUUID()}` }
         : {}),
@@ -550,8 +554,9 @@ export class ClassifierAdminService {
     if (capability === undefined) throw new IntegrationContractError(`Target scope ${command.targetScope} is not valid for ${command.typeCode}`);
     const dictionary = await this.targetDictionaries!.getValue(command.targetId, command.dictionaryValueId);
     if (dictionary === null || dictionary.entityType !== capability.entityType) throw new IntegrationContractError(`Dictionary value cannot be used for ${command.targetScope}`);
+    const relatedProjectionSyncs = await this.relatedProjectionSyncs(target, provider, capability.typeCode, capability.entityType, capability.targetScope, dictionary);
     return this.adminRepository.createTargetValueMapping({
-      ...command, targetCardinality: capability.cardinality, actor,
+      ...command, targetCardinality: capability.cardinality, actor, relatedProjectionSyncs,
     });
   }
 
@@ -614,23 +619,86 @@ export class ClassifierAdminService {
   }
 
   private async validatedRuleTargetLink(draft: ClassificationRuleDraft): Promise<NonNullable<ClassificationRuleDraft["targetLink"]>> {
+    return this.validatedTargetLink(draft.typeCode, draft.targetLink!);
+  }
+
+  private async validatedTargetLink(
+    typeCode: string,
+    targetLink: NonNullable<ClassificationDecisionCommand["targetLink"]>,
+  ): Promise<NonNullable<SaveClassificationDecisionInput["targetLink"]>> {
     this.requireProjectionDependencies();
-    const targetLink = draft.targetLink!;
     validateText(targetLink.targetId, "targetLink.targetId", 64);
     validateText(targetLink.targetScope, "targetLink.targetScope", 200);
     validateText(targetLink.dictionaryValueId, "targetLink.dictionaryValueId", 64);
     const target = await this.target(targetLink.targetId);
     const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
     const capability = capabilitiesForTarget(target, provider.classificationCapabilities)
-      .find((item) => item.typeCode === draft.typeCode && item.targetScope === targetLink.targetScope);
+      .find((item) => item.typeCode === typeCode && item.targetScope === targetLink.targetScope);
     if (capability === undefined) {
-      throw new IntegrationContractError(`Target scope ${targetLink.targetScope} is not valid for ${draft.typeCode}`);
+      throw new IntegrationContractError(`Target scope ${targetLink.targetScope} is not valid for ${typeCode}`);
     }
     const dictionary = await this.targetDictionaries!.getValue(targetLink.targetId, targetLink.dictionaryValueId);
     if (dictionary === null || dictionary.entityType !== capability.entityType) {
       throw new IntegrationContractError(`Dictionary value cannot be used for ${targetLink.targetScope}`);
     }
-    return targetLink;
+    const relatedProjectionSyncs = await this.relatedProjectionSyncs(
+      target,
+      provider,
+      capability.typeCode,
+      capability.entityType,
+      capability.targetScope,
+      dictionary,
+    );
+    const validated = {
+      targetId: targetLink.targetId,
+      targetScope: targetLink.targetScope,
+      dictionaryValueId: targetLink.dictionaryValueId,
+    };
+    return relatedProjectionSyncs.length === 0 ? validated : { ...validated, relatedProjectionSyncs };
+  }
+
+  private async relatedProjectionSyncs(
+    target: TargetRecord,
+    provider: ReturnType<TargetDictionaryProviderRegistry["get"]>,
+    typeCode: string,
+    sourceEntityType: string,
+    sourceTargetScope: string,
+    sourceDictionary: TargetDictionaryValueRecord,
+  ): Promise<readonly TargetRelatedProjectionSync[]> {
+    const scopeOverrides = stringMap(target.config.targetScopeMap);
+    const relations = (provider.termRelationCapabilities ?? []).filter((relation) =>
+      relation.sourceEntityType === sourceEntityType && relation.relatedExternalIdPath !== undefined);
+    const resolved = await Promise.all(relations.map(async (relation): Promise<TargetRelatedProjectionSync> => {
+      const rawExternalId = valueAtPath(sourceDictionary.metadata, relation.relatedExternalIdPath!);
+      const externalId = rawExternalId === null || rawExternalId === undefined ? "" : String(rawExternalId).trim();
+      let dictionaryValueId: EntityId | null = null;
+      if (externalId !== "" && externalId !== "0") {
+        const matches = await this.targetDictionaries!.listValuesByExternalIds(target.id, [externalId]);
+        const related = matches.find((value) => value.entityType === relation.relatedEntityType && value.active);
+        if (related === undefined) {
+          throw new IntegrationContractError(
+            `Related target term ${relation.relatedEntityType}/${externalId} is absent from the synchronized dictionary`,
+          );
+        }
+        dictionaryValueId = related.id;
+      }
+      return {
+        relationCode: relation.relationCode,
+        sourceTargetScope,
+        targetScope: scopeOverrides[relation.targetScope] ?? relation.targetScope,
+        dictionaryValueId,
+        metadata: {
+          managedBy: "target_term_relation",
+          relationCode: relation.relationCode,
+          relationLabel: relation.label,
+          sourceTypeCode: typeCode,
+          sourceTargetScope,
+          sourceDictionaryValueId: sourceDictionary.id,
+          sourceLabel: sourceDictionary.name,
+        },
+      };
+    }));
+    return resolved;
   }
 
   private async validatedProjectionCommand(command: ProjectionCommand, actor: string): Promise<TargetClassificationProjectionCommand> {
@@ -716,7 +784,15 @@ export class ClassifierAdminService {
     if (dictionary === null || dictionary.entityType !== capability.entityType) {
       throw new IntegrationContractError(`Dictionary value cannot be used for ${mapping.targetScope}`);
     }
-    return { mappingId, dictionaryValueId, actor, ...(reason === undefined ? {} : { reason }) };
+    const relatedProjectionSyncs = await this.relatedProjectionSyncs(
+      target,
+      provider,
+      capability.typeCode,
+      capability.entityType,
+      capability.targetScope,
+      dictionary,
+    );
+    return { mappingId, dictionaryValueId, relatedProjectionSyncs, actor, ...(reason === undefined ? {} : { reason }) };
   }
 
   private requireProjectionDependencies(): void {
@@ -741,6 +817,15 @@ function stringMap(value: unknown): Readonly<Record<string, string>> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) =>
     typeof entry === "string" && entry.trim() !== "" ? [[key, entry.trim()]] : []));
+}
+
+function valueAtPath(value: unknown, path: readonly string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (current === null || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
 }
 
 function capabilitiesForTarget(

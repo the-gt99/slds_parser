@@ -214,12 +214,11 @@ export class TargetDictionaryService {
         ...(command.reason === undefined ? {} : { reason: command.reason }),
       }, actor);
       const relatedDictionaryValue = relatedDictionaryValues[0];
-      const projection = relatedDictionaryValue === undefined || relation === undefined || decision.mappingId === null
+      const projection = relatedDictionaryValue === undefined || relation === undefined || decision.referenceValueId === null
         ? null
-        : await this.classifier.createTargetProjection({
+        : await this.classifier.createReferenceProjection({
           targetId: command.targetId,
-          resolutionKind: "mapping",
-          resolutionId: decision.mappingId,
+          referenceValueId: decision.referenceValueId,
           targetScope: relation.targetScope,
           dictionaryValueId: relatedDictionaryValue.id,
         }, actor);

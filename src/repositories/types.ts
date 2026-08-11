@@ -790,6 +790,15 @@ export interface ClassificationDecisionTargetLink {
   readonly targetId: EntityId;
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
+  readonly relatedProjectionSyncs?: readonly TargetRelatedProjectionSync[];
+}
+
+export interface TargetRelatedProjectionSync {
+  readonly relationCode: string;
+  readonly sourceTargetScope: string;
+  readonly targetScope: string;
+  readonly dictionaryValueId: EntityId | null;
+  readonly metadata: JsonObject;
 }
 
 export interface SaveClassificationDecisionInput extends ClassificationDecisionKey {
@@ -1066,6 +1075,7 @@ export interface TargetValueMappingAdminRecord extends TargetValueMappingRecord 
 export interface TargetValueMappingCommand {
   readonly mappingId: EntityId;
   readonly dictionaryValueId: EntityId;
+  readonly relatedProjectionSyncs?: readonly TargetRelatedProjectionSync[];
   readonly actor: string;
   readonly reason?: string;
 }
@@ -1076,6 +1086,7 @@ export interface CreateTargetValueMappingCommand {
   readonly typeCode: string;
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
+  readonly relatedProjectionSyncs?: readonly TargetRelatedProjectionSync[];
   readonly targetCardinality: "single" | "multiple";
   readonly actor: string;
   readonly reason?: string;

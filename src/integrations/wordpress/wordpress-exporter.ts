@@ -76,7 +76,16 @@ export interface WordPressUpsertPayloadPreview {
   readonly payload: JsonObject;
   readonly missingRequiredReferences: readonly string[];
   readonly contentContext: JsonObject;
+  readonly taxonomyOrigins: readonly {
+    readonly taxonomy: string;
+    readonly termId: number;
+    readonly relationCode: string;
+    readonly sourceTypeCode: string;
+    readonly sourceLabel: string;
+  }[];
 }
+
+type WordPressTaxonomyOrigin = WordPressUpsertPayloadPreview["taxonomyOrigins"][number];
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -395,10 +404,15 @@ async function taxonomyPayload(
   context: ExportContext,
   required: readonly ReferenceType[],
   allowMissingRequired: boolean,
-): Promise<{ readonly taxonomies: JsonObject; readonly missingRequired: readonly ReferenceType[] }> {
+): Promise<{
+  readonly taxonomies: JsonObject;
+  readonly missingRequired: readonly ReferenceType[];
+  readonly taxonomyOrigins: readonly WordPressTaxonomyOrigin[];
+}> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
   const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
   const grouped = new Map<string, Set<number>>();
+  const taxonomyOrigins: WordPressTaxonomyOrigin[] = [];
   for (const candidate of context.product.referenceCandidates) {
     if (candidate.subjectKind !== "product" || !(candidate.typeCode in REFERENCE_TARGETS) || unresolvedKeys.has(candidate.key)) continue;
     const target = REFERENCE_TARGETS[candidate.typeCode as ReferenceType];
@@ -439,6 +453,15 @@ async function taxonomyPayload(
     const values = grouped.get(target.taxonomy) ?? new Set<number>();
     values.add(termId);
     grouped.set(target.taxonomy, values);
+    if (projection.provenance !== undefined) {
+      taxonomyOrigins.push({
+        taxonomy: target.taxonomy,
+        termId,
+        relationCode: projection.provenance.relationCode,
+        sourceTypeCode: projection.provenance.sourceTypeCode,
+        sourceLabel: projection.provenance.sourceLabel,
+      });
+    }
   }
   const assignments = await context.references.resolveAssignments(context.product);
   const replacementGroups = new Map<string, string>();
@@ -484,6 +507,7 @@ async function taxonomyPayload(
   return {
     taxonomies: Object.fromEntries([...grouped.entries()].map(([taxonomy, termIds]) => [taxonomy, { mode: "replace", term_ids: [...termIds] }])),
     missingRequired: missing,
+    taxonomyOrigins,
   };
 }
 
@@ -505,7 +529,7 @@ async function buildWordPressPayload(
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
-  const { taxonomies, missingRequired } = await taxonomyPayload(context, required, allowMissingRequired);
+  const { taxonomies, missingRequired, taxonomyOrigins } = await taxonomyPayload(context, required, allowMissingRequired);
   const needsConversion = converter !== undefined && context.product.variants.some(
     (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
   );
@@ -556,6 +580,7 @@ async function buildWordPressPayload(
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
     contentContext,
+    taxonomyOrigins,
   };
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
-import { buildWordPressUpsertPayload, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
+import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
   sourceProductId: "2",
@@ -223,6 +223,25 @@ describe("WordPressExporter", () => {
       { resolutionKind: "mapping", resolutionId: "21", referenceId: "11" },
       { resolutionKind: "mapping", resolutionId: "22", referenceId: "12" },
     ]);
+  });
+
+  it("exposes a landing tag origin only in the local payload preview", async () => {
+    const input = context();
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([{
+      resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
+      provenance: {
+        kind: "related_target_term", relationCode: "landing",
+        sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
+      },
+    }]);
+
+    const preview = await previewWordPressUpsertPayload(input);
+
+    expect(preview.taxonomyOrigins).toEqual([{
+      taxonomy: "product_tag", termId: 2968, relationCode: "landing",
+      sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
+    }]);
+    expect(preview.payload).not.toHaveProperty("taxonomyOrigins");
   });
 
   it("does not block or clear an unresolved optional taxonomy", async () => {

@@ -37,12 +37,27 @@ export class TargetReferenceMappingService {
   ): Promise<readonly TargetReferenceProjectionDTO[]> {
     const unique = [...new Map(resolutions.map((item) => [`${item.resolutionKind}:${item.resolutionId}:${item.referenceId}`, item])).values()];
     const projections = await this.references.resolveTargetProjections(targetId, unique);
-    return projections.map((projection) => ({
-      resolutionKind: "referenceValueId" in projection ? "reference" as const : projection.resolutionKind,
-      resolutionId: "referenceValueId" in projection ? projection.referenceValueId : projection.resolutionId,
-      targetScope: projection.targetScope,
-      externalValue: projection.externalValue,
-    }));
+    return projections.map((projection) => {
+      const metadata = projection.metadata;
+      const managedRelation = metadata.managedBy === "target_term_relation"
+        && typeof metadata.relationCode === "string"
+        && typeof metadata.sourceTypeCode === "string"
+        && typeof metadata.sourceLabel === "string";
+      return {
+        resolutionKind: "referenceValueId" in projection ? "reference" as const : projection.resolutionKind,
+        resolutionId: "referenceValueId" in projection ? projection.referenceValueId : projection.resolutionId,
+        targetScope: projection.targetScope,
+        externalValue: projection.externalValue,
+        ...(managedRelation ? {
+          provenance: {
+            kind: "related_target_term" as const,
+            relationCode: metadata.relationCode as string,
+            sourceTypeCode: metadata.sourceTypeCode as string,
+            sourceLabel: metadata.sourceLabel as string,
+          },
+        } : {}),
+      };
+    });
   }
 
   saveTargetProjection(input: Parameters<ReferenceRepository["saveTargetProjection"]>[0]) {

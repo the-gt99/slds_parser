@@ -116,7 +116,8 @@ h3 { font-size: 17px; line-height: 1.3; }
 .preview-card-taxonomy > span { padding-top: 4px; color: var(--muted); font-size: 11px; }
 .preview-card-empty { padding: 34px 0 18px; color: var(--muted); line-height: 1.5; }
 .preview-term-list { display: flex; flex-wrap: wrap; gap: 5px; }
-.preview-term { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef1f5; color: #4b5360; font-size: 11px; line-height: 1.25; }
+.preview-term { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; background: #eef1f5; color: #4b5360; font-size: 11px; line-height: 1.25; }
+.preview-term-origin { padding-left: 6px; border-left: 1px solid currentColor; font-size: 9px; font-weight: 700; opacity: .72; }
 .preview-term.added { background: var(--accent-soft); color: var(--accent); }
 .preview-term.removed { background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
 .preview-empty { color: var(--muted); font-size: 12px; }
