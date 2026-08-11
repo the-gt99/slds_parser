@@ -75,6 +75,42 @@ const contentTemplateRow = {
 };
 
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("keeps source product id typed as bigint while building preflight search text", async () => {
+    const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await repository.savePreflight({
+      targetId: "10",
+      internalProductId: "31",
+      sourceProductId: "21",
+      sourceCode: "goat",
+      sourceExternalId: "1001",
+      title: "Nike Air Flight",
+      imageUrl: null,
+      status: "ready",
+      phase: "ready",
+      internalContentHash: "content-hash",
+      configurationRevision: "1",
+      payloadHash: "a".repeat(64),
+      externalId: "41",
+      willCreate: false,
+      matchedBy: "source_identity",
+      riskLevel: "none",
+      changeFlags: [],
+      fieldChangeCount: 0,
+      taxonomyAddedCount: 0,
+      taxonomyRemovedCount: 0,
+      imageChangeCount: 0,
+      variationChangeCount: 0,
+      deactivatedVariationCount: 0,
+      blockers: [],
+      changeSummary: {},
+    });
+
+    const saveCall = executor.calls[2]!;
+    expect(saveCall.text).toContain("CONCAT_WS(' ', $3::BIGINT::TEXT, $5, $6)");
+  });
+
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
     const executor = new FakeExecutor([
       [],
