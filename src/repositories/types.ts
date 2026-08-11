@@ -688,6 +688,9 @@ export interface JobAdminTypeSummary {
   readonly jobType: JobType;
   readonly remaining: number;
   readonly completion: { readonly last15m: number; readonly last1h: number; readonly last24h: number };
+  readonly concurrency: number;
+  readonly estimatedDurationMs: number | null;
+  readonly etaBasis: "duration" | "throughput" | null;
   readonly etaMinutes: number | null;
 }
 

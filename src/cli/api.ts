@@ -12,6 +12,7 @@ import {
   PostgresExportControlRepository,
   PostgresGoatProxyRepository,
   PostgresProductAdminRepository,
+  PostgresRuntimeWorkerSettingsRepository,
   PostgresTargetDictionaryRepository,
   PostgresTargetAssignmentRuleRepository,
   PostgresUnitOfWork,
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
-    runtime = new RuntimeAdminService(pool, repositories);
+    runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }) });
 
     for (const signal of signals) {

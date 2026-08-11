@@ -144,6 +144,10 @@ h3 { font-size: 17px; line-height: 1.3; }
 .runtime-card { min-width: 0; margin-top: 0; }
 .runtime-wide { grid-column: span 3; }
 .runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.runtime-lane-settings { display: grid; gap: 8px; margin-top: 14px; }
+.runtime-lane-settings label, .runtime-lane-settings > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.runtime-lane-settings input { width: 84px; min-width: 84px; }
+.runtime-lane-settings strong { padding-right: 10px; }
 .bulk-panel { margin-bottom: 16px; }
 .bulk-panel select, .bulk-panel input { min-height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--surface); color: var(--text); }
 .bulk-limit-field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }

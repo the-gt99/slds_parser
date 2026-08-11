@@ -4,8 +4,17 @@ import { promisify } from "node:util";
 import type { Pool } from "pg";
 
 import { createApplication, type ApplicationEnvironment } from "../bootstrap.js";
+import { loadWorkerConfig } from "../config/index.js";
 import type { JsonObject } from "../contracts/index.js";
-import type { JobRepository, JobStatus, JobType, SourceRepository } from "../repositories/index.js";
+import type {
+  JobRepository,
+  JobStatus,
+  JobType,
+  RuntimeWorkerSettingsRecord,
+  RuntimeWorkerSettingsRepository,
+  SourceRepository,
+  WorkerConcurrencySettings,
+} from "../repositories/index.js";
 
 export interface RuntimeLogRecord {
   readonly at: string;
@@ -31,8 +40,20 @@ export interface ExternalWorkerStatus {
 
 export interface RuntimeStatus {
   readonly worker: ExternalWorkerStatus | null;
+  readonly settings: RuntimeWorkerSettingsRecord | null;
   readonly queue: readonly RuntimeQueueSummary[];
   readonly logs: readonly RuntimeLogRecord[];
+}
+
+export interface RuntimeSettingsUpdateInput {
+  readonly collectionConcurrency?: unknown;
+  readonly processConcurrency?: unknown;
+  readonly preflightConcurrency?: unknown;
+}
+
+export interface RuntimeSettingsUpdateResult {
+  readonly settings: RuntimeWorkerSettingsRecord;
+  readonly worker: ExternalWorkerStatus | null;
 }
 
 export interface ManualJobRunResult {
@@ -64,6 +85,14 @@ function positiveInteger(value: unknown, name: string, fallback: number): number
   return parsed;
 }
 
+function boundedInteger(value: unknown, name: string, maximum: number): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw new Error(`${name} must be an integer from 1 to ${maximum}`);
+  }
+  return parsed;
+}
+
 const execFileAsync = promisify(execFile);
 type SystemCommandRunner = (command: string, args: readonly string[], timeoutMs: number) => Promise<string>;
 
@@ -81,17 +110,25 @@ export class RuntimeAdminService {
     private readonly environment: RuntimeAdminEnvironment = process.env,
     private readonly createRuntimeApplication: (environment: ApplicationEnvironment, options?: { readonly workerLogError?: (message: string) => void }) => RuntimeApplication = createApplication,
     private readonly commandRunner: SystemCommandRunner = runSystemCommand,
+    private readonly workerSettings?: RuntimeWorkerSettingsRepository,
   ) {}
 
   async status(): Promise<RuntimeStatus> {
+    const [worker, settings, queue] = await Promise.all([
+      this.externalWorkerStatus(),
+      this.currentSettings(),
+      this.queueSummary(),
+    ]);
     return {
-      worker: await this.externalWorkerStatus(),
-      queue: await this.queueSummary(),
+      worker,
+      settings,
+      queue,
       logs: this.logs.slice().reverse(),
     };
   }
 
   async start(): Promise<ExternalWorkerStatus> {
+    await this.currentSettings();
     await this.controlExternalWorker("start");
     const worker = await this.requireExternalWorkerStatus();
     if (!worker.active) throw new Error(`${worker.serviceName} did not become active`);
@@ -105,6 +142,35 @@ export class RuntimeAdminService {
     if (worker.active) throw new Error(`${worker.serviceName} is still active`);
     this.record("info", `Production worker stopped: ${worker.serviceName}`);
     return worker;
+  }
+
+  async saveSettings(input: RuntimeSettingsUpdateInput, actor: string, restart: boolean): Promise<RuntimeSettingsUpdateResult> {
+    if (this.workerSettings === undefined) throw new Error("Runtime worker settings are not configured");
+    await this.workerSettings.getOrCreate(this.settingsDefaults());
+    const settings = await this.workerSettings.save({
+      collectionConcurrency: boundedInteger(input.collectionConcurrency, "collectionConcurrency", 16),
+      processConcurrency: boundedInteger(input.processConcurrency, "processConcurrency", 16),
+      preflightConcurrency: boundedInteger(input.preflightConcurrency, "preflightConcurrency", 8),
+    }, actor);
+    this.record("info", `Worker settings saved by ${actor}: collection=${settings.collectionConcurrency}, processing=${settings.processConcurrency}, preflight=${settings.preflightConcurrency}, revision=${settings.revision}`);
+
+    let worker = await this.externalWorkerStatus();
+    if (restart && worker?.active) {
+      await this.controlExternalWorker("stop");
+      const stopped = await this.requireExternalWorkerStatus();
+      if (stopped.active) throw new Error(`${stopped.serviceName} is still active`);
+      await this.controlExternalWorker("start");
+      worker = await this.requireExternalWorkerStatus();
+      if (!worker.active) throw new Error(`${worker.serviceName} did not become active`);
+      this.record("info", `Production worker restarted with settings revision ${settings.revision}`);
+    }
+
+    return {
+      settings: restart && worker?.active
+        ? await this.waitForAppliedSettings(settings.revision)
+        : await this.workerSettings.getOrCreate(this.settingsDefaults()),
+      worker,
+    };
   }
 
   async runProcessJob(jobId: string): Promise<ManualJobRunResult> {
@@ -153,6 +219,29 @@ export class RuntimeAdminService {
     return this.environment.PARSER_WORKER_SYSTEMD_SERVICE?.trim() || "slds-parser-worker.service";
   }
 
+  private settingsDefaults(): WorkerConcurrencySettings {
+    const options = loadWorkerConfig(this.environment);
+    return {
+      collectionConcurrency: options.collectionConcurrency ?? 1,
+      processConcurrency: options.processConcurrency ?? 1,
+      preflightConcurrency: options.preflightConcurrency ?? 1,
+    };
+  }
+
+  private async currentSettings(): Promise<RuntimeWorkerSettingsRecord | null> {
+    return this.workerSettings?.getOrCreate(this.settingsDefaults()) ?? null;
+  }
+
+  private async waitForAppliedSettings(revision: string): Promise<RuntimeWorkerSettingsRecord> {
+    if (this.workerSettings === undefined) throw new Error("Runtime worker settings are not configured");
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const settings = await this.workerSettings.getOrCreate(this.settingsDefaults());
+      if (settings.applied?.revision === revision) return settings;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Production worker did not apply settings revision ${revision}`);
+  }
+
   private record(level: RuntimeLogRecord["level"], message: string): void {
     this.logs.push({ at: new Date().toISOString(), level, message });
     while (this.logs.length > 200) this.logs.shift();
@@ -172,7 +261,7 @@ export class RuntimeAdminService {
   private async controlExternalWorker(action: "start" | "stop"): Promise<void> {
     const serviceName = this.serviceName();
     try {
-      await this.commandRunner("systemctl", [action, serviceName, "--no-pager"], 15_000);
+      await this.commandRunner("systemctl", [action, serviceName, "--no-pager"], action === "stop" ? 45_000 : 15_000);
     } catch (error) {
       this.record("error", `Cannot ${action} production worker ${serviceName}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Cannot ${action} production worker ${serviceName}`);

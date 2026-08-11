@@ -114,6 +114,12 @@ interface SnapshotListQuery { readonly search?: string; readonly limit?: string;
 interface JobsQuery { readonly jobType?: string; readonly status?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface JobParams { readonly jobId: string }
 interface RetryFailedBody { readonly jobType?: unknown; readonly limit?: unknown; readonly reason?: unknown }
+interface RuntimeSettingsBody {
+  readonly collectionConcurrency?: unknown;
+  readonly processConcurrency?: unknown;
+  readonly preflightConcurrency?: unknown;
+  readonly restart?: unknown;
+}
 interface PreviewQuery { readonly targetId?: string }
 interface ExportControlQuery {
   readonly targetId?: string;
@@ -1125,6 +1131,22 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get("/api/operations", { preHandler: requireAdmin }, async () => ({ items: dependencies.productAdmin.listOperations() }));
 
   server.get("/api/runtime", { preHandler: requireAdmin }, async () => runtimeService().status());
+
+  server.post<{ Body: RuntimeSettingsBody }>(
+    "/api/runtime/settings",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      try {
+        return { result: await runtimeService().saveSettings({
+          collectionConcurrency: request.body?.collectionConcurrency,
+          processConcurrency: request.body?.processConcurrency,
+          preflightConcurrency: request.body?.preflightConcurrency,
+        }, actor(request), request.body?.restart === true) };
+      } catch (error) {
+        throw new HttpInputError(error instanceof Error ? error.message : "Runtime settings cannot be saved");
+      }
+    },
+  );
 
   server.get<{ Querystring: JobsQuery }>("/api/jobs", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);

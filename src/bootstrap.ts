@@ -1,7 +1,7 @@
 import { CollectionRunner, ExportRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
@@ -82,6 +82,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
   const exportRunner = new ExportRunner(repositories, exporters, targetMappings);
   const exportControl = new PostgresExportControlRepository(pool);
+  const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
   const preflightRunner = wordpress === null
     ? undefined
@@ -94,16 +95,29 @@ export function createApplication(environment: ApplicationEnvironment = process.
       exportControl,
     ));
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns, preflightRunner, exportControl);
+  const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
-    loadWorkerConfig(environment),
+    workerOptions,
     undefined,
     Date.now,
     options.workerLogError ?? console.error,
     proxyPool === undefined
       ? undefined
       : async (jobTypes) => jobTypes.length === 1 && jobTypes[0] === "collect_product" ? proxyPool.reserveClaim() : { run: async (callback) => callback(), releaseUnused: async () => {} },
+    async () => {
+      const settings = await runtimeWorkerSettings.loadAndMarkApplied({
+        collectionConcurrency: workerOptions.collectionConcurrency ?? 1,
+        processConcurrency: workerOptions.processConcurrency ?? 1,
+        preflightConcurrency: workerOptions.preflightConcurrency ?? 1,
+      }, workerOptions.workerId);
+      return {
+        collectionConcurrency: settings.collectionConcurrency,
+        processConcurrency: settings.processConcurrency,
+        preflightConcurrency: settings.preflightConcurrency,
+      };
+    },
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
     exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };

@@ -6,6 +6,12 @@ export type { ProductOperationHistoryRepository } from "./product-operation-hist
 export type { ProductAdminRepository } from "./product-admin-repository.js";
 export type { ExportControlRepository } from "./export-control-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";
+export type {
+  AppliedWorkerConcurrencySettings,
+  RuntimeWorkerSettingsRecord,
+  RuntimeWorkerSettingsRepository,
+  WorkerConcurrencySettings,
+} from "./runtime-worker-settings-repository.js";
 export type { SourceProductRepository } from "./source-product-repository.js";
 export type { SourceRepository, UpsertSourceDefinitionInput } from "./source-repository.js";
 export type { SourceRunRepository } from "./source-run-repository.js";

@@ -26,6 +26,7 @@ export { PostgresProductOperationHistoryRepository } from "./postgres-product-op
 export { PostgresProductAdminRepository } from "./postgres-product-admin-repository.js";
 export { PostgresExportControlRepository } from "./postgres-export-control-repository.js";
 export { PostgresReferenceRepository } from "./postgres-reference-repository.js";
+export { PostgresRuntimeWorkerSettingsRepository } from "./postgres-runtime-worker-settings-repository.js";
 export { PostgresSourceProductRepository } from "./postgres-source-product-repository.js";
 export { PostgresSourceRepository } from "./postgres-source-repository.js";
 export { PostgresSourceRunRepository } from "./postgres-source-run-repository.js";

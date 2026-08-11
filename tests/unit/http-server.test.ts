@@ -296,6 +296,7 @@ describe("HTTP server", () => {
         logs: [],
       }),
       start: vi.fn().mockResolvedValue({ serviceName: "slds-parser-worker.service", active: true }),
+      saveSettings: vi.fn().mockResolvedValue({ settings: { revision: "2", preflightConcurrency: 4 }, worker: { active: true } }),
     } as unknown as RuntimeAdminService;
     const server = createHttpServer({ ...dependencies(database), runtime });
 
@@ -306,6 +307,8 @@ describe("HTTP server", () => {
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
     const forbidden = await server.inject({ method: "POST", url: "/api/runtime/start", headers: { cookie }, payload: {} });
     const started = await server.inject({ method: "POST", url: "/api/runtime/start", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: {} });
+    const settingsForbidden = await server.inject({ method: "POST", url: "/api/runtime/settings", headers: { cookie }, payload: { collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4 } });
+    const settingsSaved = await server.inject({ method: "POST", url: "/api/runtime/settings", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: { collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4, restart: true } });
 
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("/runtime");
@@ -313,8 +316,11 @@ describe("HTTP server", () => {
     expect(authorized.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
     expect(started.statusCode).toBe(200);
+    expect(settingsForbidden.statusCode).toBe(403);
+    expect(settingsSaved.statusCode).toBe(200);
     expect(runtime.status).toHaveBeenCalledOnce();
     expect(runtime.start).toHaveBeenCalledOnce();
+    expect(runtime.saveSettings).toHaveBeenCalledWith({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4 }, "admin", true);
     await server.close();
   });
 

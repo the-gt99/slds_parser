@@ -695,15 +695,59 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
               WHERE status IN ('pending', 'running', 'retry')
                  OR (status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')
               GROUP BY job_type
+           ), durations AS (
+             SELECT job_type,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (
+                      ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000
+                    ) AS estimated_duration_ms
+               FROM jobs
+              WHERE status = 'completed'
+                AND finished_at >= NOW() - INTERVAL '24 hours'
+                AND started_at IS NOT NULL
+              GROUP BY job_type
+           ), configured AS (
+             SELECT
+               COALESCE((
+                 SELECT COALESCE(applied_collection_concurrency, collection_concurrency)
+                   FROM runtime_worker_settings WHERE singleton = TRUE
+               ), 1)::INT AS collection_concurrency,
+               COALESCE((
+                 SELECT COALESCE(applied_process_concurrency, process_concurrency)
+                   FROM runtime_worker_settings WHERE singleton = TRUE
+               ), 1)::INT AS process_concurrency,
+               COALESCE((
+                 SELECT COALESCE(applied_preflight_concurrency, preflight_concurrency)
+                   FROM runtime_worker_settings WHERE singleton = TRUE
+               ), 1)::INT AS preflight_concurrency
+           ), metrics AS (
+             SELECT stats.*, durations.estimated_duration_ms,
+                    CASE stats.job_type
+                      WHEN 'collect_product' THEN configured.collection_concurrency
+                      WHEN 'process_product' THEN configured.process_concurrency
+                      WHEN 'preflight_product' THEN configured.preflight_concurrency
+                      ELSE 1
+                    END AS concurrency
+               FROM stats
+               LEFT JOIN durations USING (job_type)
+               CROSS JOIN configured
            )
            SELECT *,
                   CASE
                     WHEN remaining = 0 THEN NULL
+                    WHEN estimated_duration_ms > 0 THEN GREATEST(1, CEIL(
+                      remaining * estimated_duration_ms / (concurrency * 60000)
+                    ))::INT
                     WHEN last15m > 0 THEN CEIL(remaining / (last15m::NUMERIC / 15))::INT
                     WHEN last1h > 0 THEN CEIL(remaining / (last1h::NUMERIC / 60))::INT
                     ELSE NULL
-                  END AS eta_minutes
-             FROM stats
+                  END AS eta_minutes,
+                  CASE
+                    WHEN remaining = 0 THEN NULL
+                    WHEN estimated_duration_ms > 0 THEN 'duration'
+                    WHEN last15m > 0 OR last1h > 0 THEN 'throughput'
+                    ELSE NULL
+                  END AS eta_basis
+             FROM metrics
             ORDER BY job_type`,
       );
       return {
@@ -726,6 +770,9 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
               last1h: Number(row.last1h ?? 0),
               last24h: Number(row.last24h ?? 0),
             },
+            concurrency: Number(row.concurrency ?? 1),
+            estimatedDurationMs: row.estimated_duration_ms === null || row.estimated_duration_ms === undefined ? null : Number(row.estimated_duration_ms),
+            etaBasis: row.eta_basis === "duration" ? "duration" : row.eta_basis === "throughput" ? "throughput" : null,
             etaMinutes: row.eta_minutes === null || row.eta_minutes === undefined ? null : Number(row.eta_minutes),
           })),
         },

@@ -30,4 +30,12 @@ describe("worker config", () => {
       "WORKER_COLLECTION_CONCURRENCY must be an integer from 1 to 16",
     );
   });
+
+  it("accepts a separately bounded WordPress preflight concurrency", () => {
+    expect(loadWorkerConfig(environment).preflightConcurrency).toBe(1);
+    expect(loadWorkerConfig({ ...environment, WORKER_PREFLIGHT_CONCURRENCY: "4" }).preflightConcurrency).toBe(4);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_PREFLIGHT_CONCURRENCY: "9" })).toThrow(
+      "WORKER_PREFLIGHT_CONCURRENCY must be an integer from 1 to 8",
+    );
+  });
 });

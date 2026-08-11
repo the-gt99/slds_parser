@@ -8,6 +8,7 @@ import {
   PostgresJobRepository,
   PostgresProductAdminRepository,
   PostgresReferenceRepository,
+  PostgresRuntimeWorkerSettingsRepository,
   PostgresSourceProductRepository,
   PostgresSourceRepository,
   PostgresSourceRunRepository,
@@ -873,7 +874,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       [],
       [],
       [],
-      [{ job_type: "process_product", remaining: 2, last15m: 10, last1h: 20, last24h: 30, eta_minutes: 3 }],
+      [{ job_type: "process_product", remaining: 2, last15m: 10, last1h: 20, last24h: 30, concurrency: 3, estimated_duration_ms: 12_500, eta_basis: "duration", eta_minutes: 1 }],
     ]);
 
     const result = await new PostgresProductAdminRepository(pool(executor)).listJobs({ search: "87549", limit: 50, offset: 0 });
@@ -887,14 +888,91 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT");
     expect(executor.calls[5]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
     expect(executor.calls[5]?.text).toContain("GROUP BY job_type");
-    expect(executor.calls[5]?.text).toContain("last15m::NUMERIC / 15");
+    expect(executor.calls[5]?.text).toContain("PERCENTILE_CONT(0.75)");
+    expect(executor.calls[5]?.text).toContain("applied_process_concurrency");
+    expect(executor.calls[5]?.text).toContain("remaining * estimated_duration_ms / (concurrency * 60000)");
     expect(executor.calls[1]?.text).toContain("job.finished_at - job.started_at");
     expect(result.summary.byJobType[0]).toEqual({
       jobType: "process_product",
       remaining: 2,
       completion: { last15m: 10, last1h: 20, last24h: 30 },
-      etaMinutes: 3,
+      concurrency: 3,
+      estimatedDurationMs: 12_500,
+      etaBasis: "duration",
+      etaMinutes: 1,
     });
+  });
+
+  it("initializes and marks runtime worker settings as applied", async () => {
+    const row = {
+      singleton: true,
+      collection_concurrency: 15,
+      process_concurrency: 10,
+      preflight_concurrency: 4,
+      revision: "2",
+      updated_by: "admin",
+      updated_at: new Date("2026-08-11T12:00:00.000Z"),
+      applied_revision: "2",
+      applied_collection_concurrency: 15,
+      applied_process_concurrency: 10,
+      applied_preflight_concurrency: 4,
+      applied_worker_id: "production",
+      applied_at: new Date("2026-08-11T12:01:00.000Z"),
+    };
+    const executor = new FakeExecutor([[], [], [row], [row], []]);
+    const repository = new PostgresRuntimeWorkerSettingsRepository(pool(executor));
+
+    const result = await repository.loadAndMarkApplied({
+      collectionConcurrency: 1,
+      processConcurrency: 1,
+      preflightConcurrency: 1,
+    }, "production");
+
+    expect(result).toMatchObject({
+      collectionConcurrency: 15,
+      processConcurrency: 10,
+      preflightConcurrency: 4,
+      revision: "2",
+      applied: { revision: "2", workerId: "production", preflightConcurrency: 4 },
+    });
+    expect(executor.calls[1]?.text).toContain("ON CONFLICT (singleton) DO NOTHING");
+    expect(executor.calls[3]?.text).toContain("applied_preflight_concurrency = preflight_concurrency");
+  });
+
+  it("increments and audits a changed runtime worker settings revision", async () => {
+    const current = {
+      singleton: true,
+      collection_concurrency: 15,
+      process_concurrency: 10,
+      preflight_concurrency: 1,
+      revision: "7",
+      updated_by: "environment",
+      updated_at: new Date("2026-08-11T12:00:00.000Z"),
+      applied_revision: "7",
+      applied_collection_concurrency: 15,
+      applied_process_concurrency: 10,
+      applied_preflight_concurrency: 1,
+      applied_worker_id: "production",
+      applied_at: new Date("2026-08-11T12:00:00.000Z"),
+    };
+    const updated = { ...current, preflight_concurrency: 4, revision: "8", updated_by: "admin" };
+    const executor = new FakeExecutor([[], [current], [updated], [], []]);
+    const repository = new PostgresRuntimeWorkerSettingsRepository(pool(executor));
+
+    const result = await repository.save({
+      collectionConcurrency: 15,
+      processConcurrency: 10,
+      preflightConcurrency: 4,
+    }, "admin");
+
+    expect(result).toMatchObject({ revision: "8", preflightConcurrency: 4, applied: { revision: "7", preflightConcurrency: 1 } });
+    expect(executor.calls[2]?.values).toEqual([15, 10, 4, "8", "admin"]);
+    expect(executor.calls[3]?.values).toEqual([
+      "8",
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 1 }),
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4 }),
+      "admin",
+    ]);
   });
 
   it("serializes every JSON batch audit field as JSON", async () => {

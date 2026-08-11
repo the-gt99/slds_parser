@@ -286,7 +286,7 @@ function renderJobs(data) {
       <button id="show-running-jobs" class="button secondary" type="button">Показать выполняющиеся</button>
       <button id="retry-process-failed" class="button secondary" type="button">Вернуть ошибочные обработки в очередь</button>
     </div>
-    <p class="muted runtime-note">Скорость и ETA считаются отдельно для каждого типа job. Поиск и фильтр статуса не смешивают сбор с обработкой.</p>
+    <p class="muted runtime-note">Скорость считается отдельно для каждого типа job. ETA использует p75 длительности завершённых jobs и применённое число потоков; при отсутствии длительностей — фактическую скорость.</p>
   `;
   const selectedJobType = byId("source").value;
   const metrics = (summary.byJobType || []).filter((item) => !selectedJobType || item.jobType === selectedJobType);
@@ -303,7 +303,10 @@ function renderJobs(data) {
     label.textContent = queueLabel(metric.jobType);
     queue.append(label, document.createTextNode(` · в очереди ${counts.pending || 0} · выполняется ${counts.running || 0} · повтор ${counts.retry || 0} · ошибок ${counts.failed || 0}`));
     const speed = document.createElement("strong");
-    speed.textContent = `15 мин / час / сутки: ${metric.completion.last15m} / ${metric.completion.last1h} / ${metric.completion.last24h} · ETA ${metric.etaMinutes === null ? "—" : `${metric.etaMinutes} мин.`}`;
+    const etaDetails = metric.etaBasis === "duration" && metric.estimatedDurationMs !== null
+      ? ` · p75 ${elapsedText(metric.estimatedDurationMs)} · потоков ${metric.concurrency}`
+      : "";
+    speed.textContent = `15 мин / час / сутки: ${metric.completion.last15m} / ${metric.completion.last1h} / ${metric.completion.last24h} · ETA ${metric.etaMinutes === null ? "—" : `≈ ${metric.etaMinutes} мин.`}${etaDetails}`;
     row.append(queue, speed);
     metricsRoot.append(row);
   }
@@ -518,6 +521,59 @@ function renderRuntimeLogs(items) {
   }
 }
 
+function runtimeSettingsInput() {
+  return {
+    collectionConcurrency: byId("runtime-collection-concurrency").value,
+    processConcurrency: byId("runtime-process-concurrency").value,
+    preflightConcurrency: byId("runtime-preflight-concurrency").value,
+  };
+}
+
+async function saveRuntimeSettings(restart) {
+  const action = restart ? "сохранить настройки и перезапустить production worker" : "сохранить настройки без перезапуска";
+  if (!confirm(`Действительно ${action}?`)) return;
+  const buttons = [byId("runtime-settings-save"), byId("runtime-settings-apply")];
+  for (const control of buttons) control.disabled = true;
+  try {
+    await api("/api/runtime/settings", { method: "POST", body: { ...runtimeSettingsInput(), restart } });
+    await load();
+  } catch (error) {
+    alert(error.message);
+    for (const control of buttons) control.disabled = false;
+  }
+}
+
+function renderRuntimeSettings(settings, worker) {
+  const controls = [
+    ["runtime-collection-concurrency", "collectionConcurrency"],
+    ["runtime-process-concurrency", "processConcurrency"],
+    ["runtime-preflight-concurrency", "preflightConcurrency"],
+  ];
+  const available = settings !== null && settings !== undefined;
+  for (const [id, field] of controls) {
+    const control = byId(id);
+    control.disabled = !available;
+    if (available && document.activeElement !== control) control.value = settings[field];
+  }
+  byId("runtime-settings-save").disabled = !available;
+  byId("runtime-settings-apply").disabled = !available || !worker?.active;
+  if (!available) {
+    byId("runtime-settings-status").textContent = "Недоступно";
+    byId("runtime-settings-status").className = "badge status-failed";
+    byId("runtime-settings-saved").textContent = "Runtime-настройки не подключены.";
+    byId("runtime-settings-applied").textContent = "-";
+    return;
+  }
+
+  const matchesApplied = settings.applied?.revision === settings.revision;
+  byId("runtime-settings-status").textContent = matchesApplied ? "Применено" : "Нужен перезапуск";
+  byId("runtime-settings-status").className = `badge ${matchesApplied ? "status-completed" : "status-retry"}`;
+  byId("runtime-settings-saved").textContent = `Сохранено: ревизия ${settings.revision} · ${settings.updatedBy} · ${date(settings.updatedAt)}`;
+  byId("runtime-settings-applied").textContent = settings.applied
+    ? `Последний запуск: ревизия ${settings.applied.revision} · ${settings.applied.workerId} · ${date(settings.applied.appliedAt)}`
+    : "Worker ещё не запускался с настройками из интерфейса.";
+}
+
 function renderRuntime(data) {
   const worker = data.worker;
   byId("runtime-status").textContent = worker === null
@@ -528,6 +584,7 @@ function renderRuntime(data) {
   byId("runtime-worker-state").textContent = worker ? `${worker.state || "-"} / ${worker.subState || "-"}` : "-";
   byId("runtime-start").disabled = worker === null || worker.active;
   byId("runtime-stop").disabled = worker === null || !worker.active;
+  renderRuntimeSettings(data.settings, worker);
   renderRuntimeQueue(data.queue || []);
   renderRuntimeLogs(data.logs || []);
 }
@@ -1417,6 +1474,23 @@ function configure() {
         <p class="muted runtime-note">Это единственный production worker. Он выполняет discovery, сбор, обработку и экспорт по настроенным на сервере потокам.</p>
       </section>
       <section class="section runtime-card">
+        <div class="section-title"><div><p class="eyebrow">Runtime</p><h2>Потоки worker</h2></div><span id="runtime-settings-status" class="badge">-</span></div>
+        <div class="runtime-lane-settings">
+          <label><span>Сбор товаров</span><input id="runtime-collection-concurrency" type="number" min="1" max="16" step="1"></label>
+          <label><span>Обработка</span><input id="runtime-process-concurrency" type="number" min="1" max="16" step="1"></label>
+          <label><span>Preflight WordPress</span><input id="runtime-preflight-concurrency" type="number" min="1" max="8" step="1"></label>
+          <div><span>Discovery</span><strong>1</strong></div>
+          <div><span>Экспорт</span><strong>1</strong></div>
+        </div>
+        <p id="runtime-settings-saved" class="muted runtime-note">-</p>
+        <p id="runtime-settings-applied" class="muted runtime-note">-</p>
+        <div class="runtime-actions">
+          <button id="runtime-settings-save" class="button secondary" type="button">Сохранить</button>
+          <button id="runtime-settings-apply" class="button primary" type="button">Сохранить и перезапустить</button>
+        </div>
+        <p class="muted runtime-note">Сбор ограничивается также доступными proxy sessions. Discovery и записывающий export намеренно выполняются последовательно.</p>
+      </section>
+      <section class="section runtime-card">
         <div class="section-title"><div><p class="eyebrow">GOAT</p><h2>Discovery</h2></div></div>
         <label class="field"><span>Размер страницы</span><input id="discovery-batch-size" type="number" min="1" value="500"></label>
         <label class="field"><span>Задержка запросов, мс</span><input id="discovery-delay" type="number" min="1" value="1000"></label>
@@ -1444,6 +1518,8 @@ function configure() {
       await load();
     });
     byId("runtime-refresh").addEventListener("click", load);
+    byId("runtime-settings-save").addEventListener("click", () => saveRuntimeSettings(false));
+    byId("runtime-settings-apply").addEventListener("click", () => saveRuntimeSettings(true));
     byId("runtime-discovery").addEventListener("click", async () => {
       const enqueueCollection = byId("discovery-enqueue-collection").checked;
       if (enqueueCollection && !confirm("Discovery полного каталога с автоматическим сбором может поставить много collect_product jobs. Продолжить?")) return;

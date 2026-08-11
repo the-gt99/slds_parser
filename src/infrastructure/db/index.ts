@@ -25,6 +25,7 @@ export {
   PostgresProductAdminRepository,
   PostgresExportControlRepository,
   PostgresReferenceRepository,
+  PostgresRuntimeWorkerSettingsRepository,
   PostgresSourceProductRepository,
   PostgresSourceRepository,
   PostgresSourceRunRepository,

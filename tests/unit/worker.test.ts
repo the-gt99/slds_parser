@@ -26,6 +26,51 @@ describe("Worker", () => {
     expect(value.store.jobs.get(value.job.id)?.status).toBe("pending");
   });
 
+  it("runs the configured number of WordPress preflight lanes", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 3; index++) {
+      await jobs.enqueue({
+        jobType: "preflight_product",
+        payload: { sourceProductId: String(index), targetId: "10" },
+        uniqueKey: `preflight-${index}`,
+      });
+    }
+    const controller = new AbortController();
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const workerIds: string[] = [];
+    const handler: JobHandler = {
+      dispatch: vi.fn(async (job) => {
+        workerIds.push(job.lockedBy ?? "");
+        if (workerIds.length === 3) {
+          release();
+          controller.abort();
+        }
+        await barrier;
+        return { status: "completed" as const };
+      }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, options, sleep, Date.now, console.error, undefined, async () => ({
+      collectionConcurrency: 1,
+      processConcurrency: 1,
+      preflightConcurrency: 3,
+    }));
+
+    await worker.run(controller.signal);
+
+    expect(workerIds.sort()).toEqual([
+      "worker:preflight-1",
+      "worker:preflight-2",
+      "worker:preflight-3",
+    ]);
+  });
+
   it("processes only the explicitly selected job", async () => {
     const value = await setup();
     const second = await value.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: "2", force: true }, uniqueKey: "two" });

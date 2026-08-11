@@ -16,11 +16,19 @@ export interface WorkerOptions {
   readonly retryMaxMs: number;
   readonly processConcurrency?: number;
   readonly collectionConcurrency?: number;
+  readonly preflightConcurrency?: number;
+}
+
+export interface WorkerConcurrency {
+  readonly processConcurrency: number;
+  readonly collectionConcurrency: number;
+  readonly preflightConcurrency: number;
 }
 
 export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 export type WorkerLogger = (message: string) => void;
 export type WorkerClaimPermitProvider = (jobTypes: readonly JobType[]) => Promise<WorkerClaimPermit | null>;
+export type WorkerConcurrencyProvider = () => Promise<WorkerConcurrency>;
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -44,7 +52,8 @@ export class Worker {
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
     private readonly currentTime: () => number = Date.now,
     private readonly logError: WorkerLogger = console.error,
-    private readonly claimPermit?: WorkerClaimPermitProvider) {}
+    private readonly claimPermit?: WorkerClaimPermitProvider,
+    private readonly concurrencyProvider?: WorkerConcurrencyProvider) {}
 
   async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
     const permit = this.claimPermit === undefined ? undefined : await this.claimPermit(jobTypes ?? []);
@@ -95,8 +104,13 @@ export class Worker {
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const exportJobTypes = ["export_product"] satisfies readonly JobType[];
     const preflightJobTypes = ["preflight_product"] satisfies readonly JobType[];
-    const processConcurrency = this.options.processConcurrency ?? 1;
-    const collectionConcurrency = this.options.collectionConcurrency ?? 1;
+    const configuredConcurrency = this.concurrencyProvider === undefined
+      ? {
+          processConcurrency: this.options.processConcurrency ?? 1,
+          collectionConcurrency: this.options.collectionConcurrency ?? 1,
+          preflightConcurrency: this.options.preflightConcurrency ?? 1,
+        }
+      : await this.concurrencyProvider();
     const controller = new AbortController();
     const stop = (): void => controller.abort();
     if (signal.aborted) stop();
@@ -104,11 +118,12 @@ export class Worker {
     try {
       await Promise.all([
         this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),
-        ...Array.from({ length: collectionConcurrency }, (_, index) =>
+        ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
-        ...Array.from({ length: processConcurrency }, (_, index) =>
+        ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
           this.runLane(controller.signal, ["process_product"], `${this.options.workerId}:process-${index + 1}`)),
-        this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight`),
+        ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
+          this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
       ]);
     } finally {
