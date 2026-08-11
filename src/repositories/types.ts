@@ -333,6 +333,7 @@ export interface TargetRecord {
 
 export type TargetContentTemplateField = "description" | "short_description";
 export type TargetContentTemplateStatus = "draft" | "active" | "archived";
+export type TargetContentTemplateManagementMode = "manage" | "preserve";
 
 export interface TargetContentTemplateRecord {
   readonly id: EntityId;
@@ -340,6 +341,11 @@ export interface TargetContentTemplateRecord {
   readonly field: TargetContentTemplateField;
   readonly name: string;
   readonly templateSource: string;
+  readonly profileKey: string;
+  readonly profileName: string;
+  readonly managementMode: TargetContentTemplateManagementMode;
+  readonly categoryTermIds: readonly number[];
+  readonly requiredContextPaths: readonly string[];
   readonly status: TargetContentTemplateStatus;
   readonly revision: number;
   readonly actor: string;
@@ -352,6 +358,11 @@ export interface CreateTargetContentTemplateDraftInput {
   readonly field: TargetContentTemplateField;
   readonly name: string;
   readonly templateSource: string;
+  readonly profileKey: string;
+  readonly profileName: string;
+  readonly managementMode: TargetContentTemplateManagementMode;
+  readonly categoryTermIds: readonly number[];
+  readonly requiredContextPaths: readonly string[];
   readonly actor: string;
 }
 

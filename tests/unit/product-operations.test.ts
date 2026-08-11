@@ -118,6 +118,19 @@ describe("product operations", () => {
     expect(translate.mock.calls.filter(([value]) => value === "Story")).toHaveLength(1);
   });
 
+  it("keeps an absent story empty instead of copying the description", async () => {
+    const translate = vi.fn(async (text: string) => text === "Description" ? "Описание" : text);
+    const provider: TextTranslationProvider = { code: "fake", version: "1", translate };
+
+    const result = await new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({
+      description: "Description",
+      attributes: { story: null },
+    }));
+
+    expect(result.translatedContent).toMatchObject({ description: "Описание", story: "" });
+    expect(translate).not.toHaveBeenCalledWith("", "en", "ru");
+  });
+
   it("adds a shoe height candidate from the downloaded primary image", async () => {
     const prediction: ShoeHeightPredictionProvider = {
       code: "fixture-height",

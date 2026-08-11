@@ -42,6 +42,11 @@ describe("ExportRunner", () => {
       field: "description",
       name: "Описание",
       templateSource: "<p>{{ product.effective_title }}</p>",
+      profileKey: "default",
+      profileName: "Основной профиль",
+      managementMode: "manage",
+      categoryTermIds: [],
+      requiredContextPaths: [],
       actor: "admin",
     });
     await value.repositories.contentTemplates.activate(draft.id, "10", "admin");

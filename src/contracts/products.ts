@@ -27,6 +27,11 @@ export interface TargetContentTemplateDTO {
   readonly field: "description" | "short_description";
   readonly revision: number;
   readonly templateSource: string;
+  readonly profileKey: string;
+  readonly profileName: string;
+  readonly managementMode: "manage" | "preserve";
+  readonly categoryTermIds: readonly number[];
+  readonly requiredContextPaths: readonly string[];
 }
 
 export interface DiscoveredSourceProduct {

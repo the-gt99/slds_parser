@@ -169,7 +169,7 @@ function appendCandidate(list: ReferenceCandidateDTO[], value: ReferenceCandidat
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "2.9.0";
+  readonly version = "3.0.0";
 
   async process(context: ProcessingContext): Promise<UniversalProductDTO> {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -182,7 +182,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     const countryCode = text(offersPayload.countryCode);
     if (!productId || !countryCode) throw new IntegrationContractError("GOAT product id and country code are required");
     const title = text(product.name);
-    const description = text(product.story) || text(product.description);
+    const description = text(product.description);
     const brand = text(product.brandName) || text(product.brand);
     const family = text(product.silhouette);
     const color = text(product.color);
@@ -276,7 +276,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     return { sourceProductId: context.sourceProduct.id, title, description, sku: text(product.sku),
       images: images(product.images, title), variants, referenceCandidates,
       attributes: { brand: product.brandName ?? product.brand ?? null, family, gender, color: product.color ?? null,
-        story: product.story ?? product.description ?? null, details: product.details ?? null, upperMaterial: product.upperMaterial ?? null,
+        story: product.story ?? null, details: product.details ?? null, upperMaterial: product.upperMaterial ?? null,
         midsole: product.midsole ?? null, composition: product.composition ?? null, ageGroups, categoryRaw,
         productCategory: product.productCategory ?? null, productType: product.productType ?? null, taxonomy,
         season: product.season ?? null, releaseDate: product.releaseDate ?? null, status: product.status ?? null },

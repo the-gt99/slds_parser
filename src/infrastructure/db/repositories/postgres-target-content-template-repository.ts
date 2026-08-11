@@ -16,6 +16,11 @@ function mapTemplate(row: DatabaseRow): TargetContentTemplateRecord {
     field: String(row.field_code) as TargetContentTemplateField,
     name: String(row.name),
     templateSource: String(row.template_source),
+    profileKey: String(row.profile_key),
+    profileName: String(row.profile_name),
+    managementMode: String(row.management_mode) as TargetContentTemplateRecord["managementMode"],
+    categoryTermIds: Array.isArray(row.category_term_ids) ? row.category_term_ids.map(Number) : [],
+    requiredContextPaths: Array.isArray(row.required_context_paths) ? row.required_context_paths.map(String) : [],
     status: String(row.status) as TargetContentTemplateRecord["status"],
     revision: Number(row.revision),
     actor: String(row.actor),
@@ -50,18 +55,24 @@ export class PostgresTargetContentTemplateRepository implements TargetContentTem
     return result.rows[0] === undefined ? null : mapTemplate(result.rows[0]);
   }
 
+  async lockField(targetId: EntityId, field: TargetContentTemplateField): Promise<void> {
+    await this.executor.query("SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2::TEXT, 0))", [targetId, field]);
+  }
+
   async createDraft(input: CreateTargetContentTemplateDraftInput): Promise<TargetContentTemplateRecord> {
-    await this.executor.query("SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2::TEXT, 0))", [input.targetId, input.field]);
+    await this.lockField(input.targetId, input.field);
     const result = await this.executor.query<DatabaseRow>(
       `INSERT INTO target_content_templates (
-         target_id, field_code, name, template_source, status, revision, actor
+         target_id, field_code, name, template_source, profile_key, profile_name,
+         management_mode, category_term_ids, required_context_paths, status, revision, actor
        ) VALUES (
-         $1, $2, $3, $4, 'draft',
+         $1, $2, $3, $4, $5, $6, $7, $8::BIGINT[], $9::TEXT[], 'draft',
          COALESCE((SELECT MAX(revision) + 1 FROM target_content_templates WHERE target_id = $1 AND field_code = $2), 1),
-         $5
+         $10
        )
        RETURNING *`,
-      [input.targetId, input.field, input.name, input.templateSource, input.actor],
+      [input.targetId, input.field, input.name, input.templateSource, input.profileKey, input.profileName,
+        input.managementMode, input.categoryTermIds, input.requiredContextPaths, input.actor],
     );
     return mapTemplate(requireRow(result.rows, "target content template draft", `${input.targetId}/${input.field}`));
   }
@@ -77,8 +88,8 @@ export class PostgresTargetContentTemplateRepository implements TargetContentTem
     await this.executor.query(
       `UPDATE target_content_templates
        SET status = 'archived'
-       WHERE target_id = $1 AND field_code = $2 AND status = 'active'`,
-      [targetId, String(row.field_code)],
+       WHERE target_id = $1 AND field_code = $2 AND profile_key = $3 AND status = 'active'`,
+      [targetId, String(row.field_code), String(row.profile_key)],
     );
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE target_content_templates

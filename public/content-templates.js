@@ -1,18 +1,22 @@
+const fieldLabels = { description: "Описание", short_description: "Краткое описание" };
+
 const state = {
   session: null,
   targets: [],
   targetId: "",
   field: "description",
   catalog: null,
-  versions: [],
-  selectedVersion: null,
-  autoPreview: false,
-  previewTimer: null,
+  categories: [],
+  previewController: null,
   previewRequest: 0,
+  fields: {
+    description: { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null },
+    short_description: { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null },
+  },
 };
 
 const byId = (id) => document.getElementById(id);
-const fieldLabels = { description: "Описание", short_description: "Краткое описание" };
+const currentState = () => state.fields[state.field];
 
 async function api(url, options = {}) {
   const headers = { Accept: "application/json" };
@@ -55,14 +59,78 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString("ru-RU") : "—";
 }
 
+function implicitProfile(field) {
+  const managed = field === "description";
+  return {
+    id: null,
+    field,
+    profileKey: "default",
+    profileName: "Основной профиль",
+    managementMode: managed ? "manage" : "preserve",
+    categoryTermIds: [],
+    requiredContextPaths: [],
+    name: managed ? "Системный шаблон описания" : "Пример краткого описания",
+    templateSource: state.catalog?.defaults?.[field] || "",
+    status: "system",
+    revision: 0,
+  };
+}
+
+function latestProfiles(fieldState = currentState()) {
+  const profiles = new Map();
+  for (const version of fieldState.versions) {
+    if (!profiles.has(version.profileKey)) profiles.set(version.profileKey, version);
+  }
+  if (!profiles.has("default")) profiles.set("default", implicitProfile(state.field));
+  if (fieldState.transient) profiles.set(fieldState.transient.profileKey, fieldState.transient);
+  return [...profiles.values()];
+}
+
+function versionsForProfile(profileKey = currentState().profileKey) {
+  return currentState().versions.filter((version) => version.profileKey === profileKey);
+}
+
+function selectedCategoryIds() {
+  return [...byId("profile-categories").selectedOptions].map((option) => Number(option.value));
+}
+
+function selectedRequirements() {
+  return [...document.querySelectorAll("[data-requirement-path]")]
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.requirementPath);
+}
+
+function editorSnapshot() {
+  return {
+    profileKey: currentState().profileKey,
+    profileName: byId("profile-name").value.trim(),
+    managementMode: byId("management-enabled").checked ? "manage" : "preserve",
+    categoryTermIds: selectedCategoryIds().sort((left, right) => left - right),
+    requiredContextPaths: selectedRequirements().sort(),
+    name: byId("template-name").value.trim(),
+    templateSource: byId("template-source").value,
+  };
+}
+
+function sameSnapshot(left, right) {
+  return left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isDirty(fieldState = currentState()) {
+  return !sameSnapshot(fieldState.baseline, editorSnapshot());
+}
+
 function templateBody() {
   return {
     targetId: state.targetId,
     sourceProductId: byId("preview-product-id").value.trim(),
     field: state.field,
-    name: byId("template-name").value.trim(),
-    templateSource: byId("template-source").value,
+    ...editorSnapshot(),
   };
+}
+
+function previewKey(body = templateBody()) {
+  return JSON.stringify(body);
 }
 
 function updateProductLink() {
@@ -95,9 +163,7 @@ function renderReference() {
       const button = element("button", "template-variable-button");
       button.type = "button";
       button.title = `Пример: ${variable.example}`;
-      const label = element("span", "", variable.label);
-      const code = element("code", "", `{{ ${variable.path} }}`);
-      button.append(label, code);
+      button.append(element("span", "", variable.label), element("code", "", `{{ ${variable.path} }}`));
       button.addEventListener("click", () => insertAtCursor(`{{ ${variable.path} }}`));
       group.append(button);
     }
@@ -113,46 +179,145 @@ function renderReference() {
     button.addEventListener("click", () => insertAtCursor(helper.example));
     helpers.append(button);
   }
+
+  const requirements = byId("profile-requirements");
+  requirements.replaceChildren();
+  for (const requirement of state.catalog.requirements || []) {
+    const label = element("label", "template-requirement");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.requirementPath = requirement.path;
+    input.addEventListener("change", editorChanged);
+    label.append(input, element("span", "", requirement.label));
+    requirements.append(label);
+  }
+}
+
+function renderCategoryOptions(selected = []) {
+  const select = byId("profile-categories");
+  const selectedSet = new Set(selected.map(Number));
+  const values = new Map(state.categories.map((category) => [Number(category.externalId), category]));
+  for (const termId of selectedSet) {
+    if (!values.has(termId)) values.set(termId, { externalId: String(termId), name: `Категория #${termId}` });
+  }
+  const options = [...values.values()]
+    .sort((left, right) => String(left.name).localeCompare(String(right.name), "ru"))
+    .map((category) => {
+      const option = element("option", "", `${category.name} · #${category.externalId}`);
+      option.value = String(category.externalId);
+      option.selected = selectedSet.has(Number(category.externalId));
+      return option;
+    });
+  select.replaceChildren(...options);
+}
+
+function renderProfileSelect() {
+  const select = byId("profile-select");
+  const options = latestProfiles().map((profile) => {
+    const option = element("option", "", profile.profileName);
+    option.value = profile.profileKey;
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value = currentState().profileKey;
+}
+
+function applyRequirementSelection(paths) {
+  const selected = new Set(paths || []);
+  for (const input of document.querySelectorAll("[data-requirement-path]")) input.checked = selected.has(input.dataset.requirementPath);
 }
 
 function editorStatus() {
-  const selected = state.selectedVersion;
-  const unchanged = selected !== null && selected.templateSource === byId("template-source").value && selected.name === byId("template-name").value.trim();
+  const selected = currentState().selectedVersion;
+  const dirty = isDirty();
   const badge = byId("editor-state");
-  if (unchanged) {
-    badge.textContent = selected.status === "active" ? `Активна · rev ${selected.revision}` : `Черновик · rev ${selected.revision}`;
-    badge.className = `badge ${selected.status === "active" ? "status-completed" : "status-pending"}`;
-  } else {
+  if (dirty) {
     badge.textContent = "Есть несохранённые изменения";
     badge.className = "badge warning";
+  } else if (selected?.status === "active") {
+    badge.textContent = `Активна · rev ${selected.revision}`;
+    badge.className = "badge status-completed";
+  } else if (selected?.status === "draft") {
+    badge.textContent = `Черновик · rev ${selected.revision}`;
+    badge.className = "badge status-pending";
+  } else if (state.field === "description") {
+    badge.textContent = "Системный шаблон";
+    badge.className = "badge status-completed";
+  } else {
+    badge.textContent = "Системный пример · не активен";
+    badge.className = "badge";
   }
+  const mode = byId("management-enabled").checked;
+  const categories = selectedCategoryIds();
+  byId("policy-state").textContent = `${mode ? "Поле управляется" : "Поле сохраняется без изменений"}. ${categories.length ? `Профиль применяется к выбранным категориям: ${categories.map((id) => `#${id}`).join(", ")}.` : "Это профиль по умолчанию для категорий без отдельного правила."}`;
+}
+
+function invalidatePreview(message = "Настройки изменились. Запустите проверку заново.") {
+  state.previewController?.abort();
+  state.previewController = null;
+  state.previewRequest++;
+  byId("preview-comparison").hidden = true;
+  byId("preview-context-details").hidden = true;
+  byId("preview-policy").hidden = true;
+  byId("preview-badge").textContent = "Не проверено";
+  byId("preview-badge").className = "badge";
+  byId("preview-message").textContent = message;
   byId("validation-state").textContent = "Изменения ещё не проверены";
 }
 
-function loadVersion(version) {
-  state.selectedVersion = version;
-  byId("template-name").value = version.name;
-  byId("template-source").value = version.templateSource;
+function editorChanged() {
   editorStatus();
+  invalidatePreview();
+}
+
+function applyEditor(value, selectedVersion = null) {
+  const fieldState = currentState();
+  fieldState.profileKey = value.profileKey;
+  fieldState.selectedVersion = selectedVersion;
+  byId("profile-name").value = value.profileName;
+  byId("management-enabled").checked = value.managementMode === "manage";
+  renderCategoryOptions(value.categoryTermIds);
+  applyRequirementSelection(value.requiredContextPaths);
+  byId("template-name").value = value.name;
+  byId("template-source").value = value.templateSource;
+  fieldState.baseline = editorSnapshot();
+  renderProfileSelect();
   renderVersions();
-  schedulePreview();
+  editorStatus();
+  restorePreview();
+}
+
+function selectProfile(profileKey) {
+  const fieldState = currentState();
+  const versions = fieldState.versions.filter((version) => version.profileKey === profileKey);
+  const selected = versions.find((version) => version.status === "active") || versions[0] || null;
+  const profile = selected || (fieldState.transient?.profileKey === profileKey ? fieldState.transient : implicitProfile(state.field));
+  applyEditor(profile, selected);
+}
+
+function loadVersion(version) {
+  if (isDirty() && !confirm("Заменить несохранённые изменения выбранной версией?")) return;
+  currentState().transient = null;
+  applyEditor(version, version);
 }
 
 function renderVersions() {
   const list = byId("versions-list");
   list.replaceChildren();
-  byId("versions-count").textContent = String(state.versions.length);
-  if (!state.versions.length) {
-    list.append(element("p", "muted", "Сохранённых версий пока нет. Сейчас открыт системный пример."));
+  const versions = versionsForProfile();
+  byId("versions-count").textContent = String(versions.length);
+  if (!versions.length) {
+    const message = state.field === "description"
+      ? "Сохранённых версий профиля пока нет. Используется системный шаблон."
+      : "Сохранённых версий профиля пока нет. Краткое описание сохраняется без изменений.";
+    list.append(element("p", "muted", message));
     return;
   }
-  for (const version of state.versions) {
-    const row = element("article", `template-version-row${state.selectedVersion?.id === version.id ? " selected" : ""}`);
+  for (const version of versions) {
+    const row = element("article", `template-version-row${currentState().selectedVersion?.id === version.id ? " selected" : ""}`);
     const main = element("button", "template-version-main");
     main.type = "button";
-    const title = element("strong", "", version.name);
-    const meta = element("span", "", `rev ${version.revision} · ${formatDate(version.createdAt)} · ${version.actor}`);
-    main.append(title, meta);
+    main.append(element("strong", "", version.name), element("span", "", `rev ${version.revision} · ${formatDate(version.createdAt)} · ${version.actor}`));
     main.addEventListener("click", () => loadVersion(version));
     const status = element("span", `badge ${version.status === "active" ? "status-completed" : version.status === "draft" ? "status-pending" : ""}`, version.status === "active" ? "Активна" : version.status === "draft" ? "Черновик" : "Архив");
     row.append(main, status);
@@ -166,32 +331,38 @@ function renderVersions() {
   }
 }
 
-function resetEditor() {
-  const active = state.versions.find((version) => version.status === "active") || state.versions[0] || null;
-  if (active) {
-    loadVersion(active);
-    return;
-  }
-  state.selectedVersion = null;
-  byId("template-name").value = `Шаблон: ${fieldLabels[state.field]}`;
-  byId("template-source").value = state.catalog.defaults?.[state.field] || "";
-  editorStatus();
-  renderVersions();
+async function loadVersions(field) {
+  const parameters = new URLSearchParams({ targetId: state.targetId, field });
+  const response = await api(`/api/content-templates?${parameters}`);
+  state.fields[field].versions = response.items || [];
+  state.fields[field].transient = null;
 }
 
-async function loadVersions() {
-  const parameters = new URLSearchParams({ targetId: state.targetId, field: state.field });
-  const response = await api(`/api/content-templates?${parameters}`);
-  state.versions = response.items || [];
-  resetEditor();
+async function loadCategories() {
+  const parameters = new URLSearchParams({ entityType: "product_categories", limit: "200" });
+  const response = await api(`/api/targets/${encodeURIComponent(state.targetId)}/dictionary?${parameters}`);
+  state.categories = response.items || [];
 }
 
 function iframeDocument(html) {
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>body{margin:0;padding:18px;font:14px/1.55 system-ui,sans-serif;color:#20242d}h2,h3{line-height:1.25;margin:0 0 12px}p{margin:0 0 12px}ul,ol{padding-left:22px}li{margin:5px 0}a{color:#176b52}</style></head><body>${html || '<span style="color:#78818e">Поле пустое</span>'}</body></html>`;
 }
 
-function renderPreview(item) {
-  const fieldKey = state.field === "description" ? "description_html" : "short_description_html";
+function selectionMessage(selection) {
+  if (!selection) return "Правило применения не определено.";
+  if (selection.reason === "matched") return `Профиль «${selection.profileName}» управляет этим полем.`;
+  if (selection.reason === "system_default") return "Используется системный шаблон длинного описания.";
+  if (selection.reason === "management_disabled") return `Профиль «${selection.profileName}» сохраняет поле WordPress без изменений.`;
+  if (selection.reason === "requirements_missing") {
+    const labels = new Map((state.catalog.requirements || []).map((item) => [item.path, item.label]));
+    return `Поле сохраняется: отсутствуют обязательные данные — ${selection.missingContextPaths.map((path) => labels.get(path) || path).join(", ")}.`;
+  }
+  return "Подходящий профиль не найден: поле WordPress сохраняется без изменений.";
+}
+
+function renderPreview(item, field, key) {
+  if (field !== state.field || key !== previewKey()) return;
+  const fieldKey = field === "description" ? "description_html" : "short_description_html";
   const before = item.current?.product?.[fieldKey] || "";
   const after = item.proposed?.fields?.[fieldKey] || "";
   byId("preview-before").srcdoc = iframeDocument(before);
@@ -201,48 +372,55 @@ function renderPreview(item) {
   byId("preview-badge").textContent = item.readiness?.ready ? "Payload готов" : `Блокеров: ${blockers.length}`;
   byId("preview-badge").className = `badge ${item.readiness?.ready ? "status-completed" : "status-pending"}`;
   byId("preview-message").textContent = blockers.length
-    ? `Шаблон отрендерен. Экспорт товара пока блокируют: ${blockers.map((blocker) => blocker.message).join("; ")}`
+    ? `Шаблон проверен. Экспорт товара пока блокируют: ${blockers.map((blocker) => blocker.message).join("; ")}`
     : "Шаблон отрендерен полными данными реального WordPress payload. Запись в WordPress не выполнялась.";
+  const selection = item.proposed?.contentTemplateSelections?.[field];
+  byId("preview-policy").textContent = selectionMessage(selection);
+  byId("preview-policy").hidden = false;
   const context = item.proposed?.contentContext;
   byId("preview-context-details").hidden = !context;
   byId("preview-context").textContent = context ? JSON.stringify(context, null, 2) : "";
+  byId("validation-state").textContent = "Шаблон и правило применения проверены на товаре";
+  currentState().preview = { item, key };
 }
 
-async function preview({ automatic = false } = {}) {
+function restorePreview() {
+  const saved = currentState().preview;
+  if (saved && saved.key === previewKey()) renderPreview(saved.item, state.field, saved.key);
+  else invalidatePreview("Укажите товар и нажмите «Проверить на товаре».");
+}
+
+async function preview() {
   const body = templateBody();
-  if (!body.sourceProductId) {
-    if (!automatic) toast("Укажите sourceProductId товара для проверки");
-    return;
-  }
-  if (!body.name) {
-    if (!automatic) toast("Укажите название версии");
-    return;
-  }
+  if (!body.sourceProductId) { toast("Укажите sourceProductId товара для проверки"); return; }
+  if (!body.name) { toast("Укажите название версии"); return; }
+  if (!body.profileName) { toast("Укажите название профиля"); return; }
+  state.previewController?.abort();
+  const controller = new AbortController();
+  state.previewController = controller;
   const requestId = ++state.previewRequest;
+  const field = body.field;
+  const key = previewKey(body);
   byId("preview-button").disabled = true;
+  byId("preview-comparison").hidden = true;
   byId("preview-badge").textContent = "Проверяем…";
   byId("preview-message").textContent = "Собираем реальный payload и выполняем read-only WordPress preflight…";
   try {
-    const response = await api("/api/content-templates/preview", { method: "POST", body });
-    if (requestId !== state.previewRequest) return;
-    renderPreview(response.item);
-    state.autoPreview = true;
-    byId("validation-state").textContent = "Шаблон корректен и проверен на товаре";
+    const response = await api("/api/content-templates/preview", { method: "POST", body, signal: controller.signal });
+    if (requestId !== state.previewRequest || controller.signal.aborted) return;
+    renderPreview(response.item, field, key);
   } catch (error) {
-    if (requestId !== state.previewRequest) return;
+    if (controller.signal.aborted || requestId !== state.previewRequest) return;
     byId("preview-badge").textContent = "Ошибка";
     byId("preview-badge").className = "badge status-failed";
     byId("preview-message").textContent = error.message;
     byId("validation-state").textContent = `Ошибка: ${error.message}`;
   } finally {
-    if (requestId === state.previewRequest) byId("preview-button").disabled = false;
+    if (requestId === state.previewRequest) {
+      state.previewController = null;
+      byId("preview-button").disabled = false;
+    }
   }
-}
-
-function schedulePreview() {
-  clearTimeout(state.previewTimer);
-  if (!state.autoPreview) return;
-  state.previewTimer = setTimeout(() => preview({ automatic: true }), 900);
 }
 
 async function saveDraft() {
@@ -251,9 +429,9 @@ async function saveDraft() {
   byId("save-button").disabled = true;
   try {
     const response = await api("/api/content-templates/drafts", { method: "POST", body });
-    await loadVersions();
-    const saved = state.versions.find((version) => version.id === response.item.id);
-    if (saved) loadVersion(saved);
+    await loadVersions(state.field);
+    const saved = currentState().versions.find((version) => version.id === response.item.id);
+    if (saved) applyEditor(saved, saved);
     toast("Черновик сохранён. Активная версия не изменилась.");
   } catch (error) {
     toast(error.message);
@@ -263,13 +441,16 @@ async function saveDraft() {
 }
 
 async function activateVersion(version, button) {
-  if (!confirm(`Активировать «${version.name}» rev ${version.revision} для поля «${fieldLabels[state.field]}»? Новые preview и export будут использовать эту версию.`)) return;
+  if (isDirty() && !confirm("Есть несохранённые изменения. Активировать выбранную сохранённую версию и отбросить их?")) return;
+  const action = version.managementMode === "manage" ? "управлять полем" : "сохранять поле без изменений";
+  if (!confirm(`Активировать «${version.name}» rev ${version.revision} в профиле «${version.profileName}»? Профиль будет ${action}.`)) return;
   button.disabled = true;
   try {
     await api(`/api/targets/${encodeURIComponent(state.targetId)}/content-templates/${encodeURIComponent(version.id)}/activate`, { method: "POST", body: {} });
-    await loadVersions();
+    await loadVersions(state.field);
+    selectProfile(version.profileKey);
     toast("Версия активирована. Товары не поставлены на полную переобработку.");
-    if (byId("preview-product-id").value.trim()) await preview({ automatic: true });
+    if (byId("preview-product-id").value.trim()) await preview();
   } catch (error) {
     toast(error.message);
   } finally {
@@ -277,16 +458,50 @@ async function activateVersion(version, button) {
   }
 }
 
-async function changeField(field) {
+function newProfile() {
+  const profile = {
+    ...implicitProfile(state.field),
+    profileKey: `profile-${crypto.randomUUID()}`,
+    profileName: "Новый профиль",
+    managementMode: "manage",
+    name: `Шаблон: ${fieldLabels[state.field]}`,
+    status: "new",
+  };
+  currentState().transient = profile;
+  applyEditor(profile, null);
+  currentState().baseline = null;
+  editorStatus();
+  invalidatePreview();
+  byId("profile-name").focus();
+  byId("profile-name").select();
+}
+
+function changeField(field) {
+  if (field === state.field) return;
+  if (isDirty() && !confirm("Переключить поле и отбросить несохранённые изменения?")) return;
+  state.previewController?.abort();
+  state.previewController = null;
+  state.previewRequest++;
   state.field = field;
-  state.autoPreview = false;
   for (const tab of document.querySelectorAll(".template-field-tab")) tab.classList.toggle("active", tab.dataset.field === field);
-  byId("preview-comparison").hidden = true;
-  byId("preview-context-details").hidden = true;
-  byId("preview-badge").textContent = "Не проверено";
-  byId("preview-badge").className = "badge";
-  byId("preview-message").textContent = "Укажите товар и нажмите «Проверить на товаре».";
-  await loadVersions();
+  const profiles = latestProfiles(state.fields[field]);
+  const profileKey = profiles.some((profile) => profile.profileKey === state.fields[field].profileKey) ? state.fields[field].profileKey : "default";
+  selectProfile(profileKey);
+}
+
+async function changeTarget(targetId) {
+  if ((isDirty() || Object.values(state.fields).some((fieldState) => fieldState.transient !== null))
+    && !confirm("Сменить target и отбросить несохранённые профили?")) {
+    byId("target-select").value = state.targetId;
+    return;
+  }
+  state.previewController?.abort();
+  state.previewRequest++;
+  state.targetId = targetId;
+  state.fields.description = { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null };
+  state.fields.short_description = { versions: [], profileKey: "default", selectedVersion: null, transient: null, baseline: null, preview: null };
+  await Promise.all([loadCategories(), loadVersions("description"), loadVersions("short_description")]);
+  selectProfile("default");
 }
 
 async function initialize() {
@@ -306,7 +521,8 @@ async function initialize() {
   const queryProductId = new URLSearchParams(location.search).get("productId");
   byId("preview-product-id").value = queryProductId || localStorage.getItem("content-template-product-id") || "";
   updateProductLink();
-  await loadVersions();
+  await Promise.all([loadCategories(), loadVersions("description"), loadVersions("short_description")]);
+  selectProfile("default");
   byId("page-loading").hidden = true;
   byId("template-workspace").hidden = false;
 }
@@ -337,13 +553,27 @@ byId("login-form").addEventListener("submit", async (event) => {
   }
 });
 byId("logout-button").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST", body: {} }); location.reload(); });
-byId("target-select").addEventListener("change", async (event) => { state.targetId = event.target.value; await loadVersions(); });
+byId("target-select").addEventListener("change", (event) => changeTarget(event.target.value));
+byId("profile-select").addEventListener("change", (event) => {
+  if (isDirty() && !confirm("Заменить несохранённые изменения другим профилем?")) { event.target.value = currentState().profileKey; return; }
+  selectProfile(event.target.value);
+});
+byId("new-profile-button").addEventListener("click", newProfile);
 document.querySelectorAll(".template-field-tab").forEach((tab) => tab.addEventListener("click", () => changeField(tab.dataset.field)));
 document.querySelectorAll("[data-insert]").forEach((button) => button.addEventListener("click", () => insertAtCursor(button.dataset.insert)));
-byId("template-source").addEventListener("input", () => { editorStatus(); schedulePreview(); });
-byId("template-name").addEventListener("input", editorStatus);
-byId("preview-product-id").addEventListener("input", () => { updateProductLink(); schedulePreview(); });
-byId("preview-button").addEventListener("click", () => preview());
+for (const id of ["template-source", "template-name", "profile-name"]) byId(id).addEventListener("input", editorChanged);
+byId("management-enabled").addEventListener("change", editorChanged);
+byId("profile-categories").addEventListener("change", editorChanged);
+byId("preview-product-id").addEventListener("input", () => { updateProductLink(); invalidatePreview(); });
+byId("system-template-button").addEventListener("click", () => {
+  byId("template-source").value = state.catalog.defaults?.[state.field] || "";
+  editorChanged();
+});
+byId("preview-button").addEventListener("click", preview);
 byId("save-button").addEventListener("click", saveDraft);
+window.addEventListener("beforeunload", (event) => {
+  if (!isDirty()) return;
+  event.preventDefault();
+});
 
 await session();

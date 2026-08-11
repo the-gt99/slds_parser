@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../src/contracts/index.js";
 import {
   renderWordPressContentTemplate,
+  selectWordPressContentTemplate,
   validateWordPressContentTemplate,
+  validateWordPressContentTemplateProfiles,
 } from "../../src/integrations/index.js";
+import type { WordPressContentTemplateDefinition } from "../../src/integrations/index.js";
 
 const context: JsonObject = {
   product: { effective_title: "Кроссовки Nike Dunk", source_title: "Nike Dunk", sku: "DD1503 101" },
@@ -15,6 +18,10 @@ const context: JsonObject = {
 };
 
 describe("WordPress content templates", () => {
+  const profile = (overrides: Partial<WordPressContentTemplateDefinition> = {}): WordPressContentTemplateDefinition => ({
+    id: "1", field: "description", revision: 1, templateSource: "<p>{{ content.story }}</p>", profileKey: "default",
+    profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [], requiredContextPaths: [], ...overrides,
+  });
   it("renders conditions and a numeric size range", () => {
     const result = renderWordPressContentTemplate(
       "{% if variants.available_sizes %}<p>Размеры: {{ variants.available_sizes | unique | numeric_sort | range:\" — \" }} {{ variants.audience | upper }} {{ variants.size_system | size_system_label }}</p>{% else %}<p>Нет размеров</p>{% endif %}",
@@ -51,5 +58,30 @@ describe("WordPress content templates", () => {
 
   it("fails explicitly when a required value is empty", () => {
     expect(() => renderWordPressContentTemplate("{{ content.color | required }}", context)).toThrow("Required content template value is empty");
+  });
+
+  it("selects a category profile before the fallback profile", () => {
+    const selected = selectWordPressContentTemplate("description", [
+      profile(),
+      profile({ id: "2", profileKey: "sneakers", profileName: "Кроссовки", categoryTermIds: [74, 75] }),
+    ], context, [75]);
+
+    expect(selected).toMatchObject({ managed: true, profileKey: "sneakers", reason: "matched" });
+  });
+
+  it("preserves the field when a required source value is absent", () => {
+    const missingStory = { ...context, content: { ...(context.content as JsonObject), story: "" } };
+    const selected = selectWordPressContentTemplate("description", [
+      profile({ requiredContextPaths: ["content.story"] }),
+    ], missingStory, [75]);
+
+    expect(selected).toMatchObject({ managed: false, reason: "requirements_missing", missingContextPaths: ["content.story"] });
+  });
+
+  it("rejects overlapping category profiles", () => {
+    expect(() => validateWordPressContentTemplateProfiles([
+      profile({ profileKey: "first", profileName: "Первый", categoryTermIds: [74] }),
+      profile({ id: "2", profileKey: "second", profileName: "Второй", categoryTermIds: [74, 75] }),
+    ])).toThrow("overlap");
   });
 });

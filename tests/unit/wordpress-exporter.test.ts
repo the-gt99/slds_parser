@@ -187,12 +187,22 @@ describe("WordPressExporter", () => {
           field: "description",
           revision: 3,
           templateSource: "<h2>Заказать {{ product.effective_title | lower_first }} с бесплатной доставкой</h2>{{ content.story | paragraphs }}",
+          profileKey: "default",
+          profileName: "Основной профиль",
+          managementMode: "manage",
+          categoryTermIds: [],
+          requiredContextPaths: [],
         },
         {
           id: "202",
           field: "short_description",
           revision: 2,
           templateSource: "{% if variants.available_sizes %}<p>Размеры: {{ variants.available_sizes | unique | numeric_sort | range:\" — \" }} {{ variants.audience | upper }} {{ variants.size_system | size_system_label }} ({{ variants.audience | audience_label }} размерная сетка бренда)</p>{% endif %}",
+          profileKey: "default",
+          profileName: "Основной профиль",
+          managementMode: "manage",
+          categoryTermIds: [],
+          requiredContextPaths: [],
         },
       ],
     };
@@ -203,6 +213,62 @@ describe("WordPressExporter", () => {
     expect(targetProduct.description_html).toContain("<h2>Заказать кроссовки Nike Test Shoe с бесплатной доставкой</h2>");
     expect(targetProduct.short_description_html).toBe("<p>Размеры: 7 — 7 MEN US (Мужская размерная сетка бренда)</p>");
     expect(payload.managed_fields).toContain("short_description");
+  });
+
+  it("preserves an existing description when the profile requires a missing story", async () => {
+    const base = context({ titlePrefixByCategoryTermId: { "41": "Кроссовки" } });
+    const input: ExportContext = {
+      ...base,
+      product: { ...base.product, translatedContent: { ...base.product.translatedContent!, story: "" }, attributes: { ...base.product.attributes, story: null } },
+      contentTemplates: [{
+        id: "203", field: "description", revision: 1, templateSource: "{{ content.story | paragraphs }}",
+        profileKey: "shoes", profileName: "Кроссовки", managementMode: "manage", categoryTermIds: [41], requiredContextPaths: ["content.story"],
+      }],
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+    const targetProduct = payload.product as JsonObject;
+
+    expect(payload.managed_fields).not.toContain("description");
+    expect(targetProduct).not.toHaveProperty("description_html");
+  });
+
+  it("preserves the description outside configured profile categories", async () => {
+    const input: ExportContext = {
+      ...context(),
+      contentTemplates: [{
+        id: "204", field: "description", revision: 1, templateSource: "{{ content.story | paragraphs }}",
+        profileKey: "other", profileName: "Другая категория", managementMode: "manage", categoryTermIds: [999], requiredContextPaths: [],
+      }],
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(payload.managed_fields).not.toContain("description");
+    expect(payload.product).not.toHaveProperty("description_html");
+  });
+
+  it("blocks a create before the write when the description is preserved", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true, operation: "product_upsert_lookup", product_id: 0, target_id: 0, matched_by: "created",
+      payload_hash: "placeholder", variation_plan: [],
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, async (input, init) => {
+      const requestPayload = JSON.parse(String(init?.body)) as { payload: JsonObject };
+      const response = await fetchMock(input, init);
+      const body = await response.json() as JsonObject;
+      return new Response(JSON.stringify({ ...body, payload_hash: requestPayload.payload.payload_hash }), { status: 200 });
+    });
+    const input: ExportContext = {
+      ...context(),
+      contentTemplates: [{
+        id: "205", field: "description", revision: 1, templateSource: "<p>Не используется</p>",
+        profileKey: "default", profileName: "Основной профиль", managementMode: "preserve", categoryTermIds: [], requiredContextPaths: [],
+      }],
+    };
+
+    await expect(exporter.export(input)).rejects.toThrow("Нельзя создать товар без управляемого описания");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("adds taxonomy terms projected from concrete classification decisions", async () => {

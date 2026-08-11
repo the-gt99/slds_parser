@@ -20,7 +20,11 @@ export {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
   EXAMPLE_WORDPRESS_SHORT_DESCRIPTION_TEMPLATE,
   renderWordPressContentTemplate,
+  selectWordPressContentTemplate,
   validateWordPressContentTemplate,
+  validateWordPressContentTemplateDefinition,
+  validateWordPressContentTemplateProfiles,
   type WordPressContentTemplateDefinition,
   type WordPressContentTemplateField,
+  type WordPressContentTemplateSelection,
 } from "./wordpress-content-template.js";

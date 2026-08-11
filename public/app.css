@@ -573,6 +573,26 @@ h3 { font-size: 17px; line-height: 1.3; }
 .template-editor-card { grid-column: 1; }
 .template-reference-card { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto; }
 .template-preview-card, .template-versions-card { grid-column: 1; }
+.template-profile-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.template-profile-heading label { flex: 1; display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.template-profile-heading select { min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.template-policy-card { display: grid; gap: 13px; margin-bottom: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.template-policy-grid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 1fr); gap: 12px; }
+.template-policy-grid > label:not(.template-management-toggle), .template-policy-grid fieldset { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650; }
+.template-policy-grid input[type="text"], .template-policy-grid > label > input { width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.template-management-toggle { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; }
+.template-management-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.template-management-toggle span { display: grid; gap: 2px; }
+.template-management-toggle small, .template-policy-grid small { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.35; }
+.template-policy-grid fieldset { margin: 0; padding: 0; border: 0; }
+.template-policy-grid legend { margin-bottom: 6px; padding: 0; }
+.template-policy-grid select[multiple] { min-height: 142px; padding: 7px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.template-policy-grid select[multiple] option { padding: 6px 7px; border-radius: 5px; }
+.template-requirements { display: grid; gap: 6px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.template-requirement { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; font-weight: 500; }
+.template-requirement input { accent-color: var(--accent); }
+.template-policy-state, .template-preview-policy { margin: 0; padding: 9px 11px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 12px; line-height: 1.45; }
+.template-preview-policy { margin-top: 10px; }
 .template-editor-toolbar { display: grid; grid-template-columns: 1fr minmax(260px, .65fr); gap: 12px; }
 .template-editor-toolbar label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .template-editor-toolbar input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; }
@@ -621,6 +641,7 @@ h3 { font-size: 17px; line-height: 1.3; }
   .template-editor-card, .template-reference-card, .template-preview-card, .template-versions-card { grid-column: 1; }
   .template-reference-card { grid-row: auto; position: static; max-height: none; }
   .template-reference-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .template-policy-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
@@ -674,6 +695,7 @@ h3 { font-size: 17px; line-height: 1.3; }
   .pagination-jump { flex-wrap: wrap; }
   .template-page { padding: 18px 10px 40px; }
   .template-heading, .template-actions { align-items: stretch; flex-direction: column; }
+  .template-profile-heading { align-items: stretch; flex-direction: column; }
   .template-target { width: 100%; }
   .template-editor-toolbar, .template-preview-comparison, .template-reference-list { grid-template-columns: 1fr; }
   .template-source { min-height: 340px; }

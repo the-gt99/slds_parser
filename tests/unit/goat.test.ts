@@ -126,7 +126,7 @@ describe("GOAT adapter and processor", () => {
     const product = await processor.process(context);
 
     expect(product).toMatchObject({
-      description: "Source story",
+      description: "Sanitized fixture product",
       attributes: {
         family: "Air Test",
         gender: "men",
@@ -162,6 +162,20 @@ describe("GOAT adapter and processor", () => {
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(
       expect.arrayContaining(["product_family", "gender", "season"]),
     );
+  });
+
+  it("does not invent a GOAT story from the ordinary description", async () => {
+    const processor = new GoatSourceProcessor();
+    const productPayload = { ...(jsonFixture("product.json") as JsonObject), story: null } satisfies JsonObject;
+    const context = { source: source(), sourceProduct: { id: "2", sourceId: "1", sourceKey: "test-shirt", metadata: { route: "apparel" } }, parts: [
+      { partKey: "product", rawPayload: productPayload, parsedPayload: productPayload, adapterVersion: "1.0.0" },
+      { partKey: "offers", rawPayload: jsonFixture("offers-empty.json"), parsedPayload: { market: "US", countryCode: "US", offers: [] }, adapterVersion: "1.0.0" },
+    ] } satisfies ProcessingContext;
+
+    const product = await processor.process(context);
+
+    expect(product.description).toBe("Sanitized fixture product");
+    expect(product.attributes.story).toBeNull();
   });
   it("keeps GOAT categoryRaw as merchandising only and does not synthesize activity", async () => {
     const processor = new GoatSourceProcessor();

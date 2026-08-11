@@ -28,7 +28,7 @@
 
   <main class="template-page">
     <section class="template-heading">
-      <div><p class="eyebrow">WordPress payload</p><h2>Редактор описаний</h2><p>Шаблон исполняется при preview и экспорте. Обработка товара и изображения не запускаются повторно.</p></div>
+      <div><p class="eyebrow">WordPress payload</p><h2>Редактор описаний</h2><p>Профиль выбирается по итоговой категории WordPress. Если профиль не управляет полем, текущее значение сайта сохраняется.</p></div>
       <label class="template-target"><span>Target</span><select id="target-select"></select></label>
     </section>
 
@@ -42,6 +42,21 @@
 
     <div id="template-workspace" class="template-workspace" hidden>
       <section class="template-editor-card">
+        <div class="template-profile-heading">
+          <label><span>Профиль применения</span><select id="profile-select"></select></label>
+          <button id="new-profile-button" class="button secondary" type="button">Новый профиль</button>
+        </div>
+        <div class="template-policy-card">
+          <div class="template-policy-grid">
+            <label><span>Название профиля</span><input id="profile-name" maxlength="160" value="Основной профиль"></label>
+            <label class="template-management-toggle"><input id="management-enabled" type="checkbox" checked><span><strong>Управлять полем</strong><small>Если выключено, WordPress сохранит текущее значение.</small></span></label>
+          </div>
+          <div class="template-policy-grid application-grid">
+            <label><span>Категории WordPress</span><select id="profile-categories" multiple size="6"></select><small>Пустой список — профиль по умолчанию для остальных категорий.</small></label>
+            <fieldset><legend>Обязательные данные</legend><div id="profile-requirements" class="template-requirements"></div><small>Если данных нет, существующее поле сохраняется; создание нового товара блокируется.</small></fieldset>
+          </div>
+          <p id="policy-state" class="template-policy-state"></p>
+        </div>
         <div class="template-editor-toolbar">
           <label><span>Название версии</span><input id="template-name" maxlength="160" value="Шаблон описания"></label>
           <label><span>Товар для проверки</span><div class="template-product-input"><input id="preview-product-id" inputmode="numeric" placeholder="sourceProductId, например 76399"><a id="open-product-link" class="button quiet small-button" href="/products">Открыть</a></div></label>
@@ -50,7 +65,7 @@
         <textarea id="template-source" class="template-source" spellcheck="false" aria-label="Исходный код шаблона"></textarea>
         <div class="template-actions">
           <span id="validation-state" class="template-action-status">Изменения ещё не проверены</span>
-          <div><button id="preview-button" class="button secondary">Проверить на товаре</button><button id="save-button" class="button primary">Сохранить черновик</button></div>
+          <div><button id="system-template-button" class="button quiet" type="button">Подставить системный</button><button id="preview-button" class="button secondary">Проверить на товаре</button><button id="save-button" class="button primary">Сохранить черновик</button></div>
         </div>
       </section>
 
@@ -64,6 +79,7 @@
       <section class="template-preview-card">
         <div class="template-preview-heading"><div><p class="eyebrow">Read-only WordPress preflight</p><h3>Предпросмотр</h3></div><span id="preview-badge" class="badge">Не проверено</span></div>
         <p id="preview-message" class="muted">Укажите товар и нажмите «Проверить на товаре».</p>
+        <p id="preview-policy" class="template-preview-policy" hidden></p>
         <div id="preview-comparison" class="template-preview-comparison" hidden>
           <article><div class="template-preview-label">Сейчас в WordPress</div><iframe id="preview-before" sandbox title="Текущее описание"></iframe></article>
           <article><div class="template-preview-label">После merge</div><iframe id="preview-after" sandbox title="Новое описание"></iframe></article>

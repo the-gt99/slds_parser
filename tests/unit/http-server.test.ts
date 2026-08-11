@@ -252,10 +252,11 @@ describe("HTTP server", () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const template = {
       id: "22", targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>",
+      profileKey: "shoes", profileName: "Кроссовки", managementMode: "manage", categoryTermIds: [74, 75], requiredContextPaths: ["content.story"],
       status: "draft", revision: 1, actor: "admin", createdAt: "2026-08-09T00:00:00.000Z", activatedAt: null,
     };
     const contentTemplates = {
-      catalog: vi.fn().mockReturnValue({ variables: [], helpers: [], defaults: {} }),
+      catalog: vi.fn().mockReturnValue({ variables: [], helpers: [], defaults: {}, requirements: [{ path: "content.story", label: "История товара" }] }),
       list: vi.fn().mockResolvedValue([template]),
       preview: vi.fn().mockResolvedValue({ proposed: { fields: { description_html: "<p>SKU</p>" } } }),
       createDraft: vi.fn().mockResolvedValue(template),
@@ -267,19 +268,21 @@ describe("HTTP server", () => {
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
     const headers = { cookie, "x-csrf-token": login.json().csrfToken };
     const catalog = await server.inject({ method: "GET", url: "/api/content-templates/catalog", headers: { cookie } });
-    const preview = await server.inject({ method: "POST", url: "/api/content-templates/preview", headers: { cookie }, payload: { targetId: "10", sourceProductId: "76399", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
-    const forbidden = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers: { cookie }, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
-    const saved = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>" } });
+    const policy = { profileKey: "shoes", profileName: "Кроссовки", managementMode: "manage", categoryTermIds: [74, 75], requiredContextPaths: ["content.story"] };
+    const preview = await server.inject({ method: "POST", url: "/api/content-templates/preview", headers: { cookie }, payload: { targetId: "10", sourceProductId: "76399", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>", ...policy } });
+    const forbidden = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers: { cookie }, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>", ...policy } });
+    const saved = await server.inject({ method: "POST", url: "/api/content-templates/drafts", headers, payload: { targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>", ...policy } });
     const activated = await server.inject({ method: "POST", url: "/api/targets/10/content-templates/22/activate", headers, payload: {} });
 
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("SLDS · Шаблоны контента");
+    expect(page.body).toContain("Профиль применения");
     expect(catalog.statusCode).toBe(200);
     expect(preview.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
     expect(saved.statusCode).toBe(201);
     expect(activated.statusCode).toBe(200);
-    expect(contentTemplates.preview).toHaveBeenCalledWith(expect.objectContaining({ sourceProductId: "76399", field: "description" }));
+    expect(contentTemplates.preview).toHaveBeenCalledWith(expect.objectContaining({ sourceProductId: "76399", field: "description", ...policy }));
     expect(contentTemplates.activate).toHaveBeenCalledWith("10", "22", "admin");
     await server.close();
   });

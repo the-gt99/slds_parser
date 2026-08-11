@@ -126,7 +126,7 @@ function suspiciousTranslation(source: string, translated: string): boolean {
 export class TranslateContentOperation implements ProductOperation {
   readonly code = "translate-content";
   readonly name = "Перевод контента";
-  readonly version = "1.1.0";
+  readonly version = "1.2.0";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -146,13 +146,13 @@ export class TranslateContentOperation implements ProductOperation {
 
   async execute(product: UniversalProductDTO): Promise<UniversalProductDTO> {
     const description = product.description;
-    const story = attribute(product, "story") || description;
+    const story = attribute(product, "story");
     const color = attribute(product, "color");
     const details = attribute(product, "details");
     const upperMaterial = attribute(product, "upperMaterial");
 
     const translatedDescription = await this.translateVerified("description", description);
-    const translatedStory = story === description
+    const translatedStory = story !== "" && story === description
       ? translatedDescription
       : await this.translateVerified("story", story);
 

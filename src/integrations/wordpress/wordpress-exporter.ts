@@ -15,7 +15,9 @@ import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordp
 import {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
   renderWordPressContentTemplate,
+  selectWordPressContentTemplate,
   type WordPressContentTemplateDefinition,
+  type WordPressContentTemplateSelection,
 } from "./wordpress-content-template.js";
 
 const CONTRACT_VERSION = "slds.wordpress.product-upsert.v1";
@@ -78,6 +80,7 @@ export interface WordPressUpsertPayloadPreview {
   readonly payload: JsonObject;
   readonly missingRequiredReferences: readonly string[];
   readonly contentContext: JsonObject;
+  readonly contentTemplateSelections: Readonly<Record<WordPressContentTemplateDefinition["field"], WordPressContentTemplateSelection>>;
   readonly taxonomyOrigins: readonly {
     readonly taxonomy: string;
     readonly termId: number;
@@ -354,7 +357,7 @@ function wordpressContentContext(
   return {
     product: { effective_title: effectiveTitle, source_title: product.title, sku: product.sku },
     content: {
-      story: translated?.story || translated?.description || product.description,
+      story: translated?.story || "",
       description: translated?.description || product.description,
       color: translated?.color || text(product.attributes.color),
       details: translated?.details || text(product.attributes.details),
@@ -384,21 +387,21 @@ function wordpressContentContext(
   };
 }
 
-function templateByField(templates: readonly WordPressContentTemplateDefinition[], field: WordPressContentTemplateDefinition["field"]): WordPressContentTemplateDefinition | null {
-  const matches = templates.filter((template) => template.field === field);
-  if (matches.length > 1) throw new IntegrationContractError(`More than one active WordPress ${field} template is configured`);
-  return matches[0] ?? null;
-}
-
 export function renderWordPressContentFields(
   context: JsonObject,
   templates: readonly WordPressContentTemplateDefinition[] = [],
-): { readonly descriptionHtml: string; readonly shortDescriptionHtml?: string } {
-  const description = templateByField(templates, "description");
-  const shortDescription = templateByField(templates, "short_description");
+  productCategoryTermIds: readonly number[] = [],
+): {
+  readonly descriptionHtml?: string;
+  readonly shortDescriptionHtml?: string;
+  readonly selections: Readonly<Record<WordPressContentTemplateDefinition["field"], WordPressContentTemplateSelection>>;
+} {
+  const description = selectWordPressContentTemplate("description", templates, context, productCategoryTermIds);
+  const shortDescription = selectWordPressContentTemplate("short_description", templates, context, productCategoryTermIds);
   return {
-    descriptionHtml: renderWordPressContentTemplate(description?.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, context),
-    ...(shortDescription === null ? {} : { shortDescriptionHtml: renderWordPressContentTemplate(shortDescription.templateSource, context) }),
+    ...(description.managed ? { descriptionHtml: renderWordPressContentTemplate(description.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, context) } : {}),
+    ...(shortDescription.managed ? { shortDescriptionHtml: renderWordPressContentTemplate(shortDescription.templateSource!, context) } : {}),
+    selections: { description, short_description: shortDescription },
   };
 }
 
@@ -551,9 +554,11 @@ async function buildWordPressPayload(
   const title = applyWordPressTitlePolicy(context.product.title, taxonomies, context.target.config);
   const contentContext = wordpressContentContext(context.product, title, resolvedVariations);
   const contentTemplates = context.contentTemplates ?? [];
-  const content = renderWordPressContentFields(contentContext, contentTemplates);
-  const managedFields = ["title", "slug", "sku", "description", "images", "taxonomies", "variations"];
+  const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
+  const managedFields = ["title", "slug", "sku"];
+  if (content.descriptionHtml !== undefined) managedFields.push("description");
   if (content.shortDescriptionHtml !== undefined) managedFields.push("short_description");
+  managedFields.push("images", "taxonomies", "variations");
   const base: JsonObject = {
     contract_version: CONTRACT_VERSION,
     mode: "upsert",
@@ -568,7 +573,7 @@ async function buildWordPressPayload(
       title,
       slug: context.sourceProduct.slug ?? "",
       sku: context.product.sku,
-      description_html: content.descriptionHtml,
+      ...(content.descriptionHtml === undefined ? {} : { description_html: content.descriptionHtml }),
       ...(content.shortDescriptionHtml === undefined ? {} : { short_description_html: content.shortDescriptionHtml }),
       status: "publish",
       images: context.product.images.map((image) => imagePayload(image, sourceExternalId)),
@@ -582,6 +587,7 @@ async function buildWordPressPayload(
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
     contentContext,
+    contentTemplateSelections: content.selections,
     taxonomyOrigins,
   };
 }
@@ -610,7 +616,7 @@ function retryableHttpStatus(status: number): boolean {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.4.0";
+  readonly version = "1.5.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -663,7 +669,17 @@ export class WordPressExporter {
   async export(context: ExportContext): Promise<ExportResult> {
     const payload = await this.buildPayload(context);
     const expectedPayloadHash = text(payload.payload_hash);
+    const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : [];
+    if (!managedFields.includes("description") && context.approval === undefined) {
+      const current = await this.preflightPayload(payload);
+      if (current.willCreate) {
+        throw new IntegrationContractError("Нельзя создать товар без управляемого описания: для нового товара нечего сохранять без изменений");
+      }
+    }
     if (context.approval !== undefined) {
+      if (!managedFields.includes("description") && context.approval.willCreate) {
+        throw new IntegrationContractError("Нельзя создать товар без управляемого описания: для нового товара нечего сохранять без изменений");
+      }
       if (expectedPayloadHash !== context.approval.payloadHash) {
         throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
       }

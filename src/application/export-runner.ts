@@ -37,7 +37,9 @@ export class ExportRunner {
       .sort((left, right) => left.field.localeCompare(right.field));
     const mappingRevision = await this.mappings.getTargetMappingRevision(target.id);
     const fingerprint = hashStableJson({ contentHash: internal.contentHash, exporterVersion: exporter.version, targetConfig: target.config, mappingRevision,
-      contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })) });
+      contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision,
+        templateSource: template.templateSource, profileKey: template.profileKey, profileName: template.profileName,
+        managementMode: template.managementMode, categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths })) });
     if (!payload.force && payload.approval === undefined && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
     const attemptedAt = new Date().toISOString();
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
@@ -58,7 +60,9 @@ export class ExportRunner {
           resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
           resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
         },
-        contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })),
+        contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision,
+          templateSource: template.templateSource, profileKey: template.profileKey, profileName: template.profileName,
+          managementMode: template.managementMode, categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths })),
         ...(payload.approval === undefined ? {} : { approval: {
           payloadHash: payload.approval.payloadHash,
           willCreate: payload.approval.willCreate,

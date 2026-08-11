@@ -160,4 +160,52 @@ integration("classification observation normalization migration", () => {
     expect((await repository.list(String(target.id))).map((rule) => rule.id)).toEqual([created.id]);
     expect(disabled.enabled).toBe(false);
   }, 120_000);
+
+  it("migrates existing content templates and permits one active revision per profile", async () => {
+    const target = (await client.query("SELECT id::TEXT FROM targets WHERE code = 'assignment-test'" )).rows[0]!;
+    await client.query(
+      `INSERT INTO target_content_templates (
+         target_id, field_code, name, template_source, status, revision, actor, activated_at
+       ) VALUES ($1, 'description', 'Legacy active', '<p>Legacy</p>', 'active', 1, 'integration-test', NOW())`,
+      [target.id],
+    );
+    for (const migration of [
+      "039_wordpress_landing_term_projections.sql",
+      "040_export_control.sql",
+      "041_classifier_exact_matches.sql",
+      "042_content_template_profiles.sql",
+    ]) {
+      await client.query(await readFile(path.join(migrationsDirectory, migration), "utf8"));
+    }
+
+    const legacy = (await client.query(
+      `SELECT profile_key, profile_name, management_mode, category_term_ids, required_context_paths
+       FROM target_content_templates WHERE target_id = $1 AND revision = 1`,
+      [target.id],
+    )).rows[0];
+    expect(legacy).toEqual({
+      profile_key: "default",
+      profile_name: "Основной профиль",
+      management_mode: "manage",
+      category_term_ids: [],
+      required_context_paths: [],
+    });
+
+    await client.query(
+      `INSERT INTO target_content_templates (
+         target_id, field_code, name, template_source, profile_key, profile_name,
+         management_mode, category_term_ids, required_context_paths, status, revision, actor, activated_at
+       ) VALUES ($1, 'description', 'Shoes active', '<p>Shoes</p>', 'shoes', 'Кроссовки',
+         'manage', ARRAY[74, 75]::BIGINT[], ARRAY['content.story']::TEXT[], 'active', 2, 'integration-test', NOW())`,
+      [target.id],
+    );
+    await expect(client.query(
+      `INSERT INTO target_content_templates (
+         target_id, field_code, name, template_source, profile_key, profile_name,
+         management_mode, status, revision, actor, activated_at
+       ) VALUES ($1, 'description', 'Duplicate', '<p>Duplicate</p>', 'shoes', 'Кроссовки',
+         'manage', 'active', 3, 'integration-test', NOW())`,
+      [target.id],
+    )).rejects.toMatchObject({ code: "23505" });
+  }, 120_000);
 });

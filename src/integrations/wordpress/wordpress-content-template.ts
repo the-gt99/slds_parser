@@ -10,6 +10,22 @@ export interface WordPressContentTemplateDefinition {
   readonly field: WordPressContentTemplateField;
   readonly revision: number;
   readonly templateSource: string;
+  readonly profileKey: string;
+  readonly profileName: string;
+  readonly managementMode: "manage" | "preserve";
+  readonly categoryTermIds: readonly number[];
+  readonly requiredContextPaths: readonly string[];
+}
+
+export interface WordPressContentTemplateSelection {
+  readonly field: WordPressContentTemplateField;
+  readonly managed: boolean;
+  readonly source: "profile" | "system" | "preserved";
+  readonly profileKey: string | null;
+  readonly profileName: string | null;
+  readonly reason: "matched" | "system_default" | "management_disabled" | "requirements_missing" | "no_matching_profile";
+  readonly missingContextPaths: readonly string[];
+  readonly templateSource?: string;
 }
 
 export interface WordPressContentTemplateVariable {
@@ -55,6 +71,12 @@ const variables: readonly WordPressContentTemplateVariable[] = [
 
 export const WORDPRESS_CONTENT_TEMPLATE_VARIABLES = variables;
 const variablePaths = new Set(variables.map((item) => item.path));
+
+export const WORDPRESS_CONTENT_TEMPLATE_REQUIREMENTS = [
+  { path: "content.story", label: "Переведённая история товара" },
+  { path: "content.description", label: "Переведённое описание источника" },
+  { path: "variants.available_sizes", label: "Доступные размеры" },
+] as const;
 
 export const WORDPRESS_CONTENT_TEMPLATE_HELPERS: readonly WordPressContentTemplateHelper[] = [
   { code: "trim", label: "Убрать пробелы по краям", accepts: ["string"], example: "{{ content.story | trim }}" },
@@ -214,6 +236,86 @@ function present(value: unknown): boolean {
   return value !== null && value !== undefined && value !== false;
 }
 
+export function contentTemplateContextValuePresent(context: JsonObject, path: string): boolean {
+  validatePath(path);
+  return present(valueAt(context, path));
+}
+
+export function validateWordPressContentTemplateDefinition(template: WordPressContentTemplateDefinition): void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u.test(template.profileKey)) {
+    throw new IntegrationContractError("Content template profile key is invalid");
+  }
+  if (template.profileName.trim() === "") throw new IntegrationContractError("Content template profile name is required");
+  if (template.managementMode !== "manage" && template.managementMode !== "preserve") {
+    throw new IntegrationContractError("Content template management mode is invalid");
+  }
+  if (template.categoryTermIds.some((termId) => !Number.isSafeInteger(termId) || termId <= 0)) {
+    throw new IntegrationContractError("Content template category term IDs must be positive integers");
+  }
+  if (new Set(template.categoryTermIds).size !== template.categoryTermIds.length) {
+    throw new IntegrationContractError("Content template category term IDs must be unique");
+  }
+  if (new Set(template.requiredContextPaths).size !== template.requiredContextPaths.length) {
+    throw new IntegrationContractError("Content template required values must be unique");
+  }
+  template.requiredContextPaths.forEach(validatePath);
+  validateWordPressContentTemplate(template.templateSource);
+}
+
+export function validateWordPressContentTemplateProfiles(templates: readonly WordPressContentTemplateDefinition[]): void {
+  templates.forEach(validateWordPressContentTemplateDefinition);
+  for (const field of ["description", "short_description"] as const) {
+    const active = templates.filter((template) => template.field === field);
+    const profileKeys = new Set<string>();
+    let fallback: WordPressContentTemplateDefinition | null = null;
+    const categoryOwners = new Map<number, WordPressContentTemplateDefinition>();
+    for (const template of active) {
+      if (profileKeys.has(template.profileKey)) throw new IntegrationContractError(`More than one active revision exists for content profile ${template.profileName}`);
+      profileKeys.add(template.profileKey);
+      if (template.categoryTermIds.length === 0) {
+        if (fallback !== null) throw new IntegrationContractError(`Content profiles ${fallback.profileName} and ${template.profileName} are both fallbacks for ${field}`);
+        fallback = template;
+        continue;
+      }
+      for (const termId of template.categoryTermIds) {
+        const owner = categoryOwners.get(termId);
+        if (owner !== undefined) throw new IntegrationContractError(`Content profiles ${owner.profileName} and ${template.profileName} overlap on product category ${termId}`);
+        categoryOwners.set(termId, template);
+      }
+    }
+  }
+}
+
+export function selectWordPressContentTemplate(
+  field: WordPressContentTemplateField,
+  templates: readonly WordPressContentTemplateDefinition[],
+  context: JsonObject,
+  productCategoryTermIds: readonly number[],
+): WordPressContentTemplateSelection {
+  validateWordPressContentTemplateProfiles(templates);
+  const fieldTemplates = templates.filter((template) => template.field === field);
+  if (fieldTemplates.length === 0) {
+    return field === "description"
+      ? { field, managed: true, source: "system", profileKey: null, profileName: "Системный шаблон", reason: "system_default", missingContextPaths: [], templateSource: DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE }
+      : { field, managed: false, source: "preserved", profileKey: null, profileName: null, reason: "no_matching_profile", missingContextPaths: [] };
+  }
+  const categories = new Set(productCategoryTermIds);
+  const scoped = fieldTemplates.filter((template) => template.categoryTermIds.length > 0
+    && template.categoryTermIds.some((termId) => categories.has(termId)));
+  const selected = scoped[0] ?? fieldTemplates.find((template) => template.categoryTermIds.length === 0) ?? null;
+  if (selected === null) {
+    return { field, managed: false, source: "preserved", profileKey: null, profileName: null, reason: "no_matching_profile", missingContextPaths: [] };
+  }
+  if (selected.managementMode === "preserve") {
+    return { field, managed: false, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "management_disabled", missingContextPaths: [] };
+  }
+  const missingContextPaths = selected.requiredContextPaths.filter((path) => !contentTemplateContextValuePresent(context, path));
+  if (missingContextPaths.length > 0) {
+    return { field, managed: false, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "requirements_missing", missingContextPaths };
+  }
+  return { field, managed: true, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "matched", missingContextPaths: [], templateSource: selected.templateSource };
+}
+
 function strings(value: unknown, helper: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new IntegrationContractError(`Helper ${helper} requires a string array`);
@@ -292,6 +394,7 @@ export function contentTemplateCatalog(): JsonObject {
   return {
     variables: WORDPRESS_CONTENT_TEMPLATE_VARIABLES as unknown as readonly JsonValue[],
     helpers: WORDPRESS_CONTENT_TEMPLATE_HELPERS as unknown as readonly JsonValue[],
+    requirements: WORDPRESS_CONTENT_TEMPLATE_REQUIREMENTS as unknown as readonly JsonValue[],
     defaults: {
       description: DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
       short_description: EXAMPLE_WORDPRESS_SHORT_DESCRIPTION_TEMPLATE,

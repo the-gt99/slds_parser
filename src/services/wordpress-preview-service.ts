@@ -305,10 +305,12 @@ export class WordPressPreviewService {
     const exporter = this.exporters.get(target.exporterCode);
     if (!(exporter instanceof WordPressExporter)) throw new IntegrationContractError("Target does not use the WordPress exporter");
     const activeTemplates = await this.repositories.contentTemplates.listActive(target.id);
-    const overriddenFields = new Set(templateOverrides.map((template) => template.field));
+    const overriddenProfiles = new Set(templateOverrides.map((template) => `${template.field}:${template.profileKey}`));
     const contentTemplates: readonly TargetContentTemplateDTO[] = [
-      ...activeTemplates.filter((template) => !overriddenFields.has(template.field)).map((template) => ({
+      ...activeTemplates.filter((template) => !overriddenProfiles.has(`${template.field}:${template.profileKey}`)).map((template) => ({
         id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
+        profileKey: template.profileKey, profileName: template.profileName, managementMode: template.managementMode,
+        categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
       })),
       ...templateOverrides,
     ];
@@ -413,7 +415,16 @@ export class WordPressPreviewService {
     const variations = record(payload.variations);
     const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
     const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
-    const preflight = draft.missingRequiredReferences.length === 0 ? await exporter.preflightPayload(payload) : null;
+    let preflight = null;
+    let preflightError: IntegrationContractError | null = null;
+    if (draft.missingRequiredReferences.length === 0) {
+      try {
+        preflight = await exporter.preflightPayload(payload);
+      } catch (error) {
+        if (!(error instanceof IntegrationContractError)) throw error;
+        preflightError = error;
+      }
+    }
     if (snapshot === null && preflight?.snapshot !== undefined && preflight.externalId !== null && sourceProduct.externalId !== null) {
       snapshot = await this.repositories.targets.saveProductSnapshot({
         targetId: target.id,
@@ -481,14 +492,19 @@ export class WordPressPreviewService {
       ...draft.contentContext,
       product: { ...draftProductContext, effective_title: effectiveTitle },
     };
-    const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates);
+    const effectiveCategoryTermIds = payloadTaxonomies(effectiveTaxonomies).product_cat ?? [];
+    const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates, effectiveCategoryTermIds);
     const effectiveProduct = {
       ...product,
       title: effectiveTitle,
-      description_html: effectiveContent.descriptionHtml,
+      ...(effectiveContent.descriptionHtml === undefined ? {} : { description_html: effectiveContent.descriptionHtml }),
       ...(effectiveContent.shortDescriptionHtml === undefined ? {} : { short_description_html: effectiveContent.shortDescriptionHtml }),
     };
     const managedFields = new Set(Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : []);
+    if (effectiveContent.selections.description.managed) managedFields.add("description");
+    else managedFields.delete("description");
+    if (effectiveContent.selections.short_description.managed) managedFields.add("short_description");
+    else managedFields.delete("short_description");
     const fieldRows = fieldComparison(effectiveProduct, current, managedFields);
     const fields = fieldRows.filter((row) => row.changed).map(({ field, expected, actual }) => ({ field, expected, actual }));
     const taxonomyDifferences = taxonomyRows.filter((row) => row.changed).map((row) => ({
@@ -497,6 +513,14 @@ export class WordPressPreviewService {
       actual: row.before.map((term) => term.termId),
     }));
     const ready = preflight !== null;
+    const readinessBlockers = [
+      ...draft.missingRequiredReferences.map((referenceType) => ({
+        code: "required_reference_missing",
+        referenceType,
+        message: `Не заполнено обязательное поле WordPress «${referenceLabels[referenceType] ?? referenceType}».`,
+      })),
+      ...(preflightError === null ? [] : [{ code: "payload_contract", message: preflightError.message }]),
+    ];
     return finish({
       target: targetSummary,
       externalId: preflight?.externalId ?? snapshot?.externalId ?? targetProduct?.externalId ?? null,
@@ -505,17 +529,14 @@ export class WordPressPreviewService {
       ...(preflight === null ? {} : { payloadHash: preflight.payloadHash }),
       readiness: {
         ready,
-        phase: ready ? "ready" : "classification",
-        blockers: draft.missingRequiredReferences.map((referenceType) => ({
-          code: "required_reference_missing",
-          referenceType,
-          message: `Не заполнено обязательное поле WordPress «${referenceLabels[referenceType] ?? referenceType}».`,
-        })),
+        phase: ready ? "ready" : preflightError === null ? "classification" : "payload",
+        blockers: readinessBlockers,
       },
       current: currentSummary,
       proposed: {
         complete: ready,
         contentContext: effectiveContentContext,
+        contentTemplateSelections: effectiveContent.selections,
         fields: Object.fromEntries(fieldRows.map((row) => [row.field, row.expected])),
         taxonomies: taxonomyRows.map((row) => ({ taxonomy: row.taxonomy, terms: row.after, managed: row.managed })),
         images: Array.isArray(product.images) ? product.images : [],
@@ -530,7 +551,7 @@ export class WordPressPreviewService {
         variations: {
           available: ready,
           rows: variationRows,
-          expectedCount: ready ? preflight.variationPlan.length : expectedVariations.length,
+          expectedCount: preflight?.variationPlan.length ?? expectedVariations.length,
           actualCount: Array.isArray(current.variations) ? current.variations.length : 0,
           differences: variationResult.differences,
           deactivated: variationResult.deactivated,

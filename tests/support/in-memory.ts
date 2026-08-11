@@ -126,6 +126,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       listActive: async (targetId) => [...store.contentTemplates.values()]
         .filter((item) => item.targetId === targetId && item.status === "active"),
       getById: async (id) => store.contentTemplates.get(id) ?? null,
+      lockField: async () => {},
       createDraft: async (input) => {
         const revision = Math.max(0, ...[...store.contentTemplates.values()]
           .filter((item) => item.targetId === input.targetId && item.field === input.field)
@@ -138,7 +139,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
         const selected = store.contentTemplates.get(id);
         if (selected === undefined || selected.targetId !== targetId) throw new Error(`Template not found: ${id}`);
         for (const [key, item] of store.contentTemplates) {
-          if (item.targetId === targetId && item.field === selected.field && item.status === "active") {
+          if (item.targetId === targetId && item.field === selected.field && item.profileKey === selected.profileKey && item.status === "active") {
             store.contentTemplates.set(key, { ...item, status: "archived" });
           }
         }

@@ -2,7 +2,8 @@ import type { EntityId, TargetContentTemplateDTO } from "../contracts/index.js";
 import { EntityNotFoundError } from "../core/errors/index.js";
 import {
   contentTemplateCatalog,
-  validateWordPressContentTemplate,
+  validateWordPressContentTemplateDefinition,
+  validateWordPressContentTemplateProfiles,
   type WordPressContentTemplateField,
 } from "../integrations/index.js";
 import type {
@@ -18,6 +19,11 @@ export interface ContentTemplateDraftCommand {
   readonly field: WordPressContentTemplateField;
   readonly name: string;
   readonly templateSource: string;
+  readonly profileKey?: string;
+  readonly profileName?: string;
+  readonly managementMode?: "manage" | "preserve";
+  readonly categoryTermIds?: readonly number[];
+  readonly requiredContextPaths?: readonly string[];
 }
 
 export interface ContentTemplatePreviewCommand extends ContentTemplateDraftCommand {
@@ -41,10 +47,18 @@ export class ContentTemplateAdminService {
 
   async createDraft(command: ContentTemplateDraftCommand, actor: string): Promise<TargetContentTemplateRecord> {
     await this.requireTarget(command.targetId);
-    validateWordPressContentTemplate(command.templateSource);
+    const definition = this.definition(command);
+    validateWordPressContentTemplateDefinition(definition);
     return this.unitOfWork.transaction((repositories) => repositories.contentTemplates.createDraft({
-      ...command,
+      targetId: command.targetId,
+      field: command.field,
       name: command.name.trim(),
+      templateSource: command.templateSource,
+      profileKey: definition.profileKey,
+      profileName: definition.profileName,
+      managementMode: definition.managementMode,
+      categoryTermIds: definition.categoryTermIds,
+      requiredContextPaths: definition.requiredContextPaths,
       actor,
     }));
   }
@@ -54,21 +68,35 @@ export class ContentTemplateAdminService {
     return this.unitOfWork.transaction(async (repositories) => {
       const template = await repositories.contentTemplates.getById(templateId);
       if (template === null || template.targetId !== targetId) throw new EntityNotFoundError("Target content template", templateId);
-      validateWordPressContentTemplate(template.templateSource);
+      await repositories.contentTemplates.lockField(targetId, template.field);
+      const active = await repositories.contentTemplates.listActive(targetId);
+      validateWordPressContentTemplateProfiles([
+        ...active.filter((item) => item.field !== template.field || item.profileKey !== template.profileKey),
+        template,
+      ]);
       return repositories.contentTemplates.activate(templateId, targetId, actor);
     });
   }
 
   async preview(command: ContentTemplatePreviewCommand) {
     await this.requireTarget(command.targetId);
-    validateWordPressContentTemplate(command.templateSource);
-    const override: TargetContentTemplateDTO = {
+    const override: TargetContentTemplateDTO = this.definition(command);
+    validateWordPressContentTemplateDefinition(override);
+    return this.wordpressPreview.preview(command.sourceProductId, command.targetId, [override]);
+  }
+
+  private definition(command: ContentTemplateDraftCommand): TargetContentTemplateDTO {
+    return {
       id: "preview",
       field: command.field,
       revision: 0,
       templateSource: command.templateSource,
+      profileKey: command.profileKey ?? "default",
+      profileName: command.profileName?.trim() || "Основной профиль",
+      managementMode: command.managementMode ?? "manage",
+      categoryTermIds: [...new Set(command.categoryTermIds ?? [])].sort((left, right) => left - right),
+      requiredContextPaths: [...new Set(command.requiredContextPaths ?? [])].sort(),
     };
-    return this.wordpressPreview.preview(command.sourceProductId, command.targetId, [override]);
   }
 
   private async requireTarget(targetId: EntityId): Promise<void> {

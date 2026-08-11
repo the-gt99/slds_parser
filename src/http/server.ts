@@ -170,6 +170,11 @@ interface ContentTemplateBody {
   readonly field?: unknown;
   readonly name?: unknown;
   readonly templateSource?: unknown;
+  readonly profileKey?: unknown;
+  readonly profileName?: unknown;
+  readonly managementMode?: unknown;
+  readonly categoryTermIds?: unknown;
+  readonly requiredContextPaths?: unknown;
 }
 
 class HttpInputError extends Error {}
@@ -293,6 +298,27 @@ function projectionBody(value: unknown) {
     dictionaryValueId: entityId(body.dictionaryValueId, "dictionaryValueId"),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
+}
+
+function contentTemplateMode(value: unknown): "manage" | "preserve" {
+  if (value !== "manage" && value !== "preserve") throw new HttpInputError("managementMode must be manage or preserve");
+  return value;
+}
+
+function contentTemplateCategoryIds(value: unknown): readonly number[] {
+  if (!Array.isArray(value)) throw new HttpInputError("categoryTermIds must be an array");
+  return value.map((item) => {
+    const number = Number(item);
+    if (!Number.isSafeInteger(number) || number <= 0) throw new HttpInputError("categoryTermIds must contain positive integers");
+    return number;
+  });
+}
+
+function contentTemplateRequiredPaths(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
+    throw new HttpInputError("requiredContextPaths must contain non-empty strings");
+  }
+  return value as readonly string[];
 }
 
 function entityIds(value: unknown, field: string): readonly string[] | undefined {
@@ -959,6 +985,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         field: contentTemplateField(request.body?.field),
         name: requiredString(request.body?.name, "name"),
         templateSource: requiredString(request.body?.templateSource, "templateSource"),
+        ...(optionalString(request.body?.profileKey) === undefined ? {} : { profileKey: optionalString(request.body?.profileKey)! }),
+        ...(optionalString(request.body?.profileName) === undefined ? {} : { profileName: optionalString(request.body?.profileName)! }),
+        managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
+        categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
+        requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
       }),
     }),
   );
@@ -972,6 +1003,11 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         field: contentTemplateField(request.body?.field),
         name: requiredString(request.body?.name, "name"),
         templateSource: requiredString(request.body?.templateSource, "templateSource"),
+        ...(optionalString(request.body?.profileKey) === undefined ? {} : { profileKey: optionalString(request.body?.profileKey)! }),
+        ...(optionalString(request.body?.profileName) === undefined ? {} : { profileName: optionalString(request.body?.profileName)! }),
+        managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
+        categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
+        requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
       }, actor(request)),
     }),
   );

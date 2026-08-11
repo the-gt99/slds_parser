@@ -70,7 +70,8 @@ const targetSnapshotRow = {
 
 const contentTemplateRow = {
   id: "51", target_id: "10", field_code: "description", name: "Описание",
-  template_source: "<p>{{ product.sku }}</p>", status: "draft", revision: 2, actor: "admin",
+  template_source: "<p>{{ product.sku }}</p>", profile_key: "default", profile_name: "Основной профиль",
+  management_mode: "manage", category_term_ids: [74, 75], required_context_paths: ["content.story"], status: "draft", revision: 2, actor: "admin",
   created_at: new Date("2026-08-09T00:00:00.000Z"), activated_at: null,
 };
 
@@ -177,9 +178,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
   it("serializes template revisions and activation inside the caller transaction", async () => {
     const createExecutor = new FakeExecutor([[], [contentTemplateRow]]);
     const repository = new PostgresTargetContentTemplateRepository(createExecutor);
-    const draft = await repository.createDraft({ targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>", actor: "admin" });
+    const draft = await repository.createDraft({ targetId: "10", field: "description", name: "Описание", templateSource: "<p>{{ product.sku }}</p>",
+      profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [74, 75], requiredContextPaths: ["content.story"], actor: "admin" });
 
-    expect(draft).toMatchObject({ id: "51", field: "description", revision: 2, status: "draft" });
+    expect(draft).toMatchObject({ id: "51", field: "description", revision: 2, status: "draft", profileKey: "default",
+      managementMode: "manage", categoryTermIds: [74, 75], requiredContextPaths: ["content.story"] });
     expect(createExecutor.calls[0]?.text).toContain("pg_advisory_xact_lock");
     expect(createExecutor.calls[1]?.text).toContain("MAX(revision) + 1");
 
