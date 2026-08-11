@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -58,8 +58,8 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
           ...(options.missingCategory ? { titlePrefixByCategoryTermId: { "75": "Кроссовки" } } : {}),
         },
       }),
-      findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 ? null : { externalId: String(targetId) }),
-      findProductSnapshot: vi.fn().mockResolvedValue(targetId === 0 ? null : {
+      findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 || options.savedSnapshotMissing ? null : { externalId: String(targetId) }),
+      findProductSnapshot: vi.fn().mockResolvedValue(targetId === 0 || options.savedSnapshotMissing ? null : {
         externalId: String(targetId),
         fetchedAt: "2026-08-06T00:00:00.000Z",
         payload: { product: {
@@ -100,6 +100,11 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       matched_by: matchedBy,
       payload_hash: body.payload.payload_hash,
       variation_plan: [],
+      ...(options.preflightSnapshot ? { snapshot: { product: {
+        title: "Legacy SKU title", slug: "legacy-sku-title", sku: "SKU-2",
+        description_html: "<p>Legacy SKU</p>", short_description_html: "<p>Сохранить</p>",
+        images: [], taxonomies: {}, variations: [],
+      } } } : {}),
     }), { status: 200 });
   });
   const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, request);
@@ -128,8 +133,12 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     }] : []),
   ];
   const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue(dictionaryValues) };
-  const snapshotReader = options.remoteSnapshot ? {
-    read: vi.fn().mockResolvedValue([{
+  const snapshotReader = options.remoteSnapshot || options.remoteSnapshotMissing ? {
+    read: vi.fn().mockResolvedValue([options.remoteSnapshotMissing ? {
+      sourceExternalId: "100",
+      found: false,
+      errorCode: "target_not_found",
+    } : {
       sourceExternalId: "100",
       found: true,
       externalId: "321",
@@ -252,6 +261,28 @@ describe("WordPressPreviewService", () => {
       sourceExternalId: "100",
     }));
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("uses the legacy SKU preflight snapshot when source identity is absent", async () => {
+    const { service, repositories, snapshotReader } = setup(321, "legacy_sku", {
+      savedSnapshotMissing: true,
+      remoteSnapshotMissing: true,
+      preflightSnapshot: true,
+    });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      externalId: "321",
+      willCreate: false,
+      matchedBy: "legacy_sku",
+      current: { externalId: "321", product: { title: "Legacy SKU title", sku: "SKU-2" } },
+    });
+    expect(snapshotReader?.read).toHaveBeenCalledWith("goat", ["100"]);
+    expect(repositories.targets.saveProductSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      sourceProductId: "2",
+      externalId: "321",
+      sourceExternalId: "100",
+    }));
   });
 
   it("shows the saved WordPress product before processing without attempting a preflight", async () => {

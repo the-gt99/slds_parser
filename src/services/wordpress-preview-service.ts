@@ -337,9 +337,9 @@ export class WordPressPreviewService {
         snapshot = null;
       }
     }
-    const current = record(snapshot?.payload.product);
+    let current = record(snapshot?.payload.product);
     const targetSummary = { id: target.id, code: target.code, name: target.name, enabled: target.enabled };
-    const currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
+    let currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
     const internal = await this.repositories.internalProducts.findBySourceProductId(sourceProductId);
     if (internal === null) {
       return {
@@ -413,8 +413,21 @@ export class WordPressPreviewService {
     const variations = record(payload.variations);
     const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
     const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
-    const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
     const preflight = draft.missingRequiredReferences.length === 0 ? await exporter.preflightPayload(payload) : null;
+    if (snapshot === null && preflight?.snapshot !== undefined && preflight.externalId !== null && sourceProduct.externalId !== null) {
+      snapshot = await this.repositories.targets.saveProductSnapshot({
+        targetId: target.id,
+        sourceProductId: sourceProduct.id,
+        externalId: preflight.externalId,
+        sourceExternalId: sourceProduct.externalId,
+        payload: preflight.snapshot,
+        contentHash: hashStableJson(preflight.snapshot),
+        fetchedAt: new Date().toISOString(),
+      });
+      current = record(snapshot.payload.product);
+      currentSummary = { externalId: snapshot.externalId, snapshotFetchedAt: snapshot.fetchedAt, product: current };
+    }
+    const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
     const variationResult = preflight === null
       ? { differences: [] as Record<string, unknown>[], deactivated: [] as string[], rows: [] as Record<string, unknown>[] }
       : variationComparison(preflight.variationPlan, current.variations);

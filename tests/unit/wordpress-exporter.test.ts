@@ -354,8 +354,9 @@ describe("WordPressExporter", () => {
       operation: "product_upsert_lookup",
       product_id: 321,
       target_id: 321,
-      matched_by: "legacy_goat_id",
+      matched_by: "legacy_sku",
       payload_hash: payload.payload_hash,
+      snapshot: { product: { target_id: 321, sku: "SKU-1" } },
       variation_plan: [{
         variation_id: 123,
         source_variant_key: "offer-7",
@@ -371,8 +372,9 @@ describe("WordPressExporter", () => {
     await expect(exporter.preflightPayload(payload)).resolves.toEqual({
       externalId: "321",
       willCreate: false,
-      matchedBy: "legacy_goat_id",
+      matchedBy: "legacy_sku",
       payloadHash: payload.payload_hash,
+      snapshot: { product: { target_id: 321, sku: "SKU-1" } },
       variationPlan: [{
         variation_id: 123,
         source_variant_key: "offer-7",

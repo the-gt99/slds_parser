@@ -62,6 +62,7 @@ interface WordPressResponse {
   readonly matched_by?: unknown;
   readonly payload_hash?: unknown;
   readonly variation_plan?: unknown;
+  readonly snapshot?: unknown;
 }
 
 export interface WordPressUpsertPreflightResult {
@@ -70,6 +71,7 @@ export interface WordPressUpsertPreflightResult {
   readonly matchedBy: string;
   readonly payloadHash: string;
   readonly variationPlan: readonly JsonObject[];
+  readonly snapshot?: JsonObject;
 }
 
 export interface WordPressUpsertPayloadPreview {
@@ -649,7 +651,13 @@ export class WordPressExporter {
     if (payloadHash !== expectedPayloadHash) throw new IntegrationContractError("WordPress preflight payload hash does not match the request");
     if (!Array.isArray(response.variation_plan)) throw new IntegrationContractError("WordPress preflight variation_plan must be a list");
     const variationPlan = response.variation_plan.map((value, index) => record(value, `WordPress preflight variation_plan[${index}]`) as JsonObject);
-    return { externalId, willCreate, matchedBy, payloadHash, variationPlan };
+    const snapshot = response.snapshot === undefined
+      ? undefined
+      : record(response.snapshot, "WordPress preflight snapshot") as JsonObject;
+    if (matchedBy === "legacy_sku" && snapshot === undefined) {
+      throw new IntegrationContractError("WordPress legacy SKU preflight snapshot is required");
+    }
+    return { externalId, willCreate, matchedBy, payloadHash, variationPlan, ...(snapshot === undefined ? {} : { snapshot }) };
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
