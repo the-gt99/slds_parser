@@ -840,6 +840,8 @@ WordPress payload подставляет live-вариации непосред�
 
 Проверка проблемного `sourceProductId=177149`, GOAT external ID `462323`, ранее подтвердила, что GOAT US `buy_bar_data` возвращает два `single_in_stock` offer для размеров `8` и `9.5` по `$2693` каждый. Поэтому цена `471275 ₽` не была следствием старого snapshot или ошибки умножения: это `2693 × 175` из текущего US API. Скриншот публичного GOAT показывал доставку в Saudi Arabia и `Currently Unavailable`, то есть другой market context. Не добавлять произвольный price cap или считать такой offer отсутствующим без отдельного бизнес-правила.
 
+Production обновлён до HEAD `6bcf133`, миграция `045` применена, API и worker перезапущены. Настройка сохранена и применена как `true`, старой колонки нет. Безопасный smoke через `ExportSourceRefresher` для `sourceProductId=177149` получил ровно два варианта `8` и `9.5`, оба `available`, quantity `1`, цена `$2693`; offers сохранены, но новых jobs и WordPress-записи не создано. После smoke active jobs `0`, recent exports `0`, target `slamdunk=false`, internal/external health `200`, warning/error в journal нет. Локально и на production прошли typecheck, `352` теста и build.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
