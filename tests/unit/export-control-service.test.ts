@@ -45,9 +45,9 @@ describe("ExportControlService", () => {
     });
     expect(repository.preparePreflightCandidates).toHaveBeenCalledWith({ targetId: "10", limit: 50 });
     expect(jobs.enqueueMany).toHaveBeenCalledWith([{
-      jobType: "preflight_product",
-      payload: { sourceProductId: "21", targetId: "10" },
-      uniqueKey: "target-product:10:21:preflight",
+      jobType: "collect_product",
+      payload: { sourceProductId: "21", refreshForExport: true, enqueueProcessing: true },
+      uniqueKey: "source-product:21:collect",
     }]);
   });
 

@@ -71,6 +71,7 @@ function productImages(card: JsonObject, discoveryMetadata: JsonObject): readonl
 export class GoatSourceAdapter implements SourceAdapter {
   readonly code = "goat";
   readonly version = "1.1.0";
+  readonly exportRefreshPartKeys = ["offers"] as const;
   readonly #children = new Map<string, readonly GoatSitemapProduct[]>();
   readonly #indexes = new Map<string, readonly string[]>();
   // TODO: Add ETag/304 revalidation when sitemap refresh scheduling is implemented.

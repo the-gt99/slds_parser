@@ -6,7 +6,7 @@ export class PreflightRunner {
   constructor(private readonly previews: Pick<WordPressPreviewService, "preview">) {}
 
   async preflightProduct(payload: PreflightProductPayload): Promise<RunnerResult> {
-    await this.previews.preview(payload.sourceProductId, payload.targetId);
+    await this.previews.preview(payload.sourceProductId, payload.targetId, [], { saveExportControl: true });
     return { status: "completed" };
   }
 }

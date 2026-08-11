@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { ExportRunner } from "../../src/application/index.js";
 import type { TargetExporter } from "../../src/contracts/index.js";
-import { TargetExporterRegistry } from "../../src/core/registry/index.js";
+import { SourceAdapterRegistry, TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { TargetReferenceMappingService } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
-async function setup(version = "1", implementation = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "created", metadata: {} })) {
+async function setup(
+  version = "1",
+  implementation = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "created", metadata: {} }),
+  exportRefreshPartKeys: readonly string[] = [],
+  currentTime: () => number = Date.now,
+) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord()); seedProduct(store); store.targets.set("10", targetRecord());
   const repositories = createMemoryRepositories(store); const internal = await repositories.internalProducts.upsert({ sourceProductId: "2", data: validProduct(), inputHash: "input", contentHash: "content", processorVersion: "1", status: "processed" });
   const exporter: TargetExporter = { targetCode: "fake-exporter", version, export: implementation }; const registry = new TargetExporterRegistry(); registry.register(exporter);
-  return { store, repositories, internal, implementation, runner: new ExportRunner(repositories, registry, new TargetReferenceMappingService(repositories.references)) };
+  const adapters = new SourceAdapterRegistry(); adapters.register({ code: "fake-adapter", version: "1", exportRefreshPartKeys, discover: vi.fn(), collectProduct: vi.fn() });
+  return { store, repositories, internal, implementation, adapters, runner: new ExportRunner(repositories, registry, new TargetReferenceMappingService(repositories.references), adapters, currentTime) };
 }
 
 describe("ExportRunner", () => {
@@ -32,7 +38,7 @@ describe("ExportRunner", () => {
     });
     expect(value.implementation).toHaveBeenCalledTimes(2);
   });
-  it("exports after exporter version or mapping revision changes", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); value.store.mappingRevision = "revision-2"; await value.runner.exportProduct(payload); expect(value.implementation).toHaveBeenCalledTimes(2); const changedVersion = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "updated", metadata: {} }); const registry = new TargetExporterRegistry(); registry.register({ targetCode: "fake-exporter", version: "2", export: changedVersion }); const runner = new ExportRunner(value.repositories, registry, new TargetReferenceMappingService(value.repositories.references)); await runner.exportProduct(payload); expect(changedVersion).toHaveBeenCalledOnce(); });
+  it("exports after exporter version or mapping revision changes", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); value.store.mappingRevision = "revision-2"; await value.runner.exportProduct(payload); expect(value.implementation).toHaveBeenCalledTimes(2); const changedVersion = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "updated", metadata: {} }); const registry = new TargetExporterRegistry(); registry.register({ targetCode: "fake-exporter", version: "2", export: changedVersion }); const runner = new ExportRunner(value.repositories, registry, new TargetReferenceMappingService(value.repositories.references), value.adapters); await runner.exportProduct(payload); expect(changedVersion).toHaveBeenCalledOnce(); });
   it("exports again after an active content template changes without processing the product", async () => {
     const value = await setup();
     const payload = { internalProductId: value.internal.id, targetId: "10", force: false };
@@ -56,6 +62,42 @@ describe("ExportRunner", () => {
     expect(value.implementation).toHaveBeenLastCalledWith(expect.objectContaining({
       contentTemplates: [expect.objectContaining({ id: draft.id, revision: 1 })],
     }));
+  });
+  it("blocks a write when source pricing and availability are stale", async () => {
+    const now = Date.parse("2026-08-11T12:00:00.000Z");
+    const value = await setup("1", vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "created", metadata: {} }), ["offers"], () => now);
+    await value.repositories.sourceProducts.upsertPart({
+      sourceProductId: "2",
+      partKey: "offers",
+      rawPayload: {},
+      parsedPayload: { offers: [] },
+      contentHash: "offers",
+      fetchedAt: "2026-08-11T11:30:00.000Z",
+      adapterVersion: "1",
+    });
+    value.store.internals.set(value.internal.id, { ...value.internal, processedAt: "2026-08-11T11:31:00.000Z" });
+
+    await expect(value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: true }))
+      .rejects.toThrow("Перед экспортом нужно обновить часть источника: offers");
+    expect(value.implementation).not.toHaveBeenCalled();
+  });
+  it("allows a write only after fresh source parts were processed", async () => {
+    const now = Date.parse("2026-08-11T12:00:00.000Z");
+    const value = await setup("1", vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "created", metadata: {} }), ["offers"], () => now);
+    await value.repositories.sourceProducts.upsertPart({
+      sourceProductId: "2",
+      partKey: "offers",
+      rawPayload: {},
+      parsedPayload: { offers: [] },
+      contentHash: "offers",
+      fetchedAt: "2026-08-11T11:55:00.000Z",
+      adapterVersion: "1",
+    });
+    value.store.internals.set(value.internal.id, { ...value.internal, processedAt: "2026-08-11T11:56:00.000Z" });
+
+    await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: true });
+
+    expect(value.implementation).toHaveBeenCalledOnce();
   });
   it("saves failure and rethrows the original error", async () => { const error = new Error("export failed"); const value = await setup("1", vi.fn().mockRejectedValue(error)); await expect(value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false })).rejects.toBe(error); expect([...value.store.targetProducts.values()][0]).toMatchObject({ status: "failed", lastError: "export failed" }); });
   it("keeps the export error when saving the failure also fails", async () => { const error = new Error("export failed"); const saveError = new Error("database failed"); const value = await setup("1", vi.fn().mockRejectedValue(error)); vi.spyOn(value.repositories.targets, "saveExportFailure").mockRejectedValue(saveError); await expect(value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false })).rejects.toBe(error); expect(error.cause).toBe(saveError); });

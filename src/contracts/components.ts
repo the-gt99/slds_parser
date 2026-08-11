@@ -14,6 +14,8 @@ import type {
 export interface SourceAdapter {
   readonly code: string;
   readonly version: string;
+  /** Source parts that must be refreshed and reprocessed before a target write. */
+  readonly exportRefreshPartKeys?: readonly string[];
   discover(input: DiscoveryInput): Promise<DiscoveryResult>;
   collectProduct(input: CollectProductInput): Promise<CollectedSourceProduct>;
 }

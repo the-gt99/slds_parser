@@ -12,6 +12,7 @@ export interface CollectProductPayload {
   readonly sourceProductId: string;
   readonly requestedPartKeys?: readonly string[];
   readonly enqueueProcessing?: boolean;
+  readonly refreshForExport?: boolean;
 }
 
 export interface ProcessProductPayload {
@@ -58,11 +59,13 @@ export function parseDiscoverSourcePayload(value: JsonValue): DiscoverSourcePayl
 export function parseCollectProductPayload(value: JsonValue): CollectProductPayload {
   if (isObject(value) && typeof value.sourceProductId === "string"
     && (value.requestedPartKeys === undefined || isStringArray(value.requestedPartKeys))
-    && (value.enqueueProcessing === undefined || typeof value.enqueueProcessing === "boolean")) {
+    && (value.enqueueProcessing === undefined || typeof value.enqueueProcessing === "boolean")
+    && (value.refreshForExport === undefined || typeof value.refreshForExport === "boolean")) {
     return {
       sourceProductId: value.sourceProductId,
       ...(value.requestedPartKeys === undefined ? {} : { requestedPartKeys: value.requestedPartKeys }),
       ...(value.enqueueProcessing === undefined ? {} : { enqueueProcessing: value.enqueueProcessing }),
+      ...(value.refreshForExport === undefined ? {} : { refreshForExport: value.refreshForExport }),
     };
   }
   throw new InvalidJobPayloadError("collect_product");

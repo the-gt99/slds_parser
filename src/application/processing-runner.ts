@@ -2,7 +2,7 @@ import type { JsonValue, SourceDTO, SourceProductDTO, SourceProductPartDTO, Univ
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { SourceProcessorRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository, UnitOfWork } from "../repositories/index.js";
+import type { ExportControlRepository, InternalProductRepository, SourceProductRepository, SourceRepository, TargetRepository, UnitOfWork } from "../repositories/index.js";
 import type { ProductClassifier, ProductClassifierRun } from "../services/index.js";
 import type { ProcessProductPayload } from "./job-payloads.js";
 import type { ProductOperationPipeline } from "./product-operation-pipeline.js";
@@ -22,6 +22,7 @@ export class ProcessingRunner {
     private readonly processors: SourceProcessorRegistry,
     private readonly operations: ProductOperationPipeline,
     private readonly classifier: ProductClassifier,
+    private readonly exportControl?: ExportControlRepository,
   ) {}
 
   async processProduct(payload: ProcessProductPayload): Promise<RunnerResult> {
@@ -54,13 +55,16 @@ export class ProcessingRunner {
       ...(product.externalId === null ? {} : { externalId: product.externalId }), ...(product.slug === null ? {} : { slug: product.slug }),
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
     const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
+    const preflightTargetIds = this.exportControl === undefined
+      ? []
+      : await this.exportControl.listSourceRefreshedPreflightTargetIds(product.id);
     let classificationRun: ProductClassifierRun;
     let attemptId: string | null = null;
     let operationsOutput: UniversalProductDTO | null = null;
     if (!payload.force && existing?.inputHash === inputHash) {
       classificationRun = await this.classifier.classify(source.id, existing.data);
       const reclassifiedHash = hashStableJson(classificationRun.product as unknown as JsonValue);
-      if (existing.contentHash === reclassifiedHash) return { status: "skipped" };
+      if (existing.contentHash === reclassifiedHash && preflightTargetIds.length === 0) return { status: "skipped" };
     } else {
       const partDtos: SourceProductPartDTO[] = parts.map((part) => ({ partKey: part.partKey, rawPayload: part.rawPayload, parsedPayload: part.parsedPayload,
       ...(part.sourceUpdatedAt === null ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), adapterVersion: part.adapterVersion }));
@@ -84,6 +88,7 @@ export class ProcessingRunner {
     try {
       const contentHash = hashStableJson(data as unknown as JsonValue);
       const targets = await this.repositories.targets.listEnabled();
+      const preflightTargetIdSet = new Set(preflightTargetIds);
       await this.unitOfWork.transaction(async (repositories) => {
         const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
           processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
@@ -100,10 +105,23 @@ export class ProcessingRunner {
           await repositories.productOperationHistory.completeAttempt(attemptId, operationsOutput, classificationRun.product, new Date().toISOString());
         }
         if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
-          for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
-            payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
+          for (const target of targets) {
+            if (!preflightTargetIdSet.has(target.id)) await repositories.jobs.enqueue({ jobType: "export_product",
+              payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
+          }
+        }
+        if (data.classification.status === "complete") {
+          for (const targetId of preflightTargetIds) await repositories.jobs.enqueue({ jobType: "preflight_product",
+            payload: { sourceProductId: product.id, targetId }, uniqueKey: `target-product:${targetId}:${product.id}:preflight` });
         }
       });
+      if (data.classification.status !== "complete" && preflightTargetIds.length > 0 && this.exportControl !== undefined) {
+        await this.exportControl.savePreparationError({
+          sourceProductId: product.id,
+          phase: "processing",
+          error: "После обновления источника товар требует завершения классификации",
+        });
+      }
     } catch (error) {
       if (attemptId !== null) await this.operations.failAttempt(attemptId, error);
       throw error;

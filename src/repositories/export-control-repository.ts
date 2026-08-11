@@ -18,6 +18,13 @@ export interface ExportControlRepository {
     readonly limit: number;
   }): Promise<readonly ExportControlPreflightCandidate[]>;
   savePreflight(input: SaveExportControlPreflightInput): Promise<void>;
+  markSourceRefreshed(sourceProductId: EntityId, refreshedAt: string): Promise<void>;
+  listSourceRefreshedPreflightTargetIds(sourceProductId: EntityId): Promise<readonly EntityId[]>;
+  savePreparationError(input: {
+    readonly sourceProductId: EntityId;
+    readonly phase: "source_refresh" | "processing";
+    readonly error: string;
+  }): Promise<void>;
   savePreflightError(input: {
     readonly targetId: EntityId;
     readonly sourceProductId: EntityId;

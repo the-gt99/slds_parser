@@ -33,18 +33,31 @@ export class JobDispatcher implements JobHandler {
   }
 
   async handleTerminalFailure(job: JobRecord, error: unknown): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    if (job.jobType === "collect_product" && this.exportControl !== undefined) {
+      const payload = parseCollectProductPayload(job.payload);
+      if (payload.refreshForExport === true) {
+        await this.exportControl.savePreparationError({ sourceProductId: payload.sourceProductId, phase: "source_refresh", error: message });
+      }
+      return;
+    }
+    if (job.jobType === "process_product" && this.exportControl !== undefined) {
+      const payload = parseProcessProductPayload(job.payload);
+      await this.exportControl.savePreparationError({ sourceProductId: payload.sourceProductId, phase: "processing", error: message });
+      return;
+    }
     if (job.jobType === "preflight_product" && this.exportControl !== undefined) {
       const payload = parsePreflightProductPayload(job.payload);
       await this.exportControl.savePreflightError({
         targetId: payload.targetId,
         sourceProductId: payload.sourceProductId,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
       return;
     }
     if (job.jobType !== "discover_source") return;
     const payload = parseDiscoverSourcePayload(job.payload);
     const run = await this.sourceRuns.findActiveBySource(payload.sourceId);
-    if (run !== null) await this.sourceRuns.fail(run.id, { error: error instanceof Error ? error.message : String(error), checkpoint: run.checkpoint, finishedAt: new Date().toISOString() });
+    if (run !== null) await this.sourceRuns.fail(run.id, { error: message, checkpoint: run.checkpoint, finishedAt: new Date().toISOString() });
   }
 }

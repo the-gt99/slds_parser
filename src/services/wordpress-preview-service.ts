@@ -292,8 +292,8 @@ export class WordPressPreviewService {
     private readonly exportControl?: ExportControlRepository,
   ) {}
 
-  async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = []) {
-    const configurationRevision = this.exportControl === undefined
+  async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = [], options: { readonly saveExportControl?: boolean } = {}) {
+    const configurationRevision = this.exportControl === undefined || options.saveExportControl !== true
       ? null
       : await this.mappings.getTargetMappingRevision(targetId);
     const sourceProduct = await this.repositories.sourceProducts.getById(sourceProductId);

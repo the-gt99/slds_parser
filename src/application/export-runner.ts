@@ -1,6 +1,7 @@
 import type { SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
-import { EntityNotFoundError } from "../core/errors/index.js";
-import type { TargetExporterRegistry } from "../core/registry/index.js";
+import { EXPORT_SOURCE_FRESHNESS_SECONDS } from "../core/export/source-freshness.js";
+import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
+import type { SourceAdapterRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, TargetRepository } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "../services/index.js";
@@ -20,7 +21,34 @@ export class ExportRunner {
     private readonly repositories: ExportRunnerRepositories,
     private readonly exporters: TargetExporterRegistry,
     private readonly mappings: TargetReferenceMappingService,
+    private readonly adapters: SourceAdapterRegistry,
+    private readonly currentTime: () => number = Date.now,
   ) {}
+
+  private async assertFreshSource(
+    sourceAdapterCode: string,
+    sourceProductId: string,
+    processedAt: string | null,
+  ): Promise<void> {
+    const requiredPartKeys = this.adapters.get(sourceAdapterCode).exportRefreshPartKeys ?? [];
+    if (requiredPartKeys.length === 0) return;
+    const parts = await this.repositories.sourceProducts.listParts(sourceProductId);
+    const partByKey = new Map(parts.map((part) => [part.partKey, part]));
+    let latestFetch = Number.NEGATIVE_INFINITY;
+    for (const partKey of requiredPartKeys) {
+      const part = partByKey.get(partKey);
+      const fetchedAt = part === undefined ? Number.NaN : Date.parse(part.fetchedAt);
+      if (!Number.isFinite(fetchedAt)
+        || this.currentTime() - fetchedAt > EXPORT_SOURCE_FRESHNESS_SECONDS * 1_000) {
+        throw new IntegrationContractError(`Перед экспортом нужно обновить часть источника: ${partKey}`);
+      }
+      latestFetch = Math.max(latestFetch, fetchedAt);
+    }
+    const processedAtTime = processedAt === null ? Number.NaN : Date.parse(processedAt);
+    if (!Number.isFinite(processedAtTime) || processedAtTime < latestFetch) {
+      throw new IntegrationContractError("Перед экспортом нужно обработать обновлённые данные источника");
+    }
+  }
 
   async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {
     const internal = await this.repositories.internalProducts.getById(payload.internalProductId);
@@ -41,7 +69,7 @@ export class ExportRunner {
         templateSource: template.templateSource, profileKey: template.profileKey, profileName: template.profileName,
         managementMode: template.managementMode, categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths })) });
     if (!payload.force && payload.approval === undefined && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
-    const attemptedAt = new Date().toISOString();
+    const attemptedAt = new Date(this.currentTime()).toISOString();
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {
       id: sourceProduct.id,
@@ -54,6 +82,7 @@ export class ExportRunner {
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
+      await this.assertFreshSource(source.adapterCode, sourceProduct.id, internal.processedAt);
       const result = await exporter.export({ source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
         references: {
           resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
@@ -71,7 +100,7 @@ export class ExportRunner {
         } }),
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });
       await this.repositories.targets.saveExportSuccess({ targetId: target.id, internalProductId: internal.id, externalId: result.externalId,
-        status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date().toISOString() });
+        status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date(this.currentTime()).toISOString() });
       return { status: "completed" };
     } catch (error) {
       try {

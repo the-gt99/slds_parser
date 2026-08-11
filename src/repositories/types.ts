@@ -803,6 +803,7 @@ export interface ExportControlListItem {
   readonly blockers: JsonValue;
   readonly changeSummary: JsonObject;
   readonly error: string | null;
+  readonly sourceRefreshedAt: Timestamp | null;
   readonly checkedAt: Timestamp;
   readonly lastExportJob: {
     readonly id: EntityId;

@@ -124,6 +124,21 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(listCall.text).toContain("review.source_external_id = $2::BIGINT::TEXT");
   });
 
+  it("records source freshness and requires it for export candidates", async () => {
+    const refreshExecutor = new FakeExecutor([[]]);
+    const repository = new PostgresExportControlRepository(pool(refreshExecutor));
+
+    await repository.markSourceRefreshed("21", "2026-08-11T12:00:00.000Z");
+
+    expect(refreshExecutor.calls[0]?.text).toContain("source_refreshed_at = $2::TIMESTAMPTZ");
+    expect(refreshExecutor.calls[0]?.values).toEqual(["21", "2026-08-11T12:00:00.000Z"]);
+
+    const candidateExecutor = new FakeExecutor([[]]);
+    await new PostgresExportControlRepository(pool(candidateExecutor)).listExportCandidates({ targetId: "10", limit: 50 });
+    expect(candidateExecutor.calls[0]?.text).toContain("review.source_refreshed_at IS NOT NULL");
+    expect(candidateExecutor.calls[0]?.text).toContain("make_interval(secs => 900)");
+  });
+
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
     const executor = new FakeExecutor([
       [],

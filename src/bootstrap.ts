@@ -74,14 +74,14 @@ export function createApplication(environment: ApplicationEnvironment = process.
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool);
   const classifier = new ProductClassifier(repositories.classifications);
   const targetMappings = new TargetReferenceMappingService(repositories.references);
-  const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
+  const exportControl = new PostgresExportControlRepository(pool);
+  const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters, exportControl);
   const operationPipeline = new ProductOperationPipeline(
     operations,
     new PostgresProductOperationHistoryRepository(pool),
   );
-  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
-  const exportRunner = new ExportRunner(repositories, exporters, targetMappings);
-  const exportControl = new PostgresExportControlRepository(pool);
+  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier, exportControl);
+  const exportRunner = new ExportRunner(repositories, exporters, targetMappings, adapters);
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
   const preflightRunner = wordpress === null
