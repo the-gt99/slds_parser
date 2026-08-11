@@ -96,18 +96,80 @@ function changeChips(item) {
   return chips;
 }
 
+const taxonomyLabels = {
+  product_tag: "Метки",
+  product_cat: "Категории",
+  pa_brand: "Бренды",
+  pa_model: "Модели",
+  pa_tsvet: "Цвета",
+  pa_material: "Материалы",
+  pa_vid: "Виды спорта",
+  pa_shoe_height: "Высота обуви",
+  pa_season: "Сезоны",
+};
+
 function taxonomyDetails(summary) {
   const rows = Array.isArray(summary?.taxonomies) ? summary.taxonomies : [];
   const box = element("div", "export-change-details");
   for (const row of rows) {
     const added = Array.isArray(row.added) ? row.added.map((item) => item.name).filter(Boolean) : [];
-    const removed = Array.isArray(row.removed) ? row.removed.map((item) => item.name).filter(Boolean) : [];
-    if (!added.length && !removed.length) continue;
+    if (!added.length) continue;
     const line = element("p", "");
-    line.append(element("strong", "", row.taxonomy));
-    if (added.length) line.append(document.createTextNode(` · добавятся: ${added.join(", ")}`));
-    if (removed.length) line.append(document.createTextNode(` · удалятся: ${removed.join(", ")}`));
+    line.append(element("strong", "", taxonomyLabels[row.taxonomy] || row.taxonomy));
+    line.append(document.createTextNode(` · добавятся: ${added.join(", ")}`));
     box.append(line);
+  }
+  return box;
+}
+
+function deletionDetails(item) {
+  const summary = item.changeSummary || {};
+  const taxonomyRows = Array.isArray(summary.taxonomies) ? summary.taxonomies : [];
+  const removedTaxonomies = taxonomyRows.flatMap((row) => {
+    const terms = Array.isArray(row.removed) ? row.removed.map((term) => term.name).filter(Boolean) : [];
+    return terms.length ? [{ label: taxonomyLabels[row.taxonomy] || row.taxonomy, values: terms }] : [];
+  });
+  const variations = summary.variations || {};
+  const deactivatedItems = Array.isArray(variations.deactivatedItems) ? variations.deactivatedItems : [];
+  const images = summary.images || {};
+  const removedImages = Array.isArray(images.removedItems) ? images.removedItems : [];
+  const hasDanger = removedTaxonomies.length || Number(variations.deactivated || 0) || Number(images.removed || 0);
+  if (!hasDanger) return null;
+
+  const box = element("section", "export-deletion-details");
+  box.append(element("strong", "export-deletion-title", "Опасные изменения при экспорте"));
+  for (const row of removedTaxonomies) {
+    const line = element("p", "");
+    line.append(element("strong", "", `Снимутся ${row.label.toLowerCase()}: `), document.createTextNode(row.values.join(", ")));
+    box.append(line);
+  }
+  if (Number(variations.deactivated || 0) > 0) {
+    const labels = deactivatedItems.map((variation) => variation.label || variation.size).filter(Boolean);
+    const line = element("p", "");
+    line.append(element("strong", "", "Отключатся размеры: "));
+    line.append(document.createTextNode(labels.length ? labels.join(", ") : `${variations.deactivated} — перепроверьте товар для точного списка`));
+    box.append(line);
+  }
+  if (Number(images.removed || 0) > 0) {
+    const row = element("div", "export-deletion-images");
+    row.append(element("strong", "", "Удалятся фото:"));
+    if (removedImages.length) {
+      for (const removed of removedImages) {
+        const itemBox = element("span", "export-deletion-image");
+        if (removed.url) {
+          const image = document.createElement("img");
+          image.src = removed.url;
+          image.alt = `Удаляемое фото ${removed.position || ""}`.trim();
+          image.loading = "lazy";
+          itemBox.append(image);
+        }
+        itemBox.append(element("span", "", removed.position ? `Фото ${removed.position}` : "Фото"));
+        row.append(itemBox);
+      }
+    } else {
+      row.append(element("span", "", `${images.removed} — перепроверьте товар для точного списка`));
+    }
+    box.append(row);
   }
   return box;
 }
@@ -141,7 +203,7 @@ function renderCard(item) {
   titleBox.append(title, element("p", "muted", `${item.sourceCode} · товар ${item.sourceProductId} · external ${item.sourceExternalId || "—"}`));
   const statuses = element("div", "export-card-statuses");
   statuses.append(badge(statusLabel(item.status), item.status === "ready" ? "safe" : item.status === "blocked" || item.status === "error" ? "danger" : "review"));
-  if (item.riskLevel === "danger") statuses.append(badge("Есть удаления", "danger"));
+  if (item.riskLevel === "danger") statuses.append(badge("Опасные изменения", "danger"));
   else if (item.riskLevel === "review") statuses.append(badge("Нужен просмотр", "review"));
   heading.append(titleBox, statuses);
   const identity = element("div", "export-identity");
@@ -153,6 +215,8 @@ function renderCard(item) {
   const chips = element("div", "export-change-chips");
   chips.append(...changeChips(item));
   main.append(heading, identity, chips, taxonomyDetails(item.changeSummary));
+  const deletions = deletionDetails(item);
+  if (deletions) main.append(deletions);
   if (item.blockers?.length) {
     const blockers = element("ul", "export-blockers");
     for (const blocker of item.blockers) blockers.append(element("li", "", blocker.message || blocker.code || String(blocker)));

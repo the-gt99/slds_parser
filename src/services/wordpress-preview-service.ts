@@ -422,8 +422,8 @@ export class WordPressPreviewService {
     const termIds = [...new Set([
       ...Object.values(expectedTaxonomies).flat(),
       ...Object.values(actualTaxonomies).flat(),
-      ...(preflight?.variationPlan ?? []).flatMap((item) => {
-        const key = sizeKey(item.size);
+      ...variationResult.rows.flatMap((item) => {
+        const key = String(item.size ?? "");
         return key === "" ? [] : [key.split(":").at(-1)!];
       }),
     ].map(String))];
@@ -443,13 +443,18 @@ export class WordPressPreviewService {
         }]);
       }
     }
+    const dictionaryTerms = dictionaryTermMap(dictionaryValues);
     const taxonomyRows = taxonomyComparison(
       expectedTaxonomies,
       actualTaxonomies,
       snapshotTermMap(current.taxonomies),
-      dictionaryTermMap(dictionaryValues),
+      dictionaryTerms,
       taxonomyOrigins,
     );
+    const variationRows = variationResult.rows.map((row) => {
+      const size = String(row.size ?? "");
+      return { ...row, sizeLabel: dictionaryTerms.get(size)?.name ?? size };
+    });
     const effectiveCategory = taxonomyRows.find((row) => row.taxonomy === "product_cat");
     const effectiveTaxonomies = {
       ...record(product.taxonomies),
@@ -511,7 +516,7 @@ export class WordPressPreviewService {
         images: imageResult,
         variations: {
           available: ready,
-          rows: variationResult.rows,
+          rows: variationRows,
           expectedCount: ready ? preflight.variationPlan.length : expectedVariations.length,
           actualCount: Array.isArray(current.variations) ? current.variations.length : 0,
           differences: variationResult.differences,

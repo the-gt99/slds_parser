@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -73,7 +73,14 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
             ...(options.matchingPerceptualImages ? { perceptual_hash: "00000000000007ff" } : {}),
             ...(options.mismatchedStoredOrigin ? { origin_url: "https://source.example/old.png" } : {}),
           }],
-          taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}, variations: [],
+          taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {},
+          variations: options.existingSizeVariation ? [{
+            regular_price: "93450",
+            stock_status: "instock",
+            manage_stock: true,
+            stock_quantity: 2,
+            attributes: [{ taxonomy: "pa_razmer", term_id: 114 }],
+          }] : [],
         } },
       }),
       saveProductSnapshot: vi.fn().mockImplementation(async (input) => ({
@@ -106,12 +113,21 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     }] : []),
     resolveTargetAssignments: vi.fn().mockResolvedValue([]),
   };
-  const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue(options.landingProjection ? [{
-    id: "90", targetId: "10", entityType: "tags", externalId: "2968", name: "Onitsuka Tiger",
-    slug: "onitsuka-tiger", parentExternalId: null, taxonomy: "product_tag", attributeCode: null,
-    remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
-    firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
-  }] : []) };
+  const dictionaryValues = [
+    ...(options.landingProjection ? [{
+      id: "90", targetId: "10", entityType: "tags", externalId: "2968", name: "Onitsuka Tiger",
+      slug: "onitsuka-tiger", parentExternalId: null, taxonomy: "product_tag", attributeCode: null,
+      remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
+      firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
+    }] : []),
+    ...(options.existingSizeVariation ? [{
+      id: "91", targetId: "10", entityType: "sizes", externalId: "114", name: "US 10,5M",
+      slug: "us-10-5m", parentExternalId: null, taxonomy: "pa_razmer", attributeCode: "pa_razmer",
+      remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
+      firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
+    }] : []),
+  ];
+  const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue(dictionaryValues) };
   const snapshotReader = options.remoteSnapshot ? {
     read: vi.fn().mockResolvedValue([{
       sourceExternalId: "100",
@@ -176,6 +192,18 @@ describe("WordPressPreviewService", () => {
         termId: 2968,
         origins: [{ relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" }],
       })],
+    }));
+  });
+
+  it("adds a readable label to a size that will be deactivated", async () => {
+    const { service } = setup(321, "source_identity", { existingSizeVariation: true });
+
+    const result = await service.preview("2", "10");
+
+    expect(result.comparison?.variations.rows).toContainEqual(expect.objectContaining({
+      size: "pa_razmer:114",
+      sizeLabel: "US 10,5M",
+      status: "deactivate",
     }));
   });
 

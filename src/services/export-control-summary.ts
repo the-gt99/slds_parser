@@ -17,6 +17,34 @@ function termSummary(value: unknown): JsonObject {
   };
 }
 
+function removedImageSummary(value: unknown): JsonObject {
+  const row = record(value);
+  const image = record(row.actual);
+  const url = [image.url, image.source_url, image.origin_url]
+    .find((candidate) => typeof candidate === "string" && candidate.trim() !== "");
+  const position = Number(row.position);
+  return {
+    position: Number.isSafeInteger(position) && position >= 0 ? position + 1 : null,
+    url: typeof url === "string" ? url : null,
+  };
+}
+
+function deactivatedVariationSummary(value: unknown): JsonObject {
+  const row = record(value);
+  const current = record(row.actual);
+  const size = String(row.size ?? "");
+  const sizeLabel = String(row.sizeLabel ?? "").trim();
+  return {
+    size,
+    label: sizeLabel || size,
+    regularPrice: String(current.regularPrice ?? ""),
+    stockStatus: String(current.stockStatus ?? ""),
+    stockQuantity: current.stockQuantity === null || current.stockQuantity === undefined
+      ? null
+      : Number(current.stockQuantity),
+  };
+}
+
 function imageUrl(product: UniversalProductDTO): string | null {
   return product.images[0]?.url?.trim() || null;
 }
@@ -58,11 +86,15 @@ export function summarizeExportControlPreflight(input: {
   const addedImages = imageRows.filter((item) => item.status === "add").length;
   const removedImages = imageRows.filter((item) => item.status === "remove").length;
   const changedImages = imageRows.filter((item) => item.status === "change").length;
+  const removedImageItems = imageRows.filter((item) => item.status === "remove").map(removedImageSummary);
   if (addedImages > 0) flags.add("images_added");
   if (removedImages > 0) flags.add("images_removed");
   const addedVariations = variationRows.filter((item) => item.status === "add").length;
   const changedVariations = variationRows.filter((item) => item.status === "change").length;
   const deactivatedVariations = variationRows.filter((item) => item.status === "deactivate").length;
+  const deactivatedVariationItems = variationRows
+    .filter((item) => item.status === "deactivate")
+    .map(deactivatedVariationSummary);
   if (addedVariations > 0) flags.add("variation_added");
   if (changedVariations > 0) flags.add("variation_changed");
   if (deactivatedVariations > 0) flags.add("variation_deactivated");
@@ -108,8 +140,13 @@ export function summarizeExportControlPreflight(input: {
     changeSummary: {
       fields: fields.map((field) => String(field.field ?? "unknown")),
       taxonomies: taxonomySummary,
-      images: { added: addedImages, changed: changedImages, removed: removedImages },
-      variations: { added: addedVariations, changed: changedVariations, deactivated: deactivatedVariations },
+      images: { added: addedImages, changed: changedImages, removed: removedImages, removedItems: removedImageItems },
+      variations: {
+        added: addedVariations,
+        changed: changedVariations,
+        deactivated: deactivatedVariations,
+        deactivatedItems: deactivatedVariationItems,
+      },
     },
   };
 }

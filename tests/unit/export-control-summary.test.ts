@@ -28,8 +28,17 @@ describe("summarizeExportControlPreflight", () => {
             added: [{ termId: 12, name: "Новая метка" }],
             removed: [{ termId: 11, name: "Старая метка" }],
           }],
-          images: { rows: [{ status: "unchanged" }, { status: "remove" }] },
-          variations: { rows: [{ status: "change" }, { status: "deactivate" }] },
+          images: { rows: [{ status: "unchanged" }, {
+            position: 1,
+            status: "remove",
+            actual: { url: "https://shop.example/old.webp" },
+          }] },
+          variations: { rows: [{ status: "change" }, {
+            size: "pa_razmer:114",
+            sizeLabel: "US 10,5M",
+            status: "deactivate",
+            actual: { regularPrice: "93450", stockStatus: "instock", stockQuantity: 2 },
+          }] },
         },
       },
     });
@@ -54,8 +63,24 @@ describe("summarizeExportControlPreflight", () => {
       "variation_deactivated",
     ]));
     expect(result.changeSummary).toMatchObject({
-      images: { added: 0, changed: 0, removed: 1 },
-      variations: { added: 0, changed: 1, deactivated: 1 },
+      images: {
+        added: 0,
+        changed: 0,
+        removed: 1,
+        removedItems: [{ position: 2, url: "https://shop.example/old.webp" }],
+      },
+      variations: {
+        added: 0,
+        changed: 1,
+        deactivated: 1,
+        deactivatedItems: [{
+          size: "pa_razmer:114",
+          label: "US 10,5M",
+          regularPrice: "93450",
+          stockStatus: "instock",
+          stockQuantity: 2,
+        }],
+      },
     });
   });
 
