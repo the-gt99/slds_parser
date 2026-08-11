@@ -914,7 +914,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .exact-summary-card span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .exact-summary-card strong { font-size: 25px; line-height: 1; font-variant-numeric: tabular-nums; }
 .exact-summary-card small { color: var(--muted); }
-.catalog-filters-wide.exact-filters { grid-template-columns: minmax(260px, 1fr) repeat(4, minmax(145px, .35fr)); }
+.catalog-filters-wide.exact-filters { grid-template-columns: minmax(260px, 1fr) repeat(4, minmax(145px, .35fr)) auto; }
 .exact-progress { margin: 0; }
 .exact-selection-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 13px; border-bottom: 1px solid var(--line); }
 .exact-selection-bar .confirm-check { margin: 0; }

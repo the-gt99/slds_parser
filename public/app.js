@@ -38,6 +38,7 @@ const state = {
   exactSelected: new Set(),
   exactTarget: null,
   exactApplying: false,
+  exactFiltersInitialized: false,
   configMeta: { sources: [], types: [] },
   references: [],
   referenceTotal: 0,
@@ -112,7 +113,6 @@ let projectionSearchTimer;
 let catalogSearchTimer;
 let reviewProductsSearchTimer;
 let targetRuleSearchTimer;
-let exactSearchTimer;
 const queuePageSize = 200;
 const reviewProductsPageSize = 50;
 const exactPageSize = 50;
@@ -1552,7 +1552,13 @@ function populateExactFilters() {
   const types = codes.map((code) => state.configMeta.types.find((item) => item.code === code) ?? { code, name: typeName(code) })
     .sort((left, right) => left.name.localeCompare(right.name, "ru"));
   byId("exact-type").replaceChildren(new Option("Все безопасные типы", ""), ...types.map((item) => new Option(item.name, item.code)));
-  if ([...byId("exact-type").options].some((option) => option.value === currentType)) byId("exact-type").value = currentType;
+  const typeOptions = [...byId("exact-type").options];
+  if (state.exactFiltersInitialized && typeOptions.some((option) => option.value === currentType)) {
+    byId("exact-type").value = currentType;
+  } else if (typeOptions.some((option) => option.value === "model")) {
+    byId("exact-type").value = "model";
+  }
+  state.exactFiltersInitialized = true;
 }
 
 function exactQuery(offset = 0) {
@@ -2546,10 +2552,6 @@ for (const button of document.querySelectorAll("[data-classification-view]")) {
   button.addEventListener("click", () => { void switchClassificationView(button.dataset.classificationView); });
 }
 byId("exact-filters").addEventListener("submit", (event) => { event.preventDefault(); void loadExactMatches(true); });
-byId("exact-search").addEventListener("input", () => {
-  clearTimeout(exactSearchTimer);
-  exactSearchTimer = setTimeout(() => loadExactMatches(true), 280);
-});
 byId("exact-target").addEventListener("change", () => { populateExactFilters(); void loadExactMatches(true); });
 for (const id of ["exact-source", "exact-type", "exact-status"]) byId(id).addEventListener("change", () => loadExactMatches(true));
 for (const card of document.querySelectorAll("[data-exact-status]")) {
