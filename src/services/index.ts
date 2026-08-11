@@ -25,6 +25,8 @@ export {
 } from "./target-dictionary-service.js";
 export { ProductAdminService } from "./product-admin-service.js";
 export { WordPressPreviewService } from "./wordpress-preview-service.js";
+export { summarizeExportControlPreflight } from "./export-control-summary.js";
+export { ExportControlService } from "./export-control-service.js";
 export {
   ContentTemplateAdminService,
   type ContentTemplateDraftCommand,

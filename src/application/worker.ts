@@ -94,6 +94,7 @@ export class Worker {
     const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const exportJobTypes = ["export_product"] satisfies readonly JobType[];
+    const preflightJobTypes = ["preflight_product"] satisfies readonly JobType[];
     const processConcurrency = this.options.processConcurrency ?? 1;
     const collectionConcurrency = this.options.collectionConcurrency ?? 1;
     const controller = new AbortController();
@@ -107,6 +108,7 @@ export class Worker {
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: processConcurrency }, (_, index) =>
           this.runLane(controller.signal, ["process_product"], `${this.options.workerId}:process-${index + 1}`)),
+        this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight`),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
       ]);
     } finally {

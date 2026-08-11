@@ -9,6 +9,7 @@ import { AppError } from "../core/errors/index.js";
 import type {
   ClassificationRuleConditionRecord,
   ClassificationReviewStatus,
+  ExportControlFilter,
   JobStatus,
   JobType,
   ProductBatchAction,
@@ -21,6 +22,7 @@ import type {
   ClassifierAdminService,
   ContentTemplateAdminService,
   CreateTargetTermCommand,
+  ExportControlService,
   ProductAdminService,
   ProxyAdminService,
   RuntimeAdminService,
@@ -44,6 +46,7 @@ export interface HttpServerDependencies {
   readonly proxies?: ProxyAdminService;
   readonly runtime?: RuntimeAdminService;
   readonly wordpressPreview?: WordPressPreviewService;
+  readonly exportControl?: ExportControlService;
   readonly contentTemplates?: ContentTemplateAdminService;
   readonly targetAssignments?: TargetAssignmentAdminService;
 }
@@ -93,6 +96,24 @@ interface JobsQuery { readonly jobType?: string; readonly status?: string; reado
 interface JobParams { readonly jobId: string }
 interface RetryFailedBody { readonly jobType?: unknown; readonly limit?: unknown; readonly reason?: unknown }
 interface PreviewQuery { readonly targetId?: string }
+interface ExportControlQuery {
+  readonly targetId?: string;
+  readonly status?: string;
+  readonly operation?: string;
+  readonly risk?: string;
+  readonly change?: string;
+  readonly search?: string;
+  readonly cursorAt?: string;
+  readonly cursorId?: string;
+  readonly limit?: string;
+}
+interface ExportControlBody {
+  readonly targetId?: unknown;
+  readonly sourceProductIds?: unknown;
+  readonly limit?: unknown;
+  readonly filter?: unknown;
+  readonly reason?: unknown;
+}
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -254,6 +275,54 @@ function projectionBody(value: unknown) {
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
 }
+
+function entityIds(value: unknown, field: string): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new HttpInputError(`${field} must be an array`);
+  return [...new Set(value.map((item, index) => entityId(item, `${field}[${index}]`)))];
+}
+
+function exportControlStatus(value: unknown) {
+  if (value === undefined || value === "") return undefined;
+  if (!["checking", "ready", "blocked", "error", "stale"].includes(String(value))) throw new HttpInputError("Unknown export control status");
+  return value as "checking" | "ready" | "blocked" | "error" | "stale";
+}
+
+function exportControlOperation(value: unknown): "create" | "update" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "create" && value !== "update") throw new HttpInputError("operation must be create or update");
+  return value;
+}
+
+function exportControlRisk(value: unknown): "none" | "review" | "danger" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "none" && value !== "review" && value !== "danger") throw new HttpInputError("risk must be none, review or danger");
+  return value;
+}
+
+function exportControlChange(value: unknown): string | undefined {
+  const change = optionalString(value);
+  if (change !== undefined && !/^[a-z0-9_:.-]{1,80}$/u.test(change)) throw new HttpInputError("Invalid change filter");
+  return change;
+}
+
+function exportControlFilter(value: unknown): ExportControlFilter | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("filter must be an object");
+  const filter = value as Record<string, unknown>;
+  const status = exportControlStatus(filter.status);
+  const operation = exportControlOperation(filter.operation);
+  const riskLevel = exportControlRisk(filter.riskLevel ?? filter.risk);
+  const changeFlag = exportControlChange(filter.changeFlag ?? filter.change);
+  const search = optionalString(filter.search);
+  return {
+    ...(status === undefined ? {} : { status }),
+    ...(operation === undefined ? {} : { operation }),
+    ...(riskLevel === undefined ? {} : { riskLevel }),
+    ...(changeFlag === undefined ? {} : { changeFlag }),
+    ...(search === undefined ? {} : { search }),
+  };
+}
 function referenceProjectionBody(value: unknown) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
   const body = value as Record<string, unknown>;
@@ -313,8 +382,8 @@ function configStatus(value: string | undefined) {
 }
 
 function jobType(value: unknown): JobType {
-  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "export_product") {
-    throw new HttpInputError("jobType must be discover_source, collect_product, process_product or export_product");
+  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "preflight_product" && value !== "export_product") {
+    throw new HttpInputError("jobType must be discover_source, collect_product, process_product, preflight_product or export_product");
   }
   return value;
 }
@@ -464,6 +533,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   const contentTemplateService = (): ContentTemplateAdminService => {
     if (dependencies.contentTemplates === undefined) throw new HttpInputError("Content template management is not configured");
     return dependencies.contentTemplates;
+  };
+  const exportControlService = (): ExportControlService => {
+    if (dependencies.exportControl === undefined) throw new HttpInputError("Export control is not configured");
+    return dependencies.exportControl;
   };
 
   registerStaticUi(server);
@@ -857,6 +930,79 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       limit, offset: positiveInteger(request.query.offset, 0, 1_000_000),
     });
   });
+
+  server.get<{ Querystring: ExportControlQuery }>("/api/export-control", { preHandler: requireAdmin }, async (request) => {
+    const limit = positiveInteger(request.query.limit, 50, 100);
+    if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 100");
+    const cursorAt = optionalString(request.query.cursorAt);
+    const cursorId = optionalString(request.query.cursorId);
+    if ((cursorAt === undefined) !== (cursorId === undefined)) throw new HttpInputError("Both cursorAt and cursorId are required");
+    if (cursorAt !== undefined && Number.isNaN(new Date(cursorAt).valueOf())) throw new HttpInputError("cursorAt must be a timestamp");
+    return exportControlService().list({
+      targetId: entityId(request.query.targetId, "targetId"),
+      ...(exportControlStatus(request.query.status) === undefined ? {} : { status: exportControlStatus(request.query.status)! }),
+      ...(exportControlOperation(request.query.operation) === undefined ? {} : { operation: exportControlOperation(request.query.operation)! }),
+      ...(exportControlRisk(request.query.risk) === undefined ? {} : { riskLevel: exportControlRisk(request.query.risk)! }),
+      ...(exportControlChange(request.query.change) === undefined ? {} : { changeFlag: exportControlChange(request.query.change)! }),
+      ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+      ...(cursorAt === undefined ? {} : { cursor: { checkedAt: cursorAt, id: entityId(cursorId, "cursorId") } }),
+      limit,
+    });
+  });
+
+  server.post<{ Body: ExportControlBody }>(
+    "/api/export-control/preflights",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const sourceProductIds = entityIds(request.body?.sourceProductIds, "sourceProductIds");
+      const limit = positiveInteger(String(request.body?.limit ?? "100"), 100, 100);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 100");
+      return { result: await exportControlService().enqueuePreflights({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        ...(sourceProductIds === undefined ? {} : { sourceProductIds }),
+        limit,
+      }) };
+    },
+  );
+
+  server.post<{ Body: ExportControlBody }>(
+    "/api/export-control/export/preview",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const sourceProductIds = entityIds(request.body?.sourceProductIds, "sourceProductIds");
+      const filter = exportControlFilter(request.body?.filter);
+      return { preview: await exportControlService().previewExport({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        ...(sourceProductIds === undefined ? {} : { sourceProductIds }),
+        ...(filter === undefined ? {} : { filter }),
+      }) };
+    },
+  );
+
+  server.post<{ Body: ExportControlBody }>(
+    "/api/export-control/export",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const sourceProductIds = entityIds(request.body?.sourceProductIds, "sourceProductIds");
+      const filter = exportControlFilter(request.body?.filter);
+      const reason = optionalString(request.body?.reason);
+      return { result: await exportControlService().applyExport({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        ...(sourceProductIds === undefined ? {} : { sourceProductIds }),
+        ...(filter === undefined ? {} : { filter }),
+        ...(reason === undefined ? {} : { reason }),
+      }, actor(request)) };
+    },
+  );
+
+  server.get<{ Querystring: { readonly targetId?: string; readonly limit?: string } }>(
+    "/api/export-control/batches",
+    { preHandler: requireAdmin },
+    async (request) => ({ items: await exportControlService().listBatches(
+      entityId(request.query.targetId, "targetId"),
+      positiveInteger(request.query.limit, 20, 100),
+    ) }),
+  );
 
   server.post<{ Body: ProductBatchBody }>(
     "/api/products/batch/preview",

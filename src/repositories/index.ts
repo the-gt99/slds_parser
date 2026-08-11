@@ -4,6 +4,7 @@ export type { InternalProductRepository } from "./internal-product-repository.js
 export type { JobRepository } from "./job-repository.js";
 export type { ProductOperationHistoryRepository } from "./product-operation-history-repository.js";
 export type { ProductAdminRepository } from "./product-admin-repository.js";
+export type { ExportControlRepository } from "./export-control-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";
 export type { SourceProductRepository } from "./source-product-repository.js";
 export type { SourceRepository, UpsertSourceDefinitionInput } from "./source-repository.js";

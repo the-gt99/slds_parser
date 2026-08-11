@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>SLDS · Контроль экспорта</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/export-control.js"></script>
+</head>
+<body>
+<div id="login-view" class="login-shell" hidden>
+  <form id="login-form" class="login-card">
+    <div class="brand-mark">S</div>
+    <div><p class="eyebrow">SLDS Parser</p><h1>Контроль экспорта</h1><p class="muted">Войдите в административный интерфейс.</p></div>
+    <label class="field"><span>Пользователь</span><input id="login-username" required autocomplete="username"></label>
+    <label class="field"><span>Пароль</span><input id="login-password" type="password" required autocomplete="current-password"></label>
+    <p id="login-error" class="form-error" hidden></p>
+    <button class="button primary wide" type="submit">Войти</button>
+  </form>
+</div>
+
+<div id="app-view" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="brand-line"><a class="brand-mark small brand-link" href="/products">S</a><div><p class="eyebrow">SLDS Parser</p><h1>Контроль экспорта</h1></div></div>
+    <div class="topbar-actions"><span id="operator-name" class="operator"></span><button id="refresh" class="icon-button" type="button" title="Обновить">↻</button><button id="logout-button" class="button quiet">Выйти</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Основные разделы"><a href="/classifier">Классификация</a><a href="/content-templates">Шаблоны контента</a><a href="/products">Товары</a><a class="active" aria-current="page" href="/export-control">Контроль экспорта</a><a href="/operations">Операции</a><a href="/runtime">Парсер</a><a href="/jobs">Очередь и ошибки</a><a href="/wordpress-snapshots">Снимки WordPress</a><a href="/proxies">Прокси</a></nav>
+
+  <main class="export-control-page">
+    <section class="export-control-hero">
+      <div><p class="eyebrow">Ручной контур</p><h2>Проверка и управляемая выгрузка</h2><p class="muted">Список читает сохранённые результаты. WordPress вызывается только через явную постановку preflight в очередь и повторно перед записью.</p></div>
+      <div class="export-control-hero-actions">
+        <label class="field compact-field"><span>Target</span><select id="target"></select></label>
+        <label class="field compact-field"><span>Размер проверки</span><select id="preflight-limit"><option>25</option><option selected>50</option><option>100</option></select></label>
+        <button id="check-next" class="button secondary" type="button">Проверить следующие</button>
+      </div>
+    </section>
+
+    <section class="section export-control-filters">
+      <form id="filters">
+        <label class="field"><span>Поиск</span><input id="search" type="search" placeholder="ID или название"></label>
+        <label class="field"><span>Состояние</span><select id="status"><option value="ready" selected>Готовы</option><option value="checking">Проверяются</option><option value="blocked">Заблокированы</option><option value="stale">Нужно перепроверить</option><option value="error">Ошибка preflight</option><option value="">Все проверенные</option></select></label>
+        <label class="field"><span>Операция</span><select id="operation"><option value="">Любая</option><option value="update">Обновление</option><option value="create">Возможно создание</option></select></label>
+        <label class="field"><span>Риск</span><select id="risk"><option value="">Любой</option><option value="danger">Есть удаления</option><option value="review">Нужен просмотр</option><option value="none">Без опасных изменений</option></select></label>
+        <label class="field"><span>Изменение</span><select id="change"><option value="">Любое</option><option value="taxonomy:product_tag">Метки</option><option value="taxonomy_removed:product_tag">Удалятся метки</option><option value="taxonomy:product_cat">Категории</option><option value="field:title">Название</option><option value="field:slug">Slug</option><option value="images">Изображения</option><option value="variation_added">Добавятся вариации</option><option value="variation_changed">Изменятся вариации</option><option value="variation_deactivated">Отключатся вариации</option><option value="new_product">Не найден в WordPress</option><option value="no_changes">Без изменений</option></select></label>
+        <button class="button primary" type="submit">Применить</button>
+      </form>
+    </section>
+
+    <section id="selection-panel" class="section export-selection-panel">
+      <div><strong><span id="selected-count">0</span> выбрано</strong><p class="muted">Без выбора действие относится ко всем готовым товарам текущего фильтра, максимум 5000.</p></div>
+      <div class="runtime-actions"><button id="select-page" class="button quiet" type="button">Выбрать страницу</button><button id="clear-selection" class="button quiet" type="button">Сбросить</button><button id="refresh-selected" class="button secondary" type="button">Перепроверить выбранные</button><button id="preview-export" class="button primary" type="button">Проверить экспорт</button></div>
+    </section>
+
+    <div id="message" class="inline-message" hidden></div>
+    <div id="loading" class="product-message">Загрузка…</div>
+    <div id="error" class="product-message error" hidden></div>
+    <div id="empty" class="product-message" hidden>Подходящих сохранённых preflight пока нет. Запусти проверку следующих товаров.</div>
+    <section id="cards" class="export-control-grid" aria-live="polite"></section>
+    <div class="export-load-more"><button id="load-more" class="button quiet" type="button" hidden>Показать ещё</button></div>
+
+    <section class="section export-batches-section">
+      <div class="section-title"><div><p class="eyebrow">История запуска</p><h2>Последние партии</h2></div><button id="refresh-batches" class="button quiet" type="button">Обновить</button></div>
+      <div id="batches" class="export-batches"></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="export-dialog" class="admin-dialog export-dialog">
+  <form method="dialog" class="dialog-card">
+    <div class="section-title"><div><p class="eyebrow">Контроль перед записью</p><h2>Подтвердить экспорт</h2></div><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
+    <div id="export-preview-summary" class="export-preview-summary"></div>
+    <label class="field"><span>Причина или комментарий</span><input id="export-reason" maxlength="300" placeholder="Например: проверенная партия Nike"></label>
+    <p class="muted">Перед записью worker заново соберёт тот же payload и выполнит свежий WordPress preflight. Изменившийся товар будет остановлен.</p>
+    <div class="dialog-actions"><button class="button quiet" value="cancel">Отмена</button><button id="confirm-export" class="button primary" type="button">Поставить в очередь</button></div>
+  </form>
+</dialog>
+</body>
+</html>

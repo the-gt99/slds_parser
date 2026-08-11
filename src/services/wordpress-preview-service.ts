@@ -17,8 +17,10 @@ import type {
   TargetDictionaryValueRecord,
   TargetRepository,
   TargetContentTemplateRepository,
+  ExportControlRepository,
 } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
+import { summarizeExportControlPreflight } from "./export-control-summary.js";
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -287,9 +289,13 @@ export class WordPressPreviewService {
     private readonly mappings: TargetReferenceMappingService,
     private readonly targetDictionaries?: TargetDictionaryRepository,
     private readonly snapshotReader?: Pick<WordPressProductSnapshotReader, "read">,
+    private readonly exportControl?: ExportControlRepository,
   ) {}
 
   async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = []) {
+    const configurationRevision = this.exportControl === undefined
+      ? null
+      : await this.mappings.getTargetMappingRevision(targetId);
     const sourceProduct = await this.repositories.sourceProducts.getById(sourceProductId);
     if (sourceProduct === null) throw new EntityNotFoundError("Source product", sourceProductId);
     const source = await this.repositories.sources.getById(sourceProduct.sourceId);
@@ -354,6 +360,14 @@ export class WordPressPreviewService {
       };
     }
     const targetProduct = await this.repositories.targets.findTargetProduct(target.id, internal.id);
+    const finish = async <Result>(result: Result): Promise<Result> => {
+      if (this.exportControl !== undefined && configurationRevision !== null) {
+        await this.exportControl.savePreflight(summarizeExportControlPreflight({
+          target, source, sourceProduct, internal, configurationRevision, preview: result,
+        }));
+      }
+      return result;
+    };
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {
       id: sourceProduct.id, sourceId: sourceProduct.sourceId, sourceKey: sourceProduct.sourceKey,
@@ -377,7 +391,7 @@ export class WordPressPreviewService {
       draft = await exporter.previewPayload(context);
     } catch (error) {
       if (!(error instanceof IntegrationContractError)) throw error;
-      return {
+      return finish({
         target: targetSummary,
         externalId: snapshot?.externalId ?? targetProduct?.externalId ?? null,
         willCreate: lookupFound === false || (snapshot === null && targetProduct === null),
@@ -392,7 +406,7 @@ export class WordPressPreviewService {
         comparison: null,
         payload: null,
         diff: null,
-      };
+      });
     }
     const payload = draft.payload;
     const product = record(payload.product);
@@ -465,7 +479,7 @@ export class WordPressPreviewService {
       actual: row.before.map((term) => term.termId),
     }));
     const ready = preflight !== null;
-    return {
+    return finish({
       target: targetSummary,
       externalId: preflight?.externalId ?? snapshot?.externalId ?? targetProduct?.externalId ?? null,
       willCreate: preflight?.willCreate ?? (lookupFound === false || (snapshot === null && targetProduct === null)),
@@ -517,6 +531,6 @@ export class WordPressPreviewService {
         variationDifferences: variationResult.differences,
         deactivatedVariations: variationResult.deactivated,
       },
-    };
+    });
   }
 }

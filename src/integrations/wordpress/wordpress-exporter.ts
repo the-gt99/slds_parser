@@ -655,6 +655,17 @@ export class WordPressExporter {
   async export(context: ExportContext): Promise<ExportResult> {
     const payload = await this.buildPayload(context);
     const expectedPayloadHash = text(payload.payload_hash);
+    if (context.approval !== undefined) {
+      if (expectedPayloadHash !== context.approval.payloadHash) {
+        throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
+      }
+      const current = await this.preflightPayload(payload);
+      if (current.willCreate !== context.approval.willCreate
+        || current.externalId !== context.approval.externalId
+        || current.matchedBy !== context.approval.matchedBy) {
+        throw new IntegrationContractError("Состояние товара WordPress изменилось после подтверждённого preflight");
+      }
+    }
     const created = await this.request("upsert-jobs", { method: "POST", body: JSON.stringify({ payload }) });
     const initialJob = normalizeJob(created.job);
     const jobId = positiveInteger(initialJob.job_id, "WordPress job_id");

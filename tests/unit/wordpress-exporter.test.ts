@@ -311,6 +311,41 @@ describe("WordPressExporter", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=job&id=9");
   });
 
+  it("blocks an approved export before WordPress when the payload changed", async () => {
+    const fetchMock = vi.fn();
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+    const input: ExportContext = {
+      ...context(),
+      approval: { payloadHash: "0".repeat(64), willCreate: false, externalId: "321", matchedBy: "source_identity" },
+    };
+
+    await expect(exporter.export(input)).rejects.toThrow("payload изменился");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rechecks WordPress identity immediately before an approved write", async () => {
+    const base = context();
+    const payload = await buildWordPressUpsertPayload(base);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      operation: "product_upsert_lookup",
+      product_id: 322,
+      target_id: 322,
+      matched_by: "source_identity",
+      payload_hash: payload.payload_hash,
+      variation_plan: [],
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+    const input: ExportContext = {
+      ...base,
+      approval: { payloadHash: String(payload.payload_hash), willCreate: false, externalId: "321", matchedBy: "source_identity" },
+    };
+
+    await expect(exporter.export(input)).rejects.toThrow("Состояние товара WordPress изменилось");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
+  });
+
   it("preflights an upsert payload without creating a job", async () => {
     const input = context();
     const payload = await buildWordPressUpsertPayload(input);

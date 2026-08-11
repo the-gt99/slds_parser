@@ -15,6 +15,23 @@ async function setup(version = "1", implementation = vi.fn().mockResolvedValue({
 describe("ExportRunner", () => {
   it("selects exporter and saves success", async () => { const value = await setup(); await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false }); expect(value.implementation).toHaveBeenCalledOnce(); expect([...value.store.targetProducts.values()][0]).toMatchObject({ externalId: "ext-1", status: "synced", lastExportedHash: "content" }); });
   it("skips the same fingerprint", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); await value.runner.exportProduct(payload); expect(value.implementation).toHaveBeenCalledOnce(); });
+  it("does not skip a manually approved export when the local fingerprint is unchanged", async () => {
+    const value = await setup();
+    await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false });
+    await value.runner.exportProduct({
+      internalProductId: value.internal.id,
+      targetId: "10",
+      force: false,
+      approval: {
+        preflightReviewId: "15",
+        payloadHash: "a".repeat(64),
+        willCreate: false,
+        externalId: "ext-1",
+        matchedBy: "source_identity",
+      },
+    });
+    expect(value.implementation).toHaveBeenCalledTimes(2);
+  });
   it("exports after exporter version or mapping revision changes", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); value.store.mappingRevision = "revision-2"; await value.runner.exportProduct(payload); expect(value.implementation).toHaveBeenCalledTimes(2); const changedVersion = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "updated", metadata: {} }); const registry = new TargetExporterRegistry(); registry.register({ targetCode: "fake-exporter", version: "2", export: changedVersion }); const runner = new ExportRunner(value.repositories, registry, new TargetReferenceMappingService(value.repositories.references)); await runner.exportProduct(payload); expect(changedVersion).toHaveBeenCalledOnce(); });
   it("exports again after an active content template changes without processing the product", async () => {
     const value = await setup();

@@ -23,6 +23,7 @@ export {
   PostgresJobRepository,
   PostgresProductOperationHistoryRepository,
   PostgresProductAdminRepository,
+  PostgresExportControlRepository,
   PostgresReferenceRepository,
   PostgresSourceProductRepository,
   PostgresSourceRepository,

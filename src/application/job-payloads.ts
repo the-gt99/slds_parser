@@ -23,6 +23,19 @@ export interface ExportProductPayload {
   readonly internalProductId: string;
   readonly targetId: string;
   readonly force: boolean;
+  readonly batchItemId?: string;
+  readonly approval?: {
+    readonly preflightReviewId: string;
+    readonly payloadHash: string;
+    readonly willCreate: boolean;
+    readonly externalId: string | null;
+    readonly matchedBy: string | null;
+  };
+}
+
+export interface PreflightProductPayload {
+  readonly sourceProductId: string;
+  readonly targetId: string;
 }
 
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
@@ -63,8 +76,38 @@ export function parseProcessProductPayload(value: JsonValue): ProcessProductPayl
 }
 
 export function parseExportProductPayload(value: JsonValue): ExportProductPayload {
-  if (isObject(value) && typeof value.internalProductId === "string" && typeof value.targetId === "string" && typeof value.force === "boolean") {
-    return { internalProductId: value.internalProductId, targetId: value.targetId, force: value.force };
+  if (isObject(value) && typeof value.internalProductId === "string" && typeof value.targetId === "string" && typeof value.force === "boolean"
+    && (value.batchItemId === undefined || typeof value.batchItemId === "string")) {
+    let approval: ExportProductPayload["approval"];
+    if (value.approval !== undefined) {
+      if (!isObject(value.approval) || typeof value.approval.preflightReviewId !== "string"
+        || typeof value.approval.payloadHash !== "string" || typeof value.approval.willCreate !== "boolean"
+        || (value.approval.externalId !== null && typeof value.approval.externalId !== "string")
+        || (value.approval.matchedBy !== null && typeof value.approval.matchedBy !== "string")) {
+        throw new InvalidJobPayloadError("export_product");
+      }
+      approval = {
+        preflightReviewId: value.approval.preflightReviewId,
+        payloadHash: value.approval.payloadHash,
+        willCreate: value.approval.willCreate,
+        externalId: value.approval.externalId,
+        matchedBy: value.approval.matchedBy,
+      };
+    }
+    return {
+      internalProductId: value.internalProductId,
+      targetId: value.targetId,
+      force: value.force,
+      ...(value.batchItemId === undefined ? {} : { batchItemId: value.batchItemId }),
+      ...(approval === undefined ? {} : { approval }),
+    };
   }
   throw new InvalidJobPayloadError("export_product");
+}
+
+export function parsePreflightProductPayload(value: JsonValue): PreflightProductPayload {
+  if (isObject(value) && typeof value.sourceProductId === "string" && typeof value.targetId === "string") {
+    return { sourceProductId: value.sourceProductId, targetId: value.targetId };
+  }
+  throw new InvalidJobPayloadError("preflight_product");
 }

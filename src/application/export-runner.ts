@@ -38,7 +38,7 @@ export class ExportRunner {
     const mappingRevision = await this.mappings.getTargetMappingRevision(target.id);
     const fingerprint = hashStableJson({ contentHash: internal.contentHash, exporterVersion: exporter.version, targetConfig: target.config, mappingRevision,
       contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })) });
-    if (!payload.force && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
+    if (!payload.force && payload.approval === undefined && existing?.lastExportFingerprint === fingerprint) return { status: "skipped" };
     const attemptedAt = new Date().toISOString();
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {
@@ -59,6 +59,12 @@ export class ExportRunner {
           resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
         },
         contentTemplates: contentTemplates.map((template) => ({ id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource })),
+        ...(payload.approval === undefined ? {} : { approval: {
+          payloadHash: payload.approval.payloadHash,
+          willCreate: payload.approval.willCreate,
+          externalId: payload.approval.externalId,
+          matchedBy: payload.approval.matchedBy,
+        } }),
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }) });
       await this.repositories.targets.saveExportSuccess({ targetId: target.id, internalProductId: internal.id, externalId: result.externalId,
         status: "synced", exportedHash: internal.contentHash, exportFingerprint: fingerprint, attemptedAt, syncedAt: new Date().toISOString() });

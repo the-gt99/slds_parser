@@ -18,5 +18,26 @@ describe("JobDispatcher", () => {
     const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher(collection as never, processing as never, exports as never, repositories.sourceRuns);
     await dispatcher.dispatch(job(type, payload)); const owner = method === "processProduct" ? processing : method === "exportProduct" ? exports : collection; expect(owner[method as keyof typeof owner]).toHaveBeenCalledOnce();
   });
+  it("routes preflight jobs and records their terminal error", async () => {
+    const collection = {};
+    const processing = {};
+    const exports = {};
+    const preflights = { preflightProduct: vi.fn().mockResolvedValue({ status: "completed" }) };
+    const exportControl = { savePreflightError: vi.fn().mockResolvedValue(undefined) };
+    const repositories = createMemoryRepositories(new MemoryStore());
+    const dispatcher = new JobDispatcher(collection as never, processing as never, exports as never,
+      repositories.sourceRuns, preflights as never, exportControl as never);
+    const value = job("preflight_product", { sourceProductId: "1", targetId: "2" });
+
+    await dispatcher.dispatch(value);
+    await dispatcher.handleTerminalFailure(value, new Error("lookup failed"));
+
+    expect(preflights.preflightProduct).toHaveBeenCalledWith({ sourceProductId: "1", targetId: "2" });
+    expect(exportControl.savePreflightError).toHaveBeenCalledWith({
+      sourceProductId: "1",
+      targetId: "2",
+      error: "lookup failed",
+    });
+  });
   it("rejects an invalid payload", async () => { const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns); await expect(dispatcher.dispatch(job("process_product", { sourceProductId: 1, force: false }))).rejects.toBeInstanceOf(InvalidJobPayloadError); });
 });

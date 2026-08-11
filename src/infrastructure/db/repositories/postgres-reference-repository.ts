@@ -108,43 +108,9 @@ export class PostgresReferenceRepository implements ReferenceRepository {
 
   async getTargetMappingRevision(targetId: EntityId): Promise<string> {
     const result = await this.executor.query<DatabaseRow>(
-      `SELECT MD5(JSONB_BUILD_OBJECT(
-         'mappings', COALESCE((
-           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(mapping.id, mapping.reference_value_id, mapping.target_scope,
-             mapping.external_value, mapping.external_label, mapping.metadata, mapping.revision, mapping.updated_at) ORDER BY mapping.id)
-           FROM target_value_mappings mapping
-           WHERE mapping.target_id = $1 AND mapping.active = TRUE
-         ), '[]'::JSONB),
-         'projections', COALESCE((
-           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(projection.id, projection.mapping_id, projection.rule_id,
-             projection.target_scope, projection.dictionary_value_id, projection.metadata,
-             projection.revision, projection.updated_at, dictionary.external_id, dictionary.updated_at) ORDER BY projection.id)
-           FROM target_classification_projections projection
-           JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
-           WHERE projection.target_id = $1 AND projection.active = TRUE AND dictionary.active = TRUE
-         ), '[]'::JSONB),
-         'referenceProjections', COALESCE((
-           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(projection.id, projection.reference_value_id,
-             projection.target_scope, projection.dictionary_value_id, projection.metadata,
-             projection.revision, projection.updated_at, dictionary.external_id, dictionary.updated_at) ORDER BY projection.id)
-           FROM target_reference_projections projection
-           JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id
-           WHERE projection.target_id = $1 AND projection.active = TRUE AND dictionary.active = TRUE
-         ), '[]'::JSONB),
-         'assignmentRules', COALESCE((
-           SELECT JSONB_AGG(JSONB_BUILD_ARRAY(rule.id, rule.group_code, rule.priority,
-             rule.conditions, rule.revision, rule.updated_at, actions.items) ORDER BY rule.id)
-           FROM target_assignment_rules rule
-           JOIN LATERAL (
-             SELECT JSONB_AGG(JSONB_BUILD_ARRAY(action.target_scope, action.dictionary_value_id,
-               action.mode, dictionary.external_id, dictionary.updated_at) ORDER BY action.id) AS items
-             FROM target_assignment_rule_actions action
-             JOIN target_dictionary_values dictionary ON dictionary.id = action.dictionary_value_id
-             WHERE action.rule_id = rule.id AND dictionary.active = TRUE
-           ) actions ON TRUE
-           WHERE rule.target_id = $1 AND rule.enabled = TRUE
-         ), '[]'::JSONB)
-       )::TEXT) AS revision`,
+      `SELECT revision::TEXT AS revision
+       FROM target_export_revisions
+       WHERE target_id = $1`,
       [targetId],
     );
     return String(result.rows[0]?.revision ?? "");

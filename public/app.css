@@ -40,6 +40,61 @@ h3 { font-size: 17px; line-height: 1.3; }
 .admin-nav a { padding: 8px 11px; border-radius: 8px; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .admin-nav a:hover { background: var(--surface-soft); color: var(--text); }
 .admin-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+.export-control-page { width: min(1460px, calc(100% - 40px)); margin: 24px auto 60px; display: grid; gap: 18px; }
+.export-control-hero { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(135deg, var(--surface), var(--accent-soft)); }
+.export-control-hero h2 { margin: 3px 0 8px; }
+.export-control-hero-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.compact-field { min-width: 170px; }
+.export-control-filters form { display: grid; grid-template-columns: minmax(210px, 1.5fr) repeat(4, minmax(145px, 1fr)) auto; gap: 12px; align-items: end; }
+.export-selection-panel { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 20px; }
+.export-selection-panel p { margin: 4px 0 0; }
+.export-control-grid { display: grid; gap: 12px; }
+.export-card { display: grid; grid-template-columns: auto 124px minmax(0, 1fr); gap: 16px; padding: 18px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 24px rgba(28, 36, 48, .045); }
+.export-card.risk-danger { border-left-color: #d65b5b; }
+.export-card.risk-review { border-left-color: #d89a35; }
+.export-card.risk-none { border-left-color: #4c9a7d; }
+.export-card > input[type="checkbox"] { margin-top: 6px; width: 18px; height: 18px; }
+.export-card-media { width: 124px; height: 104px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: var(--surface-soft); }
+.export-card-media img { width: 100%; height: 100%; object-fit: contain; }
+.export-card-main { min-width: 0; display: grid; gap: 10px; }
+.export-card-heading { display: flex; justify-content: space-between; gap: 16px; }
+.export-card-title { color: var(--text); font-size: 18px; line-height: 1.3; font-weight: 750; text-decoration: none; }
+.export-card-title:hover { color: var(--accent); }
+.export-card-heading p { margin: 5px 0 0; }
+.export-card-statuses, .export-change-chips { display: flex; align-items: flex-start; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.export-badge { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 9px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.export-badge.safe, .export-badge.add { background: #e7f5ef; color: #197555; }
+.export-badge.review, .export-badge.change { background: #fff2dc; color: #996116; }
+.export-badge.danger { background: #fde9e9; color: #b03434; }
+.export-identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.danger-text { color: #b03434; }
+.export-change-details { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.export-change-details p { margin: 0; overflow-wrap: anywhere; }
+.export-blockers { margin: 0; padding-left: 20px; color: #a13b3b; }
+.export-card-footer { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.export-load-more { display: flex; justify-content: center; }
+.export-batches-section { margin-top: 8px; }
+.export-batches { display: grid; gap: 8px; }
+.export-batch-row { display: grid; grid-template-columns: 130px minmax(180px, 1fr) 110px minmax(280px, 1.5fr); gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+.export-dialog { width: min(620px, calc(100vw - 32px)); }
+.export-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 18px; }
+.export-preview-summary p { margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-soft); }
+
+@media (max-width: 1050px) {
+  .export-control-filters form { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
+  .export-control-hero, .export-selection-panel { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 700px) {
+  .export-control-page { width: min(100% - 20px, 1460px); }
+  .export-control-filters form { grid-template-columns: 1fr; }
+  .export-card { grid-template-columns: auto 88px minmax(0, 1fr); padding: 12px; gap: 10px; }
+  .export-card-media { width: 88px; height: 82px; }
+  .export-card-heading, .export-card-footer { flex-direction: column; align-items: stretch; }
+  .export-card-statuses, .export-change-chips { justify-content: flex-start; }
+  .export-batch-row, .export-preview-summary { grid-template-columns: 1fr; }
+}
 .admin-page { width: min(100% - 32px, 1500px); margin: 24px auto 50px; }
 .admin-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(130px, 1fr)) auto; gap: 10px; align-items: end; margin-bottom: 16px; }
 .admin-table-section { padding: 0; overflow: hidden; }

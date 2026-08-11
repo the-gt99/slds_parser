@@ -309,6 +309,12 @@ export interface ExportContext {
   readonly references: TargetReferenceResolver;
   readonly contentTemplates?: readonly TargetContentTemplateDTO[];
   readonly existingExternalId?: string;
+  readonly approval?: {
+    readonly payloadHash: string;
+    readonly willCreate: boolean;
+    readonly externalId: string | null;
+    readonly matchedBy: string | null;
+  };
 }
 
 export type ExportOperation = "created" | "updated" | "skipped";

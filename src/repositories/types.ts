@@ -16,6 +16,7 @@ export type JobType =
   | "discover_source"
   | "collect_product"
   | "process_product"
+  | "preflight_product"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";
 
@@ -735,6 +736,139 @@ export interface ClassificationReviewExample {
     readonly externalId: string;
     readonly snapshot: JsonObject;
   }[];
+}
+
+export type ExportControlStatus = "checking" | "ready" | "blocked" | "error" | "stale";
+export type ExportControlRiskLevel = "none" | "review" | "danger";
+export type ExportControlOperation = "create" | "update";
+
+export interface ExportControlCursor {
+  readonly checkedAt: Timestamp;
+  readonly id: EntityId;
+}
+
+export interface ExportControlFilter {
+  readonly status?: ExportControlStatus;
+  readonly operation?: ExportControlOperation;
+  readonly riskLevel?: ExportControlRiskLevel;
+  readonly changeFlag?: string;
+  readonly search?: string;
+}
+
+export interface ExportControlListQuery extends ExportControlFilter {
+  readonly targetId: EntityId;
+  readonly limit: number;
+  readonly cursor?: ExportControlCursor;
+}
+
+export interface ExportControlListItem {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly targetName: string;
+  readonly targetEnabled: boolean;
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceExternalId: string | null;
+  readonly title: string;
+  readonly imageUrl: string | null;
+  readonly status: ExportControlStatus;
+  readonly phase: string;
+  readonly payloadHash: string | null;
+  readonly externalId: string | null;
+  readonly willCreate: boolean | null;
+  readonly matchedBy: string | null;
+  readonly riskLevel: ExportControlRiskLevel;
+  readonly changeFlags: readonly string[];
+  readonly fieldChangeCount: number;
+  readonly taxonomyAddedCount: number;
+  readonly taxonomyRemovedCount: number;
+  readonly imageChangeCount: number;
+  readonly variationChangeCount: number;
+  readonly deactivatedVariationCount: number;
+  readonly blockers: JsonValue;
+  readonly changeSummary: JsonObject;
+  readonly error: string | null;
+  readonly checkedAt: Timestamp;
+  readonly lastExportJob: {
+    readonly id: EntityId;
+    readonly status: JobStatus;
+    readonly createdAt: Timestamp;
+    readonly finishedAt: Timestamp | null;
+    readonly lastError: string | null;
+  } | null;
+  readonly targetProductStatus: string | null;
+  readonly targetProductExternalId: string | null;
+}
+
+export interface ExportControlListResult {
+  readonly items: readonly ExportControlListItem[];
+  readonly nextCursor: ExportControlCursor | null;
+}
+
+export interface SaveExportControlPreflightInput {
+  readonly targetId: EntityId;
+  readonly internalProductId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceExternalId: string | null;
+  readonly title: string;
+  readonly imageUrl: string | null;
+  readonly status: Exclude<ExportControlStatus, "checking" | "stale">;
+  readonly phase: string;
+  readonly internalContentHash: string;
+  readonly configurationRevision: string;
+  readonly payloadHash: string | null;
+  readonly externalId: string | null;
+  readonly willCreate: boolean | null;
+  readonly matchedBy: string | null;
+  readonly riskLevel: ExportControlRiskLevel;
+  readonly changeFlags: readonly string[];
+  readonly fieldChangeCount: number;
+  readonly taxonomyAddedCount: number;
+  readonly taxonomyRemovedCount: number;
+  readonly imageChangeCount: number;
+  readonly variationChangeCount: number;
+  readonly deactivatedVariationCount: number;
+  readonly blockers: JsonValue;
+  readonly changeSummary: JsonObject;
+  readonly error?: string | null;
+}
+
+export interface ExportControlPreflightCandidate {
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId;
+}
+
+export interface ExportControlExportCandidate {
+  readonly reviewId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId;
+  readonly payloadHash: string;
+  readonly willCreate: boolean;
+  readonly externalId: string | null;
+  readonly matchedBy: string | null;
+  readonly riskLevel: ExportControlRiskLevel;
+  readonly changeFlags: readonly string[];
+}
+
+export interface ExportControlBatchRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly actor: string;
+  readonly reason: string | null;
+  readonly createdAt: Timestamp;
+  readonly itemCount: number;
+  readonly pendingCount: number;
+  readonly runningCount: number;
+  readonly completedCount: number;
+  readonly failedCount: number;
+}
+
+export interface ExportControlBatchItemRecord {
+  readonly id: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId;
 }
 
 export interface ClassificationReviewExamplesQuery {

@@ -9,6 +9,7 @@ import {
   createPostgresPool,
   createPostgresRepositories,
   PostgresClassificationAdminRepository,
+  PostgresExportControlRepository,
   PostgresGoatProxyRepository,
   PostgresProductAdminRepository,
   PostgresTargetDictionaryRepository,
@@ -17,7 +18,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ClassifierAdminService, ContentTemplateAdminService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetAssignmentAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetAssignmentAdminService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -88,9 +89,13 @@ async function main(): Promise<void> {
       new ProductClassifier(repositories.classifications),
     );
     const targetMappings = new TargetReferenceMappingService(repositories.references);
+    const exportControlRepository = new PostgresExportControlRepository(pool);
     const wordpressPreview = wordpress === null
       ? undefined
-      : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository, new WordPressProductSnapshotReader(wordpress));
+      : new WordPressPreviewService(repositories, exporters, targetMappings, targetDictionaryRepository, new WordPressProductSnapshotReader(wordpress), exportControlRepository);
+    const exportControl = wordpressPreview === undefined
+      ? undefined
+      : new ExportControlService(exportControlRepository, repositories.jobs);
     const contentTemplates = wordpressPreview === undefined
       ? undefined
       : new ContentTemplateAdminService(repositories.contentTemplates, repositories.targets, wordpressPreview, new PostgresUnitOfWork(pool));
@@ -98,7 +103,7 @@ async function main(): Promise<void> {
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
     runtime = new RuntimeAdminService(pool, repositories);
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(contentTemplates === undefined ? {} : { contentTemplates }) });
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, productAdmin, runtime, ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

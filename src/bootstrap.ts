@@ -1,13 +1,13 @@
-import { CollectionRunner, ExportRunner, JobDispatcher, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
+import { CollectionRunner, ExportRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressExporter, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
-import { ProductClassifier, TargetReferenceMappingService } from "./services/index.js";
+import { ProductClassifier, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -81,7 +81,19 @@ export function createApplication(environment: ApplicationEnvironment = process.
   );
   const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
   const exportRunner = new ExportRunner(repositories, exporters, targetMappings);
-  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns);
+  const exportControl = new PostgresExportControlRepository(pool);
+  const wordpress = loadWordPressTargetConfig(environment);
+  const preflightRunner = wordpress === null
+    ? undefined
+    : new PreflightRunner(new WordPressPreviewService(
+      repositories,
+      exporters,
+      targetMappings,
+      new PostgresTargetDictionaryRepository(pool),
+      new WordPressProductSnapshotReader(wordpress),
+      exportControl,
+    ));
+  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns, preflightRunner, exportControl);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
@@ -94,5 +106,5 @@ export function createApplication(environment: ApplicationEnvironment = process.
       : async (jobTypes) => jobTypes.length === 1 && jobTypes[0] === "collect_product" ? proxyPool.reserveClaim() : { run: async (callback) => callback(), releaseUnused: async () => {} },
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
-    exportRunner, dispatcher, worker, close: () => pool.end() };
+    exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };
 }

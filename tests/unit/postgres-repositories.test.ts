@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   PostgresClassificationRepository,
   PostgresClassificationAdminRepository,
+  PostgresExportControlRepository,
   PostgresJobRepository,
   PostgresProductAdminRepository,
   PostgresReferenceRepository,
@@ -74,6 +75,58 @@ const contentTemplateRow = {
 };
 
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("freezes a reviewed export batch and its jobs in one transaction", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{ id: "51" }],
+      [{ id: "61", source_product_id: "21", internal_product_id: "31" }],
+      [{ job_id: "71" }],
+      [],
+    ]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await expect(repository.createBatch({
+      targetId: "10",
+      filter: { riskLevel: "danger" },
+      actor: "admin",
+      candidates: [{
+        reviewId: "11",
+        sourceProductId: "21",
+        internalProductId: "31",
+        payloadHash: "a".repeat(64),
+        willCreate: false,
+        externalId: "41",
+        matchedBy: "source_identity",
+        riskLevel: "danger",
+        changeFlags: ["taxonomy_removed:product_tag"],
+      }],
+    })).resolves.toEqual({
+      batchId: "51",
+      items: [{ id: "61", sourceProductId: "21", internalProductId: "31" }],
+      jobIds: ["71"],
+    });
+
+    expect(executor.calls.map((call) => call.text.trim().split(/\s+/u)[0])).toEqual([
+      "BEGIN", "INSERT", "WITH", "WITH", "COMMIT",
+    ]);
+    const jobCall = executor.calls[3]!;
+    expect(jobCall.text).toContain("JSONB_TO_RECORDSET");
+    expect(jobCall.text).toContain("INSERT INTO jobs");
+    expect(jobCall.text).toContain("UPDATE target_export_batch_items");
+    expect(jobCall.text).not.toContain("ON CONFLICT");
+    const queued = JSON.parse(String(jobCall.values[0])) as Array<{ payload: Record<string, unknown> }>;
+    expect(queued[0]?.payload).toMatchObject({
+      internalProductId: "31",
+      targetId: "10",
+      batchItemId: "61",
+      approval: {
+        preflightReviewId: "11",
+        payloadHash: "a".repeat(64),
+        externalId: "41",
+      },
+    });
+  });
+
   it("serializes template revisions and activation inside the caller transaction", async () => {
     const createExecutor = new FakeExecutor([[], [contentTemplateRow]]);
     const repository = new PostgresTargetContentTemplateRepository(createExecutor);
@@ -164,11 +217,13 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("mapping.context_key = requested.context_key");
   });
 
-  it("builds mapping revision from sorted mapping contents", async () => {
-    const executor = new FakeExecutor([[{ revision: "abc" }]]);
-    await expect(new PostgresReferenceRepository(executor).getTargetMappingRevision("7")).resolves.toBe("abc");
+  it("reads the monotonic target revision without aggregating mapping tables", async () => {
+    const executor = new FakeExecutor([[{ revision: "42" }]]);
+    await expect(new PostgresReferenceRepository(executor).getTargetMappingRevision("7")).resolves.toBe("42");
     const sql = executor.calls[0]?.text ?? "";
-    for (const field of ["external_value", "external_label", "mapping.metadata", "mapping.updated_at", "projection.dictionary_value_id", "ORDER BY mapping.id", "ORDER BY projection.id"]) expect(sql).toContain(field);
+    expect(sql).toContain("target_export_revisions");
+    expect(sql).not.toContain("JSONB_AGG");
+    expect(executor.calls[0]?.values).toEqual(["7"]);
   });
 
   it("resolves classification projections in one batch", async () => {

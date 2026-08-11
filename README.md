@@ -238,6 +238,10 @@ API запускается отдельным процессом после `npm
 - `GET /api/runtime`, `POST /api/runtime/start`, `POST /api/runtime/stop` — состояние и управление единственным production worker `slds-parser-worker.service`;
 - `GET /api/wordpress-snapshots` — поиск и пагинация сохранённых снимков WordPress;
 - `GET /api/products/:productId/wordpress-preview?targetId=...` — сборка общего payload экспортера и реальный read-only WordPress preflight;
+- `GET /api/export-control` — курсорный список сохранённых результатов preflight без live-запросов в WordPress и без полного подсчёта строк;
+- `POST /api/export-control/preflights` — поставить выбранные либо следующие устаревшие товары в отдельную ограниченную очередь проверки;
+- `POST /api/export-control/export/preview` и `POST /api/export-control/export` — проверить состав и атомарно поставить подтверждённую партию на ручной экспорт;
+- `GET /api/export-control/batches` — последние партии и их текущие job-результаты;
 - `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
 - `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
 - `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.
@@ -258,6 +262,10 @@ WordPress-адаптер включается только когда однов
 ```
 
 Числа в примере являются форматом, а не готовой production-настройкой. Term ID необходимо брать из актуального target-справочника. Отсутствующее или неоднозначное соответствие останавливает export до HTTP-запроса. Exporter заменяет только те taxonomy-типы, которые реально присутствуют среди кандидатов товара; отсутствующий source-тип не очищает ручные значения WordPress. GOAT availability передаётся без `quantity`, если источник не сообщил точный остаток. Недоступный вариант без цены передаёт явный `price=null` и очищает прежнюю стоимость; доступный вариант без цены не экспортируется.
+
+Отдельный интерфейс `/export-control` показывает только сохранённый компактный read model: создание или обновление WordPress, поля и taxonomy с изменениями, добавление и снятие меток, изображения, вариации, блокировки и последний export job. Открытие страницы не собирает payload заново и не обращается к WordPress. Preflight выполняется через отдельный worker lane по одному товару; список использует keyset pagination и индексы вместо `OFFSET` и `COUNT(*)`. Изменение обработанного товара или target-конфигурации делает результат устаревшим.
+
+Ручной экспорт принимает только свежие готовые результаты. При подтверждении payload hash и ожидаемая WordPress identity замораживаются вместе с batch items и export jobs в одной транзакции. Перед фактической записью exporter повторно строит payload и делает свежий WordPress lookup; изменение payload, найденного товара или способа совпадения останавливает запись. После любой попытки экспорта сохранённый preflight помечается устаревшим, чтобы прежний diff нельзя было повторно принять за актуальный.
 
 Размер источника не перезаписывается при processing. Если точного `sizeMappings` для него нет, WordPress exporter перед export или read-only preview получает преобразование в US из брендовой таблицы сайта по уже разрешённым `pa_brand`, `product_cat` и `audience`, после чего применяет точный US mapping. Поддерживаются таблицы EU, UK, JP, RU и CM; подтверждённые обувные обозначения IT и FR используют колонку EU. Для нескольких категорий обуви target может явно задать `sizeConversionCategoryTermIds`; без этого используются категории из `titlePrefixByCategoryTermId`. Отсутствующая строка таблицы, неоднозначная колонка, конфликт преобразований или совпадение двух source-вариантов в один target-размер блокируют payload. Ближайший размер не подбирается.
 

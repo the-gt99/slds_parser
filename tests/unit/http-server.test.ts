@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ContentTemplateAdminService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -463,6 +463,51 @@ describe("HTTP server", () => {
     expect(classifier.previewTargetProjection).toHaveBeenCalledWith(payload);
     expect(classifier.createTargetProjection).toHaveBeenCalledWith(payload, "admin");
     expect(targetDictionaries.createTermAndDecide).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("serves export control and protects its queued actions with CSRF", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const exportControl = {
+      list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      enqueuePreflights: vi.fn().mockResolvedValue({ queuedCount: 1, sourceProductIds: ["3"], jobIds: ["20"] }),
+      previewExport: vi.fn().mockResolvedValue({ eligibleCount: 1, creates: 0, updates: 1, risks: { none: 1, review: 0, danger: 0 }, truncated: false }),
+      applyExport: vi.fn().mockResolvedValue({ batchId: "7", queuedCount: 1, jobIds: ["21"] }),
+      listBatches: vi.fn().mockResolvedValue([]),
+    } as unknown as ExportControlService;
+    const server = createHttpServer({ ...dependencies(database), exportControl });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const mutationHeaders = { cookie, "x-csrf-token": login.json().csrfToken };
+
+    const page = await server.inject({ method: "GET", url: "/export-control" });
+    const unauthorized = await server.inject({ method: "GET", url: "/api/export-control?targetId=10" });
+    const list = await server.inject({ method: "GET", url: "/api/export-control?targetId=10&status=ready&risk=danger&change=taxonomy_removed%3Aproduct_tag&limit=50", headers: { cookie } });
+    const forbidden = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: { cookie }, payload: { targetId: "10", sourceProductIds: ["3"] } });
+    const queued = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: mutationHeaders, payload: { targetId: "10", sourceProductIds: ["3"] } });
+    const preview = await server.inject({ method: "POST", url: "/api/export-control/export/preview", headers: mutationHeaders, payload: { targetId: "10", filter: { status: "ready", risk: "danger" } } });
+    const applied = await server.inject({ method: "POST", url: "/api/export-control/export", headers: mutationHeaders, payload: { targetId: "10", sourceProductIds: ["3"], reason: "smoke" } });
+
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("Проверка и управляемая выгрузка");
+    expect(unauthorized.statusCode).toBe(401);
+    expect(list.statusCode).toBe(200);
+    expect(forbidden.statusCode).toBe(403);
+    expect(queued.statusCode).toBe(200);
+    expect(preview.statusCode).toBe(200);
+    expect(applied.statusCode).toBe(200);
+    expect(exportControl.list).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      status: "ready",
+      riskLevel: "danger",
+      changeFlag: "taxonomy_removed:product_tag",
+      limit: 50,
+    }));
+    expect(exportControl.applyExport).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      sourceProductIds: ["3"],
+      reason: "smoke",
+    }), "admin");
     await server.close();
   });
 

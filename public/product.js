@@ -32,6 +32,7 @@ const jobNames = {
   collect_product: "Сбор данных",
   process_product: "Обработка товара",
   export_product: "Выгрузка на target",
+  preflight_product: "Проверка WordPress без записи",
   discover_source: "Получение каталога",
 };
 

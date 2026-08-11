@@ -477,6 +477,7 @@ function queueLabel(jobType) {
     collect_product: "Сбор товаров",
     process_product: "Обработка",
     export_product: "Экспорт",
+    preflight_product: "Preflight WordPress",
   })[jobType] || jobType;
 }
 
@@ -1389,7 +1390,7 @@ function configure() {
   if (mode === "operations" || mode === "runtime") byId("filters").hidden = true;
   if (mode === "jobs") {
     byId("source-filter").querySelector("span").textContent = "Job type";
-    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Экспорт", "export_product"));
+    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Preflight WordPress", "preflight_product"), new Option("Экспорт", "export_product"));
     byId("stage-filter").querySelector("span").textContent = "Статус";
     byId("stage").replaceChildren(new Option("Все", ""), new Option("В очереди", "pending"), new Option("Выполняется", "running"), new Option("Повтор", "retry"), new Option("Ошибка", "failed"), new Option("Выполнено", "completed"));
     byId("classification-filter").hidden = true;
