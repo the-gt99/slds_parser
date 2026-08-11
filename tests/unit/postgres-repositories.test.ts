@@ -108,7 +108,18 @@ describe("PostgreSQL repository mapping and SQL", () => {
     });
 
     const saveCall = executor.calls[2]!;
-    expect(saveCall.text).toContain("CONCAT_WS(' ', $3::BIGINT::TEXT, $5, $6)");
+    expect(saveCall.text).toContain("CONCAT_WS(' ', $3::BIGINT::TEXT, $5::TEXT, $6::TEXT)");
+  });
+
+  it("types a numeric export-control search once as bigint", async () => {
+    const executor = new FakeExecutor([[]]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await repository.list({ targetId: "10", search: "7058", limit: 50 });
+
+    const listCall = executor.calls[0]!;
+    expect(listCall.text).toContain("review.source_product_id = $2::BIGINT");
+    expect(listCall.text).toContain("review.source_external_id = $2::BIGINT::TEXT");
   });
 
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {

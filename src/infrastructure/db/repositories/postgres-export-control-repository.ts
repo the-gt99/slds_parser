@@ -68,7 +68,7 @@ function filterSql(
     const search = filter.search.trim();
     if (/^\d+$/u.test(search)) {
       const value = add(search);
-      where.push(`(review.source_product_id = ${value}::BIGINT OR review.source_external_id = ${value})`);
+      where.push(`(review.source_product_id = ${value}::BIGINT OR review.source_external_id = ${value}::BIGINT::TEXT)`);
     } else {
       where.push(`review.search_text ILIKE ${add(`%${search}%`)}`);
     }
@@ -303,7 +303,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          variation_change_count, deactivated_variation_count, blockers,
          change_summary, error, checked_at, updated_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, CONCAT_WS(' ', $3::BIGINT::TEXT, $5, $6), $8, $9,
+         $1, $2, $3, $4, $5, $6, $7,
+         CONCAT_WS(' ', $3::BIGINT::TEXT, $5::TEXT, $6::TEXT), $8, $9,
          $10, $11::BIGINT, $12, $13, $14, $15, $16, $17::TEXT[], $18, $19,
          $20, $21, $22, $23, $24::JSONB, $25::JSONB, $26, NOW(), NOW()
        )
