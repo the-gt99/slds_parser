@@ -424,6 +424,49 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["1", "category", "unresolved", "sneakers", "{}", "context-women"]);
   });
 
+  it("finds exact target matches in one indexed paginated query", async () => {
+    const executor = new FakeExecutor([[{
+      total: 1,
+      ready_count: 1,
+      ready_product_count: 8,
+      duplicate_count: 0,
+      conflict_count: 0,
+      items: [{
+        reviewGroupId: "77", sourceId: "1", sourceCode: "goat", sourceName: "GOAT",
+        typeCode: "brand", typeName: "Бренд", scope: "product.brand",
+        normalizedSourceValue: "sporty & rich", contextKey: "{}", sourceValue: "Sporty & Rich",
+        productCount: 8, observationCount: 8, targetScope: "product.brand", matchStatus: "ready",
+        issueReason: null,
+        targets: [{ dictionaryValueId: "88", externalId: "4262", name: "Sporty & Rich", slug: "sporty-amp-rich", taxonomy: "pa_brand" }],
+      }],
+    }]]);
+
+    const result = await new PostgresClassificationAdminRepository(pool(executor)).listExactMatches({
+      targetId: "10",
+      capabilities: [{ typeCode: "brand", entityType: "brands", targetScope: "product.brand" }],
+      sourceId: "1",
+      status: "ready",
+      search: "Sporty",
+      limit: 50,
+      offset: 0,
+      currentProcessorVersions: { "1": "2.9.0" },
+    });
+
+    expect(result).toMatchObject({ total: 1, summary: { readyCount: 1, readyProductCount: 8 } });
+    expect(result.items[0]).toMatchObject({
+      reviewGroupId: "77",
+      matchStatus: "ready",
+      targets: [{ dictionaryValueId: "88", externalId: "4262" }],
+    });
+    const call = executor.calls[0]!;
+    expect(call.text).toContain("FROM dictionary_candidates dictionary");
+    expect(call.text).toContain("JOIN classification_review_groups review");
+    expect(call.text).toContain("LOWER(NORMALIZE(BTRIM(dictionary.name), NFKC)) AS normalized_target_name");
+    expect(call.text).toContain("review.normalized_source_value = dictionary.normalized_target_name");
+    expect(call.text).toContain("LIMIT $9 OFFSET $10");
+    expect(call.values).toHaveLength(10);
+  });
+
   it("uses indexed substring search and indexed prefixes for short values", async () => {
     const substringExecutor = new FakeExecutor([[]]);
     await new PostgresClassificationAdminRepository(pool(substringExecutor)).listReviewQueue({

@@ -31,6 +31,13 @@ const state = {
   pendingQueueSelection: null,
   selectedExamplesRequest: 0,
   classificationView: "queue",
+  exactMatches: [],
+  exactTotal: 0,
+  exactOffset: 0,
+  exactSummary: { readyCount: 0, readyProductCount: 0, duplicateCount: 0, conflictCount: 0 },
+  exactSelected: new Set(),
+  exactTarget: null,
+  exactApplying: false,
   configMeta: { sources: [], types: [] },
   references: [],
   referenceTotal: 0,
@@ -105,8 +112,10 @@ let projectionSearchTimer;
 let catalogSearchTimer;
 let reviewProductsSearchTimer;
 let targetRuleSearchTimer;
+let exactSearchTimer;
 const queuePageSize = 200;
 const reviewProductsPageSize = 50;
+const exactPageSize = 50;
 
 function showToast(message) {
   const toast = byId("toast");
@@ -241,7 +250,7 @@ async function loadDashboard() {
   const requestedView = location.pathname.includes("classifier-config")
     ? (new URLSearchParams(location.search).get("kind") === "rule" ? "rules" : "references")
     : new URLSearchParams(location.search).get("view") || "queue";
-  await switchClassificationView(["queue", "references", "rules", "wordpress"].includes(requestedView) ? requestedView : "queue", false);
+  await switchClassificationView(["queue", "exact", "references", "rules", "wordpress"].includes(requestedView) ? requestedView : "queue", false);
   return targets;
 }
 
@@ -1519,17 +1528,239 @@ function populateCatalogFilters() {
     byId("wordpress-filters")?.classList.toggle("single-target", singleTarget);
     populateWordPressEntities();
   }
+  populateExactFilters();
+}
+
+function populateExactFilters() {
+  const targetSelect = byId("exact-target");
+  if (!targetSelect) return;
+  const currentTarget = targetSelect.value;
+  const targets = state.targets.filter((item) => item.dictionary?.configured);
+  targetSelect.replaceChildren(...targets.map((item) => new Option(item.name, item.id)));
+  if ([...targetSelect.options].some((option) => option.value === currentTarget)) targetSelect.value = currentTarget;
+
+  const sourceSelect = byId("exact-source");
+  const currentSource = sourceSelect.value;
+  sourceSelect.replaceChildren(new Option("Все источники", ""), ...state.configMeta.sources.map((item) => new Option(item.name, item.id)));
+  if ([...sourceSelect.options].some((option) => option.value === currentSource)) sourceSelect.value = currentSource;
+
+  const target = state.targets.find((item) => item.id === targetSelect.value) ?? targets[0];
+  const currentType = byId("exact-type").value;
+  const capabilities = (target?.dictionary?.classificationCapabilities ?? [])
+    .filter((item) => item.typeCode !== "category");
+  const codes = [...new Set(capabilities.map((item) => item.typeCode))];
+  const types = codes.map((code) => state.configMeta.types.find((item) => item.code === code) ?? { code, name: typeName(code) })
+    .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  byId("exact-type").replaceChildren(new Option("Все безопасные типы", ""), ...types.map((item) => new Option(item.name, item.code)));
+  if ([...byId("exact-type").options].some((option) => option.value === currentType)) byId("exact-type").value = currentType;
+}
+
+function exactQuery(offset = 0) {
+  const params = new URLSearchParams({
+    targetId: byId("exact-target").value,
+    status: byId("exact-status").value,
+    limit: String(exactPageSize),
+    offset: String(offset),
+  });
+  const search = byId("exact-search").value.trim();
+  if (search) params.set("search", search);
+  if (byId("exact-source").value) params.set("sourceId", byId("exact-source").value);
+  if (byId("exact-type").value) params.set("typeCode", byId("exact-type").value);
+  return `/api/classifier/exact-matches?${params}`;
+}
+
+async function loadExactMatches(reset = true) {
+  if (!byId("exact-target").value) {
+    byId("exact-list").replaceChildren(emptyText("Нет target с настроенным справочником."));
+    return;
+  }
+  if (reset) {
+    state.exactMatches = [];
+    state.exactOffset = 0;
+    state.exactSelected.clear();
+    byId("exact-list").replaceChildren(loading("Ищем точные совпадения…"));
+  }
+  try {
+    const response = await api(exactQuery(state.exactOffset));
+    const received = response.items ?? [];
+    state.exactMatches.push(...received);
+    state.exactOffset += received.length;
+    state.exactTotal = Number(response.total ?? 0);
+    state.exactSummary = response.summary ?? { readyCount: 0, readyProductCount: 0, duplicateCount: 0, conflictCount: 0 };
+    state.exactTarget = response.target ?? null;
+    for (const item of received) state.typeNames.set(item.typeCode, item.typeName || item.typeCode);
+    renderExactMatches();
+  } catch (error) {
+    byId("exact-list").replaceChildren(emptyText(error.message));
+    updateExactActions();
+  }
+}
+
+function exactStatusLabel(status) {
+  return ({ ready: "Совпадение 1 в 1", duplicate: "Дубликаты target", conflict: "Конфликт решения" })[status] || status;
+}
+
+function exactIssueLabel(reason) {
+  return ({
+    rule_ambiguous: "Несколько правил дали разные решения",
+    target_mapping_ambiguous: "Термин target уже связан с несколькими внутренними значениями",
+    mapping_missing: "Исходное значение ещё не сопоставлено",
+  })[reason] || reason;
+}
+
+function renderExactMatches() {
+  byId("exact-ready-count").textContent = state.exactSummary.readyCount.toLocaleString("ru-RU");
+  byId("exact-ready-products").textContent = `${state.exactSummary.readyProductCount.toLocaleString("ru-RU")} товарных вхождений`;
+  byId("exact-duplicate-count").textContent = state.exactSummary.duplicateCount.toLocaleString("ru-RU");
+  byId("exact-conflict-count").textContent = state.exactSummary.conflictCount.toLocaleString("ru-RU");
+  byId("exact-nav-count").textContent = state.exactSummary.readyCount.toLocaleString("ru-RU");
+  for (const card of document.querySelectorAll("[data-exact-status]")) {
+    card.classList.toggle("active", card.dataset.exactStatus === byId("exact-status").value);
+  }
+
+  const list = byId("exact-list");
+  list.replaceChildren();
+  for (const item of state.exactMatches) {
+    const row = document.createElement("div");
+    row.className = `exact-match-row ${item.matchStatus}`;
+    if (item.matchStatus === "ready") {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = state.exactSelected.has(item.reviewGroupId);
+      checkbox.setAttribute("aria-label", `Выбрать ${item.sourceValue}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) state.exactSelected.add(item.reviewGroupId);
+        else state.exactSelected.delete(item.reviewGroupId);
+        updateExactActions();
+      });
+      row.append(checkbox);
+    } else row.append(document.createElement("span"));
+
+    const source = document.createElement("div");
+    source.className = "exact-match-source";
+    const sourceName = document.createElement("strong");
+    sourceName.textContent = item.sourceValue;
+    const sourceMeta = document.createElement("span");
+    sourceMeta.textContent = `${item.typeName || typeName(item.typeCode)} · ${item.sourceCode} · ${item.scope}`;
+    source.append(sourceName, sourceMeta);
+
+    const arrow = document.createElement("span");
+    arrow.className = "exact-match-arrow";
+    arrow.textContent = "→";
+    const targets = document.createElement("div");
+    targets.className = "exact-match-targets";
+    for (const target of item.targets ?? []) {
+      const targetBox = document.createElement("div");
+      targetBox.className = "exact-match-target";
+      const name = document.createElement("strong");
+      name.textContent = target.name;
+      const details = document.createElement("span");
+      details.textContent = [target.taxonomy || item.targetScope, target.slug, `term #${target.externalId}`].filter(Boolean).join(" · ");
+      targetBox.append(name, details);
+      targets.append(targetBox);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "exact-match-meta";
+    const status = document.createElement("span");
+    status.className = "exact-match-status";
+    status.textContent = exactStatusLabel(item.matchStatus);
+    const count = document.createElement("span");
+    count.textContent = `${item.productCount.toLocaleString("ru-RU")} тов.`;
+    meta.append(status, count);
+    if (item.issueReason) {
+      const reason = document.createElement("span");
+      reason.textContent = exactIssueLabel(item.issueReason);
+      meta.append(reason);
+    }
+    row.append(source, arrow, targets, meta);
+    list.append(row);
+  }
+  if (!state.exactMatches.length) list.append(emptyText(byId("exact-status").value === "ready"
+    ? "Уникальных точных совпадений в этой выборке нет."
+    : "Проблем этого типа в текущей выборке нет."));
+  byId("exact-more").hidden = state.exactOffset >= state.exactTotal;
+  const readyOnPage = state.exactMatches.filter((item) => item.matchStatus === "ready");
+  byId("exact-select-page").checked = readyOnPage.length > 0 && readyOnPage.every((item) => state.exactSelected.has(item.reviewGroupId));
+  byId("exact-select-page").disabled = readyOnPage.length === 0 || state.exactApplying;
+  updateExactActions();
+}
+
+function updateExactActions() {
+  byId("exact-selected-count").textContent = state.exactSelected.size.toLocaleString("ru-RU");
+  const targetDisabled = state.exactTarget?.enabled === true;
+  byId("exact-apply-selected").disabled = state.exactApplying || targetDisabled || state.exactSelected.size === 0;
+  byId("exact-apply-all").disabled = state.exactApplying || targetDisabled || state.exactSummary.readyCount === 0;
+}
+
+function exactApplyBody(reviewGroupIds) {
+  return {
+    targetId: byId("exact-target").value,
+    ...(byId("exact-source").value ? { sourceId: byId("exact-source").value } : {}),
+    ...(byId("exact-type").value ? { typeCode: byId("exact-type").value } : {}),
+    ...(byId("exact-search").value.trim() ? { search: byId("exact-search").value.trim() } : {}),
+    ...(reviewGroupIds ? { reviewGroupIds } : { limit: 50 }),
+  };
+}
+
+async function applyExactMatches(mode) {
+  const selected = [...state.exactSelected];
+  const total = mode === "selected" ? selected.length : state.exactSummary.readyCount;
+  if (total === 0) return;
+  const wording = mode === "selected" ? `${total} выбранных значений` : `все ${total} точных совпадений текущего фильтра`;
+  if (!confirm(`Применить ${wording}? WordPress сейчас не изменяется; товары будут поставлены на повторную обработку.`)) return;
+  state.exactApplying = true;
+  updateExactActions();
+  const progress = byId("exact-progress");
+  progress.hidden = false;
+  let applied = 0;
+  let affected = 0;
+  try {
+    if (mode === "selected") {
+      for (let offset = 0; offset < selected.length; offset += 50) {
+        const batch = selected.slice(offset, offset + 50);
+        progress.textContent = `Применено ${applied} из ${total}. Обрабатываем следующий пакет…`;
+        const response = await api("/api/classifier/exact-matches/apply", { method: "POST", body: exactApplyBody(batch) });
+        applied += response.result.appliedCount;
+        affected += response.result.affectedProductCount;
+        for (const id of response.result.appliedReviewGroupIds ?? []) state.exactSelected.delete(id);
+        if (response.result.failed) throw new Error(`Группа #${response.result.failed.reviewGroupId}: ${response.result.failed.message}`);
+      }
+    } else {
+      let remaining = total;
+      while (remaining > 0) {
+        progress.textContent = `Применено ${applied} из ${total}. Обрабатываем следующий пакет…`;
+        const response = await api("/api/classifier/exact-matches/apply", { method: "POST", body: exactApplyBody() });
+        applied += response.result.appliedCount;
+        affected += response.result.affectedProductCount;
+        if (response.result.failed) throw new Error(`Группа #${response.result.failed.reviewGroupId}: ${response.result.failed.message}`);
+        remaining = response.result.remainingCount;
+        if (response.result.appliedCount === 0 && remaining > 0) throw new Error("Пакет не изменил очередь; массовое применение остановлено.");
+      }
+    }
+    progress.textContent = `Готово: сопоставлено ${applied}, на переобработку затронуто товаров ${affected}.`;
+    showToast(`Точные совпадения применены: ${applied}.`);
+  } catch (error) {
+    progress.textContent = `Остановлено после ${applied} сопоставлений: ${error.message}`;
+  } finally {
+    state.exactApplying = false;
+    await Promise.all([loadExactMatches(true), loadQueue({ preserveSelection: false })]);
+  }
 }
 
 async function switchClassificationView(view, updateUrl = true) {
   state.classificationView = view;
-  byId("app-view").classList.toggle("document-scroll", view === "rules" || view === "wordpress");
+  byId("app-view").classList.toggle("document-scroll", view === "exact" || view === "rules" || view === "wordpress");
   window.scrollTo(0, 0);
   for (const panel of document.querySelectorAll(".classification-view")) panel.hidden = panel.id !== `classification-view-${view}`;
   for (const button of document.querySelectorAll("[data-classification-view]")) button.classList.toggle("active", button.dataset.classificationView === view);
   byId("refresh-button").hidden = view !== "queue";
   byId("sync-button").hidden = true;
   if (updateUrl) history.replaceState(null, "", `/classifier${view === "queue" ? "" : `?view=${view}`}`);
+  if (view === "exact") {
+    populateExactFilters();
+    await loadExactMatches(true);
+  }
   if (view === "references") await loadReferences(true);
   if (view === "rules") await loadRules(true);
   if (view === "wordpress") {
@@ -2314,6 +2545,29 @@ byId("rule-source").addEventListener("change", () => {
 for (const button of document.querySelectorAll("[data-classification-view]")) {
   button.addEventListener("click", () => { void switchClassificationView(button.dataset.classificationView); });
 }
+byId("exact-filters").addEventListener("submit", (event) => { event.preventDefault(); void loadExactMatches(true); });
+byId("exact-search").addEventListener("input", () => {
+  clearTimeout(exactSearchTimer);
+  exactSearchTimer = setTimeout(() => loadExactMatches(true), 280);
+});
+byId("exact-target").addEventListener("change", () => { populateExactFilters(); void loadExactMatches(true); });
+for (const id of ["exact-source", "exact-type", "exact-status"]) byId(id).addEventListener("change", () => loadExactMatches(true));
+for (const card of document.querySelectorAll("[data-exact-status]")) {
+  card.addEventListener("click", () => {
+    byId("exact-status").value = card.dataset.exactStatus;
+    void loadExactMatches(true);
+  });
+}
+byId("exact-select-page").addEventListener("change", () => {
+  for (const item of state.exactMatches.filter((entry) => entry.matchStatus === "ready")) {
+    if (byId("exact-select-page").checked) state.exactSelected.add(item.reviewGroupId);
+    else state.exactSelected.delete(item.reviewGroupId);
+  }
+  renderExactMatches();
+});
+byId("exact-more").addEventListener("click", () => loadExactMatches(false));
+byId("exact-apply-selected").addEventListener("click", () => applyExactMatches("selected"));
+byId("exact-apply-all").addEventListener("click", () => applyExactMatches("all"));
 byId("reference-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);
   catalogSearchTimer = setTimeout(() => loadReferences(true), 280);

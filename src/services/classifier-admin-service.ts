@@ -7,6 +7,7 @@ import type {
   ClassificationConfigListQuery,
   ClassificationDecisionKey,
   ClassificationDecisionPreview,
+  ClassificationExactMatchStatus,
   ClassificationReferenceValueOption,
   ClassificationRepository,
   ClassificationReviewItem,
@@ -104,6 +105,25 @@ export interface ReferenceTargetMappingCommand extends ReferenceProjectionComman
   readonly typeCode: string;
 }
 
+export interface ClassificationExactMatchListCommand {
+  readonly targetId: EntityId;
+  readonly sourceId?: EntityId;
+  readonly typeCode?: string;
+  readonly status?: ClassificationExactMatchStatus;
+  readonly search?: string;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ClassificationExactMatchApplyCommand {
+  readonly targetId: EntityId;
+  readonly sourceId?: EntityId;
+  readonly typeCode?: string;
+  readonly search?: string;
+  readonly reviewGroupIds?: readonly EntityId[];
+  readonly limit?: number;
+}
+
 function validateText(value: string, field: string, maximum: number): string {
   const trimmed = value.trim();
   if (trimmed === "" || trimmed.length > maximum) {
@@ -181,6 +201,112 @@ export class ClassifierAdminService {
 
   countReviewQueue(query: ClassificationReviewQuery): Promise<number> {
     return this.adminRepository.countReviewQueue({ ...query, currentProcessorVersions: this.currentProcessorVersions });
+  }
+
+  async listExactMatches(command: ClassificationExactMatchListCommand) {
+    const { target, capabilities } = await this.exactMatchContext(command.targetId, command.typeCode);
+    const result = await this.adminRepository.listExactMatches({
+      targetId: target.id,
+      capabilities,
+      ...(command.sourceId === undefined ? {} : { sourceId: command.sourceId }),
+      ...(command.typeCode === undefined ? {} : { typeCode: command.typeCode }),
+      ...(command.status === undefined ? {} : { status: command.status }),
+      ...(command.search === undefined ? {} : { search: command.search }),
+      limit: command.limit,
+      offset: command.offset,
+      currentProcessorVersions: this.currentProcessorVersions,
+    });
+    return {
+      ...result,
+      target: { id: target.id, code: target.code, name: target.name, enabled: target.enabled },
+      supportedTypes: capabilities.map((capability) => capability.typeCode),
+    };
+  }
+
+  async applyExactMatches(command: ClassificationExactMatchApplyCommand, actor = this.actor) {
+    const requestedIds = command.reviewGroupIds === undefined ? undefined : [...new Set(command.reviewGroupIds)];
+    if (requestedIds !== undefined && (requestedIds.length === 0 || requestedIds.length > 50)) {
+      throw new IntegrationContractError("За один пакет можно применить от 1 до 50 точных совпадений");
+    }
+    const limit = requestedIds?.length ?? Math.min(command.limit ?? 50, 50);
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new IntegrationContractError("Нужно выбрать хотя бы одно точное совпадение");
+    }
+    const { target, capabilities } = await this.exactMatchContext(command.targetId, command.typeCode);
+    if (target.enabled) {
+      throw new IntegrationContractError(`Target ${target.code} должен быть выключен на время массовой классификации`);
+    }
+    const matches = await this.adminRepository.listExactMatches({
+      targetId: target.id,
+      capabilities,
+      ...(command.sourceId === undefined ? {} : { sourceId: command.sourceId }),
+      ...(command.typeCode === undefined ? {} : { typeCode: command.typeCode }),
+      ...(command.search === undefined ? {} : { search: command.search }),
+      ...(requestedIds === undefined ? {} : { reviewGroupIds: requestedIds }),
+      status: "ready",
+      limit,
+      offset: 0,
+      currentProcessorVersions: this.currentProcessorVersions,
+    });
+    if (requestedIds !== undefined) {
+      const found = new Set(matches.items.map((item) => item.reviewGroupId));
+      if (requestedIds.some((id) => !found.has(id))) {
+        throw new IntegrationContractError("Часть выбранных значений уже не является уникальным точным совпадением; обновите список");
+      }
+    }
+
+    let affectedProductCount = 0;
+    const appliedReviewGroupIds: EntityId[] = [];
+    let failed: { readonly reviewGroupId: EntityId; readonly message: string } | null = null;
+    for (const match of matches.items) {
+      const dictionary = match.targets[0];
+      if (dictionary === undefined || match.targets.length !== 1) {
+        throw new IntegrationContractError("Exact match lost its unique target term");
+      }
+      try {
+        const result = await this.saveDecision({
+          sourceId: match.sourceId,
+          typeCode: match.typeCode,
+          scope: match.scope,
+          normalizedSourceValue: match.normalizedSourceValue,
+          contextKey: match.contextKey,
+          action: "confirm",
+          targetLink: {
+            targetId: target.id,
+            targetScope: match.targetScope,
+            dictionaryValueId: dictionary.dictionaryValueId,
+          },
+          reason: "Однозначное точное совпадение с актуальным справочником target",
+        }, actor);
+        affectedProductCount += result.affectedProductCount;
+        appliedReviewGroupIds.push(match.reviewGroupId);
+      } catch (error) {
+        failed = {
+          reviewGroupId: match.reviewGroupId,
+          message: error instanceof Error ? error.message : String(error),
+        };
+        break;
+      }
+    }
+
+    const remaining = await this.adminRepository.listExactMatches({
+      targetId: target.id,
+      capabilities,
+      ...(command.sourceId === undefined ? {} : { sourceId: command.sourceId }),
+      ...(command.typeCode === undefined ? {} : { typeCode: command.typeCode }),
+      ...(command.search === undefined ? {} : { search: command.search }),
+      status: "ready",
+      limit: 1,
+      offset: 0,
+      currentProcessorVersions: this.currentProcessorVersions,
+    });
+    return {
+      appliedCount: appliedReviewGroupIds.length,
+      affectedProductCount,
+      appliedReviewGroupIds,
+      remainingCount: remaining.total,
+      failed,
+    };
   }
 
   listReviewExamples(reviewGroupId: EntityId, query: { readonly search?: string; readonly limit: number; readonly offset: number }) {
@@ -805,6 +931,26 @@ export class ClassifierAdminService {
     const target = (await this.targetDictionaries!.listTargets()).find((item) => item.id === targetId);
     if (target === undefined) throw new IntegrationContractError(`Target does not exist: ${targetId}`);
     return target;
+  }
+
+  private async exactMatchContext(targetId: EntityId, typeCode?: string) {
+    this.requireProjectionDependencies();
+    validateText(targetId, "targetId", 64);
+    if (typeCode !== undefined && !/^[a-z][a-z0-9_]*$/u.test(typeCode)) {
+      throw new IntegrationContractError("Invalid classification type code");
+    }
+    const target = await this.target(targetId);
+    const provider = this.targetProviders!.get(providerCode(target.config, target.exporterCode));
+    const capabilities = capabilitiesForTarget(target, provider.classificationCapabilities)
+      .filter((capability) => capability.typeCode !== "category")
+      .filter((capability) => typeCode === undefined || capability.typeCode === typeCode)
+      .map(({ typeCode: code, entityType, targetScope }) => ({ typeCode: code, entityType, targetScope }));
+    if (capabilities.length === 0) {
+      throw new IntegrationContractError(typeCode === undefined
+        ? "Target does not expose safe exact-match capabilities"
+        : `Точные совпадения недоступны для типа ${typeCode}`);
+    }
+    return { target, capabilities };
   }
 }
 

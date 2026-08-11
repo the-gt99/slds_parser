@@ -45,6 +45,11 @@ function repositories(
     listConfiguration: vi.fn(),
     listReviewQueue: vi.fn(),
     countReviewQueue: vi.fn(),
+    listExactMatches: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0,
+      summary: { readyCount: 0, readyProductCount: 0, duplicateCount: 0, conflictCount: 0 },
+    }),
     listReviewExamples: vi.fn(),
     listReferenceValues: vi.fn(),
     listReferenceCatalog: vi.fn(),
@@ -96,6 +101,37 @@ const draft = {
   ],
   referenceValueId: "500",
 };
+
+function exactMatchDependencies(enabled = false) {
+  const provider: TargetDictionaryProvider = {
+    code: "wordpress",
+    supportedEntityTypes: ["brands", "product_categories"],
+    creatableEntityTypes: ["brands", "product_categories"],
+    classificationCapabilities: [
+      { typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "single" },
+      { typeCode: "category", entityType: "product_categories", targetScope: "product.category", cardinality: "multiple" },
+    ],
+    fetchPage: vi.fn(),
+    createTerm: vi.fn(),
+  };
+  const providers = new TargetDictionaryProviderRegistry();
+  providers.register(provider);
+  const targets: TargetDictionaryRepository = {
+    listTargets: vi.fn().mockResolvedValue([{
+      id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
+      config: {}, enabled, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    }]),
+    getValue: vi.fn().mockResolvedValue({
+      id: "88", targetId: "10", entityType: "brands", externalId: "4262", name: "Sporty & Rich",
+      slug: "sporty-amp-rich", parentExternalId: null, taxonomy: "pa_brand", attributeCode: null,
+      remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
+      firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
+    }),
+    listValuesByExternalIds: vi.fn(), listValues: vi.fn(), replaceEntityValues: vi.fn(), upsertValue: vi.fn(),
+    startTermCreation: vi.fn(), completeTermCreation: vi.fn(), failTermCreation: vi.fn(),
+  };
+  return { providers, targets };
+}
 
 describe("ClassifierAdminService", () => {
   it("previews a contextual rule without grouping every Pegasus product together", async () => {
@@ -244,6 +280,73 @@ describe("ClassifierAdminService", () => {
     });
     expect(deps.admin.listConfiguration).toHaveBeenCalledWith(expect.objectContaining({ currentProcessorVersions: { "1": "2.9.0" } }));
     expect(deps.admin.listRuleConditionFields).toHaveBeenCalledWith("1", "model", "2.9.0");
+  });
+
+  it("lists only target capabilities that are safe for exact matching", async () => {
+    const deps = repositories([]);
+    const exact = exactMatchDependencies();
+    const service = new ClassifierAdminService(
+      deps.admin,
+      deps.classification,
+      exact.targets,
+      exact.providers,
+      "admin-api",
+      { "1": "2.9.0" },
+    );
+
+    const result = await service.listExactMatches({ targetId: "10", limit: 50, offset: 0 });
+
+    expect(result.target).toMatchObject({ id: "10", enabled: false });
+    expect(result.supportedTypes).toEqual(["brand"]);
+    expect(deps.admin.listExactMatches).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      capabilities: [{ typeCode: "brand", entityType: "brands", targetScope: "product.brand" }],
+      currentProcessorVersions: { "1": "2.9.0" },
+    }));
+  });
+
+  it("revalidates and applies a bounded batch through the audited decision flow", async () => {
+    const deps = repositories([]);
+    const exact = exactMatchDependencies();
+    deps.admin.listExactMatches
+      .mockResolvedValueOnce({
+        items: [{
+          reviewGroupId: "77", sourceId: "1", sourceCode: "goat", sourceName: "GOAT",
+          typeCode: "brand", typeName: "Бренд", scope: "product.brand",
+          normalizedSourceValue: "sporty & rich", contextKey: "{}", sourceValue: "Sporty & Rich",
+          productCount: 8, observationCount: 8, targetScope: "product.brand", matchStatus: "ready",
+          issueReason: null,
+          targets: [{ dictionaryValueId: "88", externalId: "4262", name: "Sporty & Rich", slug: "sporty-amp-rich", taxonomy: "pa_brand" }],
+        }],
+        total: 1,
+        summary: { readyCount: 1, readyProductCount: 8, duplicateCount: 0, conflictCount: 0 },
+      })
+      .mockResolvedValueOnce({
+        items: [], total: 0,
+        summary: { readyCount: 0, readyProductCount: 0, duplicateCount: 0, conflictCount: 0 },
+      });
+    const service = new ClassifierAdminService(deps.admin, deps.classification, exact.targets, exact.providers);
+
+    const result = await service.applyExactMatches({ targetId: "10", reviewGroupIds: ["77"] }, "roman");
+
+    expect(result).toMatchObject({ appliedCount: 1, affectedProductCount: 1, remainingCount: 0, failed: null });
+    expect(deps.admin.saveDecision).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "1",
+      normalizedSourceValue: "sporty & rich",
+      generatedReferenceCode: expect.stringMatching(/^ref-/u),
+      actor: "roman",
+      reason: "Однозначное точное совпадение с актуальным справочником target",
+      targetLink: { targetId: "10", targetScope: "product.brand", dictionaryValueId: "88" },
+    }));
+  });
+
+  it("does not mass-apply exact matches while target is enabled", async () => {
+    const deps = repositories([]);
+    const exact = exactMatchDependencies(true);
+    const service = new ClassifierAdminService(deps.admin, deps.classification, exact.targets, exact.providers);
+
+    await expect(service.applyExactMatches({ targetId: "10", limit: 50 })).rejects.toThrow("должен быть выключен");
+    expect(deps.admin.listExactMatches).not.toHaveBeenCalled();
   });
 
   it("creates an opaque internal reference when a target term is linked directly", async () => {

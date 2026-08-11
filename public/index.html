@@ -51,6 +51,7 @@
 
     <nav class="classification-nav" aria-label="Разделы классификации">
       <button class="classification-nav-item active" data-classification-view="queue" type="button">Требуют решения <span id="queue-nav-count">0</span></button>
+      <button class="classification-nav-item" data-classification-view="exact" type="button">Точные совпадения <span id="exact-nav-count">—</span></button>
       <button class="classification-nav-item" data-classification-view="references" type="button">Внутренние значения</button>
       <button class="classification-nav-item" data-classification-view="rules" type="button">Правила</button>
       <button class="classification-nav-item" data-classification-view="wordpress" type="button">WordPress</button>
@@ -180,6 +181,44 @@
             </div>
           </section>
         </div>
+      </section>
+    </main>
+
+    <main id="classification-view-exact" class="catalog-page classification-view exact-match-page" hidden>
+      <section class="catalog-toolbar">
+        <div>
+          <p class="eyebrow">Массовое сопоставление</p>
+          <h2>Точные совпадения</h2>
+          <p class="muted">Источник и термин target совпадают по нормализованному имени. Автоматически применяются только значения с единственным термином и без конфликта решений.</p>
+        </div>
+        <div class="exact-match-actions">
+          <button id="exact-apply-selected" class="button secondary" type="button" disabled>Применить выбранные</button>
+          <button id="exact-apply-all" class="button primary" type="button" disabled>Применить все точные</button>
+        </div>
+      </section>
+
+      <section class="exact-summary" aria-label="Сводка точных совпадений">
+        <button class="exact-summary-card active" data-exact-status="ready" type="button"><span>Можно сопоставить</span><strong id="exact-ready-count">0</strong><small id="exact-ready-products">0 товаров</small></button>
+        <button class="exact-summary-card warning" data-exact-status="duplicate" type="button"><span>Дубликаты target</span><strong id="exact-duplicate-count">0</strong><small>нужен ручной выбор</small></button>
+        <button class="exact-summary-card danger" data-exact-status="conflict" type="button"><span>Конфликты</span><strong id="exact-conflict-count">0</strong><small>оставлены в очереди</small></button>
+      </section>
+
+      <form id="exact-filters" class="catalog-filters catalog-filters-wide exact-filters">
+        <label class="search-field"><span aria-hidden="true">⌕</span><input id="exact-search" type="search" placeholder="Исходное или target-значение"></label>
+        <select id="exact-target" aria-label="Target"></select>
+        <select id="exact-source" aria-label="Источник"><option value="">Все источники</option></select>
+        <select id="exact-type" aria-label="Тип значения"><option value="">Все безопасные типы</option></select>
+        <select id="exact-status" aria-label="Результат проверки"><option value="ready">Можно сопоставить</option><option value="duplicate">Дубликаты target</option><option value="conflict">Конфликты</option></select>
+      </form>
+
+      <div id="exact-progress" class="inline-message exact-progress" hidden></div>
+      <section class="section catalog-table-section">
+        <div class="exact-selection-bar">
+          <label class="confirm-check"><input id="exact-select-page" type="checkbox"><span>Выбрать показанные точные совпадения</span></label>
+          <span class="muted"><strong id="exact-selected-count">0</strong> выбрано</span>
+        </div>
+        <div id="exact-list" class="exact-match-list"></div>
+        <button id="exact-more" class="button quiet wide" type="button" hidden>Показать ещё</button>
       </section>
     </main>
 

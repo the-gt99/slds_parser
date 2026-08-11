@@ -2,6 +2,8 @@ import type {
   ClassificationDecisionContext,
   ClassificationDecisionPreview,
   ClassificationDecisionKey,
+  ClassificationExactMatchQuery,
+  ClassificationExactMatchResult,
   ClassificationConfigListQuery,
   ClassificationConfigListResult,
   ClassificationReferenceValueOption,
@@ -36,6 +38,7 @@ export interface ClassificationAdminRepository {
   listConfiguration(query: ClassificationConfigListQuery): Promise<ClassificationConfigListResult>;
   listReviewQueue(query: ClassificationReviewQuery): Promise<readonly ClassificationReviewItem[]>;
   countReviewQueue(query: ClassificationReviewQuery): Promise<number>;
+  listExactMatches(query: ClassificationExactMatchQuery): Promise<ClassificationExactMatchResult>;
   listReviewExamples(query: ClassificationReviewExamplesQuery): Promise<ClassificationReviewExamplesResult>;
   listReferenceValues(
     typeCode: string,

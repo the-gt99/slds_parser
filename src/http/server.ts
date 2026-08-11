@@ -65,6 +65,25 @@ interface ReviewExamplesParams {
   readonly reviewGroupId: string;
 }
 
+interface ExactMatchQuery {
+  readonly targetId?: string;
+  readonly sourceId?: string;
+  readonly typeCode?: string;
+  readonly status?: string;
+  readonly search?: string;
+  readonly limit?: string;
+  readonly offset?: string;
+}
+
+interface ExactMatchApplyBody {
+  readonly targetId?: unknown;
+  readonly sourceId?: unknown;
+  readonly typeCode?: unknown;
+  readonly search?: unknown;
+  readonly reviewGroupIds?: unknown;
+  readonly limit?: unknown;
+}
+
 interface ReviewExamplesQuery {
   readonly search?: string;
   readonly limit?: string;
@@ -286,6 +305,14 @@ function exportControlStatus(value: unknown) {
   if (value === undefined || value === "") return undefined;
   if (!["checking", "ready", "blocked", "error", "stale"].includes(String(value))) throw new HttpInputError("Unknown export control status");
   return value as "checking" | "ready" | "blocked" | "error" | "stale";
+}
+
+function exactMatchStatus(value: unknown): "ready" | "duplicate" | "conflict" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value !== "ready" && value !== "duplicate" && value !== "conflict") {
+    throw new HttpInputError("status must be ready, duplicate or conflict");
+  }
+  return value;
 }
 
 function exportControlOperation(value: unknown): "create" | "update" | undefined {
@@ -637,6 +664,49 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
           offset: positiveInteger(request.query.offset, 0, 1_000_000),
         },
       );
+    },
+  );
+
+  server.get<{ Querystring: ExactMatchQuery }>(
+    "/api/classifier/exact-matches",
+    { preHandler: requireAdmin },
+    async (request) => {
+      const limit = positiveInteger(request.query.limit, 50, 200);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+      return dependencies.classifier.listExactMatches({
+        targetId: entityId(request.query.targetId, "targetId"),
+        ...(optionalString(request.query.sourceId) === undefined ? {} : { sourceId: entityId(request.query.sourceId, "sourceId") }),
+        ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
+        ...(exactMatchStatus(request.query.status) === undefined ? {} : { status: exactMatchStatus(request.query.status)! }),
+        ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+        limit,
+        offset: positiveInteger(request.query.offset, 0, 1_000_000),
+      });
+    },
+  );
+
+  server.post<{ Body: ExactMatchApplyBody }>(
+    "/api/classifier/exact-matches/apply",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const limit = request.body?.limit === undefined
+        ? undefined
+        : positiveInteger(String(request.body.limit), 50, 50);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 50");
+      const reviewGroupIds = entityIds(request.body?.reviewGroupIds, "reviewGroupIds");
+      if (reviewGroupIds !== undefined && (reviewGroupIds.length === 0 || reviewGroupIds.length > 50)) {
+        throw new HttpInputError("reviewGroupIds must contain from 1 to 50 IDs");
+      }
+      return {
+        result: await dependencies.classifier.applyExactMatches({
+          targetId: entityId(request.body?.targetId, "targetId"),
+          ...(optionalString(request.body?.sourceId) === undefined ? {} : { sourceId: entityId(request.body?.sourceId, "sourceId") }),
+          ...(optionalString(request.body?.typeCode) === undefined ? {} : { typeCode: optionalString(request.body?.typeCode)! }),
+          ...(optionalString(request.body?.search) === undefined ? {} : { search: optionalString(request.body?.search)! }),
+          ...(reviewGroupIds === undefined ? {} : { reviewGroupIds }),
+          ...(limit === undefined ? {} : { limit }),
+        }, actor(request)),
+      };
     },
   );
 

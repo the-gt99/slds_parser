@@ -121,6 +121,45 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("lists and applies unique exact classifier matches", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const classifier = {
+      listExactMatches: vi.fn().mockResolvedValue({
+        items: [], total: 12,
+        summary: { readyCount: 12, readyProductCount: 20, duplicateCount: 2, conflictCount: 1 },
+        target: { id: "10", code: "slamdunk", name: "Slamdunk", enabled: false },
+        supportedTypes: ["brand", "model"],
+      }),
+      applyExactMatches: vi.fn().mockResolvedValue({
+        appliedCount: 2, affectedProductCount: 8, appliedReviewGroupIds: ["41", "42"], remainingCount: 10, failed: null,
+      }),
+    } as unknown as ClassifierAdminService;
+    const server = createHttpServer({ ...dependencies(database), classifier });
+
+    const listed = await server.inject({
+      method: "GET",
+      url: "/api/classifier/exact-matches?targetId=10&sourceId=1&typeCode=brand&status=ready&search=Sporty&limit=25&offset=50",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const applied = await server.inject({
+      method: "POST",
+      url: "/api/classifier/exact-matches/apply",
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { targetId: "10", sourceId: "1", typeCode: "brand", search: "Sporty", reviewGroupIds: ["41", "42"] },
+    });
+
+    expect(listed.statusCode).toBe(200);
+    expect(applied.statusCode).toBe(200);
+    expect(classifier.listExactMatches).toHaveBeenCalledWith({
+      targetId: "10", sourceId: "1", typeCode: "brand", status: "ready", search: "Sporty", limit: 25, offset: 50,
+    });
+    expect(classifier.applyExactMatches).toHaveBeenCalledWith({
+      targetId: "10", sourceId: "1", typeCode: "brand", search: "Sporty", reviewGroupIds: ["41", "42"],
+    }, "api-token");
+    expect(applied.json().result.appliedCount).toBe(2);
+    await server.close();
+  });
+
   it("can omit expensive classifier configuration usage statistics", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = {

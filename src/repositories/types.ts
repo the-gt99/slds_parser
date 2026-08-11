@@ -1010,6 +1010,68 @@ export interface ClassificationConfigListQuery {
   readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
 }
 
+export type ClassificationExactMatchStatus = "ready" | "duplicate" | "conflict";
+export type ClassificationExactMatchIssueReason = ClassificationIssueReason | "target_mapping_ambiguous";
+
+export interface ClassificationExactMatchCapability {
+  readonly typeCode: string;
+  readonly entityType: string;
+  readonly targetScope: string;
+}
+
+export interface ClassificationExactMatchTarget {
+  readonly dictionaryValueId: EntityId;
+  readonly externalId: string;
+  readonly name: string;
+  readonly slug: string | null;
+  readonly taxonomy: string | null;
+}
+
+export interface ClassificationExactMatchItem {
+  readonly reviewGroupId: EntityId;
+  readonly sourceId: EntityId;
+  readonly sourceCode: string;
+  readonly sourceName: string;
+  readonly typeCode: string;
+  readonly typeName: string;
+  readonly scope: string;
+  readonly normalizedSourceValue: string;
+  readonly contextKey: string;
+  readonly sourceValue: string;
+  readonly productCount: number;
+  readonly observationCount: number;
+  readonly targetScope: string;
+  readonly matchStatus: ClassificationExactMatchStatus;
+  readonly issueReason: ClassificationExactMatchIssueReason | null;
+  readonly targets: readonly ClassificationExactMatchTarget[];
+}
+
+export interface ClassificationExactMatchSummary {
+  readonly readyCount: number;
+  readonly readyProductCount: number;
+  readonly duplicateCount: number;
+  readonly conflictCount: number;
+}
+
+export interface ClassificationExactMatchQuery {
+  readonly targetId: EntityId;
+  readonly capabilities: readonly ClassificationExactMatchCapability[];
+  readonly sourceId?: EntityId;
+  readonly typeCode?: string;
+  readonly status?: ClassificationExactMatchStatus;
+  readonly search?: string;
+  readonly reviewGroupIds?: readonly EntityId[];
+  readonly limit: number;
+  readonly offset: number;
+  readonly currentProcessorVersions?: Readonly<Record<EntityId, string>>;
+}
+
+export interface ClassificationExactMatchResult {
+  readonly items: readonly ClassificationExactMatchItem[];
+  readonly total: number;
+  readonly summary: ClassificationExactMatchSummary;
+}
+
 export interface ClassificationReferenceCatalogItem extends ClassificationReferenceValueOption {
   readonly typeName: string;
   readonly productCount: number;

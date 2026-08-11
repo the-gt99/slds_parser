@@ -10,6 +10,9 @@ import type {
   ClassificationDecisionContext,
   ClassificationDecisionPreview,
   ClassificationDecisionKey,
+  ClassificationExactMatchItem,
+  ClassificationExactMatchQuery,
+  ClassificationExactMatchResult,
   ClassificationReferenceValueOption,
   ClassificationReferenceCatalogQuery,
   ClassificationReferenceCatalogResult,
@@ -117,6 +120,41 @@ function configOutputs(value: unknown): readonly ClassificationConfigOutput[] {
 
 function processorVersions(value: Readonly<Record<string, string>> | undefined): string {
   return JSON.stringify(value ?? {});
+}
+
+function exactMatchItems(value: unknown): readonly ClassificationExactMatchItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    const row = jsonObject(entry);
+    const targets = Array.isArray(row.targets) ? row.targets.map((targetEntry) => {
+      const target = jsonObject(targetEntry);
+      return {
+        dictionaryValueId: String(target.dictionaryValueId),
+        externalId: String(target.externalId),
+        name: String(target.name),
+        slug: nullableText(target.slug),
+        taxonomy: nullableText(target.taxonomy),
+      };
+    }) : [];
+    return {
+      reviewGroupId: String(row.reviewGroupId),
+      sourceId: String(row.sourceId),
+      sourceCode: String(row.sourceCode),
+      sourceName: String(row.sourceName),
+      typeCode: String(row.typeCode),
+      typeName: String(row.typeName),
+      scope: String(row.scope),
+      normalizedSourceValue: String(row.normalizedSourceValue),
+      contextKey: String(row.contextKey),
+      sourceValue: String(row.sourceValue),
+      productCount: Number(row.productCount),
+      observationCount: Number(row.observationCount),
+      targetScope: String(row.targetScope),
+      matchStatus: String(row.matchStatus) as ClassificationExactMatchItem["matchStatus"],
+      issueReason: nullableText(row.issueReason) as ClassificationExactMatchItem["issueReason"],
+      targets,
+    };
+  });
 }
 
 function normalizedJson(value: unknown): unknown {
@@ -849,6 +887,197 @@ export class PostgresClassificationAdminRepository implements ClassificationAdmi
         filter.parameters,
       );
       return Number(result.rows[0]?.total ?? 0);
+    });
+  }
+
+  async listExactMatches(query: ClassificationExactMatchQuery): Promise<ClassificationExactMatchResult> {
+    return withClient(this.pool, async (client) => {
+      const capabilities = query.capabilities.map((capability) => ({
+        type_code: capability.typeCode,
+        entity_type: capability.entityType,
+        target_scope: capability.targetScope,
+      }));
+      const result = await client.query<DatabaseRow>(
+        `WITH capability AS MATERIALIZED (
+           SELECT item.type_code,
+                  item.entity_type,
+                  item.target_scope,
+                  type.id AS reference_type_id,
+                  type.name AS type_name
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS item(
+             type_code TEXT,
+             entity_type TEXT,
+             target_scope TEXT
+           )
+           JOIN reference_types type ON type.code = item.type_code
+         ), dictionary_candidates AS MATERIALIZED (
+           SELECT capability.*,
+                  dictionary.id AS dictionary_value_id,
+                  dictionary.external_id,
+                  dictionary.name AS target_name,
+                  dictionary.slug,
+                  dictionary.taxonomy,
+                  LOWER(NORMALIZE(BTRIM(dictionary.name), NFKC)) AS normalized_target_name
+           FROM capability
+           JOIN target_dictionary_values dictionary
+             ON dictionary.target_id = $1
+            AND dictionary.entity_type = capability.entity_type
+            AND dictionary.active = TRUE
+         ), dictionary_matches AS MATERIALIZED (
+           SELECT review.id AS review_group_id,
+                  review.source_id,
+                  source.code AS source_code,
+                  source.name AS source_name,
+                  review.reference_type_id,
+                  dictionary.type_code,
+                  dictionary.type_name,
+                  review.scope,
+                  review.normalized_source_value,
+                  review.context_key,
+                  review.source_value,
+                  review.review_status,
+                  review.issue_reason,
+                  review.needs_decision_observation_count AS observation_count,
+                  review.needs_decision_product_count AS product_count,
+                  dictionary.target_scope,
+                  review.last_seen_at,
+                  dictionary.dictionary_value_id,
+                  dictionary.external_id,
+                  dictionary.target_name,
+                  dictionary.slug,
+                  dictionary.taxonomy,
+                  COUNT(DISTINCT reference.id)::INTEGER AS linked_reference_count
+           FROM dictionary_candidates dictionary
+           JOIN classification_review_groups review
+             ON review.reference_type_id = dictionary.reference_type_id
+            AND review.normalized_source_value = dictionary.normalized_target_name
+           JOIN sources source ON source.id = review.source_id
+           LEFT JOIN target_value_mappings mapping
+             ON mapping.target_id = $1
+            AND mapping.target_scope = dictionary.target_scope
+            AND mapping.dictionary_value_id = dictionary.dictionary_value_id
+            AND mapping.active = TRUE
+           LEFT JOIN reference_values reference
+             ON reference.id = mapping.reference_value_id
+            AND reference.type_id = review.reference_type_id
+            AND reference.enabled = TRUE
+           WHERE review.review_status IN ('unresolved', 'ambiguous')
+             AND review.needs_decision_observation_count > 0
+             AND ($3::BIGINT IS NULL OR review.source_id = $3)
+             AND ($4::TEXT = '' OR dictionary.type_code = $4)
+             AND ($6::TEXT = '' OR review.source_value ILIKE '%' || $6 || '%')
+             AND ($7::JSONB = '{}'::JSONB
+               OR review.processor_version = $7::JSONB ->> review.source_id::TEXT)
+             AND ($8::BIGINT[] IS NULL OR review.id = ANY($8))
+           GROUP BY review.id, review.source_id, source.code, source.name,
+                    review.reference_type_id, dictionary.type_code,
+                    dictionary.type_name, review.scope, review.normalized_source_value,
+                    review.context_key, review.source_value, review.review_status,
+                    review.issue_reason, review.needs_decision_observation_count,
+                    review.needs_decision_product_count, dictionary.target_scope,
+                    review.last_seen_at, dictionary.dictionary_value_id,
+                    dictionary.external_id, dictionary.target_name,
+                    dictionary.slug, dictionary.taxonomy
+         ), grouped AS MATERIALIZED (
+           SELECT review_group_id, source_id, source_code, source_name,
+                  reference_type_id, type_code, type_name, scope,
+                  normalized_source_value, context_key, source_value,
+                  review_status, issue_reason, observation_count, product_count,
+                  target_scope, last_seen_at,
+                  COUNT(*)::INTEGER AS target_count,
+                  MAX(linked_reference_count)::INTEGER AS linked_reference_count,
+                  JSONB_AGG(JSONB_BUILD_OBJECT(
+                    'dictionaryValueId', dictionary_value_id::TEXT,
+                    'externalId', external_id,
+                    'name', target_name,
+                    'slug', slug,
+                    'taxonomy', taxonomy
+                  ) ORDER BY target_name, external_id) AS targets
+           FROM dictionary_matches
+           GROUP BY review_group_id, source_id, source_code, source_name,
+                    reference_type_id, type_code, type_name, scope,
+                    normalized_source_value, context_key, source_value,
+                    review_status, issue_reason, observation_count, product_count,
+                    target_scope, last_seen_at
+         ), classified AS MATERIALIZED (
+           SELECT grouped.*,
+                  CASE
+                    WHEN review_status = 'ambiguous' OR linked_reference_count > 1 THEN 'conflict'
+                    WHEN target_count = 1 THEN 'ready'
+                    ELSE 'duplicate'
+                  END AS match_status,
+                  CASE
+                    WHEN review_status = 'ambiguous' THEN COALESCE(issue_reason, 'rule_ambiguous')
+                    WHEN linked_reference_count > 1 THEN 'target_mapping_ambiguous'
+                    ELSE issue_reason
+                  END AS match_issue_reason
+           FROM grouped
+         ), summary AS (
+           SELECT COUNT(*) FILTER (WHERE match_status = 'ready')::INTEGER AS ready_count,
+                  COALESCE(SUM(product_count) FILTER (WHERE match_status = 'ready'), 0)::INTEGER AS ready_product_count,
+                  COUNT(*) FILTER (WHERE match_status = 'duplicate')::INTEGER AS duplicate_count,
+                  COUNT(*) FILTER (WHERE match_status = 'conflict')::INTEGER AS conflict_count
+           FROM classified
+         ), filtered AS MATERIALIZED (
+           SELECT * FROM classified
+           WHERE $5::TEXT = '' OR match_status = $5
+         ), page AS (
+           SELECT * FROM filtered
+           ORDER BY CASE match_status WHEN 'ready' THEN 0 WHEN 'duplicate' THEN 1 ELSE 2 END,
+                    product_count DESC, last_seen_at DESC, review_group_id DESC
+           LIMIT $9 OFFSET $10
+         )
+         SELECT
+           (SELECT COUNT(*)::INTEGER FROM filtered) AS total,
+           summary.ready_count,
+           summary.ready_product_count,
+           summary.duplicate_count,
+           summary.conflict_count,
+           COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+             'reviewGroupId', page.review_group_id::TEXT,
+             'sourceId', page.source_id::TEXT,
+             'sourceCode', page.source_code,
+             'sourceName', page.source_name,
+             'typeCode', page.type_code,
+             'typeName', page.type_name,
+             'scope', page.scope,
+             'normalizedSourceValue', page.normalized_source_value,
+             'contextKey', page.context_key,
+             'sourceValue', page.source_value,
+             'productCount', page.product_count,
+             'observationCount', page.observation_count,
+             'targetScope', page.target_scope,
+             'matchStatus', page.match_status,
+             'issueReason', page.match_issue_reason,
+             'targets', page.targets
+           ) ORDER BY CASE page.match_status WHEN 'ready' THEN 0 WHEN 'duplicate' THEN 1 ELSE 2 END,
+                      page.product_count DESC, page.last_seen_at DESC, page.review_group_id DESC)
+             FROM page), '[]'::JSONB) AS items
+         FROM summary`,
+        [
+          query.targetId,
+          JSON.stringify(capabilities),
+          query.sourceId ?? null,
+          query.typeCode ?? "",
+          query.status ?? "",
+          query.search?.trim() ?? "",
+          processorVersions(query.currentProcessorVersions),
+          query.reviewGroupIds ?? null,
+          query.limit,
+          query.offset,
+        ],
+      );
+      const row = result.rows[0]!;
+      return {
+        items: exactMatchItems(row.items),
+        total: Number(row.total ?? 0),
+        summary: {
+          readyCount: Number(row.ready_count ?? 0),
+          readyProductCount: Number(row.ready_product_count ?? 0),
+          duplicateCount: Number(row.duplicate_count ?? 0),
+          conflictCount: Number(row.conflict_count ?? 0),
+        },
+      };
     });
   }
 

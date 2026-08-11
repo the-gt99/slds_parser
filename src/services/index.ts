@@ -6,6 +6,8 @@ export { TargetAssignmentAdminService } from "./target-assignment-admin-service.
 export {
   ClassifierAdminService,
   type ClassificationDecisionCommand,
+  type ClassificationExactMatchApplyCommand,
+  type ClassificationExactMatchListCommand,
   type ClassificationRuleDraft,
   type ClassificationRulePreview,
   type ClassificationRulePreviewExample,
