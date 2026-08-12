@@ -12,6 +12,8 @@ describe("WordPressDictionaryProvider", () => {
       "brands", "models", "tags", "product_categories", "colors", "materials", "seasons", "activities",
     ]));
     expect(provider.classificationCapabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ typeCode: "brand", entityType: "brands", cardinality: "multiple" }),
+      expect.objectContaining({ typeCode: "model", entityType: "models", cardinality: "multiple" }),
       expect.objectContaining({ typeCode: "color", entityType: "colors", cardinality: "single" }),
       expect.objectContaining({ typeCode: "category", entityType: "product_categories", cardinality: "multiple" }),
       expect.objectContaining({ typeCode: "merchandising_category", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" }),

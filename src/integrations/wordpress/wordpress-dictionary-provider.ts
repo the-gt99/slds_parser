@@ -74,8 +74,8 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
   ] as const;
   readonly creatableEntityTypes = ["brands", "models", "tags", "product_categories"] as const;
   readonly classificationCapabilities = [
-    { typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "single" },
-    { typeCode: "model", entityType: "models", targetScope: "product.model", cardinality: "single" },
+    { typeCode: "brand", entityType: "brands", targetScope: "product.brand", cardinality: "multiple" },
+    { typeCode: "model", entityType: "models", targetScope: "product.model", cardinality: "multiple" },
     { typeCode: "category", entityType: "product_categories", targetScope: "product.category", cardinality: "multiple" },
     { typeCode: "merchandising_category", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
     { typeCode: "tag", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },

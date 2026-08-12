@@ -26,8 +26,8 @@ import {
 const CONTRACT_VERSION = "slds.wordpress.product-upsert.v1";
 
 const REFERENCE_TARGETS = {
-  brand: { scope: "product.brand", taxonomy: "pa_brand", cardinality: "single" },
-  model: { scope: "product.model", taxonomy: "pa_model", cardinality: "single" },
+  brand: { scope: "product.brand", taxonomy: "pa_brand", cardinality: "multiple" },
+  model: { scope: "product.model", taxonomy: "pa_model", cardinality: "multiple" },
   category: { scope: "product.category", taxonomy: "product_cat", cardinality: "multiple" },
   tag: { scope: "product.tag", taxonomy: "product_tag", cardinality: "multiple" },
   color: { scope: "product.color", taxonomy: "pa_tsvet", cardinality: "single" },
@@ -274,10 +274,13 @@ function configuredConversionCategoryIds(config: JsonObject): readonly number[] 
   return Object.keys(titlePolicy).filter((value) => /^\d+$/u.test(value)).map(Number);
 }
 
-function sizeConversionIdentity(taxonomies: JsonObject, config: JsonObject): { readonly brandTermId: number; readonly categoryTermId: number } {
-  const brandIds = taxonomyTermIds(taxonomies, "pa_brand");
-  if (brandIds.length !== 1) {
-    throw new IntegrationContractError("WordPress size conversion requires exactly one resolved pa_brand term");
+function sizeConversionIdentity(
+  taxonomies: JsonObject,
+  config: JsonObject,
+  primaryBrandTermId: number | null,
+): { readonly brandTermId: number; readonly categoryTermId: number } {
+  if (primaryBrandTermId === null) {
+    throw new IntegrationContractError("WordPress size conversion requires exactly one primary resolved pa_brand term");
   }
   const productCategoryIds = taxonomyTermIds(taxonomies, "product_cat");
   const configured = new Set(configuredConversionCategoryIds(config));
@@ -285,7 +288,7 @@ function sizeConversionIdentity(taxonomies: JsonObject, config: JsonObject): { r
   if (candidates.length !== 1) {
     throw new IntegrationContractError("WordPress size conversion requires exactly one configured product_cat term");
   }
-  return { brandTermId: brandIds[0]!, categoryTermId: candidates[0]! };
+  return { brandTermId: primaryBrandTermId, categoryTermId: candidates[0]! };
 }
 
 async function resolveVariationSize(
@@ -436,6 +439,7 @@ async function taxonomyPayload(
   readonly missingRequired: readonly ReferenceType[];
   readonly taxonomyOrigins: readonly WordPressTaxonomyOrigin[];
   readonly modelTagLink: { readonly name: string; readonly url: string } | null;
+  readonly primaryBrandTermId: number | null;
 }> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
   const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
@@ -542,6 +546,7 @@ async function taxonomyPayload(
   if (invalidSingleAssignments.length > 0) {
     throw new IntegrationContractError(`WordPress single-value assignments contain multiple terms: ${invalidSingleAssignments.join(", ")}`);
   }
+  const primaryBrandTerms = termsByType.get("brand") ?? new Set<number>();
   const missing = required.filter((type) => !presentTypes.has(type));
   if (!allowMissingRequired && missing.length > 0) {
     throw new IntegrationContractError(`Required WordPress references are missing: ${missing.join(", ")}`);
@@ -551,6 +556,7 @@ async function taxonomyPayload(
     missingRequired: missing,
     taxonomyOrigins,
     modelTagLink: [...modelTagLinks.values()][0] ?? null,
+    primaryBrandTermId: primaryBrandTerms.size === 1 ? [...primaryBrandTerms][0]! : null,
   };
 }
 
@@ -573,7 +579,7 @@ async function buildWordPressPayload(
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
-  const { taxonomies, missingRequired, taxonomyOrigins, modelTagLink } = await taxonomyPayload(context, required, allowMissingRequired);
+  const { taxonomies, missingRequired, taxonomyOrigins, modelTagLink, primaryBrandTermId } = await taxonomyPayload(context, required, allowMissingRequired);
   const variantsForConversion = context.liveVariants === undefined
     ? context.product.variants
     : [...context.product.variants, ...context.liveVariants];
@@ -581,7 +587,7 @@ async function buildWordPressPayload(
     (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
   );
   const conversionIdentity = needsConversion && converter !== undefined
-    ? sizeConversionIdentity(taxonomies, context.target.config)
+    ? sizeConversionIdentity(taxonomies, context.target.config, primaryBrandTermId)
     : undefined;
   const resolvedVariations = await Promise.all(outputVariants.map(
     (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
@@ -669,7 +675,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.8.0";
+  readonly version = "1.9.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

@@ -159,6 +159,72 @@ describe("WordPressExporter", () => {
     });
   });
 
+  it("adds secondary WordPress brands and models without replacing the primary values", async () => {
+    const base = context();
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        classification: {
+          ...base.product.classification!,
+          resolved: [
+            ...base.product.classification!.resolved,
+            { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "mapping", resolutionId: "23", resolutionRevision: "1" },
+          ],
+        },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => {
+      if (referenceType === "brand") return "31";
+      if (referenceType === "model") return "51";
+      return "41";
+    });
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
+      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", mode: "add" },
+      { ruleId: "402", groupCode: "additional_model_8th_street", targetScope: "product.model", externalValue: "52", mode: "add" },
+    ]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect((payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31, 32] },
+      pa_model: { mode: "replace", term_ids: [51, 52] },
+      product_cat: { mode: "replace", term_ids: [41] },
+    });
+  });
+
+  it("uses the primary source brand for size conversion when an additional brand is assigned", async () => {
+    const base = context({
+      sizeConversionCategoryTermIds: [41],
+      sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }],
+    });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        variants: base.product.variants.map((variant) => ({
+          ...variant,
+          size: { sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" },
+        })),
+      },
+    };
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
+      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", mode: "add" },
+    ]);
+    const converter: WordPressSizeConverterLike = {
+      supports: vi.fn(() => true),
+      convert: vi.fn(async ({ size }) => ({ ...size, sourceValue: "8", displayValue: "8", system: "us-numeric" })),
+    };
+
+    const payload = await buildWordPressUpsertPayload(input, converter);
+
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, size: input.product.variants[0]!.size });
+    expect((payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31, 32] },
+      product_cat: { mode: "replace", term_ids: [41] },
+    });
+  });
+
   it("converts a native source size before resolving the WordPress size term", async () => {
     const base = context({
       sizeConversionCategoryTermIds: [41],
