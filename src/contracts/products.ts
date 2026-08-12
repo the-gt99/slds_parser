@@ -284,6 +284,8 @@ export interface TargetReferenceProjectionDTO {
   readonly resolutionId: EntityId;
   readonly targetScope: string;
   readonly externalValue: string;
+  readonly externalLabel: string;
+  readonly externalSlug: string | null;
   readonly provenance?: {
     readonly kind: "related_target_term";
     readonly relationCode: string;

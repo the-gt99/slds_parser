@@ -349,6 +349,7 @@ function wordpressContentContext(
   product: UniversalProductDTO,
   effectiveTitle: string,
   variations: readonly { readonly size: ProductSizeDTO; readonly availability: ProductVariantDTO["inventory"]["availability"] }[],
+  modelTagLink: { readonly name: string; readonly url: string } | null,
 ): JsonObject {
   const translated = product.translatedContent;
   const allSizes = variations.map((variation) => variation.size.displayValue || variation.size.sourceValue);
@@ -375,6 +376,10 @@ function wordpressContentContext(
       tags: classifiedValues(product, "tag"),
       colors: classifiedValues(product, "color"),
       materials: classifiedValues(product, "material"),
+    },
+    links: {
+      model_tag_name: modelTagLink?.name ?? "",
+      model_tag_url: modelTagLink?.url ?? "",
     },
     variants: {
       available_sizes: availableSizes,
@@ -413,6 +418,7 @@ async function taxonomyPayload(
   readonly taxonomies: JsonObject;
   readonly missingRequired: readonly ReferenceType[];
   readonly taxonomyOrigins: readonly WordPressTaxonomyOrigin[];
+  readonly modelTagLink: { readonly name: string; readonly url: string } | null;
 }> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
   const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
@@ -451,6 +457,7 @@ async function taxonomyPayload(
       referenceId: reference.referenceValueId,
     })),
   );
+  const modelTagLinks = new Map<string, { readonly name: string; readonly url: string }>();
   for (const projection of projections) {
     const target = targetForScope(context.target.config, projection.targetScope);
     if (target === null) throw new IntegrationContractError(`WordPress projection has an unsupported target scope: ${projection.targetScope}`);
@@ -466,7 +473,20 @@ async function taxonomyPayload(
         sourceTypeCode: projection.provenance.sourceTypeCode,
         sourceLabel: projection.provenance.sourceLabel,
       });
+      const modelName = projection.provenance.sourceLabel.trim();
+      const tagSlug = projection.externalSlug?.trim() ?? "";
+      if (target.taxonomy === "product_tag"
+        && projection.provenance.relationCode === "landing"
+        && projection.provenance.sourceTypeCode === "model"
+        && modelName !== ""
+        && tagSlug !== "") {
+        const link = { name: modelName, url: `/tags/${encodeURIComponent(tagSlug)}/` } as const;
+        modelTagLinks.set(`${link.name}\u0000${link.url}`, link);
+      }
     }
+  }
+  if (modelTagLinks.size > 1) {
+    throw new IntegrationContractError("WordPress model resolves to more than one landing tag");
   }
   const assignments = await context.references.resolveAssignments(context.product);
   const replacementGroups = new Map<string, string>();
@@ -513,6 +533,7 @@ async function taxonomyPayload(
     taxonomies: Object.fromEntries([...grouped.entries()].map(([taxonomy, termIds]) => [taxonomy, { mode: "replace", term_ids: [...termIds] }])),
     missingRequired: missing,
     taxonomyOrigins,
+    modelTagLink: [...modelTagLinks.values()][0] ?? null,
   };
 }
 
@@ -535,7 +556,7 @@ async function buildWordPressPayload(
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
-  const { taxonomies, missingRequired, taxonomyOrigins } = await taxonomyPayload(context, required, allowMissingRequired);
+  const { taxonomies, missingRequired, taxonomyOrigins, modelTagLink } = await taxonomyPayload(context, required, allowMissingRequired);
   const variantsForConversion = context.liveVariants === undefined
     ? context.product.variants
     : [...context.product.variants, ...context.liveVariants];
@@ -561,7 +582,7 @@ async function buildWordPressPayload(
     : await Promise.all(context.product.variants.map(
       (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
     ));
-  const contentContext = wordpressContentContext(context.product, title, contentVariations);
+  const contentContext = wordpressContentContext(context.product, title, contentVariations, modelTagLink);
   const contentTemplates = context.contentTemplates ?? [];
   const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
   const managedFields = ["title", "slug", "sku"];

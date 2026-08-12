@@ -114,6 +114,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
     resolveTargetProjections: vi.fn().mockResolvedValue(options.landingProjection ? [{
       resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
+      externalLabel: "Onitsuka Tiger", externalSlug: "onitsuka-tiger",
       provenance: { kind: "related_target_term", relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" },
     }] : []),
     resolveTargetAssignments: vi.fn().mockResolvedValue([]),

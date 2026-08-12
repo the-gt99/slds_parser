@@ -61,6 +61,8 @@ const variables: readonly WordPressContentTemplateVariable[] = [
   { path: "classification.tags", label: "Метки", group: "Классификация", valueType: "string_array", example: "На каждый день" },
   { path: "classification.colors", label: "Цвета", group: "Классификация", valueType: "string_array", example: "Серый" },
   { path: "classification.materials", label: "Материалы", group: "Классификация", valueType: "string_array", example: "Синтетика" },
+  { path: "links.model_tag_name", label: "Название модели для ссылки", group: "Ссылки", valueType: "string", example: "Nike Dunk" },
+  { path: "links.model_tag_url", label: "Ссылка на другие расцветки", group: "Ссылки", valueType: "string", example: "/tags/nike-dunk/" },
   { path: "variants.available_sizes", label: "Доступные размеры", group: "Вариации", valueType: "string_array", example: "5, 5.5, 6, 16.5" },
   { path: "variants.all_sizes", label: "Все размеры", group: "Вариации", valueType: "string_array", example: "5, 5.5, 6, 16.5" },
   { path: "variants.audience", label: "Пол / аудитория", group: "Вариации", valueType: "string", example: "women" },

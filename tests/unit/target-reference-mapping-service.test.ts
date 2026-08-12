@@ -46,6 +46,7 @@ describe("TargetReferenceMappingService", () => {
       dictionaryValueId: "401",
       externalValue: "892",
       externalLabel: "Lifestyle",
+      externalSlug: "lifestyle",
       metadata: {},
       revision: "1",
     };
@@ -60,6 +61,8 @@ describe("TargetReferenceMappingService", () => {
       resolutionId: "21",
       targetScope: "product.tag",
       externalValue: "892",
+      externalLabel: "Lifestyle",
+      externalSlug: "lifestyle",
     }]);
     expect(repository.resolveTargetProjections).toHaveBeenCalledWith("2", [{ resolutionKind: "mapping", resolutionId: "21", referenceId: "31" }]);
   });
@@ -69,6 +72,7 @@ describe("TargetReferenceMappingService", () => {
     const projection: TargetReferenceProjectionRecord = {
       id: "302", targetId: "2", referenceValueId: "31", targetScope: "product.tag",
       dictionaryValueId: "402", externalValue: "895", externalLabel: "Для баскетбола",
+      externalSlug: "basketball",
       metadata: {}, revision: "1",
     };
     vi.mocked(repository.resolveTargetProjections).mockResolvedValue([projection]);
@@ -78,6 +82,7 @@ describe("TargetReferenceMappingService", () => {
       { resolutionKind: "rule", resolutionId: "22", referenceId: "31" },
     ])).resolves.toEqual([{
       resolutionKind: "reference", resolutionId: "31", targetScope: "product.tag", externalValue: "895",
+      externalLabel: "Для баскетбола", externalSlug: "basketball",
     }]);
   });
 
@@ -86,6 +91,7 @@ describe("TargetReferenceMappingService", () => {
     const projection: TargetReferenceProjectionRecord = {
       id: "303", targetId: "2", referenceValueId: "31", targetScope: "product.tag",
       dictionaryValueId: "403", externalValue: "2968", externalLabel: "Onitsuka Tiger",
+      externalSlug: "onitsuka-tiger",
       metadata: {
         managedBy: "target_term_relation", relationCode: "landing",
         sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",

@@ -34,7 +34,7 @@ export class PostgresReferenceRepository implements ReferenceRepository {
          FROM JSONB_TO_RECORDSET($2::JSONB) AS item(resolution_kind TEXT, resolution_id BIGINT, reference_id BIGINT)
        )
        SELECT DISTINCT projection.*, dictionary.external_id AS external_value,
-              dictionary.name AS external_label
+              dictionary.name AS external_label, dictionary.slug AS external_slug
        FROM target_classification_projections projection
        JOIN target_dictionary_values dictionary
          ON dictionary.id = projection.dictionary_value_id
@@ -53,7 +53,7 @@ export class PostgresReferenceRepository implements ReferenceRepository {
            FROM JSONB_TO_RECORDSET($2::JSONB) AS item(resolution_kind TEXT, resolution_id BIGINT, reference_id BIGINT)
          )
          SELECT projection.*, dictionary.external_id AS external_value,
-                dictionary.name AS external_label
+                dictionary.name AS external_label, dictionary.slug AS external_slug
          FROM target_reference_projections projection
          JOIN target_dictionary_values dictionary
            ON dictionary.id = projection.dictionary_value_id
@@ -94,7 +94,7 @@ export class PostgresReferenceRepository implements ReferenceRepository {
          RETURNING *
        )
        SELECT saved.*, dictionary.external_id AS external_value,
-              dictionary.name AS external_label
+              dictionary.name AS external_label, dictionary.slug AS external_slug
        FROM saved
        JOIN target_dictionary_values dictionary ON dictionary.id = saved.dictionary_value_id`,
       [input.targetId, input.resolutionId, input.targetScope, input.dictionaryValueId, input.actor],

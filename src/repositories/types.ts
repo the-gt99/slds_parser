@@ -274,6 +274,7 @@ export interface TargetClassificationProjectionRecord {
   readonly dictionaryValueId: EntityId;
   readonly externalValue: string;
   readonly externalLabel: string;
+  readonly externalSlug: string | null;
   readonly metadata: JsonObject;
   readonly revision: string;
   readonly active?: boolean;
@@ -1124,6 +1125,7 @@ export interface TargetReferenceProjectionRecord {
   readonly dictionaryValueId: EntityId;
   readonly externalValue: string;
   readonly externalLabel: string;
+  readonly externalSlug: string | null;
   readonly metadata: JsonObject;
   readonly revision: string;
   readonly active?: boolean;

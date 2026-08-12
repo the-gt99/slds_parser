@@ -79,6 +79,7 @@ export function mapTargetClassificationProjection(row: DatabaseRow): TargetClass
     dictionaryValueId: text(row, "dictionary_value_id"),
     externalValue: text(row, "external_value"),
     externalLabel: text(row, "external_label"),
+    externalSlug: nullableText(row, "external_slug"),
     metadata: row.metadata as JsonObject,
     revision: text(row, "revision"),
   };
@@ -93,6 +94,7 @@ export function mapTargetReferenceProjection(row: DatabaseRow): TargetReferenceP
     dictionaryValueId: text(row, "dictionary_value_id"),
     externalValue: text(row, "external_value"),
     externalLabel: text(row, "external_label"),
+    externalSlug: nullableText(row, "external_slug"),
     metadata: row.metadata as JsonObject,
     revision: text(row, "revision"),
   };

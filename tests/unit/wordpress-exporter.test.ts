@@ -274,7 +274,7 @@ describe("WordPressExporter", () => {
   it("adds taxonomy terms projected from concrete classification decisions", async () => {
     const input = context();
     vi.mocked(input.references.resolveProjections).mockResolvedValue([
-      { resolutionKind: "mapping", resolutionId: "22", targetScope: "product.tag", externalValue: "892" },
+      { resolutionKind: "mapping", resolutionId: "22", targetScope: "product.tag", externalValue: "892", externalLabel: "Lifestyle", externalSlug: "lifestyle" },
     ]);
 
     const payload = await buildWordPressUpsertPayload(input);
@@ -295,6 +295,7 @@ describe("WordPressExporter", () => {
     const input = context();
     vi.mocked(input.references.resolveProjections).mockResolvedValue([{
       resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
+      externalLabel: "Onitsuka Tiger", externalSlug: "onitsuka-tiger",
       provenance: {
         kind: "related_target_term", relationCode: "landing",
         sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
@@ -308,6 +309,50 @@ describe("WordPressExporter", () => {
       sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger",
     }]);
     expect(preview.payload).not.toHaveProperty("taxonomyOrigins");
+  });
+
+  it("exposes the confirmed model landing tag to content templates", async () => {
+    const input: ExportContext = {
+      ...context(),
+      contentTemplates: [{
+        id: "206", field: "description", revision: 1,
+        templateSource: "{% if links.model_tag_url %}<p><span class=\"slds-managed-model-tag-link\"><a href=\"{{ links.model_tag_url }}\">Заказать другие расцветки {{ links.model_tag_name }}</a></span></p>{% endif %}",
+        profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [], requiredContextPaths: [],
+      }],
+    };
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([{
+      resolutionKind: "reference", resolutionId: "45", targetScope: "product.tag", externalValue: "4456",
+      externalLabel: "Кроссовки Nike Dunk", externalSlug: "nike-dunk",
+      provenance: {
+        kind: "related_target_term", relationCode: "landing",
+        sourceTypeCode: "model", sourceLabel: "Nike Dunk",
+      },
+    }]);
+
+    const preview = await previewWordPressUpsertPayload(input);
+
+    expect(preview.contentContext.links).toEqual({ model_tag_name: "Nike Dunk", model_tag_url: "/tags/nike-dunk/" });
+    expect((preview.payload.product as JsonObject).description_html).toBe(
+      '<p><span class="slds-managed-model-tag-link"><a href="/tags/nike-dunk/" rel="noopener noreferrer">Заказать другие расцветки Nike Dunk</a></span></p>',
+    );
+  });
+
+  it("rejects conflicting model landing tags", async () => {
+    const input = context();
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([
+      {
+        resolutionKind: "reference", resolutionId: "45", targetScope: "product.tag", externalValue: "4456",
+        externalLabel: "Кроссовки Nike Dunk", externalSlug: "nike-dunk",
+        provenance: { kind: "related_target_term", relationCode: "landing", sourceTypeCode: "model", sourceLabel: "Nike Dunk" },
+      },
+      {
+        resolutionKind: "reference", resolutionId: "45", targetScope: "product.tag", externalValue: "4457",
+        externalLabel: "Кроссовки Nike Dunk Low", externalSlug: "nike-dunk-low",
+        provenance: { kind: "related_target_term", relationCode: "landing", sourceTypeCode: "model", sourceLabel: "Nike Dunk" },
+      },
+    ]);
+
+    await expect(previewWordPressUpsertPayload(input)).rejects.toThrow("more than one landing tag");
   });
 
   it("does not block or clear an unresolved optional taxonomy", async () => {

@@ -14,6 +14,7 @@ const context: JsonObject = {
   content: { story: "Первый абзац.\n\nВторой абзац.", description: "", color: "", details: "", upper_material: "" },
   attributes: { midsole: "", category: "Lifestyle", release_date: "" },
   classification: { brands: ["Nike"], models: ["Dunk"], categories: [], tags: [], colors: [], materials: [] },
+  links: { model_tag_name: "Nike Dunk", model_tag_url: "/tags/nike-dunk/" },
   variants: { available_sizes: ["10", "5.5", "5", "10"], all_sizes: ["5", "5.5", "10"], audience: "women", size_system: "us-numeric", available_count: 4, count: 4 },
 };
 
@@ -58,6 +59,13 @@ describe("WordPress content templates", () => {
 
   it("fails explicitly when a required value is empty", () => {
     expect(() => renderWordPressContentTemplate("{{ content.color | required }}", context)).toThrow("Required content template value is empty");
+  });
+
+  it("renders a managed model tag link from the target context", () => {
+    expect(renderWordPressContentTemplate(
+      "{% if links.model_tag_url %}<p><span class=\"slds-managed-model-tag-link\"><a href=\"{{ links.model_tag_url }}\">Заказать другие расцветки {{ links.model_tag_name }}</a></span></p>{% endif %}",
+      context,
+    )).toBe('<p><span class="slds-managed-model-tag-link"><a href="/tags/nike-dunk/" rel="noopener noreferrer">Заказать другие расцветки Nike Dunk</a></span></p>');
   });
 
   it("selects a category profile before the fallback profile", () => {

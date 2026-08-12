@@ -286,13 +286,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
   it("resolves classification projections in one batch", async () => {
     const executor = new FakeExecutor([[
-      { id: "51", target_id: "7", mapping_id: "21", rule_id: null, target_scope: "product.tag", dictionary_value_id: "61", external_value: "892", external_label: "Lifestyle", metadata: {}, revision: "1" },
+      { id: "51", target_id: "7", mapping_id: "21", rule_id: null, target_scope: "product.tag", dictionary_value_id: "61", external_value: "892", external_label: "Lifestyle", external_slug: "lifestyle", metadata: {}, revision: "1" },
     ], [
-      { id: "52", target_id: "7", reference_value_id: "31", target_scope: "product.tag", dictionary_value_id: "62", external_value: "893", external_label: "Running", metadata: {}, revision: "1" },
+      { id: "52", target_id: "7", reference_value_id: "31", target_scope: "product.tag", dictionary_value_id: "62", external_value: "893", external_label: "Running", external_slug: "running", metadata: {}, revision: "1" },
     ]]);
     const projections = await new PostgresReferenceRepository(executor).resolveTargetProjections("7", [{ resolutionKind: "mapping", resolutionId: "21", referenceId: "31" }]);
-    expect(projections[0]).toMatchObject({ resolutionKind: "mapping", resolutionId: "21", externalValue: "892" });
-    expect(projections[1]).toMatchObject({ referenceValueId: "31", externalValue: "893" });
+    expect(projections[0]).toMatchObject({ resolutionKind: "mapping", resolutionId: "21", externalValue: "892", externalSlug: "lifestyle" });
+    expect(projections[1]).toMatchObject({ referenceValueId: "31", externalValue: "893", externalSlug: "running" });
+    expect(executor.calls[0]?.text).toContain("dictionary.slug AS external_slug");
     expect(executor.calls[0]?.text).toContain("JSONB_TO_RECORDSET");
     expect(executor.calls[0]?.values[1]).toContain('"resolution_kind":"mapping"');
     expect(executor.calls[0]?.values[1]).toContain('"reference_id":"31"');

@@ -48,6 +48,8 @@ export class TargetReferenceMappingService {
         resolutionId: "referenceValueId" in projection ? projection.referenceValueId : projection.resolutionId,
         targetScope: projection.targetScope,
         externalValue: projection.externalValue,
+        externalLabel: projection.externalLabel,
+        externalSlug: projection.externalSlug,
         ...(managedRelation ? {
           provenance: {
             kind: "related_target_term" as const,
