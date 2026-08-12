@@ -51,6 +51,14 @@ describe("ExportControlService", () => {
     }]);
   });
 
+  it("requests only stale reviewed products for automatic maintenance", async () => {
+    const { repository, service } = setup();
+
+    await service.enqueuePreflights({ targetId: "10", mode: "stale", limit: 100 });
+
+    expect(repository.preparePreflightCandidates).toHaveBeenCalledWith({ targetId: "10", mode: "stale", limit: 100 });
+  });
+
   it("delegates the frozen approval and export jobs to one atomic batch creation", async () => {
     const { repository, jobs, service } = setup();
 

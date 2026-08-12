@@ -819,6 +819,19 @@ export interface ExportControlListItem {
 export interface ExportControlListResult {
   readonly items: readonly ExportControlListItem[];
   readonly nextCursor: ExportControlCursor | null;
+  readonly summary: ExportControlReadinessSummary;
+}
+
+export interface ExportControlReadinessSummary {
+  readonly candidateCount: number;
+  readonly reviewedCount: number;
+  readonly unreviewedCount: number;
+  readonly checkingCount: number;
+  readonly readyCount: number;
+  readonly exportableCount: number;
+  readonly blockedCount: number;
+  readonly staleCount: number;
+  readonly errorCount: number;
 }
 
 export interface SaveExportControlPreflightInput {

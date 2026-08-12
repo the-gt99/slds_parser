@@ -136,6 +136,7 @@ interface ExportControlQuery {
 interface ExportControlBody {
   readonly targetId?: unknown;
   readonly sourceProductIds?: unknown;
+  readonly mode?: unknown;
   readonly limit?: unknown;
   readonly filter?: unknown;
   readonly reason?: unknown;
@@ -305,6 +306,12 @@ function projectionBody(value: unknown) {
     dictionaryValueId: entityId(body.dictionaryValueId, "dictionaryValueId"),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
   };
+}
+
+function preflightMode(value: unknown): "all" | "stale" | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value !== "all" && value !== "stale") throw new HttpInputError("mode must be all or stale");
+  return value;
 }
 
 function contentTemplateMode(value: unknown): "manage" | "preserve" {
@@ -1068,11 +1075,13 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => {
       const sourceProductIds = entityIds(request.body?.sourceProductIds, "sourceProductIds");
+      const mode = preflightMode(request.body?.mode);
       const limit = positiveInteger(String(request.body?.limit ?? "100"), 100, 100);
       if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 100");
       return { result: await exportControlService().enqueuePreflights({
         targetId: entityId(request.body?.targetId, "targetId"),
         ...(sourceProductIds === undefined ? {} : { sourceProductIds }),
+        ...(mode === undefined ? {} : { mode }),
         limit,
       }) };
     },
@@ -1326,6 +1335,20 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         actor(request),
       ),
     }),
+  );
+
+  server.post<{ Params: ProductParams; Body: { readonly targetId?: unknown } }>(
+    "/api/products/:productId/wordpress-preflight",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.wordpressPreview === undefined) throw new HttpInputError("WordPress preview is not configured");
+      return { item: await dependencies.wordpressPreview.preview(
+        entityId(request.params.productId, "productId"),
+        entityId(request.body?.targetId, "targetId"),
+        [],
+        { saveExportControl: true },
+      ) };
+    },
   );
 
   server.get<{ Params: TargetParams }>("/api/targets/:targetId/assignment-rules", { preHandler: requireAdmin }, async (request) => ({

@@ -7,6 +7,9 @@ const state = {
   cursor: null,
   selected: new Set(),
   pendingExport: null,
+  summary: null,
+  refreshTimer: null,
+  maintenanceRunning: false,
 };
 
 async function api(url, options = {}) {
@@ -74,6 +77,71 @@ function showMessage(text, kind = "") {
   box.textContent = text;
   box.className = `inline-message ${kind}`.trim();
   box.hidden = false;
+}
+
+function count(value) {
+  return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
+}
+
+function renderSummary(summary) {
+  state.summary = summary;
+  byId("summary-exportable").textContent = count(summary.exportableCount);
+  byId("summary-ready").textContent = count(summary.readyCount);
+  byId("summary-stale").textContent = count(summary.staleCount);
+  byId("summary-checking").textContent = count(summary.checkingCount);
+  byId("summary-blocked").textContent = count(summary.blockedCount);
+  byId("summary-blocked-note").textContent = summary.errorCount > 0
+    ? `ошибок preflight: ${count(summary.errorCount)}`
+    : "не прошли требования экспорта";
+  byId("summary-unreviewed").textContent = count(summary.unreviewedCount);
+  byId("summary-candidates").textContent = count(summary.candidateCount);
+  const pending = summary.unreviewedCount + summary.errorCount + summary.staleCount;
+  const batch = Math.min(Number(byId("preflight-limit").value), pending);
+  byId("check-next").textContent = batch > 0 ? `Проверить ещё ${count(batch)}` : "Всё проверено";
+  byId("check-next").disabled = pending === 0;
+  byId("summary-maintenance").textContent = summary.checkingCount > 0
+    ? `${count(summary.checkingCount)} в очереди или работе`
+    : summary.staleCount > 0
+      ? "автоматическая перепроверка запускается"
+      : "актуальные результаты";
+}
+
+function clearScheduledRefresh() {
+  if (state.refreshTimer !== null) window.clearTimeout(state.refreshTimer);
+  state.refreshTimer = null;
+}
+
+function scheduleReadinessMaintenance() {
+  clearScheduledRefresh();
+  if (document.hidden || !state.summary || state.maintenanceRunning) return;
+  if (state.summary.checkingCount > 0) {
+    state.refreshTimer = window.setTimeout(() => load(true), 8_000);
+    return;
+  }
+  if (state.summary.staleCount > 0) void enqueueStalePreflights();
+}
+
+async function enqueueStalePreflights() {
+  if (state.maintenanceRunning || document.hidden || !state.targetId) return;
+  state.maintenanceRunning = true;
+  byId("summary-maintenance").textContent = "ставим устаревшие проверки в очередь";
+  try {
+    const result = await api("/api/export-control/preflights", {
+      method: "POST",
+      body: { targetId: state.targetId, mode: "stale", limit: 100 },
+    });
+    await load(true, { scheduleMaintenance: false });
+    if (result.result.queuedCount === 0 && state.summary?.staleCount > 0) {
+      byId("summary-maintenance").textContent = "ожидаем освобождения очереди";
+      state.refreshTimer = window.setTimeout(() => load(true), 8_000);
+    }
+  } catch (error) {
+    byId("summary-maintenance").textContent = `автопроверка остановлена: ${error.message}`;
+    state.refreshTimer = window.setTimeout(() => load(true), 30_000);
+  } finally {
+    state.maintenanceRunning = false;
+    if (state.refreshTimer === null) scheduleReadinessMaintenance();
+  }
 }
 
 function updateSelection() {
@@ -255,7 +323,7 @@ function render(reset) {
   updateSelection();
 }
 
-async function load(reset = true) {
+async function load(reset = true, options = {}) {
   if (!state.targetId) return;
   if (reset) {
     state.cursor = null;
@@ -276,7 +344,9 @@ async function load(reset = true) {
     const items = result.items || [];
     state.items = reset ? items : [...state.items, ...items];
     state.cursor = result.nextCursor;
+    renderSummary(result.summary || {});
     render(true);
+    if (reset && options.scheduleMaintenance !== false) scheduleReadinessMaintenance();
   } catch (error) {
     if (error.status === 401) return showLogin();
     byId("error").textContent = error.message;
@@ -386,6 +456,10 @@ byId("clear-selection").addEventListener("click", () => { state.selected.clear()
 byId("preview-export").addEventListener("click", () => previewExport(state.selected.size ? [...state.selected] : undefined));
 byId("confirm-export").addEventListener("click", applyExport);
 byId("load-more").addEventListener("click", () => load(false));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearScheduledRefresh();
+  else load(true);
+});
 
 api("/api/auth/session").then(async (session) => {
   if (!session.authenticated) return showLogin();

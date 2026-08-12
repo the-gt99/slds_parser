@@ -9,6 +9,7 @@ import type {
   ExportControlListQuery,
   ExportControlListResult,
   ExportControlPreflightCandidate,
+  ExportControlReadinessSummary,
   ExportControlRepository,
   SaveExportControlPreflightInput,
 } from "../../../repositories/index.js";
@@ -41,7 +42,8 @@ function flags(value: unknown): string[] {
 const effectiveStatusSql = `CASE
   WHEN review.status = 'checking' THEN 'checking'
   WHEN review.status = 'stale'
-    OR review.configuration_revision <> revision.revision THEN 'stale'
+    OR review.configuration_revision <> revision.revision
+    OR review.internal_content_hash <> internal.content_hash THEN 'stale'
   ELSE review.status
 END`;
 
@@ -53,11 +55,11 @@ function filterSql(
   const where: string[] = [];
   if (options.includeStatus && filter.status !== undefined) {
     if (filter.status === "stale") {
-      where.push("(review.status = 'stale' OR (review.status <> 'checking' AND review.configuration_revision <> revision.revision))");
+      where.push("(review.status = 'stale' OR (review.status <> 'checking' AND (review.configuration_revision <> revision.revision OR review.internal_content_hash <> internal.content_hash)))");
     } else if (filter.status === "checking") {
       where.push("review.status = 'checking'");
     } else {
-      where.push(`review.status = ${add(filter.status)} AND review.configuration_revision = revision.revision`);
+      where.push(`review.status = ${add(filter.status)} AND review.configuration_revision = revision.revision AND review.internal_content_hash = internal.content_hash`);
     }
   }
   if (filter.operation === "create") where.push("review.will_create = TRUE");
@@ -162,6 +164,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          SELECT review.id, ${effectiveStatusSql} AS effective_status
          FROM target_product_preflight_reviews review
          JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         JOIN internal_products internal ON internal.id = review.internal_product_id
          WHERE ${where.join(" AND ")}
          ORDER BY review.checked_at DESC, review.id DESC
          LIMIT ${pageLimit}
@@ -192,20 +195,76 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        ORDER BY review.checked_at DESC, review.id DESC`,
       parameters,
     );
+    const summaryResult = await queryPool<DatabaseRow>(this.pool,
+      `WITH eligible AS MATERIALIZED (
+         SELECT id, content_hash
+         FROM internal_products
+         WHERE status = 'classified'
+           AND data->'classification'->>'status' = 'complete'
+       ), states AS MATERIALIZED (
+         SELECT eligible.id AS internal_product_id,
+                review.id AS review_id,
+                ${effectiveStatusSql} AS effective_status,
+                review.payload_hash,
+                review.target_id
+         FROM eligible
+         CROSS JOIN target_export_revisions revision
+         LEFT JOIN target_product_preflight_reviews review
+           ON review.target_id = revision.target_id
+          AND review.internal_product_id = eligible.id
+         JOIN internal_products internal ON internal.id = eligible.id
+         WHERE revision.target_id = $1
+       )
+       SELECT COUNT(*)::BIGINT AS candidate_count,
+              COUNT(review_id)::BIGINT AS reviewed_count,
+              COUNT(*) FILTER (WHERE review_id IS NULL)::BIGINT AS unreviewed_count,
+              COUNT(*) FILTER (WHERE effective_status = 'checking')::BIGINT AS checking_count,
+              COUNT(*) FILTER (WHERE effective_status = 'ready')::BIGINT AS ready_count,
+              COUNT(*) FILTER (
+                WHERE effective_status = 'ready'
+                  AND payload_hash IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM jobs active_job
+                    WHERE active_job.job_type = 'export_product'
+                      AND active_job.status IN ('pending', 'running', 'retry')
+                      AND active_job.payload->>'targetId' = states.target_id::TEXT
+                      AND active_job.payload->>'internalProductId' = states.internal_product_id::TEXT
+                  )
+              )::BIGINT AS exportable_count,
+              COUNT(*) FILTER (WHERE effective_status = 'blocked')::BIGINT AS blocked_count,
+              COUNT(*) FILTER (WHERE effective_status = 'stale')::BIGINT AS stale_count,
+              COUNT(*) FILTER (WHERE effective_status = 'error')::BIGINT AS error_count
+       FROM states`,
+      [query.targetId],
+    );
     const hasMore = result.rows.length > query.limit;
     const rows = result.rows.slice(0, query.limit);
     const last = rows.at(-1);
+    const summaryRow = summaryResult.rows[0] ?? {};
+    const summary: ExportControlReadinessSummary = {
+      candidateCount: Number(summaryRow.candidate_count ?? 0),
+      reviewedCount: Number(summaryRow.reviewed_count ?? 0),
+      unreviewedCount: Number(summaryRow.unreviewed_count ?? 0),
+      checkingCount: Number(summaryRow.checking_count ?? 0),
+      readyCount: Number(summaryRow.ready_count ?? 0),
+      exportableCount: Number(summaryRow.exportable_count ?? 0),
+      blockedCount: Number(summaryRow.blocked_count ?? 0),
+      staleCount: Number(summaryRow.stale_count ?? 0),
+      errorCount: Number(summaryRow.error_count ?? 0),
+    };
     return {
       items: rows.map(mapListItem),
       nextCursor: hasMore && last !== undefined
         ? { checkedAt: timestamp(last, "checked_at"), id: text(last, "id") }
         : null,
+      summary,
     };
   }
 
   async preparePreflightCandidates(input: {
     readonly targetId: EntityId;
     readonly sourceProductIds?: readonly EntityId[];
+    readonly mode?: "all" | "stale";
     readonly limit: number;
   }): Promise<readonly ExportControlPreflightCandidate[]> {
     return transaction(this.pool, async (client) => {
@@ -235,12 +294,19 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
              )
              AND CASE WHEN $3::BOOLEAN THEN COALESCE(review.status, '') <> 'checking'
+               WHEN $4::BOOLEAN THEN review.id IS NOT NULL
+                 AND review.status <> 'checking'
+                 AND (review.status = 'stale'
+                   OR review.configuration_revision <> revision.revision
+                   OR review.internal_content_hash <> internal.content_hash)
                ELSE review.id IS NULL OR review.status IN ('stale', 'error')
                  OR review.configuration_revision <> revision.revision
+                 OR review.internal_content_hash <> internal.content_hash
              END
            ORDER BY CASE WHEN $2::BIGINT[] IS NULL THEN 0 ELSE ARRAY_POSITION($2::BIGINT[], internal.source_product_id) END,
+                    CASE WHEN review.id IS NULL THEN 1 ELSE 0 END,
                     internal.updated_at DESC, internal.id DESC
-           LIMIT $4
+           LIMIT $5
            FOR UPDATE OF internal SKIP LOCKED
          ), marked AS (
            INSERT INTO target_product_preflight_reviews (
@@ -267,7 +333,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            RETURNING source_product_id, internal_product_id
          )
          SELECT * FROM marked`,
-        [input.targetId, input.sourceProductIds ?? null, explicit, input.limit],
+        [input.targetId, input.sourceProductIds ?? null, explicit, input.mode === "stale", input.limit],
       );
       return result.rows.map((row) => ({
         sourceProductId: text(row, "source_product_id"),
@@ -384,6 +450,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
               review.matched_by, review.risk_level, review.change_flags
        FROM target_product_preflight_reviews review
        JOIN target_export_revisions revision ON revision.target_id = review.target_id
+       JOIN internal_products internal
+         ON internal.id = review.internal_product_id
+        AND internal.content_hash = review.internal_content_hash
+        AND internal.status = 'classified'
+        AND internal.data->'classification'->>'status' = 'complete'
        WHERE ${where.join(" AND ")}
        ORDER BY review.checked_at DESC, review.id DESC
        LIMIT ${limit}`,

@@ -15,6 +15,7 @@ export interface ExportControlRepository {
   preparePreflightCandidates(input: {
     readonly targetId: EntityId;
     readonly sourceProductIds?: readonly EntityId[];
+    readonly mode?: "all" | "stale";
     readonly limit: number;
   }): Promise<readonly ExportControlPreflightCandidate[]>;
   savePreflight(input: SaveExportControlPreflightInput): Promise<void>;

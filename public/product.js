@@ -975,12 +975,15 @@ async function loadPreview() {
   if (!target) { box.textContent = "WordPress target не настроен для preview."; return; }
   button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; box.classList.remove("error"); content.hidden = true;
   try {
-    const { item } = await api(`/api/products/${productId}/wordpress-preview?targetId=${encodeURIComponent(target.id)}`);
+    const { item } = await api(`/api/products/${productId}/wordpress-preflight`, {
+      method: "POST",
+      body: { targetId: target.id },
+    });
     box.textContent = item.readiness?.ready
       ? item.willCreate
-        ? `Preflight выполнен без записи · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
-        : `Preflight выполнен без записи · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`
-      : `Read-only проверка выполнена · найден товар WP ${item.externalId || "—"} · экспорт заблокирован`;
+        ? `Preflight сохранён без записи в WordPress · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
+        : `Preflight сохранён без записи в WordPress · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`
+      : `Проверка сохранена без записи в WordPress · найден товар WP ${item.externalId || "—"} · экспорт заблокирован`;
     const blocks = [renderVisualPreview(item)];
     if (item.payload) {
       blocks.push(

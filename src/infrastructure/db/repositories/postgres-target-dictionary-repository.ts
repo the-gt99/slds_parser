@@ -117,16 +117,17 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
     return withClient(this.pool, async (client) => {
       await client.query("BEGIN");
       try {
-        await client.query(
-          `UPDATE target_dictionary_values
-           SET active = FALSE, updated_at = NOW()
-           WHERE target_id = $1 AND entity_type = $2 AND active = TRUE`,
-          [targetId, entityType],
-        );
-
         if (values.length > 0) {
           await this.upsertMany(client, targetId, entityType, values);
         }
+        const externalIds = [...new Set(values.map((value) => value.externalId))];
+        await client.query(
+          `UPDATE target_dictionary_values
+           SET active = FALSE, updated_at = NOW()
+           WHERE target_id = $1 AND entity_type = $2 AND active = TRUE
+             AND NOT (external_id = ANY($3::TEXT[]))`,
+          [targetId, entityType, externalIds],
+        );
         await client.query("COMMIT");
         return values.length;
       } catch (error) {

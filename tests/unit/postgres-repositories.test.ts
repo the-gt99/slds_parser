@@ -13,6 +13,7 @@ import {
   PostgresSourceRepository,
   PostgresSourceRunRepository,
   PostgresTargetContentTemplateRepository,
+  PostgresTargetDictionaryRepository,
   PostgresTargetRepository,
   DatabaseRetentionService,
 } from "../../src/infrastructure/db/index.js";
@@ -114,7 +115,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("types a numeric export-control search once as bigint", async () => {
-    const executor = new FakeExecutor([[]]);
+    const executor = new FakeExecutor([[], [{
+      candidate_count: "120", reviewed_count: "100", unreviewed_count: "20",
+      checking_count: "2", ready_count: "52", exportable_count: "51",
+      blocked_count: "40", stale_count: "5", error_count: "1",
+    }]]);
     const repository = new PostgresExportControlRepository(pool(executor));
 
     await repository.list({ targetId: "10", search: "7058", limit: 50 });
@@ -122,6 +127,44 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const listCall = executor.calls[0]!;
     expect(listCall.text).toContain("review.source_product_id = $2::BIGINT");
     expect(listCall.text).toContain("review.source_external_id = $2::BIGINT::TEXT");
+    expect(listCall.text).toContain("review.internal_content_hash <> internal.content_hash");
+  });
+
+  it("returns exact export readiness counters independently of the current page filter", async () => {
+    const executor = new FakeExecutor([[], [{
+      candidate_count: "12917", reviewed_count: "296", unreviewed_count: "12621",
+      checking_count: "0", ready_count: "52", exportable_count: "51",
+      blocked_count: "46", stale_count: "198", error_count: "0",
+    }]]);
+    const result = await new PostgresExportControlRepository(pool(executor)).list({ targetId: "10", status: "ready", limit: 50 });
+
+    expect(result.summary).toEqual({
+      candidateCount: 12917, reviewedCount: 296, unreviewedCount: 12621,
+      checkingCount: 0, readyCount: 52, exportableCount: 51,
+      blockedCount: 46, staleCount: 198, errorCount: 0,
+    });
+    expect(executor.calls[1]?.values).toEqual(["10"]);
+    expect(executor.calls[1]?.text).toContain("data->'classification'->>'status' = 'complete'");
+  });
+
+  it("selects only existing stale reviews for automatic preflight maintenance", async () => {
+    const executor = new FakeExecutor([[], [], [], []]);
+    await new PostgresExportControlRepository(pool(executor)).preparePreflightCandidates({ targetId: "10", mode: "stale", limit: 100 });
+
+    const selectCall = executor.calls[1]!;
+    expect(selectCall.values).toEqual(["10", null, false, true, 100]);
+    expect(selectCall.text).toContain("review.id IS NOT NULL");
+    expect(selectCall.text).toContain("review.internal_content_hash <> internal.content_hash");
+  });
+
+  it("keeps dictionary rows active during replacement and deactivates only missing values", async () => {
+    const executor = new FakeExecutor([[], [], [], []]);
+    const repository = new PostgresTargetDictionaryRepository(pool(executor));
+    await repository.replaceEntityValues("10", "brands", [{ externalId: "7", name: "Nike", metadata: {} }]);
+
+    expect(executor.calls[1]?.text).toContain("INSERT INTO target_dictionary_values");
+    expect(executor.calls[2]?.text).toContain("NOT (external_id = ANY($3::TEXT[]))");
+    expect(executor.calls[2]?.values).toEqual(["10", "brands", ["7"]]);
   });
 
   it("does not apply a source freshness TTL to approved export candidates", async () => {

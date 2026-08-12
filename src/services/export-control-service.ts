@@ -27,7 +27,12 @@ export class ExportControlService {
     return this.repository.list(query);
   }
 
-  async enqueuePreflights(input: { readonly targetId: EntityId; readonly sourceProductIds?: readonly EntityId[]; readonly limit?: number }) {
+  async enqueuePreflights(input: {
+    readonly targetId: EntityId;
+    readonly sourceProductIds?: readonly EntityId[];
+    readonly mode?: "all" | "stale";
+    readonly limit?: number;
+  }) {
     const sourceProductIds = uniqueIds(input.sourceProductIds);
     if (sourceProductIds !== undefined && sourceProductIds.length > maximumPreflightBatch) {
       throw new IntegrationContractError(`За один раз можно проверить не более ${maximumPreflightBatch} товаров`);
@@ -40,6 +45,7 @@ export class ExportControlService {
     const candidates = await this.repository.preparePreflightCandidates({
       targetId: input.targetId,
       ...(sourceProductIds === undefined ? {} : { sourceProductIds }),
+      ...(input.mode === undefined ? {} : { mode: input.mode }),
       limit,
     });
     try {

@@ -46,6 +46,14 @@ h3 { font-size: 17px; line-height: 1.3; }
 .export-control-hero h2 { margin: 3px 0 8px; }
 .export-control-hero-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
 .compact-field { min-width: 170px; }
+.export-readiness-summary { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+.export-readiness-card { display: grid; align-content: start; gap: 6px; min-height: 116px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.export-readiness-card span { color: var(--muted); font-size: 12px; font-weight: 750; }
+.export-readiness-card strong { font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; }
+.export-readiness-card small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.export-readiness-card.primary { border-color: #9dccba; background: var(--accent-soft); color: var(--accent); }
+.export-readiness-card.warning { border-color: #ead19e; background: var(--warning-soft); }
+.export-readiness-card.danger { border-color: #edc2c5; background: var(--danger-soft); }
 .export-control-filters form { display: grid; grid-template-columns: minmax(210px, 1.5fr) repeat(4, minmax(145px, 1fr)) auto; gap: 12px; align-items: end; }
 .export-selection-panel { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 20px; }
 .export-selection-panel p { margin: 4px 0 0; }
@@ -88,12 +96,14 @@ h3 { font-size: 17px; line-height: 1.3; }
 .export-preview-summary p { margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-soft); }
 
 @media (max-width: 1050px) {
+  .export-readiness-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .export-control-filters form { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
   .export-control-hero, .export-selection-panel { align-items: stretch; flex-direction: column; }
 }
 
 @media (max-width: 700px) {
   .export-control-page { width: min(100% - 20px, 1460px); }
+  .export-readiness-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .export-control-filters form { grid-template-columns: 1fr; }
   .export-card { grid-template-columns: auto 88px minmax(0, 1fr); padding: 12px; gap: 10px; }
   .export-card-media { width: 88px; height: 82px; }

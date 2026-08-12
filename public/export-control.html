@@ -29,12 +29,22 @@
 
   <main class="export-control-page">
     <section class="export-control-hero">
-      <div><p class="eyebrow">Ручной контур</p><h2>Проверка и управляемая выгрузка</h2><p class="muted">Список читает сохранённые результаты. WordPress вызывается только через явную постановку preflight в очередь и повторно перед записью.</p></div>
+      <div><p class="eyebrow">Ручной контур</p><h2>Проверка и управляемая выгрузка</h2><p class="muted">Готовность сохраняется, пока товар и настройки экспорта не изменились. Устаревшие результаты автоматически перепроверяются небольшими пачками.</p></div>
       <div class="export-control-hero-actions">
         <label class="field compact-field"><span>Target</span><select id="target"></select></label>
         <label class="field compact-field"><span>Размер проверки</span><select id="preflight-limit"><option>25</option><option selected>50</option><option>100</option></select></label>
-        <button id="check-next" class="button secondary" type="button">Проверить следующие</button>
+        <button id="check-next" class="button secondary" type="button">Проверить ещё</button>
       </div>
+    </section>
+
+    <section class="export-readiness-summary" aria-label="Готовность товаров к экспорту">
+      <article class="export-readiness-card primary"><span>Можно экспортировать</span><strong id="summary-exportable">—</strong><small>актуальный preflight, нет активного экспорта</small></article>
+      <article class="export-readiness-card"><span>Готовы</span><strong id="summary-ready">—</strong><small>успешно прошли preflight</small></article>
+      <article class="export-readiness-card warning"><span>Нужно перепроверить</span><strong id="summary-stale">—</strong><small id="summary-maintenance">обновятся автоматически</small></article>
+      <article class="export-readiness-card"><span>Проверяются</span><strong id="summary-checking">—</strong><small>задачи в очереди или работе</small></article>
+      <article class="export-readiness-card danger"><span>Заблокированы</span><strong id="summary-blocked">—</strong><small id="summary-blocked-note">не прошли требования экспорта</small></article>
+      <article class="export-readiness-card"><span>Не проверены</span><strong id="summary-unreviewed">—</strong><small>можно брать следующими пачками</small></article>
+      <article class="export-readiness-card"><span>Всего кандидатов</span><strong id="summary-candidates">—</strong><small>обработаны и классифицированы</small></article>
     </section>
 
     <section class="section export-control-filters">
@@ -56,7 +66,7 @@
     <div id="message" class="inline-message" hidden></div>
     <div id="loading" class="product-message">Загрузка…</div>
     <div id="error" class="product-message error" hidden></div>
-    <div id="empty" class="product-message" hidden>Подходящих сохранённых preflight пока нет. Запусти проверку следующих товаров.</div>
+    <div id="empty" class="product-message" hidden>В выбранном фильтре товаров нет. Общая готовность показана в счётчиках выше.</div>
     <section id="cards" class="export-control-grid" aria-live="polite"></section>
     <div class="export-load-more"><button id="load-more" class="button quiet" type="button" hidden>Показать ещё</button></div>
 

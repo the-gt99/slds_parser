@@ -448,14 +448,26 @@ describe("HTTP server", () => {
     await server.close();
   });
 
-  it("delegates WordPress preview to the read-only preview service", async () => {
+  it("keeps GET preview read-only and saves a product preflight only through a protected mutation", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const wordpressPreview = { preview: vi.fn().mockResolvedValue({ externalId: "2916861", diff: {} }) };
     const server = createHttpServer({ ...dependencies(database), wordpressPreview: wordpressPreview as never });
     const response = await server.inject({ method: "GET", url: "/api/products/3/wordpress-preview?targetId=10", headers: { authorization: `Bearer ${adminToken}` } });
+    const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const forbidden = await server.inject({ method: "POST", url: "/api/products/3/wordpress-preflight", headers: { cookie }, payload: { targetId: "10" } });
+    const preflight = await server.inject({
+      method: "POST",
+      url: "/api/products/3/wordpress-preflight",
+      headers: { cookie, "x-csrf-token": login.json().csrfToken },
+      payload: { targetId: "10" },
+    });
 
     expect(response.statusCode).toBe(200);
-    expect(wordpressPreview.preview).toHaveBeenCalledWith("3", "10");
+    expect(forbidden.statusCode).toBe(403);
+    expect(preflight.statusCode).toBe(200);
+    expect(wordpressPreview.preview).toHaveBeenNthCalledWith(1, "3", "10");
+    expect(wordpressPreview.preview).toHaveBeenNthCalledWith(2, "3", "10", [], { saveExportControl: true });
     await server.close();
   });
 
@@ -537,6 +549,7 @@ describe("HTTP server", () => {
     const list = await server.inject({ method: "GET", url: "/api/export-control?targetId=10&status=ready&risk=danger&change=taxonomy_removed%3Aproduct_tag&limit=50", headers: { cookie } });
     const forbidden = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: { cookie }, payload: { targetId: "10", sourceProductIds: ["3"] } });
     const queued = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: mutationHeaders, payload: { targetId: "10", sourceProductIds: ["3"] } });
+    const maintenance = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: mutationHeaders, payload: { targetId: "10", mode: "stale", limit: 100 } });
     const preview = await server.inject({ method: "POST", url: "/api/export-control/export/preview", headers: mutationHeaders, payload: { targetId: "10", filter: { status: "ready", risk: "danger" } } });
     const applied = await server.inject({ method: "POST", url: "/api/export-control/export", headers: mutationHeaders, payload: { targetId: "10", sourceProductIds: ["3"], reason: "smoke" } });
 
@@ -546,6 +559,7 @@ describe("HTTP server", () => {
     expect(list.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
     expect(queued.statusCode).toBe(200);
+    expect(maintenance.statusCode).toBe(200);
     expect(preview.statusCode).toBe(200);
     expect(applied.statusCode).toBe(200);
     expect(exportControl.list).toHaveBeenCalledWith(expect.objectContaining({
@@ -555,6 +569,7 @@ describe("HTTP server", () => {
       changeFlag: "taxonomy_removed:product_tag",
       limit: 50,
     }));
+    expect(exportControl.enqueuePreflights).toHaveBeenCalledWith({ targetId: "10", mode: "stale", limit: 100 });
     expect(exportControl.applyExport).toHaveBeenCalledWith(expect.objectContaining({
       targetId: "10",
       sourceProductIds: ["3"],
