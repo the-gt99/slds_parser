@@ -17,6 +17,7 @@ export type JobType =
   | "collect_product"
   | "process_product"
   | "sync_target_classifications"
+  | "apply_target_classification_suggestion"
   | "preflight_product"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";

@@ -105,6 +105,7 @@ export class Worker {
     const exportJobTypes = ["export_product"] satisfies readonly JobType[];
     const preflightJobTypes = ["preflight_product"] satisfies readonly JobType[];
     const classificationSyncJobTypes = ["sync_target_classifications"] satisfies readonly JobType[];
+    const classificationApplyJobTypes = ["apply_target_classification_suggestion"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
           processConcurrency: this.options.processConcurrency ?? 1,
@@ -126,6 +127,7 @@ export class Worker {
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),
+        this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply`),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
       ]);
     } finally {

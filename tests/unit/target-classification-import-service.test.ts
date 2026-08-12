@@ -26,7 +26,61 @@ function conflict() {
   };
 }
 
+function ready() {
+  return {
+    ...conflict(),
+    id: "11",
+    status: "ready" as const,
+    targets: [{ dictionaryValueId: "20", externalValue: "14733", name: "Nike Air Force 1", productCount: 100 }],
+  };
+}
+
 describe("TargetClassificationImportService", () => {
+  it("queues selected safe suggestions without applying them in the HTTP request", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run()),
+      enqueueReadySuggestions: vi.fn().mockResolvedValue(2),
+    };
+    const service = new TargetClassificationImportService(repository as never, {} as never);
+
+    await expect(service.apply({ runId: "1", suggestionIds: ["10", "11"] }, "admin"))
+      .resolves.toEqual({ queuedCount: 2 });
+    expect(repository.enqueueReadySuggestions).toHaveBeenCalledWith({
+      runId: "1", actor: "admin", suggestionIds: ["10", "11"],
+    });
+  });
+
+  it("queues all safe suggestions using the current filters", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run()),
+      enqueueReadySuggestions: vi.fn().mockResolvedValue(9000),
+    };
+    const service = new TargetClassificationImportService(repository as never, {} as never);
+
+    await expect(service.applyAll({ runId: "1", typeCode: "model", search: "Nike" }, "admin"))
+      .resolves.toEqual({ queuedCount: 9000 });
+    expect(repository.enqueueReadySuggestions).toHaveBeenCalledWith({
+      runId: "1", actor: "admin", typeCode: "model", search: "Nike",
+    });
+  });
+
+  it("applies one queued suggestion inside the worker", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run()),
+      getSuggestion: vi.fn().mockResolvedValue({ ...ready(), status: "queued" }),
+      markApplied: vi.fn().mockResolvedValue(undefined),
+    };
+    const classifier = {
+      previewRule: vi.fn().mockResolvedValue({ ambiguousObservations: 0 }),
+      createRule: vi.fn().mockResolvedValue({ ruleId: "77", preview: { affectedProducts: 100 } }),
+    };
+    const service = new TargetClassificationImportService(repository as never, classifier as never);
+
+    await expect(service.applyQueued({ runId: "1", suggestionId: "11" }, "admin"))
+      .resolves.toEqual({ status: "completed", affectedProductCount: 100 });
+    expect(repository.markApplied).toHaveBeenCalledWith(expect.objectContaining({ suggestionId: "11" }));
+  });
+
   it("returns persisted product examples with WordPress links", async () => {
     const repository = {
       listSuggestionExamples: vi.fn().mockResolvedValue({

@@ -42,7 +42,7 @@ const state = {
   associationItems: [],
   associationTotal: 0,
   associationOffset: 0,
-  associationSummary: { readyCount: 0, readyProductCount: 0, conflictCount: 0, appliedCount: 0 },
+  associationSummary: { readyCount: 0, readyProductCount: 0, queuedCount: 0, conflictCount: 0, appliedCount: 0 },
   associationSelected: new Set(),
   associationLatestRun: null,
   associationActiveRun: null,
@@ -1675,7 +1675,7 @@ async function loadAssociationSuggestions(reset = true) {
     state.associationItems.push(...received);
     state.associationOffset += received.length;
     state.associationTotal = Number(response.total ?? 0);
-    state.associationSummary = response.summary ?? { readyCount: 0, readyProductCount: 0, conflictCount: 0, appliedCount: 0 };
+    state.associationSummary = response.summary ?? { readyCount: 0, readyProductCount: 0, queuedCount: 0, conflictCount: 0, appliedCount: 0 };
     state.associationLatestRun = response.latestCompletedRun ?? null;
     state.associationActiveRun = response.activeRun ?? null;
     renderAssociationSuggestions();
@@ -1689,12 +1689,13 @@ async function loadAssociationSuggestions(reset = true) {
 function scheduleAssociationPoll() {
   clearTimeout(state.associationPollTimer);
   state.associationPollTimer = null;
-  if (state.classificationView !== "associations" || !["pending", "running"].includes(state.associationActiveRun?.status)) return;
+  const syncing = ["pending", "running"].includes(state.associationActiveRun?.status);
+  if (state.classificationView !== "associations" || (!syncing && state.associationSummary.queuedCount === 0)) return;
   state.associationPollTimer = setTimeout(() => loadAssociationSuggestions(true), 2500);
 }
 
 function associationStatusLabel(status) {
-  return ({ ready: "Можно применить", conflict: "Конфликт", applied: "Применено" })[status] || status;
+  return ({ ready: "Можно применить", queued: "В очереди", conflict: "Конфликт", applied: "Применено" })[status] || status;
 }
 
 function associationIssueLabel(reason) {
@@ -1873,6 +1874,7 @@ function renderAssociationSuggestions() {
   byId("association-selection-bar").hidden = byId("association-status").value !== "ready";
   byId("association-ready-count").textContent = state.associationSummary.readyCount.toLocaleString("ru-RU");
   byId("association-ready-products").textContent = `${state.associationSummary.readyProductCount.toLocaleString("ru-RU")} товарных вхождений`;
+  byId("association-queued-count").textContent = state.associationSummary.queuedCount.toLocaleString("ru-RU");
   byId("association-conflict-count").textContent = state.associationSummary.conflictCount.toLocaleString("ru-RU");
   byId("association-applied-count").textContent = state.associationSummary.appliedCount.toLocaleString("ru-RU");
   byId("association-nav-count").textContent = state.associationSummary.readyCount.toLocaleString("ru-RU");
@@ -2017,51 +2019,37 @@ async function startAssociationSync() {
   finally { updateAssociationActions(); }
 }
 
-async function applyAssociationIds(ids, progress, total, appliedBefore) {
-  let applied = appliedBefore;
-  let affected = 0;
-  for (let offset = 0; offset < ids.length; offset += 10) {
-    const batch = ids.slice(offset, offset + 10);
-    progress.textContent = `Применено ${applied} из ${total}. Проверяем следующий пакет…`;
-    const response = await api("/api/classifier/wordpress-assignments/apply", {
-      method: "POST",
-      body: { runId: state.associationLatestRun.id, suggestionIds: batch },
-    });
-    applied += response.result.appliedCount;
-    affected += response.result.affectedProductCount;
-    for (const id of response.result.appliedSuggestionIds ?? []) state.associationSelected.delete(id);
-  }
-  return { applied, affected };
-}
-
 async function applyAssociationSuggestions(mode) {
   const selected = [...state.associationSelected];
   const total = mode === "selected" ? selected.length : state.associationTotal;
   if (total === 0 || !state.associationLatestRun) return;
-  if (!confirm(`Применить ${mode === "selected" ? `${total} выбранных` : `все ${total} безопасных`} предложений? Это создаст mappings/rules и поставит затронутые товары на переобработку.`)) return;
+  if (!confirm(`Поставить в фоновую очередь ${mode === "selected" ? `${total} выбранных` : `все ${total} безопасных по текущим фильтрам`} предложений? Правила и задачи переобработки будут создаваться последовательно на сервере.`)) return;
   state.associationApplying = true;
   updateAssociationActions();
   const progress = byId("association-progress");
   progress.hidden = false;
-  let applied = 0;
-  let affected = 0;
   try {
+    let response;
     if (mode === "selected") {
-      const result = await applyAssociationIds(selected, progress, total, applied);
-      applied = result.applied; affected += result.affected;
+      response = await api("/api/classifier/wordpress-assignments/apply", {
+        method: "POST",
+        body: { runId: state.associationLatestRun.id, suggestionIds: selected },
+      });
     } else {
-      while (applied < total) {
-        const response = await api(associationQuery(0, { status: "ready", limit: 10 }));
-        const ids = (response.items ?? []).map((item) => item.id);
-        if (!ids.length) break;
-        const result = await applyAssociationIds(ids, progress, total, applied);
-        applied = result.applied; affected += result.affected;
-      }
+      response = await api("/api/classifier/wordpress-assignments/apply-all", {
+        method: "POST",
+        body: {
+          runId: state.associationLatestRun.id,
+          ...(byId("association-type").value ? { typeCode: byId("association-type").value } : {}),
+          ...(byId("association-search").value.trim() ? { search: byId("association-search").value.trim() } : {}),
+        },
+      });
     }
-    progress.textContent = `Готово: применено ${applied}, затронуто товаров ${affected}.`;
-    showToast(`Предложения WordPress применены: ${applied}.`);
+    const queued = Number(response.result.queuedCount ?? 0);
+    progress.textContent = `Поставлено в очередь: ${queued}. Можно закрыть страницу — работа продолжится на сервере.`;
+    showToast(`Предложения WordPress поставлены в очередь: ${queued}.`);
   } catch (error) {
-    progress.textContent = `Остановлено после ${applied}: ${error.message}`;
+    progress.textContent = `Не удалось поставить в очередь: ${error.message}`;
   } finally {
     state.associationApplying = false;
     await Promise.all([loadAssociationSuggestions(true), loadQueue({ preserveSelection: false })]);

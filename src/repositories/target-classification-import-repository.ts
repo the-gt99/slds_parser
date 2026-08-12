@@ -1,7 +1,7 @@
 import type { EntityId, JsonObject } from "../contracts/index.js";
 
 export type TargetClassificationSyncStatus = "pending" | "running" | "completed" | "failed";
-export type TargetClassificationSuggestionStatus = "ready" | "conflict" | "applied";
+export type TargetClassificationSuggestionStatus = "ready" | "queued" | "conflict" | "applied";
 
 export interface TargetClassificationSyncRun {
   readonly id: EntityId;
@@ -93,6 +93,7 @@ export interface TargetClassificationSuggestionResult {
   readonly summary: {
     readonly readyCount: number;
     readonly readyProductCount: number;
+    readonly queuedCount: number;
     readonly conflictCount: number;
     readonly appliedCount: number;
   };
@@ -117,7 +118,15 @@ export interface TargetClassificationImportRepository {
     readonly items: readonly TargetClassificationSuggestionExample[];
   } | null>;
   getReadySuggestions(runId: EntityId, suggestionIds: readonly EntityId[]): Promise<readonly TargetClassificationSuggestion[]>;
+  enqueueReadySuggestions(input: {
+    readonly runId: EntityId;
+    readonly actor: string;
+    readonly suggestionIds?: readonly EntityId[];
+    readonly typeCode?: string;
+    readonly search?: string;
+  }): Promise<number>;
   getSuggestion(runId: EntityId, suggestionId: EntityId): Promise<TargetClassificationSuggestion | null>;
+  releaseQueuedSuggestion(suggestionId: EntityId, error: string): Promise<void>;
   markApplied(input: {
     readonly suggestionId: EntityId;
     readonly dictionaryValueId: EntityId;

@@ -6,6 +6,7 @@ export * from "./job-payloads.js";
 export * from "./processing-runner.js";
 export * from "./preflight-runner.js";
 export * from "./target-classification-sync-runner.js";
+export * from "./target-classification-apply-runner.js";
 export * from "./product-operation-pipeline.js";
 export * from "./runner-result.js";
 export * from "./worker.js";

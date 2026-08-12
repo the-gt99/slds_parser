@@ -55,27 +55,48 @@ export class TargetClassificationImportService {
     if (run.targetEnabled) {
       throw new IntegrationContractError(`Target ${run.targetCode} должен быть выключен на время массовой классификации`);
     }
-    const suggestions = await this.repository.getReadySuggestions(run.id, ids);
-    if (suggestions.length !== ids.length) {
-      throw new IntegrationContractError("Часть выбранных предложений уже применена или больше не готова; обновите список");
+    const queuedCount = await this.repository.enqueueReadySuggestions({ runId: run.id, actor, suggestionIds: ids });
+    if (queuedCount !== ids.length) {
+      throw new IntegrationContractError("Часть выбранных предложений уже поставлена в очередь, применена или больше не готова; обновите список");
     }
+    return { queuedCount };
+  }
 
-    let affectedProductCount = 0;
-    const appliedSuggestionIds: EntityId[] = [];
-    for (const suggestion of suggestions) {
-      if (suggestion.dictionaryValueId === null) {
-        throw new IntegrationContractError(`У предложения #${suggestion.id} отсутствует термин WordPress`);
-      }
-      const result = await this.applySuggestion(suggestion, {
-        dictionaryValueId: suggestion.dictionaryValueId,
-        externalValue: suggestion.externalValue ?? "",
-        name: suggestion.targetName ?? suggestion.externalValue ?? "",
-        productCount: suggestion.evidenceProductCount,
-      }, run.id, actor);
-      affectedProductCount += result.affectedProductCount;
-      appliedSuggestionIds.push(suggestion.id);
+  async applyAll(input: {
+    readonly runId: EntityId;
+    readonly typeCode?: string;
+    readonly search?: string;
+  }, actor: string) {
+    const run = await this.completedDisabledRun(input.runId);
+    const queuedCount = await this.repository.enqueueReadySuggestions({
+      runId: run.id,
+      actor,
+      ...(input.typeCode === undefined ? {} : { typeCode: input.typeCode }),
+      ...(input.search === undefined ? {} : { search: input.search }),
+    });
+    return { queuedCount };
+  }
+
+  async applyQueued(input: { readonly runId: EntityId; readonly suggestionId: EntityId }, actor: string) {
+    const run = await this.completedDisabledRun(input.runId);
+    const suggestion = await this.repository.getSuggestion(run.id, input.suggestionId);
+    if (suggestion === null || suggestion.status !== "queued") {
+      return { status: "skipped" as const, affectedProductCount: 0 };
     }
-    return { appliedCount: appliedSuggestionIds.length, affectedProductCount, appliedSuggestionIds };
+    if (suggestion.dictionaryValueId === null) {
+      throw new IntegrationContractError(`У предложения #${suggestion.id} отсутствует термин WordPress`);
+    }
+    const result = await this.applySuggestion(suggestion, {
+      dictionaryValueId: suggestion.dictionaryValueId,
+      externalValue: suggestion.externalValue ?? "",
+      name: suggestion.targetName ?? suggestion.externalValue ?? "",
+      productCount: suggestion.evidenceProductCount,
+    }, run.id, actor);
+    return { status: "completed" as const, affectedProductCount: result.affectedProductCount };
+  }
+
+  releaseQueued(suggestionId: EntityId, error: string): Promise<void> {
+    return this.repository.releaseQueuedSuggestion(suggestionId, error);
   }
 
   async resolve(input: {
@@ -174,12 +195,23 @@ export class TargetClassificationImportService {
     });
     return { affectedProductCount };
   }
+
+  private async completedDisabledRun(runId: EntityId) {
+    const run = await this.repository.getRun(runId);
+    if (run === null || run.status !== "completed") {
+      throw new IntegrationContractError("Завершённый импорт WordPress не найден");
+    }
+    if (run.targetEnabled) {
+      throw new IntegrationContractError(`Target ${run.targetCode} должен быть выключен на время массовой классификации`);
+    }
+    return run;
+  }
 }
 
 export function targetClassificationSuggestionStatus(value: string | undefined): TargetClassificationSuggestionStatus | undefined {
   if (value === undefined || value === "") return undefined;
-  if (value !== "ready" && value !== "conflict" && value !== "applied") {
-    throw new IntegrationContractError("status must be ready, conflict or applied");
+  if (value !== "ready" && value !== "queued" && value !== "conflict" && value !== "applied") {
+    throw new IntegrationContractError("status must be ready, queued, conflict or applied");
   }
   return value;
 }

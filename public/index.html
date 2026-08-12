@@ -243,8 +243,9 @@
         <span id="association-run-status" class="exact-match-status">Нет данных</span>
       </section>
 
-      <section class="exact-summary" aria-label="Сводка предложений WordPress">
+      <section class="exact-summary association-summary" aria-label="Сводка предложений WordPress">
         <button class="exact-summary-card active" data-association-status="ready" type="button"><span>Можно применить</span><strong id="association-ready-count">0</strong><small id="association-ready-products">0 товаров</small></button>
+        <button class="exact-summary-card warning" data-association-status="queued" type="button"><span>В очереди</span><strong id="association-queued-count">0</strong><small>применяются в фоне</small></button>
         <button class="exact-summary-card danger" data-association-status="conflict" type="button"><span>Конфликты</span><strong id="association-conflict-count">0</strong><small>нужна проверка</small></button>
         <button class="exact-summary-card" data-association-status="applied" type="button"><span>Применено</span><strong id="association-applied-count">0</strong><small>сохранено в классификаторе</small></button>
       </section>
@@ -254,7 +255,7 @@
         <select id="association-target" aria-label="Target"></select>
         <select id="association-source" aria-label="Источник"></select>
         <select id="association-type" aria-label="Тип значения"><option value="">Все типы</option><option value="model">Модели</option><option value="brand">Бренды</option><option value="category">Категории</option></select>
-        <select id="association-status" aria-label="Статус"><option value="ready">Можно применить</option><option value="conflict">Конфликты</option><option value="applied">Применено</option></select>
+        <select id="association-status" aria-label="Статус"><option value="ready">Можно применить</option><option value="queued">В очереди</option><option value="conflict">Конфликты</option><option value="applied">Применено</option></select>
         <button class="button primary" type="submit">Применить фильтры</button>
       </form>
 

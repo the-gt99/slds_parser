@@ -406,7 +406,7 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
       const activeRun = runs.rows.find((row) => row.status !== "completed");
       const latestCompleted = runs.rows.find((row) => row.status === "completed");
       if (latestCompleted === undefined) {
-        return { items: [], total: 0, summary: { readyCount: 0, readyProductCount: 0, conflictCount: 0, appliedCount: 0 },
+        return { items: [], total: 0, summary: { readyCount: 0, readyProductCount: 0, queuedCount: 0, conflictCount: 0, appliedCount: 0 },
           latestCompletedRun: null, activeRun: activeRun === undefined ? null : mapRun(activeRun) };
       }
       const result = await client.query<DatabaseRow>(
@@ -416,6 +416,7 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
          ), summary AS (
            SELECT COUNT(*) FILTER (WHERE status = 'ready')::BIGINT AS ready_count,
                   COALESCE(SUM(matched_product_count) FILTER (WHERE status = 'ready'), 0)::BIGINT AS ready_product_count,
+                  COUNT(*) FILTER (WHERE status = 'queued')::BIGINT AS queued_count,
                   COUNT(*) FILTER (WHERE status = 'conflict')::BIGINT AS conflict_count,
                   COUNT(*) FILTER (WHERE status = 'applied')::BIGINT AS applied_count
            FROM target_classification_suggestions suggestion, latest
@@ -435,6 +436,7 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
         ? await client.query<DatabaseRow>(
           `SELECT COUNT(*) FILTER (WHERE status = 'ready')::BIGINT AS ready_count,
                   COALESCE(SUM(matched_product_count) FILTER (WHERE status = 'ready'), 0)::BIGINT AS ready_product_count,
+                  COUNT(*) FILTER (WHERE status = 'queued')::BIGINT AS queued_count,
                   COUNT(*) FILTER (WHERE status = 'conflict')::BIGINT AS conflict_count,
                   COUNT(*) FILTER (WHERE status = 'applied')::BIGINT AS applied_count
            FROM target_classification_suggestions WHERE run_id = $1`, [latestCompleted.id])
@@ -446,6 +448,7 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
         summary: {
           readyCount: Number(summaryRow.ready_count ?? 0),
           readyProductCount: Number(summaryRow.ready_product_count ?? 0),
+          queuedCount: Number(summaryRow.queued_count ?? 0),
           conflictCount: Number(summaryRow.conflict_count ?? 0),
           appliedCount: Number(summaryRow.applied_count ?? 0),
         },
@@ -466,6 +469,66 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
       );
       return result.rows.map(mapSuggestion);
     } finally { client.release(); }
+  }
+
+  async enqueueReadySuggestions(input: {
+    readonly runId: EntityId;
+    readonly actor: string;
+    readonly suggestionIds?: readonly EntityId[];
+    readonly typeCode?: string;
+    readonly search?: string;
+  }): Promise<number> {
+    return transaction(this.pool, async (client) => {
+      const parameters: unknown[] = [input.runId, input.actor];
+      const where = ["suggestion.run_id = $1", "suggestion.status = 'ready'"];
+      if (input.suggestionIds !== undefined) {
+        parameters.push(input.suggestionIds);
+        where.push(`suggestion.id = ANY($${parameters.length}::BIGINT[])`);
+      }
+      if (input.typeCode !== undefined) {
+        parameters.push(input.typeCode);
+        where.push(`suggestion.type_code = $${parameters.length}`);
+      }
+      if (input.search !== undefined && input.search.trim() !== "") {
+        parameters.push(`%${input.search.trim()}%`);
+        where.push(`(suggestion.source_value ILIKE $${parameters.length} OR suggestion.target_name ILIKE $${parameters.length})`);
+      }
+      const result = await client.query<DatabaseRow>(
+        `WITH selected AS MATERIALIZED (
+           SELECT suggestion.id
+           FROM target_classification_suggestions suggestion
+           WHERE ${where.join(" AND ")}
+           ORDER BY suggestion.matched_product_count DESC, suggestion.id DESC
+           FOR UPDATE SKIP LOCKED
+         ), enqueued AS (
+           INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
+           SELECT 'apply_target_classification_suggestion',
+                  JSONB_BUILD_OBJECT(
+                    'runId', $1::TEXT,
+                    'suggestionId', selected.id::TEXT,
+                    'actor', $2::TEXT
+                  ),
+                  'pending', NOW(),
+                  'target-classification-suggestion:' || selected.id::TEXT || ':apply'
+           FROM selected
+           ON CONFLICT (job_type, unique_key)
+             WHERE status IN ('pending', 'running', 'retry')
+           DO NOTHING
+           RETURNING (payload->>'suggestionId')::BIGINT AS suggestion_id
+         ), queued AS (
+           UPDATE target_classification_suggestions suggestion
+           SET status = 'queued', queued_at = NOW(), queued_by = $2,
+               last_apply_error = NULL, updated_at = NOW()
+           FROM enqueued
+           WHERE suggestion.id = enqueued.suggestion_id
+             AND suggestion.status = 'ready'
+           RETURNING suggestion.id
+         )
+         SELECT COUNT(*)::INTEGER AS queued_count FROM queued`,
+        parameters,
+      );
+      return Number(result.rows[0]?.queued_count ?? 0);
+    });
   }
 
   async listSuggestionExamples(suggestionId: EntityId, perTargetLimit: number): Promise<{
@@ -546,6 +609,19 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
     } finally { client.release(); }
   }
 
+  async releaseQueuedSuggestion(suggestionId: EntityId, error: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `UPDATE target_classification_suggestions
+         SET status = 'ready', queued_at = NULL, queued_by = NULL,
+             last_apply_error = $2, updated_at = NOW()
+         WHERE id = $1 AND status = 'queued'`,
+        [suggestionId, error],
+      );
+    } finally { client.release(); }
+  }
+
   async markApplied(input: {
     readonly suggestionId: EntityId;
     readonly dictionaryValueId: EntityId;
@@ -561,8 +637,9 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
         `UPDATE target_classification_suggestions
          SET status = 'applied', dictionary_value_id = $2, external_value = $3, target_name = $4,
              applied_resolution_kind = $5, applied_resolution_id = $6,
-             applied_at = NOW(), applied_by = $7, updated_at = NOW()
-         WHERE id = $1 AND status IN ('ready', 'conflict')`,
+             applied_at = NOW(), applied_by = $7, queued_at = NULL, queued_by = NULL,
+             last_apply_error = NULL, updated_at = NOW()
+         WHERE id = $1 AND status IN ('ready', 'queued', 'conflict')`,
         [input.suggestionId, input.dictionaryValueId, input.externalValue, input.targetName,
           input.resolutionKind, input.resolutionId, input.actor],
       );

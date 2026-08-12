@@ -950,6 +950,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .association-run p { margin: 5px 0 0; }
 .exact-match-status.danger { background: var(--danger-soft); color: var(--danger); }
 .exact-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.association-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .exact-summary-card { display: grid; gap: 5px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); color: var(--text); text-align: left; }
 .exact-summary-card:hover { border-color: #b9d8cc; }
 .exact-summary-card.active { border-color: #8fc5b1; box-shadow: inset 0 0 0 1px #8fc5b1; background: var(--accent-soft); }
@@ -1048,7 +1049,7 @@ h3 { font-size: 17px; line-height: 1.3; }
   .wordpress-catalog-row { grid-template-columns: 1fr; gap: 4px; }
   .exact-match-actions { justify-content: stretch; }
   .exact-match-actions .button { flex: 1; }
-  .exact-summary { grid-template-columns: 1fr; }
+  .exact-summary, .association-summary { grid-template-columns: 1fr; }
   .catalog-filters-wide.exact-filters { grid-template-columns: 1fr; }
   .catalog-filters-wide.exact-filters > .search-field { grid-column: auto; }
   .exact-selection-bar { align-items: flex-start; flex-direction: column; }

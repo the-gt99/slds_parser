@@ -1,13 +1,13 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationSyncRunner, Worker } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressClassificationAssignmentReader, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
-import { ProductClassifier, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
+import { ClassifierAdminService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -100,7 +100,24 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const classificationSyncRunner = wordpress === null
     ? undefined
     : new TargetClassificationSyncRunner(classificationImportRepository, new WordPressClassificationAssignmentReader(wordpress));
-  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns, preflightRunner, exportControl, classificationSyncRunner);
+  const classificationApplyRunner = wordpress === null
+    ? undefined
+    : (() => {
+        const providers = new TargetDictionaryProviderRegistry();
+        providers.register(new WordPressDictionaryProvider(wordpress));
+        const adminClassifier = new ClassifierAdminService(
+          new PostgresClassificationAdminRepository(pool),
+          repositories.classifications,
+          new PostgresTargetDictionaryRepository(pool),
+          providers,
+          "classification-apply-worker",
+        );
+        return new TargetClassificationApplyRunner(
+          new TargetClassificationImportService(classificationImportRepository, adminClassifier, wordpress.baseUrl),
+        );
+      })();
+  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
+    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner);
   const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -22,6 +22,28 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("queues all safe WordPress suggestions in one short request", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const targetClassificationImport = {
+      applyAll: vi.fn().mockResolvedValue({ queuedCount: 9905 }),
+    } as unknown as TargetClassificationImportService;
+    const server = createHttpServer({ ...dependencies(database), targetClassificationImport });
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/classifier/wordpress-assignments/apply-all",
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { runId: "1", typeCode: "model", search: "Nike" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ result: { queuedCount: 9905 } });
+    expect(targetClassificationImport.applyAll).toHaveBeenCalledWith({
+      runId: "1", typeCode: "model", search: "Nike",
+    }, "api-token");
+    await server.close();
+  });
+
   it("returns healthy status when PostgreSQL is available", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [{ "?column?": 1 }] }) };
     const server = createHttpServer(dependencies(database));

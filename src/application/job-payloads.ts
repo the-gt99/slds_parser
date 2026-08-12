@@ -45,6 +45,12 @@ export interface SyncTargetClassificationsPayload {
   readonly cursor: string;
 }
 
+export interface ApplyTargetClassificationSuggestionPayload {
+  readonly runId: string;
+  readonly suggestionId: string;
+  readonly actor: string;
+}
+
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -129,4 +135,13 @@ export function parseSyncTargetClassificationsPayload(value: JsonValue): SyncTar
     return { runId: value.runId, cursor: value.cursor };
   }
   throw new InvalidJobPayloadError("sync_target_classifications");
+}
+
+export function parseApplyTargetClassificationSuggestionPayload(value: JsonValue): ApplyTargetClassificationSuggestionPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.suggestionId === "string"
+    && typeof value.actor === "string" && value.actor.trim() !== ""
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.suggestionId)) {
+    return { runId: value.runId, suggestionId: value.suggestionId, actor: value.actor };
+  }
+  throw new InvalidJobPayloadError("apply_target_classification_suggestion");
 }

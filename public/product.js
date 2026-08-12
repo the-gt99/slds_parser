@@ -31,6 +31,7 @@ const statusNames = {
 const jobNames = {
   collect_product: "Сбор данных",
   sync_target_classifications: "Связи WordPress",
+  apply_target_classification_suggestion: "Применение связей WordPress",
   process_product: "Обработка товара",
   export_product: "Выгрузка на target",
   preflight_product: "Проверка WordPress без записи",

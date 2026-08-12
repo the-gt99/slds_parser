@@ -39,5 +39,21 @@ describe("JobDispatcher", () => {
       error: "lookup failed",
     });
   });
+  it("routes queued WordPress classification suggestions and releases terminal failures", async () => {
+    const repositories = createMemoryRepositories(new MemoryStore());
+    const classificationApply = {
+      apply: vi.fn().mockResolvedValue({ status: "completed" }),
+      fail: vi.fn().mockResolvedValue(undefined),
+    };
+    const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns,
+      undefined, undefined, undefined, classificationApply as never);
+    const value = job("apply_target_classification_suggestion", { runId: "1", suggestionId: "2", actor: "admin" });
+
+    await dispatcher.dispatch(value);
+    await dispatcher.handleTerminalFailure(value, new Error("failed"));
+
+    expect(classificationApply.apply).toHaveBeenCalledWith({ runId: "1", suggestionId: "2", actor: "admin" });
+    expect(classificationApply.fail).toHaveBeenCalledWith({ runId: "1", suggestionId: "2", actor: "admin" }, "failed");
+  });
   it("rejects an invalid payload", async () => { const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns); await expect(dispatcher.dispatch(job("process_product", { sourceProductId: 1, force: false }))).rejects.toBeInstanceOf(InvalidJobPayloadError); });
 });

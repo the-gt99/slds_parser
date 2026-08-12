@@ -99,6 +99,7 @@ interface WordPressAssignmentQuery {
 
 interface WordPressAssignmentSyncBody { readonly targetId?: unknown; readonly sourceId?: unknown }
 interface WordPressAssignmentApplyBody { readonly runId?: unknown; readonly suggestionIds?: unknown }
+interface WordPressAssignmentApplyAllBody { readonly runId?: unknown; readonly typeCode?: unknown; readonly search?: unknown }
 interface WordPressAssignmentSuggestionParams { readonly suggestionId: string }
 interface WordPressAssignmentExamplesQuery { readonly perTargetLimit?: string }
 interface WordPressAssignmentResolveBody {
@@ -478,7 +479,8 @@ function configStatus(value: string | undefined) {
 }
 
 function jobType(value: unknown): JobType {
-  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "sync_target_classifications" && value !== "preflight_product" && value !== "export_product") {
+  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "sync_target_classifications"
+    && value !== "apply_target_classification_suggestion" && value !== "preflight_product" && value !== "export_product") {
     throw new HttpInputError("Unknown jobType");
   }
   return value;
@@ -852,6 +854,18 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         }, actor(request)),
       };
     },
+  );
+
+  server.post<{ Body: WordPressAssignmentApplyAllBody }>(
+    "/api/classifier/wordpress-assignments/apply-all",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      result: await targetClassificationImportService().applyAll({
+        runId: entityId(request.body?.runId, "runId"),
+        ...(optionalString(request.body?.typeCode) === undefined ? {} : { typeCode: optionalString(request.body?.typeCode)! }),
+        ...(optionalString(request.body?.search) === undefined ? {} : { search: optionalString(request.body?.search)! }),
+      }, actor(request)),
+    }),
   );
 
   server.get<{ Querystring: ReferenceQuery }>("/api/classifier/reference-values", { preHandler: requireAdmin }, async (request) => {
