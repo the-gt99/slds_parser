@@ -52,6 +52,7 @@
     <nav class="classification-nav" aria-label="Разделы классификации">
       <button class="classification-nav-item active" data-classification-view="queue" type="button">Требуют решения <span id="queue-nav-count">0</span></button>
       <button class="classification-nav-item" data-classification-view="exact" type="button">Точные совпадения <span id="exact-nav-count">—</span></button>
+      <button class="classification-nav-item" data-classification-view="associations" type="button">По товарам WordPress <span id="association-nav-count">—</span></button>
       <button class="classification-nav-item" data-classification-view="references" type="button">Внутренние значения</button>
       <button class="classification-nav-item" data-classification-view="rules" type="button">Правила</button>
       <button class="classification-nav-item" data-classification-view="wordpress" type="button">WordPress</button>
@@ -220,6 +221,51 @@
         </div>
         <div id="exact-list" class="exact-match-list"></div>
         <button id="exact-more" class="button quiet wide" type="button" hidden>Показать ещё</button>
+      </section>
+    </main>
+
+    <main id="classification-view-associations" class="catalog-page classification-view exact-match-page" hidden>
+      <section class="catalog-toolbar">
+        <div>
+          <p class="eyebrow">Массовое сопоставление</p>
+          <h2>По товарам WordPress</h2>
+          <p class="muted">Существующие товары связываются по GOAT ID. Назначенные им бренд, модель и категория превращаются в сохранённые предложения. Данные и прогресс находятся в PostgreSQL — вкладку можно закрывать.</p>
+        </div>
+        <div class="exact-match-actions">
+          <button id="association-sync" class="button quiet" type="button">Обновить данные WordPress</button>
+          <button id="association-apply-selected" class="button secondary" type="button" disabled>Применить выбранные</button>
+          <button id="association-apply-all" class="button primary" type="button" disabled>Применить все безопасные</button>
+        </div>
+      </section>
+
+      <section id="association-run" class="association-run section" aria-live="polite">
+        <div><strong id="association-run-title">Синхронизация ещё не запускалась</strong><p id="association-run-detail" class="muted">Нажмите «Обновить данные WordPress». Работа продолжится в фоне даже после закрытия страницы.</p></div>
+        <span id="association-run-status" class="exact-match-status">Нет данных</span>
+      </section>
+
+      <section class="exact-summary" aria-label="Сводка предложений WordPress">
+        <button class="exact-summary-card active" data-association-status="ready" type="button"><span>Можно применить</span><strong id="association-ready-count">0</strong><small id="association-ready-products">0 товаров</small></button>
+        <button class="exact-summary-card danger" data-association-status="conflict" type="button"><span>Конфликты</span><strong id="association-conflict-count">0</strong><small>нужна проверка</small></button>
+        <button class="exact-summary-card" data-association-status="applied" type="button"><span>Применено</span><strong id="association-applied-count">0</strong><small>сохранено в классификаторе</small></button>
+      </section>
+
+      <form id="association-filters" class="catalog-filters catalog-filters-wide exact-filters">
+        <label class="search-field"><span aria-hidden="true">⌕</span><input id="association-search" type="search" placeholder="Бренд, семейство или термин WordPress"></label>
+        <select id="association-target" aria-label="Target"></select>
+        <select id="association-source" aria-label="Источник"></select>
+        <select id="association-type" aria-label="Тип значения"><option value="">Все типы</option><option value="model">Модели</option><option value="brand">Бренды</option><option value="category">Категории</option></select>
+        <select id="association-status" aria-label="Статус"><option value="ready">Можно применить</option><option value="conflict">Конфликты</option><option value="applied">Применено</option></select>
+        <button class="button primary" type="submit">Применить фильтры</button>
+      </form>
+
+      <div id="association-progress" class="inline-message exact-progress" hidden></div>
+      <section class="section catalog-table-section">
+        <div class="exact-selection-bar">
+          <label class="confirm-check"><input id="association-select-page" type="checkbox"><span>Выбрать показанные безопасные предложения</span></label>
+          <span class="muted"><strong id="association-selected-count">0</strong> выбрано</span>
+        </div>
+        <div id="association-list" class="exact-match-list"></div>
+        <button id="association-more" class="button quiet wide" type="button" hidden>Показать ещё</button>
       </section>
     </main>
 

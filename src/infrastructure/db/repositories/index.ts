@@ -16,6 +16,7 @@ import { PostgresTargetRepository } from "./postgres-target-repository.js";
 import { PostgresTargetContentTemplateRepository } from "./postgres-target-content-template-repository.js";
 import { PostgresTargetDictionaryRepository } from "./postgres-target-dictionary-repository.js";
 import { PostgresTargetAssignmentRuleRepository } from "./postgres-target-assignment-rule-repository.js";
+import { PostgresTargetClassificationImportRepository } from "./postgres-target-classification-import-repository.js";
 
 export { PostgresClassificationRepository } from "./postgres-classification-repository.js";
 export { PostgresClassificationAdminRepository } from "./postgres-classification-admin-repository.js";
@@ -34,6 +35,7 @@ export { PostgresTargetRepository } from "./postgres-target-repository.js";
 export { PostgresTargetContentTemplateRepository } from "./postgres-target-content-template-repository.js";
 export { PostgresTargetDictionaryRepository } from "./postgres-target-dictionary-repository.js";
 export { PostgresTargetAssignmentRuleRepository } from "./postgres-target-assignment-rule-repository.js";
+export { PostgresTargetClassificationImportRepository } from "./postgres-target-classification-import-repository.js";
 
 export function createPostgresRepositories(executor: SqlExecutor): TransactionRepositories {
   return {

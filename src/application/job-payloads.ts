@@ -40,6 +40,11 @@ export interface PreflightProductPayload {
   readonly refreshWordPress?: boolean;
 }
 
+export interface SyncTargetClassificationsPayload {
+  readonly runId: string;
+  readonly cursor: string;
+}
+
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -116,4 +121,12 @@ export function parsePreflightProductPayload(value: JsonValue): PreflightProduct
       ...(value.refreshWordPress === undefined ? {} : { refreshWordPress: value.refreshWordPress }) };
   }
   throw new InvalidJobPayloadError("preflight_product");
+}
+
+export function parseSyncTargetClassificationsPayload(value: JsonValue): SyncTargetClassificationsPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.cursor === "string"
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.cursor)) {
+    return { runId: value.runId, cursor: value.cursor };
+  }
+  throw new InvalidJobPayloadError("sync_target_classifications");
 }

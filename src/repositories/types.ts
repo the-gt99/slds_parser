@@ -16,6 +16,7 @@ export type JobType =
   | "discover_source"
   | "collect_product"
   | "process_product"
+  | "sync_target_classifications"
   | "preflight_product"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";

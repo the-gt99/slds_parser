@@ -11,6 +11,11 @@ export {
 } from "./wordpress-exporter.js";
 export { WordPressProductSnapshotReader, type WordPressProductSnapshotResult } from "./wordpress-product-snapshot-reader.js";
 export {
+  WordPressClassificationAssignmentReader,
+  type WordPressClassificationAssignmentItem,
+  type WordPressClassificationAssignmentPage,
+} from "./wordpress-classification-assignment-reader.js";
+export {
   WordPressSizeConverter,
   type WordPressSizeConversionInput,
   type WordPressSizeConverterLike,

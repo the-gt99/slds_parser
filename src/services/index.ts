@@ -35,3 +35,4 @@ export {
   type ContentTemplatePreviewCommand,
 } from "./content-template-admin-service.js";
 export { RuntimeAdminService, type ManualJobRunResult, type RuntimeStatus } from "./runtime-admin-service.js";
+export { TargetClassificationImportService, targetClassificationSuggestionStatus } from "./target-classification-import-service.js";

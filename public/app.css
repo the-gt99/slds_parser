@@ -945,6 +945,9 @@ h3 { font-size: 17px; line-height: 1.3; }
 .wordpress-catalog-row code { color: var(--muted); font-size: 12px; }
 .assignment-rules-section { margin-bottom: 18px; }
 .exact-match-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.association-run { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; padding: 16px 18px; }
+.association-run p { margin: 5px 0 0; }
+.exact-match-status.danger { background: var(--danger-soft); color: var(--danger); }
 .exact-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .exact-summary-card { display: grid; gap: 5px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); color: var(--text); text-align: left; }
 .exact-summary-card:hover { border-color: #b9d8cc; }

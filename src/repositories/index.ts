@@ -19,5 +19,15 @@ export type { TargetRepository } from "./target-repository.js";
 export type { TargetContentTemplateRepository } from "./target-content-template-repository.js";
 export type { TargetDictionaryRepository } from "./target-dictionary-repository.js";
 export type { TargetAssignmentRuleRepository } from "./target-assignment-rule-repository.js";
+export type {
+  TargetClassificationImportProductInput,
+  TargetClassificationImportRepository,
+  TargetClassificationSuggestion,
+  TargetClassificationSuggestionQuery,
+  TargetClassificationSuggestionResult,
+  TargetClassificationSuggestionStatus,
+  TargetClassificationSyncRun,
+  TargetClassificationSyncStatus,
+} from "./target-classification-import-repository.js";
 export type { TransactionRepositories, UnitOfWork } from "./unit-of-work.js";
 export type * from "./types.js";

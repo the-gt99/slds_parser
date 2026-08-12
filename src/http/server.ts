@@ -28,8 +28,10 @@ import type {
   RuntimeAdminService,
   TargetDictionaryService,
   TargetAssignmentAdminService,
+  TargetClassificationImportService,
   WordPressPreviewService,
 } from "../services/index.js";
+import { targetClassificationSuggestionStatus } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
 import { registerStaticUi } from "./static-ui.js";
 
@@ -49,6 +51,7 @@ export interface HttpServerDependencies {
   readonly exportControl?: ExportControlService;
   readonly contentTemplates?: ContentTemplateAdminService;
   readonly targetAssignments?: TargetAssignmentAdminService;
+  readonly targetClassificationImport?: TargetClassificationImportService;
 }
 
 interface QueueQuery {
@@ -83,6 +86,19 @@ interface ExactMatchApplyBody {
   readonly reviewGroupIds?: unknown;
   readonly limit?: unknown;
 }
+
+interface WordPressAssignmentQuery {
+  readonly targetId?: string;
+  readonly sourceId?: string;
+  readonly typeCode?: string;
+  readonly status?: string;
+  readonly search?: string;
+  readonly limit?: string;
+  readonly offset?: string;
+}
+
+interface WordPressAssignmentSyncBody { readonly targetId?: unknown; readonly sourceId?: unknown }
+interface WordPressAssignmentApplyBody { readonly runId?: unknown; readonly suggestionIds?: unknown }
 
 interface ReviewExamplesQuery {
   readonly search?: string;
@@ -456,8 +472,8 @@ function configStatus(value: string | undefined) {
 }
 
 function jobType(value: unknown): JobType {
-  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "preflight_product" && value !== "export_product") {
-    throw new HttpInputError("jobType must be discover_source, collect_product, process_product, preflight_product or export_product");
+  if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "sync_target_classifications" && value !== "preflight_product" && value !== "export_product") {
+    throw new HttpInputError("Unknown jobType");
   }
   return value;
 }
@@ -612,6 +628,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (dependencies.exportControl === undefined) throw new HttpInputError("Export control is not configured");
     return dependencies.exportControl;
   };
+  const targetClassificationImportService = (): TargetClassificationImportService => {
+    if (dependencies.targetClassificationImport === undefined) throw new HttpInputError("WordPress classification import is not configured");
+    return dependencies.targetClassificationImport;
+  };
 
   registerStaticUi(server);
 
@@ -752,6 +772,54 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
           ...(optionalString(request.body?.search) === undefined ? {} : { search: optionalString(request.body?.search)! }),
           ...(reviewGroupIds === undefined ? {} : { reviewGroupIds }),
           ...(limit === undefined ? {} : { limit }),
+        }, actor(request)),
+      };
+    },
+  );
+
+  server.get<{ Querystring: WordPressAssignmentQuery }>(
+    "/api/classifier/wordpress-assignments",
+    { preHandler: requireAdmin },
+    async (request) => {
+      const limit = positiveInteger(request.query.limit, 50, 200);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 200");
+      return targetClassificationImportService().list({
+        targetId: entityId(request.query.targetId, "targetId"),
+        sourceId: entityId(request.query.sourceId, "sourceId"),
+        ...(optionalString(request.query.typeCode) === undefined ? {} : { typeCode: optionalString(request.query.typeCode)! }),
+        ...(targetClassificationSuggestionStatus(request.query.status) === undefined
+          ? {} : { status: targetClassificationSuggestionStatus(request.query.status)! }),
+        ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
+        limit,
+        offset: positiveInteger(request.query.offset, 0, 1_000_000),
+      });
+    },
+  );
+
+  server.post<{ Body: WordPressAssignmentSyncBody }>(
+    "/api/classifier/wordpress-assignments/sync",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      run: await targetClassificationImportService().start(
+        entityId(request.body?.targetId, "targetId"),
+        entityId(request.body?.sourceId, "sourceId"),
+        actor(request),
+      ),
+    }),
+  );
+
+  server.post<{ Body: WordPressAssignmentApplyBody }>(
+    "/api/classifier/wordpress-assignments/apply",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const suggestionIds = entityIds(request.body?.suggestionIds, "suggestionIds");
+      if (suggestionIds === undefined || suggestionIds.length === 0 || suggestionIds.length > 50) {
+        throw new HttpInputError("suggestionIds must contain from 1 to 50 IDs");
+      }
+      return {
+        result: await targetClassificationImportService().apply({
+          runId: entityId(request.body?.runId, "runId"),
+          suggestionIds,
         }, actor(request)),
       };
     },

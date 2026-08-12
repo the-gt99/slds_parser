@@ -39,6 +39,15 @@ const state = {
   exactTarget: null,
   exactApplying: false,
   exactFiltersInitialized: false,
+  associationItems: [],
+  associationTotal: 0,
+  associationOffset: 0,
+  associationSummary: { readyCount: 0, readyProductCount: 0, conflictCount: 0, appliedCount: 0 },
+  associationSelected: new Set(),
+  associationLatestRun: null,
+  associationActiveRun: null,
+  associationApplying: false,
+  associationPollTimer: null,
   configMeta: { sources: [], types: [] },
   references: [],
   referenceTotal: 0,
@@ -250,7 +259,7 @@ async function loadDashboard() {
   const requestedView = location.pathname.includes("classifier-config")
     ? (new URLSearchParams(location.search).get("kind") === "rule" ? "rules" : "references")
     : new URLSearchParams(location.search).get("view") || "queue";
-  await switchClassificationView(["queue", "exact", "references", "rules", "wordpress"].includes(requestedView) ? requestedView : "queue", false);
+  await switchClassificationView(["queue", "exact", "associations", "references", "rules", "wordpress"].includes(requestedView) ? requestedView : "queue", false);
   return targets;
 }
 
@@ -1529,6 +1538,20 @@ function populateCatalogFilters() {
     populateWordPressEntities();
   }
   populateExactFilters();
+  populateAssociationFilters();
+}
+
+function populateAssociationFilters() {
+  const targetSelect = byId("association-target");
+  if (!targetSelect) return;
+  const currentTarget = targetSelect.value;
+  const targets = state.targets.filter((item) => item.dictionary?.configured);
+  targetSelect.replaceChildren(...targets.map((item) => new Option(item.name, item.id)));
+  if ([...targetSelect.options].some((option) => option.value === currentTarget)) targetSelect.value = currentTarget;
+  const sourceSelect = byId("association-source");
+  const currentSource = sourceSelect.value;
+  sourceSelect.replaceChildren(...state.configMeta.sources.map((item) => new Option(item.name, item.id)));
+  if ([...sourceSelect.options].some((option) => option.value === currentSource)) sourceSelect.value = currentSource;
 }
 
 function populateExactFilters() {
@@ -1612,6 +1635,248 @@ function exactIssueLabel(reason) {
     target_mapping_ambiguous: "Термин target уже связан с несколькими внутренними значениями",
     mapping_missing: "Исходное значение ещё не сопоставлено",
   })[reason] || reason;
+}
+
+function associationQuery(offset = 0, overrides = {}) {
+  const params = new URLSearchParams({
+    targetId: byId("association-target").value,
+    sourceId: byId("association-source").value,
+    status: overrides.status ?? byId("association-status").value,
+    limit: String(overrides.limit ?? exactPageSize),
+    offset: String(offset),
+  });
+  const search = byId("association-search").value.trim();
+  if (search) params.set("search", search);
+  if (byId("association-type").value) params.set("typeCode", byId("association-type").value);
+  return `/api/classifier/wordpress-assignments?${params}`;
+}
+
+async function loadAssociationSuggestions(reset = true) {
+  if (!byId("association-target").value || !byId("association-source").value) {
+    byId("association-list").replaceChildren(emptyText("Не настроены source или target."));
+    return;
+  }
+  if (reset) {
+    state.associationItems = [];
+    state.associationOffset = 0;
+    state.associationSelected.clear();
+    byId("association-list").replaceChildren(loading("Читаем сохранённые предложения…"));
+  }
+  try {
+    const response = await api(associationQuery(state.associationOffset));
+    const received = response.items ?? [];
+    state.associationItems.push(...received);
+    state.associationOffset += received.length;
+    state.associationTotal = Number(response.total ?? 0);
+    state.associationSummary = response.summary ?? { readyCount: 0, readyProductCount: 0, conflictCount: 0, appliedCount: 0 };
+    state.associationLatestRun = response.latestCompletedRun ?? null;
+    state.associationActiveRun = response.activeRun ?? null;
+    renderAssociationSuggestions();
+    scheduleAssociationPoll();
+  } catch (error) {
+    byId("association-list").replaceChildren(emptyText(error.message));
+    updateAssociationActions();
+  }
+}
+
+function scheduleAssociationPoll() {
+  clearTimeout(state.associationPollTimer);
+  state.associationPollTimer = null;
+  if (state.classificationView !== "associations" || !["pending", "running"].includes(state.associationActiveRun?.status)) return;
+  state.associationPollTimer = setTimeout(() => loadAssociationSuggestions(true), 2500);
+}
+
+function associationStatusLabel(status) {
+  return ({ ready: "Можно применить", conflict: "Конфликт", applied: "Применено" })[status] || status;
+}
+
+function associationIssueLabel(reason) {
+  return ({
+    target_term_missing_on_products: "У товаров не назначен этот термин",
+    target_terms_conflict: "Для одинакового контекста назначены разные термины",
+    target_dictionary_value_missing: "Термин отсутствует в локальном справочнике",
+  })[reason] || reason;
+}
+
+function renderAssociationRun() {
+  const run = state.associationActiveRun ?? state.associationLatestRun;
+  const title = byId("association-run-title");
+  const detail = byId("association-run-detail");
+  const status = byId("association-run-status");
+  if (!run) {
+    title.textContent = "Синхронизация ещё не запускалась";
+    detail.textContent = "Нажмите «Обновить данные WordPress». Работа продолжится в фоне даже после закрытия страницы.";
+    status.textContent = "Нет данных";
+    return;
+  }
+  const labels = { pending: "В очереди", running: "Загружается", completed: "Готово", failed: "Ошибка" };
+  title.textContent = run.status === "completed"
+    ? `Сохранённый импорт #${run.id}`
+    : `Импорт #${run.id}: ${labels[run.status] || run.status}`;
+  detail.textContent = [
+    `загружено ${run.fetchedProductCount.toLocaleString("ru-RU")} товаров`,
+    `найдено в parser ${run.matchedSourceProductCount.toLocaleString("ru-RU")}`,
+    `назначений ${run.assignmentCount.toLocaleString("ru-RU")}`,
+    run.lastError || "",
+  ].filter(Boolean).join(" · ");
+  status.textContent = labels[run.status] || run.status;
+  status.className = `exact-match-status ${run.status === "failed" ? "danger" : ""}`;
+}
+
+function renderAssociationSuggestions() {
+  renderAssociationRun();
+  byId("association-ready-count").textContent = state.associationSummary.readyCount.toLocaleString("ru-RU");
+  byId("association-ready-products").textContent = `${state.associationSummary.readyProductCount.toLocaleString("ru-RU")} товарных вхождений`;
+  byId("association-conflict-count").textContent = state.associationSummary.conflictCount.toLocaleString("ru-RU");
+  byId("association-applied-count").textContent = state.associationSummary.appliedCount.toLocaleString("ru-RU");
+  byId("association-nav-count").textContent = state.associationSummary.readyCount.toLocaleString("ru-RU");
+  for (const card of document.querySelectorAll("[data-association-status]")) {
+    card.classList.toggle("active", card.dataset.associationStatus === byId("association-status").value);
+  }
+  const list = byId("association-list");
+  list.replaceChildren();
+  for (const item of state.associationItems) {
+    const row = document.createElement("div");
+    row.className = `exact-match-row ${item.status}`;
+    if (item.status === "ready") {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = state.associationSelected.has(item.id);
+      checkbox.setAttribute("aria-label", `Выбрать ${item.sourceValue}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) state.associationSelected.add(item.id);
+        else state.associationSelected.delete(item.id);
+        updateAssociationActions();
+      });
+      row.append(checkbox);
+    } else row.append(document.createElement("span"));
+    const source = document.createElement("div");
+    source.className = "exact-match-source";
+    const sourceName = document.createElement("strong");
+    sourceName.textContent = item.sourceValue;
+    const sourceMeta = document.createElement("span");
+    sourceMeta.textContent = `${typeName(item.typeCode)} · ${item.suggestionKind === "rule" ? "правило brand + family" : "точное сопоставление"}`;
+    source.append(sourceName, sourceMeta);
+    const arrow = document.createElement("span");
+    arrow.className = "exact-match-arrow";
+    arrow.textContent = "→";
+    const target = document.createElement("div");
+    target.className = "exact-match-targets";
+    for (const candidate of item.targets ?? []) {
+      const box = document.createElement("div");
+      box.className = "exact-match-target";
+      const name = document.createElement("strong");
+      name.textContent = candidate.name;
+      const count = document.createElement("span");
+      count.textContent = `term #${candidate.externalValue} · подтверждено на ${candidate.productCount.toLocaleString("ru-RU")} товарах`;
+      box.append(name, count);
+      target.append(box);
+    }
+    const meta = document.createElement("div");
+    meta.className = "exact-match-meta";
+    const badge = document.createElement("span");
+    badge.className = "exact-match-status";
+    badge.textContent = associationStatusLabel(item.status);
+    const coverage = document.createElement("span");
+    coverage.textContent = `${item.evidenceProductCount.toLocaleString("ru-RU")} из ${item.matchedProductCount.toLocaleString("ru-RU")} тов.`;
+    meta.append(badge, coverage);
+    if (item.missingTargetCount > 0) {
+      const missing = document.createElement("span");
+      missing.textContent = `без термина: ${item.missingTargetCount.toLocaleString("ru-RU")}`;
+      meta.append(missing);
+    }
+    if (item.issueReason) {
+      const reason = document.createElement("span");
+      reason.textContent = associationIssueLabel(item.issueReason);
+      meta.append(reason);
+    }
+    row.append(source, arrow, target, meta);
+    list.append(row);
+  }
+  if (!state.associationItems.length) list.append(emptyText(state.associationLatestRun
+    ? "В сохранённом импорте нет предложений с выбранными фильтрами."
+    : "Сначала загрузите назначения существующих товаров WordPress."));
+  byId("association-more").hidden = state.associationOffset >= state.associationTotal;
+  const ready = state.associationItems.filter((item) => item.status === "ready");
+  byId("association-select-page").checked = ready.length > 0 && ready.every((item) => state.associationSelected.has(item.id));
+  byId("association-select-page").disabled = ready.length === 0 || state.associationApplying;
+  updateAssociationActions();
+}
+
+function updateAssociationActions() {
+  byId("association-selected-count").textContent = state.associationSelected.size.toLocaleString("ru-RU");
+  const target = state.targets.find((item) => item.id === byId("association-target").value);
+  const blocked = state.associationApplying || target?.enabled === true || !state.associationLatestRun;
+  byId("association-apply-selected").disabled = blocked || state.associationSelected.size === 0;
+  byId("association-apply-all").disabled = blocked || byId("association-status").value !== "ready" || state.associationTotal === 0;
+  byId("association-sync").disabled = ["pending", "running"].includes(state.associationActiveRun?.status);
+}
+
+async function startAssociationSync() {
+  if (!confirm("Загрузить назначения брендов, моделей и категорий из WordPress? Товары WordPress изменяться не будут.")) return;
+  const button = byId("association-sync");
+  button.disabled = true;
+  try {
+    const response = await api("/api/classifier/wordpress-assignments/sync", {
+      method: "POST",
+      body: { targetId: byId("association-target").value, sourceId: byId("association-source").value },
+    });
+    state.associationActiveRun = response.run;
+    showToast(`Синхронизация #${response.run.id} поставлена в очередь.`);
+    await loadAssociationSuggestions(true);
+  } catch (error) { showToast(error.message); }
+  finally { updateAssociationActions(); }
+}
+
+async function applyAssociationIds(ids, progress, total, appliedBefore) {
+  let applied = appliedBefore;
+  let affected = 0;
+  for (let offset = 0; offset < ids.length; offset += 10) {
+    const batch = ids.slice(offset, offset + 10);
+    progress.textContent = `Применено ${applied} из ${total}. Проверяем следующий пакет…`;
+    const response = await api("/api/classifier/wordpress-assignments/apply", {
+      method: "POST",
+      body: { runId: state.associationLatestRun.id, suggestionIds: batch },
+    });
+    applied += response.result.appliedCount;
+    affected += response.result.affectedProductCount;
+    for (const id of response.result.appliedSuggestionIds ?? []) state.associationSelected.delete(id);
+  }
+  return { applied, affected };
+}
+
+async function applyAssociationSuggestions(mode) {
+  const selected = [...state.associationSelected];
+  const total = mode === "selected" ? selected.length : state.associationTotal;
+  if (total === 0 || !state.associationLatestRun) return;
+  if (!confirm(`Применить ${mode === "selected" ? `${total} выбранных` : `все ${total} безопасных`} предложений? Это создаст mappings/rules и поставит затронутые товары на переобработку.`)) return;
+  state.associationApplying = true;
+  updateAssociationActions();
+  const progress = byId("association-progress");
+  progress.hidden = false;
+  let applied = 0;
+  let affected = 0;
+  try {
+    if (mode === "selected") {
+      const result = await applyAssociationIds(selected, progress, total, applied);
+      applied = result.applied; affected += result.affected;
+    } else {
+      while (applied < total) {
+        const response = await api(associationQuery(0, { status: "ready", limit: 10 }));
+        const ids = (response.items ?? []).map((item) => item.id);
+        if (!ids.length) break;
+        const result = await applyAssociationIds(ids, progress, total, applied);
+        applied = result.applied; affected += result.affected;
+      }
+    }
+    progress.textContent = `Готово: применено ${applied}, затронуто товаров ${affected}.`;
+    showToast(`Предложения WordPress применены: ${applied}.`);
+  } catch (error) {
+    progress.textContent = `Остановлено после ${applied}: ${error.message}`;
+  } finally {
+    state.associationApplying = false;
+    await Promise.all([loadAssociationSuggestions(true), loadQueue({ preserveSelection: false })]);
+  }
 }
 
 function renderExactMatches() {
@@ -1756,7 +2021,7 @@ async function applyExactMatches(mode) {
 
 async function switchClassificationView(view, updateUrl = true) {
   state.classificationView = view;
-  byId("app-view").classList.toggle("document-scroll", view === "exact" || view === "rules" || view === "wordpress");
+  byId("app-view").classList.toggle("document-scroll", view === "exact" || view === "associations" || view === "rules" || view === "wordpress");
   window.scrollTo(0, 0);
   for (const panel of document.querySelectorAll(".classification-view")) panel.hidden = panel.id !== `classification-view-${view}`;
   for (const button of document.querySelectorAll("[data-classification-view]")) button.classList.toggle("active", button.dataset.classificationView === view);
@@ -1766,6 +2031,13 @@ async function switchClassificationView(view, updateUrl = true) {
   if (view === "exact") {
     populateExactFilters();
     await loadExactMatches(true);
+  }
+  if (view === "associations") {
+    populateAssociationFilters();
+    await loadAssociationSuggestions(true);
+  } else {
+    clearTimeout(state.associationPollTimer);
+    state.associationPollTimer = null;
   }
   if (view === "references") await loadReferences(true);
   if (view === "rules") await loadRules(true);
@@ -2570,6 +2842,27 @@ byId("exact-select-page").addEventListener("change", () => {
 byId("exact-more").addEventListener("click", () => loadExactMatches(false));
 byId("exact-apply-selected").addEventListener("click", () => applyExactMatches("selected"));
 byId("exact-apply-all").addEventListener("click", () => applyExactMatches("all"));
+byId("association-filters").addEventListener("submit", (event) => { event.preventDefault(); void loadAssociationSuggestions(true); });
+for (const id of ["association-target", "association-source", "association-type", "association-status"]) {
+  byId(id).addEventListener("change", () => loadAssociationSuggestions(true));
+}
+for (const card of document.querySelectorAll("[data-association-status]")) {
+  card.addEventListener("click", () => {
+    byId("association-status").value = card.dataset.associationStatus;
+    void loadAssociationSuggestions(true);
+  });
+}
+byId("association-select-page").addEventListener("change", () => {
+  for (const item of state.associationItems.filter((entry) => entry.status === "ready")) {
+    if (byId("association-select-page").checked) state.associationSelected.add(item.id);
+    else state.associationSelected.delete(item.id);
+  }
+  renderAssociationSuggestions();
+});
+byId("association-sync").addEventListener("click", startAssociationSync);
+byId("association-more").addEventListener("click", () => loadAssociationSuggestions(false));
+byId("association-apply-selected").addEventListener("click", () => applyAssociationSuggestions("selected"));
+byId("association-apply-all").addEventListener("click", () => applyAssociationSuggestions("all"));
 byId("reference-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);
   catalogSearchTimer = setTimeout(() => loadReferences(true), 280);

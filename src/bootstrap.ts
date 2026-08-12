@@ -1,11 +1,11 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, Worker } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationSyncRunner, Worker } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, WordPressClassificationAssignmentReader, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ProductClassifier, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
 
@@ -96,7 +96,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
       new WordPressProductSnapshotReader(wordpress),
       exportControl,
     ));
-  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns, preflightRunner, exportControl);
+  const classificationImportRepository = new PostgresTargetClassificationImportRepository(pool);
+  const classificationSyncRunner = wordpress === null
+    ? undefined
+    : new TargetClassificationSyncRunner(classificationImportRepository, new WordPressClassificationAssignmentReader(wordpress));
+  const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns, preflightRunner, exportControl, classificationSyncRunner);
   const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,
