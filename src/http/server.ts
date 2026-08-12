@@ -99,6 +99,12 @@ interface WordPressAssignmentQuery {
 
 interface WordPressAssignmentSyncBody { readonly targetId?: unknown; readonly sourceId?: unknown }
 interface WordPressAssignmentApplyBody { readonly runId?: unknown; readonly suggestionIds?: unknown }
+interface WordPressAssignmentSuggestionParams { readonly suggestionId: string }
+interface WordPressAssignmentExamplesQuery { readonly perTargetLimit?: string }
+interface WordPressAssignmentResolveBody {
+  readonly runId?: unknown;
+  readonly dictionaryValueId?: unknown;
+}
 
 interface ReviewExamplesQuery {
   readonly search?: string;
@@ -805,6 +811,29 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         entityId(request.body?.sourceId, "sourceId"),
         actor(request),
       ),
+    }),
+  );
+
+  server.get<{ Params: WordPressAssignmentSuggestionParams; Querystring: WordPressAssignmentExamplesQuery }>(
+    "/api/classifier/wordpress-assignments/:suggestionId/examples",
+    { preHandler: requireAdmin },
+    async (request) => ({
+      result: await targetClassificationImportService().examples(
+        entityId(request.params.suggestionId, "suggestionId"),
+        positiveInteger(request.query.perTargetLimit, 5, 10),
+      ),
+    }),
+  );
+
+  server.post<{ Params: WordPressAssignmentSuggestionParams; Body: WordPressAssignmentResolveBody }>(
+    "/api/classifier/wordpress-assignments/:suggestionId/resolve",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      result: await targetClassificationImportService().resolve({
+        runId: entityId(request.body?.runId, "runId"),
+        suggestionId: entityId(request.params.suggestionId, "suggestionId"),
+        dictionaryValueId: entityId(request.body?.dictionaryValueId, "dictionaryValueId"),
+      }, actor(request)),
     }),
   );
 

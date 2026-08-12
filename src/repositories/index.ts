@@ -23,9 +23,11 @@ export type {
   TargetClassificationImportProductInput,
   TargetClassificationImportRepository,
   TargetClassificationSuggestion,
+  TargetClassificationSuggestionExample,
   TargetClassificationSuggestionQuery,
   TargetClassificationSuggestionResult,
   TargetClassificationSuggestionStatus,
+  TargetClassificationSuggestionTarget,
   TargetClassificationSyncRun,
   TargetClassificationSyncStatus,
 } from "./target-classification-import-repository.js";

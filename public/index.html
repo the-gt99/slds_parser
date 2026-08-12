@@ -215,7 +215,7 @@
 
       <div id="exact-progress" class="inline-message exact-progress" hidden></div>
       <section class="section catalog-table-section">
-        <div class="exact-selection-bar">
+        <div id="association-selection-bar" class="exact-selection-bar">
           <label class="confirm-check"><input id="exact-select-page" type="checkbox"><span>Выбрать показанные точные совпадения</span></label>
           <span class="muted"><strong id="exact-selected-count">0</strong> выбрано</span>
         </div>
@@ -229,7 +229,7 @@
         <div>
           <p class="eyebrow">Массовое сопоставление</p>
           <h2>По товарам WordPress</h2>
-          <p class="muted">Существующие товары связываются по GOAT ID. Назначенные им бренд, модель и категория превращаются в сохранённые предложения. Данные и прогресс находятся в PostgreSQL — вкладку можно закрывать.</p>
+          <p class="muted">Слева показано условие из GOAT/парсера, справа — уже назначенный существующим товарам термин WordPress. Применение создаёт mapping или правило классификатора, но само по себе не изменяет WordPress. Данные и прогресс сохранены в PostgreSQL.</p>
         </div>
         <div class="exact-match-actions">
           <button id="association-sync" class="button quiet" type="button">Обновить данные WordPress</button>

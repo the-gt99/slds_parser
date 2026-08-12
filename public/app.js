@@ -48,6 +48,10 @@ const state = {
   associationActiveRun: null,
   associationApplying: false,
   associationPollTimer: null,
+  associationExpanded: new Set(),
+  associationExamples: new Map(),
+  associationExampleLoading: new Set(),
+  associationResolving: new Set(),
   configMeta: { sources: [], types: [] },
   references: [],
   referenceTotal: 0,
@@ -1660,6 +1664,9 @@ async function loadAssociationSuggestions(reset = true) {
     state.associationItems = [];
     state.associationOffset = 0;
     state.associationSelected.clear();
+    state.associationExpanded.clear();
+    state.associationExamples.clear();
+    state.associationExampleLoading.clear();
     byId("association-list").replaceChildren(loading("Читаем сохранённые предложения…"));
   }
   try {
@@ -1692,10 +1699,148 @@ function associationStatusLabel(status) {
 
 function associationIssueLabel(reason) {
   return ({
-    target_term_missing_on_products: "У товаров не назначен этот термин",
-    target_terms_conflict: "Для одинакового контекста назначены разные термины",
-    target_dictionary_value_missing: "Термин отсутствует в локальном справочнике",
+    target_term_missing_on_products: "На товарах WordPress нет значения этого типа",
+    target_terms_conflict: "Одному условию соответствуют несколько терминов WordPress",
+    target_dictionary_value_missing: "Термин WordPress ещё не загружен в справочник парсера",
   })[reason] || reason;
+}
+
+function associationConflictExplanation(item) {
+  if (item.issueReason === "target_terms_conflict") {
+    return `Для условия «${item.sourceValue}» найдено ${item.targets.length} разных терминов WordPress. `
+      + "Счётчики могут пересекаться: один товар способен иметь несколько терминов. Откройте примеры и выберите термин только если он должен применяться ко всей группе.";
+  }
+  if (item.issueReason === "target_dictionary_value_missing") {
+    return "Термин назначен товарам WordPress, но его нет в сохранённом справочнике парсера. Обновите справочник WordPress, затем повторите импорт назначений.";
+  }
+  if (item.issueReason === "target_term_missing_on_products") {
+    return "У связанных товаров WordPress не заполнено это поле. Откройте примеры, назначьте корректный термин в WordPress и затем повторите импорт.";
+  }
+  return associationIssueLabel(item.issueReason);
+}
+
+function associationTermLabel(typeCode) {
+  return ({ brand: "Бренд WordPress", model: "Модель WordPress", category: "Категория WordPress" })[typeCode] || "Термин WordPress";
+}
+
+function externalLink(label, href, className = "button quiet compact") {
+  const link = document.createElement("a");
+  link.className = className;
+  link.textContent = label;
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  return link;
+}
+
+async function toggleAssociationExamples(item) {
+  if (state.associationExpanded.has(item.id)) {
+    state.associationExpanded.delete(item.id);
+    renderAssociationSuggestions();
+    return;
+  }
+  state.associationExpanded.add(item.id);
+  renderAssociationSuggestions();
+  if (state.associationExamples.has(item.id) || state.associationExampleLoading.has(item.id)) return;
+  state.associationExampleLoading.add(item.id);
+  renderAssociationSuggestions();
+  try {
+    const response = await api(`/api/classifier/wordpress-assignments/${item.id}/examples?perTargetLimit=5`);
+    state.associationExamples.set(item.id, response.result?.items ?? []);
+  } catch (error) {
+    state.associationExamples.set(item.id, { error: error.message });
+  } finally {
+    state.associationExampleLoading.delete(item.id);
+    renderAssociationSuggestions();
+  }
+}
+
+function renderAssociationExamples(item) {
+  const details = document.createElement("div");
+  details.className = "association-examples";
+  const heading = document.createElement("div");
+  heading.className = "association-examples-heading";
+  const title = document.createElement("strong");
+  title.textContent = "Примеры товаров из сохранённого импорта";
+  const note = document.createElement("span");
+  note.textContent = "Открываются без повторного запроса к WordPress";
+  heading.append(title, note);
+  details.append(heading);
+  if (state.associationExampleLoading.has(item.id)) {
+    details.append(loading("Загружаем примеры из PostgreSQL…"));
+    return details;
+  }
+  const stored = state.associationExamples.get(item.id);
+  if (stored?.error) {
+    details.append(emptyText(stored.error));
+    return details;
+  }
+  const examples = Array.isArray(stored) ? stored : [];
+  if (!examples.length) {
+    details.append(emptyText("Для этой группы примеры не найдены."));
+    return details;
+  }
+  const sections = new Map();
+  for (const example of examples) {
+    const key = example.termExternalValue ?? "";
+    if (!sections.has(key)) sections.set(key, []);
+    sections.get(key).push(example);
+  }
+  for (const [externalValue, products] of sections) {
+    const section = document.createElement("section");
+    section.className = "association-example-section";
+    const sectionTitle = document.createElement("h4");
+    sectionTitle.textContent = externalValue === ""
+      ? `Без значения «${associationTermLabel(item.typeCode)}»`
+      : `${products[0].termName} · term #${externalValue}`;
+    section.append(sectionTitle);
+    const list = document.createElement("div");
+    list.className = "association-example-list";
+    for (const product of products) {
+      const card = document.createElement("article");
+      card.className = "association-example-card";
+      const identity = document.createElement("div");
+      const productTitle = document.createElement("strong");
+      productTitle.textContent = product.title;
+      const productMeta = document.createElement("span");
+      productMeta.textContent = `GOAT ID ${product.sourceExternalId} · WordPress #${product.targetExternalId}`;
+      identity.append(productTitle, productMeta);
+      const actions = document.createElement("div");
+      actions.className = "association-example-actions";
+      actions.append(externalLink("Карточка парсера", `/products/${product.sourceProductId}`, "button secondary compact"));
+      if (product.sourceUrl) actions.append(externalLink("GOAT", product.sourceUrl));
+      if (product.targetUrl) actions.append(externalLink("Товар WordPress", product.targetUrl));
+      if (product.targetEditUrl) actions.append(externalLink("Редактировать WP", product.targetEditUrl));
+      card.append(identity, actions);
+      list.append(card);
+    }
+    section.append(list);
+    details.append(section);
+  }
+  return details;
+}
+
+async function resolveAssociationConflict(item, candidate) {
+  if (!candidate.dictionaryValueId || !state.associationLatestRun) return;
+  const message = `Выбрать «${candidate.name}» для всей группы «${item.sourceValue}»?\n\n`
+    + `Будет создано ${item.suggestionKind === "rule" ? "правило brand + family" : "точное сопоставление"}, `
+    + `которое затронет до ${item.matchedProductCount.toLocaleString("ru-RU")} товаров парсера. WordPress сейчас изменяться не будет.`;
+  if (!confirm(message)) return;
+  state.associationResolving.add(item.id);
+  renderAssociationSuggestions();
+  try {
+    const response = await api(`/api/classifier/wordpress-assignments/${item.id}/resolve`, {
+      method: "POST",
+      body: { runId: state.associationLatestRun.id, dictionaryValueId: candidate.dictionaryValueId },
+    });
+    showToast(`Конфликт разрешён. Затронуто товаров: ${response.result.affectedProductCount}.`);
+    await Promise.all([loadAssociationSuggestions(true), loadQueue({ preserveSelection: false })]);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    state.associationResolving.delete(item.id);
+    renderAssociationSuggestions();
+  }
 }
 
 function renderAssociationRun() {
@@ -1725,6 +1870,7 @@ function renderAssociationRun() {
 
 function renderAssociationSuggestions() {
   renderAssociationRun();
+  byId("association-selection-bar").hidden = byId("association-status").value !== "ready";
   byId("association-ready-count").textContent = state.associationSummary.readyCount.toLocaleString("ru-RU");
   byId("association-ready-products").textContent = `${state.associationSummary.readyProductCount.toLocaleString("ru-RU")} товарных вхождений`;
   byId("association-conflict-count").textContent = state.associationSummary.conflictCount.toLocaleString("ru-RU");
@@ -1736,6 +1882,8 @@ function renderAssociationSuggestions() {
   const list = byId("association-list");
   list.replaceChildren();
   for (const item of state.associationItems) {
+    const wrapper = document.createElement("article");
+    wrapper.className = `association-item ${item.status}`;
     const row = document.createElement("div");
     row.className = `exact-match-row ${item.status}`;
     if (item.status === "ready") {
@@ -1755,7 +1903,9 @@ function renderAssociationSuggestions() {
     const sourceName = document.createElement("strong");
     sourceName.textContent = item.sourceValue;
     const sourceMeta = document.createElement("span");
-    sourceMeta.textContent = `${typeName(item.typeCode)} · ${item.suggestionKind === "rule" ? "правило brand + family" : "точное сопоставление"}`;
+    sourceMeta.textContent = item.suggestionKind === "rule"
+      ? "Условие парсера: бренд + семейство модели"
+      : `Исходное значение парсера: ${typeName(item.typeCode).toLowerCase()}`;
     source.append(sourceName, sourceMeta);
     const arrow = document.createElement("span");
     arrow.className = "exact-match-arrow";
@@ -1765,11 +1915,24 @@ function renderAssociationSuggestions() {
     for (const candidate of item.targets ?? []) {
       const box = document.createElement("div");
       box.className = "exact-match-target";
+      const label = document.createElement("span");
+      label.className = "association-target-label";
+      label.textContent = associationTermLabel(item.typeCode);
       const name = document.createElement("strong");
       name.textContent = candidate.name;
       const count = document.createElement("span");
-      count.textContent = `term #${candidate.externalValue} · подтверждено на ${candidate.productCount.toLocaleString("ru-RU")} товарах`;
-      box.append(name, count);
+      count.textContent = `term #${candidate.externalValue} · стоит на ${candidate.productCount.toLocaleString("ru-RU")} товарах WordPress`;
+      box.append(label, name, count);
+      if (item.status === "conflict" && item.issueReason === "target_terms_conflict") {
+        const choose = document.createElement("button");
+        choose.className = "button secondary compact association-choose-target";
+        choose.type = "button";
+        choose.textContent = candidate.dictionaryValueId ? "Выбрать для всей группы" : "Нет в справочнике парсера";
+        choose.disabled = !candidate.dictionaryValueId || state.associationResolving.has(item.id)
+          || state.targets.find((targetItem) => targetItem.id === item.targetId)?.enabled === true;
+        choose.addEventListener("click", () => resolveAssociationConflict(item, candidate));
+        box.append(choose);
+      }
       target.append(box);
     }
     const meta = document.createElement("div");
@@ -1790,8 +1953,34 @@ function renderAssociationSuggestions() {
       reason.textContent = associationIssueLabel(item.issueReason);
       meta.append(reason);
     }
+    const examplesButton = document.createElement("button");
+    examplesButton.className = "button quiet compact association-examples-toggle";
+    examplesButton.type = "button";
+    examplesButton.textContent = state.associationExpanded.has(item.id) ? "Скрыть товары" : "Показать товары";
+    examplesButton.addEventListener("click", () => toggleAssociationExamples(item));
+    meta.append(examplesButton);
     row.append(source, arrow, target, meta);
-    list.append(row);
+    wrapper.append(row);
+    if (item.status === "conflict") {
+      const explanation = document.createElement("div");
+      explanation.className = "association-conflict-explanation";
+      const explanationTitle = document.createElement("strong");
+      explanationTitle.textContent = "Почему это конфликт";
+      const explanationText = document.createElement("span");
+      explanationText.textContent = associationConflictExplanation(item);
+      explanation.append(explanationTitle, explanationText);
+      if (item.issueReason === "target_dictionary_value_missing") {
+        const dictionaryButton = document.createElement("button");
+        dictionaryButton.type = "button";
+        dictionaryButton.className = "button quiet compact";
+        dictionaryButton.textContent = "Перейти к справочнику WordPress";
+        dictionaryButton.addEventListener("click", () => switchClassificationView("wordpress"));
+        explanation.append(dictionaryButton);
+      }
+      wrapper.append(explanation);
+    }
+    if (state.associationExpanded.has(item.id)) wrapper.append(renderAssociationExamples(item));
+    list.append(wrapper);
   }
   if (!state.associationItems.length) list.append(emptyText(state.associationLatestRun
     ? "В сохранённом импорте нет предложений с выбранными фильтрами."

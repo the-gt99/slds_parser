@@ -85,7 +85,11 @@ async function main(): Promise<void> {
     );
     const targetClassificationImport = wordpress === null
       ? undefined
-      : new TargetClassificationImportService(new PostgresTargetClassificationImportRepository(pool), classifier);
+      : new TargetClassificationImportService(
+        new PostgresTargetClassificationImportRepository(pool),
+        classifier,
+        wordpress.baseUrl,
+      );
     const productAdmin = new ProductAdminService(
       new PostgresProductAdminRepository(pool),
       providers,

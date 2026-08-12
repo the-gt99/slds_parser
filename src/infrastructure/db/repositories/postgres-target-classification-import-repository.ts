@@ -6,6 +6,7 @@ import type {
 import type {
   TargetClassificationImportRepository,
   TargetClassificationSuggestion,
+  TargetClassificationSuggestionExample,
   TargetClassificationSuggestionQuery,
   TargetClassificationSuggestionResult,
   TargetClassificationSyncRun,
@@ -89,6 +90,18 @@ function mapSuggestion(row: DatabaseRow): TargetClassificationSuggestion {
     issueReason: nullableText(row, "issue_reason"),
     appliedResolutionKind: nullableText(row, "applied_resolution_kind") as TargetClassificationSuggestion["appliedResolutionKind"],
     appliedResolutionId: nullableText(row, "applied_resolution_id"),
+  };
+}
+
+function mapExample(row: DatabaseRow): TargetClassificationSuggestionExample {
+  return {
+    sourceProductId: text(row, "source_product_id"),
+    sourceExternalId: text(row, "source_external_id"),
+    targetExternalId: text(row, "target_external_id"),
+    title: text(row, "title"),
+    sourceUrl: nullableText(row, "source_url"),
+    termExternalValue: nullableText(row, "term_external_value"),
+    termName: nullableText(row, "term_name"),
   };
 }
 
@@ -455,15 +468,103 @@ export class PostgresTargetClassificationImportRepository implements TargetClass
     } finally { client.release(); }
   }
 
-  async markApplied(suggestionId: EntityId, resolutionKind: "mapping" | "rule", resolutionId: EntityId, actor: string): Promise<void> {
+  async listSuggestionExamples(suggestionId: EntityId, perTargetLimit: number): Promise<{
+    readonly suggestion: TargetClassificationSuggestion;
+    readonly items: readonly TargetClassificationSuggestionExample[];
+  } | null> {
+    const client = await this.pool.connect();
+    try {
+      const suggestionResult = await client.query<DatabaseRow>(
+        "SELECT * FROM target_classification_suggestions WHERE id = $1",
+        [suggestionId],
+      );
+      const suggestionRow = suggestionResult.rows[0];
+      if (suggestionRow === undefined) return null;
+      const examples = await client.query<DatabaseRow>(
+        `WITH selected AS MATERIALIZED (
+           SELECT suggestion.*,
+                  CASE suggestion.type_code
+                    WHEN 'brand' THEN 'pa_brand'
+                    WHEN 'model' THEN 'pa_model'
+                    WHEN 'category' THEN 'product_cat'
+                  END AS taxonomy
+           FROM target_classification_suggestions suggestion
+           WHERE suggestion.id = $1
+         ), matched_products AS MATERIALIZED (
+           SELECT DISTINCT imported.id AS import_product_id,
+                  imported.source_product_id, imported.source_external_id,
+                  imported.target_external_id, imported.taxonomies,
+                  COALESCE(NULLIF(internal.data->>'title', ''),
+                           NULLIF(product.discovery_metadata->>'title', ''),
+                           NULLIF(product.slug, ''), product.source_key) AS title,
+                  product.url AS source_url, selected.taxonomy
+           FROM selected
+           JOIN target_classification_import_products imported ON imported.run_id = selected.run_id
+           JOIN source_products product ON product.id = imported.source_product_id
+           LEFT JOIN internal_products internal ON internal.source_product_id = product.id
+           JOIN source_product_classification_links link
+             ON link.source_product_id = product.id AND link.active = TRUE
+           JOIN classification_candidates candidate ON candidate.id = link.candidate_id
+           JOIN reference_types type ON type.id = candidate.reference_type_id
+           WHERE type.code = selected.type_code
+             AND ((selected.suggestion_kind = 'rule' AND candidate.context_key = selected.group_key)
+               OR (selected.suggestion_kind = 'mapping' AND candidate.id::TEXT = selected.group_key))
+         ), product_terms AS (
+           SELECT product.*, term->>'term_id' AS term_external_value,
+                  COALESCE(NULLIF(term->>'name', ''), term->>'term_id') AS term_name
+           FROM matched_products product
+           LEFT JOIN LATERAL JSONB_ARRAY_ELEMENTS(
+             COALESCE(product.taxonomies->product.taxonomy, '[]'::JSONB)
+           ) term ON TRUE
+         ), ranked AS (
+           SELECT product_terms.*,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY term_external_value
+                    ORDER BY title, source_product_id, target_external_id
+                  ) AS example_number
+           FROM product_terms
+         )
+         SELECT source_product_id, source_external_id, target_external_id,
+                title, source_url, term_external_value, term_name
+         FROM ranked
+         WHERE example_number <= $2
+         ORDER BY term_external_value NULLS LAST, example_number`,
+        [suggestionId, perTargetLimit],
+      );
+      return { suggestion: mapSuggestion(suggestionRow), items: examples.rows.map(mapExample) };
+    } finally { client.release(); }
+  }
+
+  async getSuggestion(runId: EntityId, suggestionId: EntityId): Promise<TargetClassificationSuggestion | null> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<DatabaseRow>(
+        "SELECT * FROM target_classification_suggestions WHERE run_id = $1 AND id = $2",
+        [runId, suggestionId],
+      );
+      return result.rows[0] === undefined ? null : mapSuggestion(result.rows[0]);
+    } finally { client.release(); }
+  }
+
+  async markApplied(input: {
+    readonly suggestionId: EntityId;
+    readonly dictionaryValueId: EntityId;
+    readonly externalValue: string;
+    readonly targetName: string;
+    readonly resolutionKind: "mapping" | "rule";
+    readonly resolutionId: EntityId;
+    readonly actor: string;
+  }): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query(
         `UPDATE target_classification_suggestions
-         SET status = 'applied', applied_resolution_kind = $2,
-             applied_resolution_id = $3, applied_at = NOW(), applied_by = $4, updated_at = NOW()
-         WHERE id = $1 AND status = 'ready'`,
-        [suggestionId, resolutionKind, resolutionId, actor],
+         SET status = 'applied', dictionary_value_id = $2, external_value = $3, target_name = $4,
+             applied_resolution_kind = $5, applied_resolution_id = $6,
+             applied_at = NOW(), applied_by = $7, updated_at = NOW()
+         WHERE id = $1 AND status IN ('ready', 'conflict')`,
+        [input.suggestionId, input.dictionaryValueId, input.externalValue, input.targetName,
+          input.resolutionKind, input.resolutionId, input.actor],
       );
     } finally { client.release(); }
   }

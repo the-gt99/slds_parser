@@ -67,6 +67,16 @@ export interface TargetClassificationSuggestion {
   readonly appliedResolutionId: EntityId | null;
 }
 
+export interface TargetClassificationSuggestionExample {
+  readonly sourceProductId: EntityId;
+  readonly sourceExternalId: string;
+  readonly targetExternalId: string;
+  readonly title: string;
+  readonly sourceUrl: string | null;
+  readonly termExternalValue: string | null;
+  readonly termName: string | null;
+}
+
 export interface TargetClassificationSuggestionQuery {
   readonly targetId: EntityId;
   readonly sourceId: EntityId;
@@ -102,6 +112,19 @@ export interface TargetClassificationImportRepository {
   }): Promise<void>;
   failRun(runId: EntityId, error: string): Promise<void>;
   listSuggestions(query: TargetClassificationSuggestionQuery): Promise<TargetClassificationSuggestionResult>;
+  listSuggestionExamples(suggestionId: EntityId, perTargetLimit: number): Promise<{
+    readonly suggestion: TargetClassificationSuggestion;
+    readonly items: readonly TargetClassificationSuggestionExample[];
+  } | null>;
   getReadySuggestions(runId: EntityId, suggestionIds: readonly EntityId[]): Promise<readonly TargetClassificationSuggestion[]>;
-  markApplied(suggestionId: EntityId, resolutionKind: "mapping" | "rule", resolutionId: EntityId, actor: string): Promise<void>;
+  getSuggestion(runId: EntityId, suggestionId: EntityId): Promise<TargetClassificationSuggestion | null>;
+  markApplied(input: {
+    readonly suggestionId: EntityId;
+    readonly dictionaryValueId: EntityId;
+    readonly externalValue: string;
+    readonly targetName: string;
+    readonly resolutionKind: "mapping" | "rule";
+    readonly resolutionId: EntityId;
+    readonly actor: string;
+  }): Promise<void>;
 }

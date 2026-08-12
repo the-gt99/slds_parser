@@ -2,6 +2,8 @@ import type { EntityId } from "../contracts/index.js";
 import { IntegrationContractError } from "../core/errors/index.js";
 import type {
   TargetClassificationImportRepository,
+  TargetClassificationSuggestion,
+  TargetClassificationSuggestionTarget,
   TargetClassificationSuggestionQuery,
   TargetClassificationSuggestionStatus,
 } from "../repositories/index.js";
@@ -11,6 +13,7 @@ export class TargetClassificationImportService {
   constructor(
     private readonly repository: TargetClassificationImportRepository,
     private readonly classifier: ClassifierAdminService,
+    private readonly targetBaseUrl?: string,
   ) {}
 
   start(targetId: EntityId, sourceId: EntityId, actor: string) {
@@ -19,6 +22,22 @@ export class TargetClassificationImportService {
 
   list(query: TargetClassificationSuggestionQuery) {
     return this.repository.listSuggestions(query);
+  }
+
+  async examples(suggestionId: EntityId, perTargetLimit: number) {
+    const result = await this.repository.listSuggestionExamples(suggestionId, perTargetLimit);
+    if (result === null) throw new IntegrationContractError("Предложение WordPress не найдено");
+    const baseUrl = this.targetBaseUrl?.replace(/\/+$/u, "");
+    return {
+      suggestion: result.suggestion,
+      items: result.items.map((item) => ({
+        ...item,
+        targetUrl: baseUrl === undefined ? null : `${baseUrl}/?p=${encodeURIComponent(item.targetExternalId)}`,
+        targetEditUrl: baseUrl === undefined
+          ? null
+          : `${baseUrl}/wp-admin/post.php?post=${encodeURIComponent(item.targetExternalId)}&action=edit`,
+      })),
+    };
   }
 
   async apply(input: {
@@ -47,7 +66,55 @@ export class TargetClassificationImportService {
       if (suggestion.dictionaryValueId === null) {
         throw new IntegrationContractError(`У предложения #${suggestion.id} отсутствует термин WordPress`);
       }
-      if (suggestion.suggestionKind === "mapping") {
+      const result = await this.applySuggestion(suggestion, {
+        dictionaryValueId: suggestion.dictionaryValueId,
+        externalValue: suggestion.externalValue ?? "",
+        name: suggestion.targetName ?? suggestion.externalValue ?? "",
+        productCount: suggestion.evidenceProductCount,
+      }, run.id, actor);
+      affectedProductCount += result.affectedProductCount;
+      appliedSuggestionIds.push(suggestion.id);
+    }
+    return { appliedCount: appliedSuggestionIds.length, affectedProductCount, appliedSuggestionIds };
+  }
+
+  async resolve(input: {
+    readonly runId: EntityId;
+    readonly suggestionId: EntityId;
+    readonly dictionaryValueId: EntityId;
+  }, actor: string) {
+    const run = await this.repository.getRun(input.runId);
+    if (run === null || run.status !== "completed") {
+      throw new IntegrationContractError("Завершённый импорт WordPress не найден");
+    }
+    if (run.targetEnabled) {
+      throw new IntegrationContractError(`Target ${run.targetCode} должен быть выключен на время классификации`);
+    }
+    const suggestion = await this.repository.getSuggestion(run.id, input.suggestionId);
+    if (suggestion === null || suggestion.status !== "conflict") {
+      throw new IntegrationContractError("Конфликт уже разрешён или не найден; обновите список");
+    }
+    const selected = suggestion.targets.find((target) => target.dictionaryValueId === input.dictionaryValueId);
+    if (selected === undefined) {
+      throw new IntegrationContractError("Выбранный термин не относится к этому конфликту");
+    }
+    const result = await this.applySuggestion(suggestion, selected, run.id, actor);
+    return { appliedSuggestionId: suggestion.id, affectedProductCount: result.affectedProductCount };
+  }
+
+  private async applySuggestion(
+    suggestion: TargetClassificationSuggestion,
+    selected: TargetClassificationSuggestionTarget,
+    runId: EntityId,
+    actor: string,
+  ): Promise<{ readonly affectedProductCount: number }> {
+    if (selected.dictionaryValueId === null) {
+      throw new IntegrationContractError("Выбранный термин отсутствует в локальном справочнике WordPress");
+    }
+    let resolutionKind: "mapping" | "rule";
+    let resolutionId: EntityId;
+    let affectedProductCount: number;
+    if (suggestion.suggestionKind === "mapping") {
         const result = await this.classifier.saveDecision({
           sourceId: suggestion.sourceId,
           typeCode: suggestion.typeCode,
@@ -58,12 +125,13 @@ export class TargetClassificationImportService {
           targetLink: {
             targetId: suggestion.targetId,
             targetScope: suggestion.targetScope,
-            dictionaryValueId: suggestion.dictionaryValueId,
+            dictionaryValueId: selected.dictionaryValueId,
           },
-          reason: `Подтверждено назначениями существующих товаров WordPress, импорт #${run.id}`,
+          reason: `Подтверждено назначениями существующих товаров WordPress, импорт #${runId}`,
         }, actor);
-        affectedProductCount += result.affectedProductCount;
-        await this.repository.markApplied(suggestion.id, "mapping", result.mappingId, actor);
+        affectedProductCount = result.affectedProductCount;
+        resolutionKind = "mapping";
+        resolutionId = result.mappingId;
       } else {
         const brand = typeof suggestion.context.brand === "string" ? suggestion.context.brand.trim() : "";
         const family = typeof suggestion.context.family === "string" ? suggestion.context.family.trim() : "";
@@ -82,21 +150,29 @@ export class TargetClassificationImportService {
           targetLink: {
             targetId: suggestion.targetId,
             targetScope: suggestion.targetScope,
-            dictionaryValueId: suggestion.dictionaryValueId,
+            dictionaryValueId: selected.dictionaryValueId,
           },
-          reason: `Подтверждено назначениями существующих товаров WordPress, импорт #${run.id}`,
+          reason: `Подтверждено назначениями существующих товаров WordPress, импорт #${runId}`,
         };
         const preview = await this.classifier.previewRule(draft);
         if (preview.ambiguousObservations > 0) {
           throw new IntegrationContractError(`Предложение #${suggestion.id} конфликтует с существующими правилами`);
         }
         const result = await this.classifier.createRule(draft, actor);
-        affectedProductCount += result.preview.affectedProducts;
-        await this.repository.markApplied(suggestion.id, "rule", result.ruleId, actor);
+        affectedProductCount = result.preview.affectedProducts;
+        resolutionKind = "rule";
+        resolutionId = result.ruleId;
       }
-      appliedSuggestionIds.push(suggestion.id);
-    }
-    return { appliedCount: appliedSuggestionIds.length, affectedProductCount, appliedSuggestionIds };
+    await this.repository.markApplied({
+      suggestionId: suggestion.id,
+      dictionaryValueId: selected.dictionaryValueId,
+      externalValue: selected.externalValue,
+      targetName: selected.name,
+      resolutionKind,
+      resolutionId,
+      actor,
+    });
+    return { affectedProductCount };
   }
 }
 
