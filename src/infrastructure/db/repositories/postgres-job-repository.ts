@@ -49,6 +49,11 @@ export class PostgresJobRepository implements JobRepository {
          WHERE ${expiredJobTypeFilter}
            AND status = 'running'
            AND locked_at < NOW() - ($2::DOUBLE PRECISION * INTERVAL '1 millisecond')
+           AND (jobs.job_type <> 'reclassify_product' OR NOT EXISTS (
+             SELECT 1 FROM jobs application_job
+             WHERE application_job.job_type = 'apply_target_classification_suggestion'
+               AND application_job.status IN ('pending', 'running', 'retry')
+           ))
          ORDER BY locked_at, id
          FOR UPDATE SKIP LOCKED
          LIMIT 1
@@ -73,6 +78,11 @@ export class PostgresJobRepository implements JobRepository {
          WHERE ${availableJobTypeFilter}
            AND status IN ('pending', 'retry')
            AND available_at <= NOW()
+           AND (jobs.job_type <> 'reclassify_product' OR NOT EXISTS (
+             SELECT 1 FROM jobs application_job
+             WHERE application_job.job_type = 'apply_target_classification_suggestion'
+               AND application_job.status IN ('pending', 'running', 'retry')
+           ))
          ORDER BY available_at, id
          FOR UPDATE SKIP LOCKED
          LIMIT 1

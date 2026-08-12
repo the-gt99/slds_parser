@@ -123,7 +123,7 @@ export class Worker {
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
-          this.runLane(controller.signal, ["process_product"], `${this.options.workerId}:process-${index + 1}`)),
+          this.runLane(controller.signal, ["reclassify_product", "process_product"], `${this.options.workerId}:process-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),

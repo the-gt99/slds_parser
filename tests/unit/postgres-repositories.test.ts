@@ -640,6 +640,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(sql).toContain("FOR UPDATE OF link");
     expect(sql).toContain("UPDATE classification_review_groups review");
     expect(sql).toContain("affected AS MATERIALIZED");
+    expect(sql).toContain("'reclassify_product'");
     expect(sql).toContain("DO NOTHING");
     expect(sql).not.toContain("refresh_classification_review_groups");
     expect(sql).not.toContain("DO UPDATE SET unique_key = jobs.unique_key");
@@ -834,6 +835,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
     await new PostgresJobRepository(executor).claimNext("worker", 30000, ["process_product"]);
     expect(executor.calls).toHaveLength(1);
     expect(executor.calls[0]?.text).toContain("locked_at <");
+  });
+
+  it("does not claim reclassification while bulk classification application is active", async () => {
+    const executor = new FakeExecutor([[], []]);
+    await new PostgresJobRepository(executor).claimNext("worker", 30000, ["reclassify_product"]);
+
+    expect(executor.calls[0]?.text).toContain("application_job.job_type = 'apply_target_classification_suggestion'");
+    expect(executor.calls[1]?.text).toContain("jobs.job_type <> 'reclassify_product'");
   });
 
   it("deletes expired operational data in bounded batches", async () => {

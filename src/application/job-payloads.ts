@@ -19,6 +19,10 @@ export interface ProcessProductPayload {
   readonly force: boolean;
 }
 
+export interface ReclassifyProductPayload {
+  readonly sourceProductId: string;
+}
+
 export interface ExportProductPayload {
   readonly internalProductId: string;
   readonly targetId: string;
@@ -86,6 +90,13 @@ export function parseProcessProductPayload(value: JsonValue): ProcessProductPayl
     return { sourceProductId: value.sourceProductId, force: value.force };
   }
   throw new InvalidJobPayloadError("process_product");
+}
+
+export function parseReclassifyProductPayload(value: JsonValue): ReclassifyProductPayload {
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)) {
+    return { sourceProductId: value.sourceProductId };
+  }
+  throw new InvalidJobPayloadError("reclassify_product");
 }
 
 export function parseExportProductPayload(value: JsonValue): ExportProductPayload {

@@ -33,6 +33,7 @@ const jobNames = {
   sync_target_classifications: "Связи WordPress",
   apply_target_classification_suggestion: "Применение связей WordPress",
   process_product: "Обработка товара",
+  reclassify_product: "Переклассификация товара",
   export_product: "Выгрузка на target",
   preflight_product: "Проверка WordPress без записи",
   discover_source: "Получение каталога",

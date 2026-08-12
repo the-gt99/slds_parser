@@ -2,7 +2,7 @@ import { InvalidJobPayloadError } from "../core/errors/index.js";
 import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
-import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePreflightProductPayload, parseProcessProductPayload, parseSyncTargetClassificationsPayload } from "./job-payloads.js";
+import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePreflightProductPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseSyncTargetClassificationsPayload } from "./job-payloads.js";
 import type { PreflightRunner } from "./preflight-runner.js";
 import type { ProcessingRunner } from "./processing-runner.js";
 import type { TargetClassificationSyncRunner } from "./target-classification-sync-runner.js";
@@ -27,6 +27,7 @@ export class JobDispatcher implements JobHandler {
       case "discover_source": return await this.collection.discoverSource(parseDiscoverSourcePayload(job.payload));
       case "collect_product": return await this.collection.collectProduct(parseCollectProductPayload(job.payload));
       case "process_product": return await this.processing.processProduct(parseProcessProductPayload(job.payload));
+      case "reclassify_product": return await this.processing.reclassifyProduct(parseReclassifyProductPayload(job.payload));
       case "sync_target_classifications": {
         if (this.classificationSync === undefined) throw new InvalidJobPayloadError("sync_target_classifications is not configured");
         return await this.classificationSync.sync(parseSyncTargetClassificationsPayload(job.payload));

@@ -481,6 +481,7 @@ function queueLabel(jobType) {
     sync_target_classifications: "Связи WordPress",
     apply_target_classification_suggestion: "Применение связей WordPress",
     process_product: "Обработка",
+    reclassify_product: "Переклассификация",
     export_product: "Экспорт",
     preflight_product: "Preflight WordPress",
   })[jobType] || jobType;
@@ -772,7 +773,7 @@ async function openConfigDetails(item) {
   for (const example of item.examples || []) {
     examples.append(link(example.title || example.sourceKey, `/products/${example.sourceProductId}`));
   }
-  if (!(item.examples || []).length) examples.append(document.createTextNode("Пока не применено ни к одному пересчитанному товару. После выполнения process_product счётчик и примеры обновятся."));
+  if (!(item.examples || []).length) examples.append(document.createTextNode("Пока не применено ни к одному пересчитанному товару. После выполнения переклассификации счётчик и примеры обновятся."));
 
   const history = document.createElement("div");
   history.className = "config-history";
@@ -1453,7 +1454,7 @@ function configure() {
   if (mode === "operations" || mode === "runtime") byId("filters").hidden = true;
   if (mode === "jobs") {
     byId("source-filter").querySelector("span").textContent = "Job type";
-    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Связи WordPress", "sync_target_classifications"), new Option("Применение связей WordPress", "apply_target_classification_suggestion"), new Option("Preflight WordPress", "preflight_product"), new Option("Экспорт", "export_product"));
+    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Переклассификация", "reclassify_product"), new Option("Связи WordPress", "sync_target_classifications"), new Option("Применение связей WordPress", "apply_target_classification_suggestion"), new Option("Preflight WordPress", "preflight_product"), new Option("Экспорт", "export_product"));
     byId("stage-filter").querySelector("span").textContent = "Статус";
     byId("stage").replaceChildren(new Option("Все", ""), new Option("В очереди", "pending"), new Option("Выполняется", "running"), new Option("Повтор", "retry"), new Option("Ошибка", "failed"), new Option("Выполнено", "completed"));
     byId("classification-filter").hidden = true;
@@ -1582,7 +1583,7 @@ function configure() {
     }
     const counterNote = document.createElement("p");
     counterNote.className = "config-counter-note";
-    counterNote.textContent = "«Применено» — это уже пересчитанные товары, а не прогноз правила. Новая запись показывает 0, пока её process_product jobs стоят в очереди.";
+    counterNote.textContent = "«Применено» — это уже пересчитанные товары, а не прогноз правила. Новая запись показывает 0, пока её переклассификация стоит в очереди.";
     intro.append(copy, tabs, counterNote);
     byId("filters").before(intro);
     updateConfigDescription();

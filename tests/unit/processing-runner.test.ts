@@ -90,6 +90,35 @@ describe("ProcessingRunner", () => {
     expect([...store.jobs.values()][0]?.jobType).toBe("export_product");
   });
 
+  it("reclassifies a stale DTO without running the source processor or operations", async () => {
+    const operation = { code: "heavy-operation", version: "1", execute: vi.fn(async (product) => product) } satisfies ProductOperation;
+    const first = await setup("old-dto", operation);
+    first.process.mockResolvedValue({
+      ...validProduct(),
+      referenceCandidates: [{ key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product", sourceValue: "Nike", context: {}, evidence: {} }],
+    });
+    await first.runner.processProduct({ sourceProductId: "2", force: false });
+    const before = [...first.store.internals.values()][0]!;
+    first.store.jobs.clear();
+    first.store.classificationDecisions.set("1/brand/product.brand/nike/{}", { mappingId: "20", referenceValueId: "30", status: "confirmed", revision: "1" });
+
+    const newProcess = vi.fn().mockResolvedValue(validProduct());
+    const processors = new SourceProcessorRegistry();
+    processors.register({ sourceCode: "fake", version: "new-dto", classificationVersion: "c1", process: newProcess });
+    const runner = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), processors,
+      new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications));
+
+    await runner.reclassifyProduct({ sourceProductId: "2" });
+
+    const after = [...first.store.internals.values()][0]!;
+    expect(newProcess).not.toHaveBeenCalled();
+    expect(operation.execute).toHaveBeenCalledTimes(1);
+    expect(after.processorVersion).toBe("old-dto");
+    expect(after.inputHash).toBe(before.inputHash);
+    expect(after.status).toBe("classified");
+    expect(after.data.classification?.resolved[0]).toMatchObject({ referenceValueId: "30" });
+  });
+
   it("fails the processing attempt when saving the canonical result fails", async () => {
     const history = {
       startAttempt: vi.fn().mockResolvedValue(undefined),

@@ -11,12 +11,13 @@ describe("JobDispatcher", () => {
     ["discover_source", { sourceId: "1", runType: "full", coverage: "catalog" }, "discoverSource"],
     ["collect_product", { sourceProductId: "1", requestedPartKeys: ["details"] }, "collectProduct"],
     ["process_product", { sourceProductId: "1", force: false }, "processProduct"],
+    ["reclassify_product", { sourceProductId: "1" }, "reclassifyProduct"],
     ["export_product", { internalProductId: "1", targetId: "2", force: false }, "exportProduct"],
   ] as const)("routes %s", async (type, payload, method) => {
     const collection = { discoverSource: vi.fn().mockResolvedValue({ status: "completed" }), collectProduct: vi.fn().mockResolvedValue({ status: "completed" }) };
-    const processing = { processProduct: vi.fn().mockResolvedValue({ status: "completed" }) }; const exports = { exportProduct: vi.fn().mockResolvedValue({ status: "completed" }) };
+    const processing = { processProduct: vi.fn().mockResolvedValue({ status: "completed" }), reclassifyProduct: vi.fn().mockResolvedValue({ status: "completed" }) }; const exports = { exportProduct: vi.fn().mockResolvedValue({ status: "completed" }) };
     const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher(collection as never, processing as never, exports as never, repositories.sourceRuns);
-    await dispatcher.dispatch(job(type, payload)); const owner = method === "processProduct" ? processing : method === "exportProduct" ? exports : collection; expect(owner[method as keyof typeof owner]).toHaveBeenCalledOnce();
+    await dispatcher.dispatch(job(type, payload)); const owner = method === "processProduct" || method === "reclassifyProduct" ? processing : method === "exportProduct" ? exports : collection; expect(owner[method as keyof typeof owner]).toHaveBeenCalledOnce();
   });
   it("routes preflight jobs and records their terminal error", async () => {
     const collection = {};

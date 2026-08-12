@@ -512,9 +512,16 @@ export class ClassifierAdminService {
     };
   }
 
-  async createRule(draft: ClassificationRuleDraft, actor = this.actor) {
+  async createRule(
+    draft: ClassificationRuleDraft,
+    actor = this.actor,
+    options: { readonly rejectAmbiguous?: boolean } = {},
+  ) {
     const matchedObservationIds = new Set<EntityId>();
     const preview = await this.previewRule(draft, undefined, matchedObservationIds);
+    if (options.rejectAmbiguous === true && preview.ambiguousObservations > 0) {
+      throw new IntegrationContractError("Правило создаёт неоднозначную классификацию");
+    }
     const resolution = await this.resolveRuleResult(draft);
     const result = await this.adminRepository.createRule({
       ...draft,

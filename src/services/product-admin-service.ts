@@ -319,7 +319,7 @@ export class ProductAdminService {
     const snapshot = await this.repository.getById(sourceProductId);
     if (snapshot === null) throw new EntityNotFoundError("Source product", sourceProductId);
     const internal = snapshot.internalProduct;
-    const hasPendingProcessing = snapshot.jobs.some((job) => job.jobType === "process_product" && activeJobStatuses.has(job.status));
+    const hasPendingProcessing = snapshot.jobs.some((job) => ["process_product", "reclassify_product"].includes(job.jobType) && activeJobStatuses.has(job.status));
     const pendingResolutions = new Map<string, {
       readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
       readonly resolutionKind: "mapping" | "rule" | null;

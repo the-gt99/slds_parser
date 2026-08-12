@@ -26,6 +26,19 @@ describe("Worker", () => {
     expect(value.store.jobs.get(value.job.id)?.status).toBe("pending");
   });
 
+  it("holds reclassification until bulk rule application is complete", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    const reclassify = await jobs.enqueue({ jobType: "reclassify_product", payload: { sourceProductId: "1" }, uniqueKey: "reclassify-1" });
+    const application = await jobs.enqueue({ jobType: "apply_target_classification_suggestion", payload: { runId: "1", suggestionId: "1", actor: "admin" }, uniqueKey: "apply-1" });
+
+    expect(await jobs.claimNext("worker", 100, ["reclassify_product"])).toBeNull();
+    expect(await jobs.claimById(application.id, "worker:apply", ["apply_target_classification_suggestion"])).not.toBeNull();
+    await jobs.complete(application.id);
+
+    expect(await jobs.claimNext("worker", 100, ["reclassify_product"])).toMatchObject({ id: reclassify.id });
+  });
+
   it("runs the configured number of WordPress preflight lanes", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);

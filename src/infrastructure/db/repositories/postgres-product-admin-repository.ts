@@ -378,7 +378,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
       const jobsResult = await client.query<DatabaseRow>(
         `SELECT *
          FROM jobs
-         WHERE (job_type IN ('collect_product', 'process_product') AND payload->>'sourceProductId' = $1)
+         WHERE (job_type IN ('collect_product', 'process_product', 'reclassify_product') AND payload->>'sourceProductId' = $1)
             OR (job_type = 'export_product' AND payload->>'internalProductId' = $2::TEXT)
          ORDER BY created_at DESC, id DESC
          LIMIT 100`,
@@ -724,6 +724,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                     CASE stats.job_type
                       WHEN 'collect_product' THEN configured.collection_concurrency
                       WHEN 'process_product' THEN configured.process_concurrency
+                      WHEN 'reclassify_product' THEN configured.process_concurrency
                       WHEN 'preflight_product' THEN configured.preflight_concurrency
                       ELSE 1
                     END AS concurrency

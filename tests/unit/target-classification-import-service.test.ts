@@ -71,13 +71,13 @@ describe("TargetClassificationImportService", () => {
       markApplied: vi.fn().mockResolvedValue(undefined),
     };
     const classifier = {
-      previewRule: vi.fn().mockResolvedValue({ ambiguousObservations: 0 }),
       createRule: vi.fn().mockResolvedValue({ ruleId: "77", preview: { affectedProducts: 100 } }),
     };
     const service = new TargetClassificationImportService(repository as never, classifier as never);
 
     await expect(service.applyQueued({ runId: "1", suggestionId: "11" }, "admin"))
       .resolves.toEqual({ status: "completed", affectedProductCount: 100 });
+    expect(classifier.createRule).toHaveBeenCalledWith(expect.any(Object), "admin", { rejectAmbiguous: true });
     expect(repository.markApplied).toHaveBeenCalledWith(expect.objectContaining({ suggestionId: "11" }));
   });
 
@@ -106,7 +106,6 @@ describe("TargetClassificationImportService", () => {
       markApplied: vi.fn().mockResolvedValue(undefined),
     };
     const classifier = {
-      previewRule: vi.fn().mockResolvedValue({ ambiguousObservations: 0 }),
       createRule: vi.fn().mockResolvedValue({ ruleId: "77", preview: { affectedProducts: 100 } }),
     };
     const service = new TargetClassificationImportService(repository as never, classifier as never);
@@ -120,7 +119,7 @@ describe("TargetClassificationImportService", () => {
         { field: "context.family", operator: "equals", value: "Air Force 1" },
       ],
       targetLink: { targetId: "2", targetScope: "product.model", dictionaryValueId: "21" },
-    }), "admin");
+    }), "admin", { rejectAmbiguous: true });
     expect(repository.markApplied).toHaveBeenCalledWith(expect.objectContaining({
       suggestionId: "10", dictionaryValueId: "21", externalValue: "14965", targetName: "Nike Air Force 1 High",
       resolutionKind: "rule", resolutionId: "77", actor: "admin",

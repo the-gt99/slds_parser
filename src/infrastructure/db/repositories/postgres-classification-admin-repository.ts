@@ -278,8 +278,8 @@ async function enqueueProducts(client: SqlClient, sourceProductIds: readonly str
   await client.query(
     `INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
      SELECT
-       'process_product',
-       JSONB_BUILD_OBJECT('sourceProductId', product_id::TEXT, 'force', FALSE),
+       'reclassify_product',
+       JSONB_BUILD_OBJECT('sourceProductId', product_id::TEXT),
        'pending',
        NOW(),
        'source-product:' || product_id::TEXT || ':process'
@@ -287,7 +287,7 @@ async function enqueueProducts(client: SqlClient, sourceProductIds: readonly str
      WHERE NOT EXISTS (
        SELECT 1
        FROM jobs active_job
-       WHERE active_job.job_type = 'process_product'
+       WHERE active_job.job_type IN ('process_product', 'reclassify_product')
          AND active_job.unique_key = 'source-product:' || product_id::TEXT || ':process'
          AND active_job.status IN ('pending', 'running', 'retry')
      )
@@ -319,8 +319,8 @@ async function enqueueDecisionProducts(
      ), enqueued AS (
        INSERT INTO jobs (job_type, payload, status, available_at, unique_key)
        SELECT
-         'process_product',
-         JSONB_BUILD_OBJECT('sourceProductId', affected.product_id::TEXT, 'force', FALSE),
+         'reclassify_product',
+         JSONB_BUILD_OBJECT('sourceProductId', affected.product_id::TEXT),
          'pending',
          NOW(),
          'source-product:' || affected.product_id::TEXT || ':process'
@@ -328,7 +328,7 @@ async function enqueueDecisionProducts(
        WHERE NOT EXISTS (
          SELECT 1
          FROM jobs active_job
-         WHERE active_job.job_type = 'process_product'
+         WHERE active_job.job_type IN ('process_product', 'reclassify_product')
            AND active_job.unique_key = 'source-product:' || affected.product_id::TEXT || ':process'
            AND active_job.status IN ('pending', 'running', 'retry')
        )

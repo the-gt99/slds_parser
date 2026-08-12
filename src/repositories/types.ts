@@ -16,6 +16,7 @@ export type JobType =
   | "discover_source"
   | "collect_product"
   | "process_product"
+  | "reclassify_product"
   | "sync_target_classifications"
   | "apply_target_classification_suggestion"
   | "preflight_product"

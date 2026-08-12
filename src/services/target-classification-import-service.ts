@@ -175,11 +175,7 @@ export class TargetClassificationImportService {
           },
           reason: `Подтверждено назначениями существующих товаров WordPress, импорт #${runId}`,
         };
-        const preview = await this.classifier.previewRule(draft);
-        if (preview.ambiguousObservations > 0) {
-          throw new IntegrationContractError(`Предложение #${suggestion.id} конфликтует с существующими правилами`);
-        }
-        const result = await this.classifier.createRule(draft, actor);
+        const result = await this.classifier.createRule(draft, actor, { rejectAmbiguous: true });
         affectedProductCount = result.preview.affectedProducts;
         resolutionKind = "rule";
         resolutionId = result.ruleId;
