@@ -347,6 +347,7 @@ export interface TargetContentTemplateRecord {
   readonly managementMode: TargetContentTemplateManagementMode;
   readonly categoryTermIds: readonly number[];
   readonly requiredContextPaths: readonly string[];
+  readonly preserveExistingStory: boolean;
   readonly status: TargetContentTemplateStatus;
   readonly revision: number;
   readonly actor: string;
@@ -364,6 +365,7 @@ export interface CreateTargetContentTemplateDraftInput {
   readonly managementMode: TargetContentTemplateManagementMode;
   readonly categoryTermIds: readonly number[];
   readonly requiredContextPaths: readonly string[];
+  readonly preserveExistingStory?: boolean;
   readonly actor: string;
 }
 

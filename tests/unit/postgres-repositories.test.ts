@@ -73,7 +73,7 @@ const targetSnapshotRow = {
 const contentTemplateRow = {
   id: "51", target_id: "10", field_code: "description", name: "Описание",
   template_source: "<p>{{ product.sku }}</p>", profile_key: "default", profile_name: "Основной профиль",
-  management_mode: "manage", category_term_ids: [74, 75], required_context_paths: ["content.story"], status: "draft", revision: 2, actor: "admin",
+  management_mode: "manage", category_term_ids: [74, 75], required_context_paths: ["content.story"], preserve_existing_story: true, status: "draft", revision: 2, actor: "admin",
   created_at: new Date("2026-08-09T00:00:00.000Z"), activated_at: null,
 };
 

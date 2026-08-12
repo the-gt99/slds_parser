@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { JsonObject } from "../../src/contracts/index.js";
 import {
+  contentTemplateContextWithExistingStoryPlaceholder,
   renderWordPressContentTemplate,
   selectWordPressContentTemplate,
   validateWordPressContentTemplate,
@@ -84,6 +85,19 @@ describe("WordPress content templates", () => {
     ], missingStory, [75]);
 
     expect(selected).toMatchObject({ managed: false, reason: "requirements_missing", missingContextPaths: ["content.story"] });
+  });
+
+  it("keeps a managed description when an existing WordPress story may satisfy the requirement", () => {
+    const missingStory = { ...context, content: { ...(context.content as JsonObject), story: "" } };
+    const selected = selectWordPressContentTemplate("description", [
+      profile({ requiredContextPaths: ["content.story"], preserveExistingStory: true }),
+    ], missingStory, [75]);
+
+    expect(selected).toMatchObject({ managed: true, preserveExistingStory: true, requireStoryAfterFallback: true });
+    expect(renderWordPressContentTemplate(
+      "<h2>Товар</h2>{% if content.story %}{{ content.story | paragraphs }}{% endif %}<ul><li>Артикул: SKU</li></ul>",
+      contentTemplateContextWithExistingStoryPlaceholder(missingStory),
+    )).toContain("slds-existing-story-placeholder");
   });
 
   it("rejects overlapping category profiles", () => {

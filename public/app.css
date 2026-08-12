@@ -600,6 +600,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .template-management-toggle input:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(23, 107, 82, .16); }
 .template-management-toggle span { display: grid; gap: 2px; }
 .template-management-toggle small, .template-policy-grid small { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.35; }
+#preserve-story-option { grid-column: 1 / -1; }
 .template-policy-grid fieldset { margin: 0; padding: 0; border: 0; }
 .template-policy-grid legend { margin-bottom: 6px; padding: 0; }
 .template-policy-grid select[multiple] { min-height: 142px; padding: 7px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }

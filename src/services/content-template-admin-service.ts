@@ -24,6 +24,7 @@ export interface ContentTemplateDraftCommand {
   readonly managementMode?: "manage" | "preserve";
   readonly categoryTermIds?: readonly number[];
   readonly requiredContextPaths?: readonly string[];
+  readonly preserveExistingStory?: boolean;
 }
 
 export interface ContentTemplatePreviewCommand extends ContentTemplateDraftCommand {
@@ -59,6 +60,7 @@ export class ContentTemplateAdminService {
       managementMode: definition.managementMode,
       categoryTermIds: definition.categoryTermIds,
       requiredContextPaths: definition.requiredContextPaths,
+      preserveExistingStory: definition.preserveExistingStory ?? false,
       actor,
     }));
   }
@@ -96,6 +98,7 @@ export class ContentTemplateAdminService {
       managementMode: command.managementMode ?? "manage",
       categoryTermIds: [...new Set(command.categoryTermIds ?? [])].sort((left, right) => left - right),
       requiredContextPaths: [...new Set(command.requiredContextPaths ?? [])].sort(),
+      preserveExistingStory: command.preserveExistingStory ?? false,
     };
   }
 

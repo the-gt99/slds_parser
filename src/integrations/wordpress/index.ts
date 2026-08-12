@@ -17,6 +17,7 @@ export {
 } from "./wordpress-size-converter.js";
 export {
   contentTemplateCatalog,
+  contentTemplateContextWithExistingStoryPlaceholder,
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
   EXAMPLE_WORDPRESS_SHORT_DESCRIPTION_TEMPLATE,
   renderWordPressContentTemplate,

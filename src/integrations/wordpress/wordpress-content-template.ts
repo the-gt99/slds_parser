@@ -15,6 +15,7 @@ export interface WordPressContentTemplateDefinition {
   readonly managementMode: "manage" | "preserve";
   readonly categoryTermIds: readonly number[];
   readonly requiredContextPaths: readonly string[];
+  readonly preserveExistingStory?: boolean;
 }
 
 export interface WordPressContentTemplateSelection {
@@ -26,6 +27,8 @@ export interface WordPressContentTemplateSelection {
   readonly reason: "matched" | "system_default" | "management_disabled" | "requirements_missing" | "no_matching_profile";
   readonly missingContextPaths: readonly string[];
   readonly templateSource?: string;
+  readonly preserveExistingStory?: boolean;
+  readonly requireStoryAfterFallback?: boolean;
 }
 
 export interface WordPressContentTemplateVariable {
@@ -125,8 +128,21 @@ type Node = { readonly kind: "text"; readonly value: string }
 
 interface SafeValue { readonly safeHtml: string }
 
+interface ExistingStoryPlaceholder extends SafeValue { readonly existingStoryPlaceholder: true }
+
+export const WORDPRESS_EXISTING_STORY_MARKER = '<span class="slds-existing-story-placeholder"></span>';
+
+const existingStoryPlaceholder: ExistingStoryPlaceholder = {
+  safeHtml: WORDPRESS_EXISTING_STORY_MARKER,
+  existingStoryPlaceholder: true,
+};
+
 function safeValue(value: unknown): value is SafeValue {
   return typeof value === "object" && value !== null && "safeHtml" in value;
+}
+
+function isExistingStoryPlaceholder(value: unknown): value is ExistingStoryPlaceholder {
+  return safeValue(value) && "existingStoryPlaceholder" in value && value.existingStoryPlaceholder === true;
 }
 
 function escapeHtml(value: string): string {
@@ -251,6 +267,9 @@ export function validateWordPressContentTemplateDefinition(template: WordPressCo
   if (template.managementMode !== "manage" && template.managementMode !== "preserve") {
     throw new IntegrationContractError("Content template management mode is invalid");
   }
+  if (template.preserveExistingStory && template.field !== "description") {
+    throw new IntegrationContractError("Existing WordPress story can be preserved only for the description field");
+  }
   if (template.categoryTermIds.some((termId) => !Number.isSafeInteger(termId) || termId <= 0)) {
     throw new IntegrationContractError("Content template category term IDs must be positive integers");
   }
@@ -311,11 +330,23 @@ export function selectWordPressContentTemplate(
   if (selected.managementMode === "preserve") {
     return { field, managed: false, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "management_disabled", missingContextPaths: [] };
   }
-  const missingContextPaths = selected.requiredContextPaths.filter((path) => !contentTemplateContextValuePresent(context, path));
+  const missingContextPaths = selected.requiredContextPaths.filter((path) => !(selected.preserveExistingStory && path === "content.story")
+    && !contentTemplateContextValuePresent(context, path));
   if (missingContextPaths.length > 0) {
     return { field, managed: false, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "requirements_missing", missingContextPaths };
   }
-  return { field, managed: true, source: "profile", profileKey: selected.profileKey, profileName: selected.profileName, reason: "matched", missingContextPaths: [], templateSource: selected.templateSource };
+  return {
+    field,
+    managed: true,
+    source: "profile",
+    profileKey: selected.profileKey,
+    profileName: selected.profileName,
+    reason: "matched",
+    missingContextPaths: [],
+    templateSource: selected.templateSource,
+    preserveExistingStory: selected.preserveExistingStory === true,
+    requireStoryAfterFallback: selected.requiredContextPaths.includes("content.story"),
+  };
 }
 
 function strings(value: unknown, helper: string): string[] {
@@ -332,6 +363,10 @@ function numeric(value: string): number {
 }
 
 function applyHelper(value: unknown, helper: ReturnType<typeof helperPart>): unknown {
+  if (isExistingStoryPlaceholder(value)) {
+    if (["trim", "paragraphs", "required"].includes(helper.code)) return value;
+    throw new IntegrationContractError(`Helper ${helper.code} cannot be applied to an existing WordPress story placeholder`);
+  }
   switch (helper.code) {
     case "trim": return String(value ?? "").trim();
     case "upper": return String(value ?? "").toLocaleUpperCase("ru-RU");
@@ -390,6 +425,17 @@ export function renderWordPressContentTemplate(source: string, context: JsonObje
     allowedSchemes: ["http", "https"],
     transformTags: { a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer" }, true) },
   }).trim();
+}
+
+export function contentTemplateContextWithExistingStoryPlaceholder(context: JsonObject): JsonObject {
+  const content = valueAt(context, "content");
+  if (content === null || typeof content !== "object" || Array.isArray(content)) {
+    throw new IntegrationContractError("Content template context is missing content");
+  }
+  return {
+    ...context,
+    content: { ...(content as JsonObject), story: existingStoryPlaceholder as unknown as JsonObject },
+  };
 }
 
 export function contentTemplateCatalog(): JsonObject {

@@ -311,6 +311,7 @@ export class WordPressPreviewService {
         id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
         profileKey: template.profileKey, profileName: template.profileName, managementMode: template.managementMode,
         categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
+        preserveExistingStory: template.preserveExistingStory ?? false,
       })),
       ...templateOverrides,
     ];
@@ -494,10 +495,12 @@ export class WordPressPreviewService {
     };
     const effectiveCategoryTermIds = payloadTaxonomies(effectiveTaxonomies).product_cat ?? [];
     const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates, effectiveCategoryTermIds);
-    const effectiveProduct = {
+    const effectiveProduct: Record<string, unknown> = {
       ...product,
       title: effectiveTitle,
-      ...(effectiveContent.descriptionHtml === undefined ? {} : { description_html: effectiveContent.descriptionHtml }),
+      ...(effectiveContent.descriptionHtml === undefined ? {} : {
+        description_html: preflight?.resolvedDescriptionHtml ?? effectiveContent.descriptionHtml,
+      }),
       ...(effectiveContent.shortDescriptionHtml === undefined ? {} : { short_description_html: effectiveContent.shortDescriptionHtml }),
     };
     const managedFields = new Set(Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : []);
@@ -558,7 +561,7 @@ export class WordPressPreviewService {
         },
       },
       payload: {
-        fields: Object.fromEntries(previewFields.flatMap((field) => Object.hasOwn(product, field) ? [[field, product[field] ?? null]] : [])),
+        fields: Object.fromEntries(previewFields.flatMap((field) => Object.hasOwn(effectiveProduct, field) ? [[field, effectiveProduct[field] ?? null]] : [])),
         managedFields: [...managedFields],
         taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations,
       },

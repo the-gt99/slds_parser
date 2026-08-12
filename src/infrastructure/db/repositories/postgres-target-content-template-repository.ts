@@ -21,6 +21,7 @@ function mapTemplate(row: DatabaseRow): TargetContentTemplateRecord {
     managementMode: String(row.management_mode) as TargetContentTemplateRecord["managementMode"],
     categoryTermIds: Array.isArray(row.category_term_ids) ? row.category_term_ids.map(Number) : [],
     requiredContextPaths: Array.isArray(row.required_context_paths) ? row.required_context_paths.map(String) : [],
+    preserveExistingStory: Boolean(row.preserve_existing_story),
     status: String(row.status) as TargetContentTemplateRecord["status"],
     revision: Number(row.revision),
     actor: String(row.actor),
@@ -64,15 +65,15 @@ export class PostgresTargetContentTemplateRepository implements TargetContentTem
     const result = await this.executor.query<DatabaseRow>(
       `INSERT INTO target_content_templates (
          target_id, field_code, name, template_source, profile_key, profile_name,
-         management_mode, category_term_ids, required_context_paths, status, revision, actor
+         management_mode, category_term_ids, required_context_paths, preserve_existing_story, status, revision, actor
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8::BIGINT[], $9::TEXT[], 'draft',
+         $1, $2, $3, $4, $5, $6, $7, $8::BIGINT[], $9::TEXT[], $10, 'draft',
          COALESCE((SELECT MAX(revision) + 1 FROM target_content_templates WHERE target_id = $1 AND field_code = $2), 1),
-         $10
+         $11
        )
        RETURNING *`,
       [input.targetId, input.field, input.name, input.templateSource, input.profileKey, input.profileName,
-        input.managementMode, input.categoryTermIds, input.requiredContextPaths, input.actor],
+        input.managementMode, input.categoryTermIds, input.requiredContextPaths, input.preserveExistingStory ?? false, input.actor],
     );
     return mapTemplate(requireRow(result.rows, "target content template draft", `${input.targetId}/${input.field}`));
   }

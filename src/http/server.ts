@@ -183,6 +183,7 @@ interface ContentTemplateBody {
   readonly managementMode?: unknown;
   readonly categoryTermIds?: unknown;
   readonly requiredContextPaths?: unknown;
+  readonly preserveExistingStory?: unknown;
 }
 
 class HttpInputError extends Error {}
@@ -333,6 +334,12 @@ function contentTemplateRequiredPaths(value: unknown): readonly string[] {
     throw new HttpInputError("requiredContextPaths must contain non-empty strings");
   }
   return value as readonly string[];
+}
+
+function optionalBoolean(value: unknown, field: string, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") throw new HttpInputError(`${field} must be a boolean`);
+  return value;
 }
 
 function entityIds(value: unknown, field: string): readonly string[] | undefined {
@@ -1004,6 +1011,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
         categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
         requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
+        preserveExistingStory: optionalBoolean(request.body?.preserveExistingStory, "preserveExistingStory"),
       }),
     }),
   );
@@ -1022,6 +1030,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
         categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
         requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
+        preserveExistingStory: optionalBoolean(request.body?.preserveExistingStory, "preserveExistingStory"),
       }, actor(request)),
     }),
   );

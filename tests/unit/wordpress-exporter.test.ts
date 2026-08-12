@@ -112,6 +112,24 @@ describe("WordPressExporter", () => {
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
   });
 
+  it("delegates an empty GOAT story to the existing WordPress description", async () => {
+    const base = context();
+    const input: ExportContext = {
+      ...base,
+      product: { ...base.product, translatedContent: { ...base.product.translatedContent!, story: "" } },
+      contentTemplates: [{
+        id: "300", field: "description", revision: 1,
+        templateSource: "<h2>{{ product.effective_title }}</h2>{% if content.story %}{{ content.story | paragraphs }}{% endif %}<ul><li>Артикул: {{ product.sku }}</li></ul>",
+        profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [],
+        requiredContextPaths: ["content.story"], preserveExistingStory: true,
+      }],
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+    expect((payload.product as JsonObject).description_html).toContain("slds-existing-story-placeholder");
+    expect(payload.content_policy).toEqual({ description_story: { mode: "preserve_existing", required: true } });
+  });
+
   it("applies the winning target assignment after direct category mappings", async () => {
     const input = context();
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
@@ -565,6 +583,31 @@ describe("WordPressExporter", () => {
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
+  });
+
+  it("reads the description resolved by WordPress preflight", async () => {
+    const base = context();
+    const input: ExportContext = {
+      ...base,
+      product: { ...base.product, translatedContent: { ...base.product.translatedContent!, story: "" } },
+      contentTemplates: [{
+        id: "301", field: "description", revision: 1,
+        templateSource: "<h2>{{ product.effective_title }}</h2>{{ content.story | paragraphs }}<ul><li>Артикул: {{ product.sku }}</li></ul>",
+        profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [],
+        requiredContextPaths: [], preserveExistingStory: true,
+      }],
+    };
+    const payload = await buildWordPressUpsertPayload(input);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true, target_id: 321, matched_by: "source_identity", payload_hash: payload.payload_hash, variation_plan: [],
+      resolved_content: { description_html: "<h2>Новое</h2><p>Старая история</p><ul><li>Артикул: ROOT-SKU</li></ul>", story_source: "wordpress_existing" },
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.preflightPayload(payload)).resolves.toMatchObject({
+      resolvedDescriptionHtml: "<h2>Новое</h2><p>Старая история</p><ul><li>Артикул: ROOT-SKU</li></ul>",
+      resolvedStorySource: "wordpress_existing",
+    });
   });
 
   it("represents a new product preflight without an external ID", async () => {

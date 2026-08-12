@@ -71,6 +71,7 @@ function implicitProfile(field) {
     managementMode: managed ? "manage" : "preserve",
     categoryTermIds: [],
     requiredContextPaths: [],
+    preserveExistingStory: false,
     name: managed ? "Системный шаблон описания" : "Пример краткого описания",
     templateSource: state.catalog?.defaults?.[field] || "",
     status: "system",
@@ -109,6 +110,7 @@ function editorSnapshot() {
     managementMode: byId("management-enabled").checked ? "manage" : "preserve",
     categoryTermIds: selectedCategoryIds().sort((left, right) => left - right),
     requiredContextPaths: selectedRequirements().sort(),
+    preserveExistingStory: state.field === "description" && byId("preserve-existing-story").checked,
     name: byId("template-name").value.trim(),
     templateSource: byId("template-source").value,
   };
@@ -250,8 +252,9 @@ function editorStatus() {
     badge.className = "badge";
   }
   const mode = byId("management-enabled").checked;
+  const preserveStory = state.field === "description" && byId("preserve-existing-story").checked;
   const categories = selectedCategoryIds();
-  byId("policy-state").textContent = `${mode ? "Поле управляется" : "Поле сохраняется без изменений"}. ${categories.length ? `Профиль применяется к выбранным категориям: ${categories.map((id) => `#${id}`).join(", ")}.` : "Это профиль по умолчанию для категорий без отдельного правила."}`;
+  byId("policy-state").textContent = `${mode ? "Поле управляется" : "Поле сохраняется без изменений"}.${preserveStory ? " При пустой истории GOAT используется история из текущего описания WordPress." : ""} ${categories.length ? `Профиль применяется к выбранным категориям: ${categories.map((id) => `#${id}`).join(", ")}.` : "Это профиль по умолчанию для категорий без отдельного правила."}`;
 }
 
 function invalidatePreview(message = "Настройки изменились. Запустите проверку заново.") {
@@ -279,6 +282,8 @@ function applyEditor(value, selectedVersion = null) {
   fieldState.selectedVersion = selectedVersion;
   byId("profile-name").value = value.profileName;
   byId("management-enabled").checked = value.managementMode === "manage";
+  byId("preserve-existing-story").checked = value.preserveExistingStory === true;
+  byId("preserve-story-option").hidden = state.field !== "description";
   renderCategoryOptions(value.categoryTermIds);
   applyRequirementSelection(value.requiredContextPaths);
   byId("template-name").value = value.name;
@@ -567,6 +572,7 @@ document.querySelectorAll(".template-field-tab").forEach((tab) => tab.addEventLi
 document.querySelectorAll("[data-insert]").forEach((button) => button.addEventListener("click", () => insertAtCursor(button.dataset.insert)));
 for (const id of ["template-source", "template-name", "profile-name"]) byId(id).addEventListener("input", editorChanged);
 byId("management-enabled").addEventListener("change", editorChanged);
+byId("preserve-existing-story").addEventListener("change", editorChanged);
 byId("profile-categories").addEventListener("change", editorChanged);
 byId("preview-product-id").addEventListener("input", () => { updateProductLink(); invalidatePreview(); });
 byId("system-template-button").addEventListener("click", () => {

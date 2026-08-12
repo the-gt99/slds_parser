@@ -14,6 +14,9 @@ import { hashStableJson } from "../../core/utils/index.js";
 import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 import {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
+  WORDPRESS_EXISTING_STORY_MARKER,
+  contentTemplateContextValuePresent,
+  contentTemplateContextWithExistingStoryPlaceholder,
   renderWordPressContentTemplate,
   selectWordPressContentTemplate,
   type WordPressContentTemplateDefinition,
@@ -65,6 +68,7 @@ interface WordPressResponse {
   readonly payload_hash?: unknown;
   readonly variation_plan?: unknown;
   readonly snapshot?: unknown;
+  readonly resolved_content?: unknown;
 }
 
 export interface WordPressUpsertPreflightResult {
@@ -74,6 +78,8 @@ export interface WordPressUpsertPreflightResult {
   readonly payloadHash: string;
   readonly variationPlan: readonly JsonObject[];
   readonly snapshot?: JsonObject;
+  readonly resolvedDescriptionHtml?: string;
+  readonly resolvedStorySource?: "wordpress_existing" | "empty";
 }
 
 export interface WordPressUpsertPayloadPreview {
@@ -399,13 +405,24 @@ export function renderWordPressContentFields(
 ): {
   readonly descriptionHtml?: string;
   readonly shortDescriptionHtml?: string;
+  readonly descriptionStoryPolicy?: { readonly mode: "preserve_existing"; readonly required: boolean };
   readonly selections: Readonly<Record<WordPressContentTemplateDefinition["field"], WordPressContentTemplateSelection>>;
 } {
   const description = selectWordPressContentTemplate("description", templates, context, productCategoryTermIds);
   const shortDescription = selectWordPressContentTemplate("short_description", templates, context, productCategoryTermIds);
+  const preserveExistingStory = description.managed && description.preserveExistingStory === true
+    && !contentTemplateContextValuePresent(context, "content.story");
+  const descriptionContext = preserveExistingStory ? contentTemplateContextWithExistingStoryPlaceholder(context) : context;
+  const descriptionHtml = description.managed
+    ? renderWordPressContentTemplate(description.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, descriptionContext)
+    : undefined;
+  if (preserveExistingStory && (descriptionHtml?.split(WORDPRESS_EXISTING_STORY_MARKER).length ?? 0) !== 2) {
+    throw new IntegrationContractError("Description template must render the WordPress story placeholder exactly once");
+  }
   return {
-    ...(description.managed ? { descriptionHtml: renderWordPressContentTemplate(description.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, context) } : {}),
+    ...(descriptionHtml === undefined ? {} : { descriptionHtml }),
     ...(shortDescription.managed ? { shortDescriptionHtml: renderWordPressContentTemplate(shortDescription.templateSource!, context) } : {}),
+    ...(preserveExistingStory ? { descriptionStoryPolicy: { mode: "preserve_existing" as const, required: description.requireStoryAfterFallback === true } } : {}),
     selections: { description, short_description: shortDescription },
   };
 }
@@ -610,6 +627,7 @@ async function buildWordPressPayload(
       taxonomies,
     },
     variations: { mode: "replace_active_set", missing_policy: "out_of_stock", items: variations },
+    ...(content.descriptionStoryPolicy === undefined ? {} : { content_policy: { description_story: content.descriptionStoryPolicy } }),
   };
   const idempotencyKey = `product-upsert:${hashStableJson(base)}`;
   const payload = { ...base, idempotency_key: idempotencyKey } satisfies JsonObject;
@@ -651,7 +669,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.6.0";
+  readonly version = "1.7.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -698,7 +716,31 @@ export class WordPressExporter {
     if (matchedBy === "legacy_sku" && snapshot === undefined) {
       throw new IntegrationContractError("WordPress legacy SKU preflight snapshot is required");
     }
-    return { externalId, willCreate, matchedBy, payloadHash, variationPlan, ...(snapshot === undefined ? {} : { snapshot }) };
+    const contentPolicy = payload.content_policy === undefined ? null : record(payload.content_policy, "WordPress content_policy");
+    const expectsStoryResolution = contentPolicy !== null && contentPolicy.description_story !== undefined;
+    let resolvedDescriptionHtml: string | undefined;
+    let resolvedStorySource: "wordpress_existing" | "empty" | undefined;
+    if (expectsStoryResolution) {
+      const resolved = record(response.resolved_content, "WordPress preflight resolved_content");
+      if (typeof resolved.description_html !== "string") {
+        throw new IntegrationContractError("WordPress preflight resolved_content.description_html must be a string");
+      }
+      if (resolved.story_source !== "wordpress_existing" && resolved.story_source !== "empty") {
+        throw new IntegrationContractError("WordPress preflight resolved_content.story_source is invalid");
+      }
+      resolvedDescriptionHtml = resolved.description_html;
+      resolvedStorySource = resolved.story_source;
+    }
+    return {
+      externalId,
+      willCreate,
+      matchedBy,
+      payloadHash,
+      variationPlan,
+      ...(snapshot === undefined ? {} : { snapshot }),
+      ...(resolvedDescriptionHtml === undefined ? {} : { resolvedDescriptionHtml }),
+      ...(resolvedStorySource === undefined ? {} : { resolvedStorySource }),
+    };
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
