@@ -529,6 +529,7 @@ function runtimeSettingsInput() {
     collectionConcurrency: byId("runtime-collection-concurrency").value,
     processConcurrency: byId("runtime-process-concurrency").value,
     preflightConcurrency: byId("runtime-preflight-concurrency").value,
+    classificationApplyConcurrency: byId("runtime-classification-apply-concurrency").value,
     refreshSourceBeforeExport: byId("runtime-refresh-source-before-export").checked,
   };
 }
@@ -552,6 +553,7 @@ function renderRuntimeSettings(settings, worker) {
     ["runtime-collection-concurrency", "collectionConcurrency"],
     ["runtime-process-concurrency", "processConcurrency"],
     ["runtime-preflight-concurrency", "preflightConcurrency"],
+    ["runtime-classification-apply-concurrency", "classificationApplyConcurrency"],
   ];
   const available = settings !== null && settings !== undefined;
   for (const [id, field] of controls) {
@@ -1486,6 +1488,7 @@ function configure() {
           <label><span>Сбор товаров</span><input id="runtime-collection-concurrency" type="number" min="1" max="16" step="1"></label>
           <label><span>Обработка</span><input id="runtime-process-concurrency" type="number" min="1" max="16" step="1"></label>
           <label><span>Preflight WordPress</span><input id="runtime-preflight-concurrency" type="number" min="1" max="8" step="1"></label>
+          <label><span>Применение связей WordPress</span><input id="runtime-classification-apply-concurrency" type="number" min="1" max="8" step="1"></label>
           <div><span>Discovery</span><strong>1</strong></div>
           <div><span>Экспорт</span><strong>1</strong></div>
         </div>

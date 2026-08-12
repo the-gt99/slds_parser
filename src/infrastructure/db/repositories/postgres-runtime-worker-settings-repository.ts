@@ -16,6 +16,7 @@ function mapSettings(row: DatabaseRow): RuntimeWorkerSettingsRecord {
     collectionConcurrency: Number(row.collection_concurrency),
     processConcurrency: Number(row.process_concurrency),
     preflightConcurrency: Number(row.preflight_concurrency),
+    classificationApplyConcurrency: Number(row.classification_apply_concurrency),
     refreshSourceBeforeExport: row.refresh_source_before_export === true,
     revision: String(row.revision),
     updatedBy: String(row.updated_by),
@@ -24,6 +25,7 @@ function mapSettings(row: DatabaseRow): RuntimeWorkerSettingsRecord {
       collectionConcurrency: Number(row.applied_collection_concurrency),
       processConcurrency: Number(row.applied_process_concurrency),
       preflightConcurrency: Number(row.applied_preflight_concurrency),
+      classificationApplyConcurrency: Number(row.applied_classification_apply_concurrency),
       refreshSourceBeforeExport: row.applied_refresh_source_before_export === true,
       revision: String(appliedRevision),
       workerId: String(row.applied_worker_id),
@@ -37,6 +39,7 @@ function jsonSettings(settings: WorkerConcurrencySettings): string {
     collectionConcurrency: settings.collectionConcurrency,
     processConcurrency: settings.processConcurrency,
     preflightConcurrency: settings.preflightConcurrency,
+    classificationApplyConcurrency: settings.classificationApplyConcurrency,
     refreshSourceBeforeExport: settings.refreshSourceBeforeExport,
   });
 }
@@ -62,10 +65,11 @@ async function ensureRow(client: SqlClient, defaults: WorkerConcurrencySettings)
   await client.query(
     `INSERT INTO runtime_worker_settings (
        singleton, collection_concurrency, process_concurrency, preflight_concurrency,
-       refresh_source_before_export, updated_by
-     ) VALUES (TRUE, $1, $2, $3, $4, 'environment')
+       classification_apply_concurrency, refresh_source_before_export, updated_by
+     ) VALUES (TRUE, $1, $2, $3, $4, $5, 'environment')
      ON CONFLICT (singleton) DO NOTHING`,
-    [defaults.collectionConcurrency, defaults.processConcurrency, defaults.preflightConcurrency, defaults.refreshSourceBeforeExport],
+    [defaults.collectionConcurrency, defaults.processConcurrency, defaults.preflightConcurrency,
+      defaults.classificationApplyConcurrency, defaults.refreshSourceBeforeExport],
   );
 }
 
@@ -95,6 +99,7 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
       if (current.collectionConcurrency === settings.collectionConcurrency
         && current.processConcurrency === settings.processConcurrency
         && current.preflightConcurrency === settings.preflightConcurrency
+        && current.classificationApplyConcurrency === settings.classificationApplyConcurrency
         && current.refreshSourceBeforeExport === settings.refreshSourceBeforeExport) {
         return current;
       }
@@ -105,14 +110,15 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
          SET collection_concurrency = $1,
              process_concurrency = $2,
              preflight_concurrency = $3,
-             refresh_source_before_export = $4,
-             revision = $5,
-             updated_by = $6,
+             classification_apply_concurrency = $4,
+             refresh_source_before_export = $5,
+             revision = $6,
+             updated_by = $7,
              updated_at = NOW()
          WHERE singleton = TRUE
          RETURNING *`,
         [settings.collectionConcurrency, settings.processConcurrency, settings.preflightConcurrency,
-          settings.refreshSourceBeforeExport, nextRevision, actor],
+          settings.classificationApplyConcurrency, settings.refreshSourceBeforeExport, nextRevision, actor],
       );
       const updated = result.rows[0];
       if (updated === undefined) throw new Error("Runtime worker settings were not updated");
@@ -136,6 +142,7 @@ export class PostgresRuntimeWorkerSettingsRepository implements RuntimeWorkerSet
              applied_collection_concurrency = collection_concurrency,
              applied_process_concurrency = process_concurrency,
              applied_preflight_concurrency = preflight_concurrency,
+             applied_classification_apply_concurrency = classification_apply_concurrency,
              applied_refresh_source_before_export = refresh_source_before_export,
              applied_worker_id = $1,
              applied_at = NOW()

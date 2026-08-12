@@ -2,6 +2,7 @@ export interface WorkerConcurrencySettings {
   readonly collectionConcurrency: number;
   readonly processConcurrency: number;
   readonly preflightConcurrency: number;
+  readonly classificationApplyConcurrency: number;
   readonly refreshSourceBeforeExport: boolean;
 }
 

@@ -17,12 +17,14 @@ export interface WorkerOptions {
   readonly processConcurrency?: number;
   readonly collectionConcurrency?: number;
   readonly preflightConcurrency?: number;
+  readonly classificationApplyConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
   readonly processConcurrency: number;
   readonly collectionConcurrency: number;
   readonly preflightConcurrency: number;
+  readonly classificationApplyConcurrency: number;
 }
 
 export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -111,6 +113,7 @@ export class Worker {
           processConcurrency: this.options.processConcurrency ?? 1,
           collectionConcurrency: this.options.collectionConcurrency ?? 1,
           preflightConcurrency: this.options.preflightConcurrency ?? 1,
+          classificationApplyConcurrency: this.options.classificationApplyConcurrency ?? 1,
         }
       : await this.concurrencyProvider();
     const controller = new AbortController();
@@ -127,7 +130,8 @@ export class Worker {
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),
-        this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply`),
+        ...Array.from({ length: configuredConcurrency.classificationApplyConcurrency }, (_, index) =>
+          this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
       ]);
     } finally {

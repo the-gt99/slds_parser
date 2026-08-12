@@ -16,6 +16,7 @@ const workerEnvironment = {
   WORKER_COLLECTION_CONCURRENCY: "15",
   WORKER_PROCESS_CONCURRENCY: "10",
   WORKER_PREFLIGHT_CONCURRENCY: "1",
+  WORKER_CLASSIFICATION_APPLY_CONCURRENCY: "1",
   MAX_JOB_ATTEMPTS: "5",
   JOB_RETRY_BASE_MS: "1000",
   JOB_RETRY_MAX_MS: "60000",
@@ -26,6 +27,7 @@ function runtimeSettings(overrides: Partial<RuntimeWorkerSettingsRecord> = {}): 
     collectionConcurrency: 15,
     processConcurrency: 10,
     preflightConcurrency: 4,
+    classificationApplyConcurrency: 4,
     refreshSourceBeforeExport: true,
     revision: "2",
     updatedBy: "admin",
@@ -84,6 +86,7 @@ describe("RuntimeAdminService", () => {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      classificationApplyConcurrency: 4,
       refreshSourceBeforeExport: false,
       revision: "2",
       workerId: "production",
@@ -106,6 +109,7 @@ describe("RuntimeAdminService", () => {
       collectionConcurrency: "15",
       processConcurrency: "10",
       preflightConcurrency: "4",
+      classificationApplyConcurrency: "4",
       refreshSourceBeforeExport: false,
     }, "admin", true);
 
@@ -113,6 +117,7 @@ describe("RuntimeAdminService", () => {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      classificationApplyConcurrency: 4,
       refreshSourceBeforeExport: false,
     }, "admin");
     expect(command.mock.calls.map((call) => call[1][0])).toEqual(["show", "stop", "show", "start", "show"]);

@@ -232,14 +232,14 @@ API запускается отдельным процессом после `npm
 - `POST /api/classifier/rules/preview` — проверить область действия правила и возможные конфликты без записи;
 - `POST /api/classifier/rules` — сохранить проверенное правило и точечно переобработать затронутые товары;
 - `POST /api/classifier/wordpress-assignments/apply` — поставить выбранные безопасные предложения сохранённого импорта WordPress в фоновую очередь;
-- `POST /api/classifier/wordpress-assignments/apply-all` — одним коротким запросом поставить в очередь все безопасные предложения текущего фильтра; отдельный worker применяет их последовательно, поэтому закрытие страницы и HTTP timeout не прерывают работу;
+- `POST /api/classifier/wordpress-assignments/apply-all` — одним коротким запросом поставить в очередь все безопасные предложения текущего фильтра; отдельная настраиваемая группа worker-потоков применяет их в фоне, поэтому закрытие страницы и HTTP timeout не прерывают работу;
 - `GET /api/products/:productId` — безопасное представление товара, его частей, классификации, операций, jobs и состояния выгрузки;
 - `GET /api/products` — поиск, фильтры и пагинация общего реестра товаров;
 - `GET /api/operations` — фактический runtime registry операций;
 - `GET /api/jobs` — очередь с фильтрами, статусами и ошибками;
 - `POST /api/jobs/:jobId/run` — синхронно выполнить только выбранный pending/retry `process_product`, не запуская остальную очередь;
 - `GET /api/runtime`, `POST /api/runtime/start`, `POST /api/runtime/stop` — состояние и управление единственным production worker `slds-parser-worker.service`;
-- `POST /api/runtime/settings` — сохранить collection, processing и WordPress preflight concurrency; `restart=true` применяет новую ревизию перезапуском активного worker;
+- `POST /api/runtime/settings` — сохранить collection, processing, применение связей классификатора и WordPress preflight concurrency; `restart=true` применяет новую ревизию перезапуском активного worker;
 - `GET /api/wordpress-snapshots` — поиск и пагинация сохранённых снимков WordPress;
 - `GET /api/products/:productId/wordpress-preview?targetId=...` — сборка общего payload экспортера и реальный read-only WordPress preflight;
 - `GET /api/export-control` — курсорный список сохранённых результатов preflight без live-запросов в WordPress и без полного подсчёта строк;

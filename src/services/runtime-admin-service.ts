@@ -49,6 +49,7 @@ export interface RuntimeSettingsUpdateInput {
   readonly collectionConcurrency?: unknown;
   readonly processConcurrency?: unknown;
   readonly preflightConcurrency?: unknown;
+  readonly classificationApplyConcurrency?: unknown;
   readonly refreshSourceBeforeExport?: unknown;
 }
 
@@ -152,14 +153,17 @@ export class RuntimeAdminService {
 
   async saveSettings(input: RuntimeSettingsUpdateInput, actor: string, restart: boolean): Promise<RuntimeSettingsUpdateResult> {
     if (this.workerSettings === undefined) throw new Error("Runtime worker settings are not configured");
-    await this.workerSettings.getOrCreate(this.settingsDefaults());
+    const current = await this.workerSettings.getOrCreate(this.settingsDefaults());
     const settings = await this.workerSettings.save({
       collectionConcurrency: boundedInteger(input.collectionConcurrency, "collectionConcurrency", 16),
       processConcurrency: boundedInteger(input.processConcurrency, "processConcurrency", 16),
       preflightConcurrency: boundedInteger(input.preflightConcurrency, "preflightConcurrency", 8),
+      classificationApplyConcurrency: input.classificationApplyConcurrency === undefined
+        ? current.classificationApplyConcurrency
+        : boundedInteger(input.classificationApplyConcurrency, "classificationApplyConcurrency", 8),
       refreshSourceBeforeExport: booleanSetting(input.refreshSourceBeforeExport, "refreshSourceBeforeExport"),
     }, actor);
-    this.record("info", `Worker settings saved by ${actor}: collection=${settings.collectionConcurrency}, processing=${settings.processConcurrency}, preflight=${settings.preflightConcurrency}, refreshSourceBeforeExport=${settings.refreshSourceBeforeExport}, revision=${settings.revision}`);
+    this.record("info", `Worker settings saved by ${actor}: collection=${settings.collectionConcurrency}, processing=${settings.processConcurrency}, preflight=${settings.preflightConcurrency}, classificationApply=${settings.classificationApplyConcurrency}, refreshSourceBeforeExport=${settings.refreshSourceBeforeExport}, revision=${settings.revision}`);
 
     let worker = await this.externalWorkerStatus();
     if (restart && worker?.active) {
@@ -232,6 +236,7 @@ export class RuntimeAdminService {
       collectionConcurrency: options.collectionConcurrency ?? 1,
       processConcurrency: options.processConcurrency ?? 1,
       preflightConcurrency: options.preflightConcurrency ?? 1,
+      classificationApplyConcurrency: options.classificationApplyConcurrency ?? 1,
       refreshSourceBeforeExport: true,
     };
   }

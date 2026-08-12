@@ -140,6 +140,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         collectionConcurrency: workerOptions.collectionConcurrency ?? 1,
         processConcurrency: workerOptions.processConcurrency ?? 1,
         preflightConcurrency: workerOptions.preflightConcurrency ?? 1,
+        classificationApplyConcurrency: workerOptions.classificationApplyConcurrency ?? 1,
         refreshSourceBeforeExport: true,
       }, workerOptions.workerId);
       refreshSourceBeforeExport = settings.refreshSourceBeforeExport;
@@ -147,6 +148,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         collectionConcurrency: settings.collectionConcurrency,
         processConcurrency: settings.processConcurrency,
         preflightConcurrency: settings.preflightConcurrency,
+        classificationApplyConcurrency: settings.classificationApplyConcurrency,
       };
     },
   );

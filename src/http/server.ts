@@ -141,6 +141,7 @@ interface RuntimeSettingsBody {
   readonly collectionConcurrency?: unknown;
   readonly processConcurrency?: unknown;
   readonly preflightConcurrency?: unknown;
+  readonly classificationApplyConcurrency?: unknown;
   readonly refreshSourceBeforeExport?: unknown;
   readonly restart?: unknown;
 }
@@ -1271,6 +1272,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
           collectionConcurrency: request.body?.collectionConcurrency,
           processConcurrency: request.body?.processConcurrency,
           preflightConcurrency: request.body?.preflightConcurrency,
+          classificationApplyConcurrency: request.body?.classificationApplyConcurrency,
           refreshSourceBeforeExport: request.body?.refreshSourceBeforeExport,
         }, actor(request), request.body?.restart === true) };
       } catch (error) {

@@ -976,6 +976,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collection_concurrency: 15,
       process_concurrency: 10,
       preflight_concurrency: 4,
+      classification_apply_concurrency: 4,
       refresh_source_before_export: true,
       revision: "2",
       updated_by: "admin",
@@ -984,6 +985,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       applied_collection_concurrency: 15,
       applied_process_concurrency: 10,
       applied_preflight_concurrency: 4,
+      applied_classification_apply_concurrency: 4,
       applied_refresh_source_before_export: true,
       applied_worker_id: "production",
       applied_at: new Date("2026-08-11T12:01:00.000Z"),
@@ -995,6 +997,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collectionConcurrency: 1,
       processConcurrency: 1,
       preflightConcurrency: 1,
+      classificationApplyConcurrency: 1,
       refreshSourceBeforeExport: true,
     }, "production");
 
@@ -1002,12 +1005,14 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      classificationApplyConcurrency: 4,
       refreshSourceBeforeExport: true,
       revision: "2",
       applied: { revision: "2", workerId: "production", preflightConcurrency: 4, refreshSourceBeforeExport: true },
     });
     expect(executor.calls[1]?.text).toContain("ON CONFLICT (singleton) DO NOTHING");
     expect(executor.calls[3]?.text).toContain("applied_preflight_concurrency = preflight_concurrency");
+    expect(executor.calls[3]?.text).toContain("applied_classification_apply_concurrency = classification_apply_concurrency");
     expect(executor.calls[3]?.text).toContain("applied_refresh_source_before_export = refresh_source_before_export");
   });
 
@@ -1017,6 +1022,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collection_concurrency: 15,
       process_concurrency: 10,
       preflight_concurrency: 1,
+      classification_apply_concurrency: 1,
       refresh_source_before_export: true,
       revision: "7",
       updated_by: "environment",
@@ -1025,11 +1031,12 @@ describe("PostgreSQL repository mapping and SQL", () => {
       applied_collection_concurrency: 15,
       applied_process_concurrency: 10,
       applied_preflight_concurrency: 1,
+      applied_classification_apply_concurrency: 1,
       applied_refresh_source_before_export: true,
       applied_worker_id: "production",
       applied_at: new Date("2026-08-11T12:00:00.000Z"),
     };
-    const updated = { ...current, preflight_concurrency: 4, refresh_source_before_export: false, revision: "8", updated_by: "admin" };
+    const updated = { ...current, preflight_concurrency: 4, classification_apply_concurrency: 4, refresh_source_before_export: false, revision: "8", updated_by: "admin" };
     const executor = new FakeExecutor([[], [current], [updated], [], []]);
     const repository = new PostgresRuntimeWorkerSettingsRepository(pool(executor));
 
@@ -1037,15 +1044,16 @@ describe("PostgreSQL repository mapping and SQL", () => {
       collectionConcurrency: 15,
       processConcurrency: 10,
       preflightConcurrency: 4,
+      classificationApplyConcurrency: 4,
       refreshSourceBeforeExport: false,
     }, "admin");
 
     expect(result).toMatchObject({ revision: "8", preflightConcurrency: 4, refreshSourceBeforeExport: false, applied: { revision: "7", preflightConcurrency: 1, refreshSourceBeforeExport: true } });
-    expect(executor.calls[2]?.values).toEqual([15, 10, 4, false, "8", "admin"]);
+    expect(executor.calls[2]?.values).toEqual([15, 10, 4, 4, false, "8", "admin"]);
     expect(executor.calls[3]?.values).toEqual([
       "8",
-      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 1, refreshSourceBeforeExport: true }),
-      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4, refreshSourceBeforeExport: false }),
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 1, classificationApplyConcurrency: 1, refreshSourceBeforeExport: true }),
+      JSON.stringify({ collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4, classificationApplyConcurrency: 4, refreshSourceBeforeExport: false }),
       "admin",
     ]);
   });

@@ -718,7 +718,11 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                COALESCE((
                  SELECT COALESCE(applied_preflight_concurrency, preflight_concurrency)
                    FROM runtime_worker_settings WHERE singleton = TRUE
-               ), 1)::INT AS preflight_concurrency
+               ), 1)::INT AS preflight_concurrency,
+               COALESCE((
+                 SELECT COALESCE(applied_classification_apply_concurrency, classification_apply_concurrency)
+                   FROM runtime_worker_settings WHERE singleton = TRUE
+               ), 1)::INT AS classification_apply_concurrency
            ), metrics AS (
              SELECT stats.*, durations.estimated_duration_ms,
                     CASE stats.job_type
@@ -726,6 +730,7 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
                       WHEN 'process_product' THEN configured.process_concurrency
                       WHEN 'reclassify_product' THEN configured.process_concurrency
                       WHEN 'preflight_product' THEN configured.preflight_concurrency
+                      WHEN 'apply_target_classification_suggestion' THEN configured.classification_apply_concurrency
                       ELSE 1
                     END AS concurrency
                FROM stats

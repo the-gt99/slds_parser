@@ -73,6 +73,7 @@ describe("Worker", () => {
       collectionConcurrency: 1,
       processConcurrency: 1,
       preflightConcurrency: 3,
+      classificationApplyConcurrency: 1,
     }));
 
     await worker.run(controller.signal);
@@ -81,6 +82,53 @@ describe("Worker", () => {
       "worker:preflight-1",
       "worker:preflight-2",
       "worker:preflight-3",
+    ]);
+  });
+
+  it("runs the configured number of WordPress classification apply lanes", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 4; index++) {
+      await jobs.enqueue({
+        jobType: "apply_target_classification_suggestion",
+        payload: { runId: "1", suggestionId: String(index), actor: "admin" },
+        uniqueKey: `apply-${index}`,
+      });
+    }
+    const controller = new AbortController();
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const workerIds: string[] = [];
+    const handler: JobHandler = {
+      dispatch: vi.fn(async (job) => {
+        workerIds.push(job.lockedBy ?? "");
+        if (workerIds.length === 4) {
+          release();
+          controller.abort();
+        }
+        await barrier;
+        return { status: "completed" as const };
+      }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, options, sleep, Date.now, console.error, undefined, async () => ({
+      collectionConcurrency: 1,
+      processConcurrency: 1,
+      preflightConcurrency: 1,
+      classificationApplyConcurrency: 4,
+    }));
+
+    await worker.run(controller.signal);
+
+    expect(workerIds.sort()).toEqual([
+      "worker:classification-apply-1",
+      "worker:classification-apply-2",
+      "worker:classification-apply-3",
+      "worker:classification-apply-4",
     ]);
   });
 

@@ -38,4 +38,12 @@ describe("worker config", () => {
       "WORKER_PREFLIGHT_CONCURRENCY must be an integer from 1 to 8",
     );
   });
+
+  it("accepts a separately bounded WordPress classification apply concurrency", () => {
+    expect(loadWorkerConfig(environment).classificationApplyConcurrency).toBe(1);
+    expect(loadWorkerConfig({ ...environment, WORKER_CLASSIFICATION_APPLY_CONCURRENCY: "4" }).classificationApplyConcurrency).toBe(4);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_CLASSIFICATION_APPLY_CONCURRENCY: "9" })).toThrow(
+      "WORKER_CLASSIFICATION_APPLY_CONCURRENCY must be an integer from 1 to 8",
+    );
+  });
 });
