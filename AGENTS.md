@@ -852,6 +852,8 @@ Parser commit `4ba33b3` развёрнут на production, миграция `05
 
 Изменения классификации не должны ставить обычный `process_product`: он сравнивает полный DTO fingerprint и при устаревшей версии повторяет SourceProcessor и все ProductOperation, включая перевод и изображения. Для mappings/rules используется отдельный `reclassify_product`, который классифицирует сохранённый internal DTO, обновляет канонический результат и наблюдения, но сохраняет старые `inputHash`, `processorVersion` и `processedAt`. Поэтому настоящий stale processing остаётся видимым и может быть выполнен отдельно. Пока активны `apply_target_classification_suggestion`, PostgreSQL job claim удерживает `reclassify_product`: все правила сначала создаются, affected товары дедуплицируются одной активной job на source product, затем processing lanes разбирают итоговую классификацию один раз.
 
+Parser commit `3f9128c` развёрнут на production, миграция `051` применена. Worker был штатно остановлен перед изменением; `64325` pending jobs, созданных классификационными решениями старого кода, атомарно переведены из `process_product` в `reclassify_product`, отдельно зафиксированный диапазон не затронул новые full-processing jobs. После запуска worker apply-очередь продолжила создавать правила, а reclassification barrier оставил накопленные товары pending; за первые 15 секунд новых `product_operation_executions` не появилось. Принудительный smoke одной reclass job занял `306 мс`, добавил `0` operation executions и сохранил `processorVersion=2.9.0`. API/worker active, health `200`, ошибок нет, target `slamdunk=false`.
+
 ## Старые материалы
 
 Использовать их как источник проверенного поведения и бизнес-правил, но не переносить код «ради готового кода»:
