@@ -1,3 +1,5 @@
+import { replacePreviewFrame } from "./content-template-preview.js";
+
 const fieldLabels = { description: "Описание", short_description: "Краткое описание" };
 
 const state = {
@@ -345,10 +347,6 @@ async function loadCategories() {
   state.categories = response.items || [];
 }
 
-function iframeDocument(html) {
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>body{margin:0;padding:18px;font:14px/1.55 system-ui,sans-serif;color:#20242d}h2,h3{line-height:1.25;margin:0 0 12px}p{margin:0 0 12px}ul,ol{padding-left:22px}li{margin:5px 0}a{color:#176b52}</style></head><body>${html || '<span style="color:#78818e">Поле пустое</span>'}</body></html>`;
-}
-
 function selectionMessage(selection) {
   if (!selection) return "Правило применения не определено.";
   if (selection.reason === "matched") return `Профиль «${selection.profileName}» управляет этим полем.`;
@@ -366,9 +364,10 @@ function renderPreview(item, field, key) {
   const fieldKey = field === "description" ? "description_html" : "short_description_html";
   const before = item.current?.product?.[fieldKey] || "";
   const after = item.proposed?.fields?.[fieldKey] || "";
-  byId("preview-before").srcdoc = iframeDocument(before);
-  byId("preview-after").srcdoc = iframeDocument(after);
+  replacePreviewFrame(document, byId("preview-before"), before);
+  replacePreviewFrame(document, byId("preview-after"), after);
   byId("preview-comparison").hidden = false;
+  byId("preview-comparison").classList.remove("is-loading");
   const blockers = item.readiness?.blockers || [];
   byId("preview-badge").textContent = item.readiness?.ready ? "Payload готов" : `Блокеров: ${blockers.length}`;
   byId("preview-badge").className = `badge ${item.readiness?.ready ? "status-completed" : "status-pending"}`;
@@ -403,7 +402,7 @@ async function preview() {
   const field = body.field;
   const key = previewKey(body);
   byId("preview-button").disabled = true;
-  byId("preview-comparison").hidden = true;
+  byId("preview-comparison").classList.toggle("is-loading", !byId("preview-comparison").hidden);
   byId("preview-badge").textContent = "Проверяем…";
   byId("preview-message").textContent = "Собираем реальный payload и выполняем read-only WordPress preflight…";
   try {
@@ -420,6 +419,7 @@ async function preview() {
     if (requestId === state.previewRequest) {
       state.previewController = null;
       byId("preview-button").disabled = false;
+      byId("preview-comparison").classList.remove("is-loading");
     }
   }
 }
@@ -570,8 +570,14 @@ byId("management-enabled").addEventListener("change", editorChanged);
 byId("profile-categories").addEventListener("change", editorChanged);
 byId("preview-product-id").addEventListener("input", () => { updateProductLink(); invalidatePreview(); });
 byId("system-template-button").addEventListener("click", () => {
-  byId("template-source").value = state.catalog.defaults?.[state.field] || "";
+  const systemTemplate = state.catalog.defaults?.[state.field] || "";
+  if (byId("template-source").value === systemTemplate) {
+    toast("В редакторе уже находится системный текст шаблона.");
+    return;
+  }
+  byId("template-source").value = systemTemplate;
   editorChanged();
+  toast("Текст заменён системным. Сохранение и активация не выполнялись.");
 });
 byId("preview-button").addEventListener("click", preview);
 byId("save-button").addEventListener("click", saveDraft);

@@ -264,6 +264,7 @@ describe("HTTP server", () => {
     } as unknown as ContentTemplateAdminService;
     const server = createHttpServer({ ...dependencies(database), contentTemplates });
     const page = await server.inject({ method: "GET", url: "/content-templates" });
+    const previewScript = await server.inject({ method: "GET", url: "/assets/content-template-preview.js" });
     const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
     const headers = { cookie, "x-csrf-token": login.json().csrfToken };
@@ -277,6 +278,9 @@ describe("HTTP server", () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("SLDS · Шаблоны контента");
     expect(page.body).toContain("Профиль применения");
+    expect(page.body).toContain("Взять системный текст");
+    expect(previewScript.statusCode).toBe(200);
+    expect(previewScript.body).toContain("replacePreviewFrame");
     expect(catalog.statusCode).toBe(200);
     expect(preview.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
