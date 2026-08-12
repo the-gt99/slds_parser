@@ -6,7 +6,10 @@ export class PreflightRunner {
   constructor(private readonly previews: Pick<WordPressPreviewService, "preview">) {}
 
   async preflightProduct(payload: PreflightProductPayload): Promise<RunnerResult> {
-    await this.previews.preview(payload.sourceProductId, payload.targetId, [], { saveExportControl: true });
+    await this.previews.preview(payload.sourceProductId, payload.targetId, [], {
+      saveExportControl: true,
+      refreshWordPress: payload.refreshWordPress !== false,
+    });
     return { status: "completed" };
   }
 }

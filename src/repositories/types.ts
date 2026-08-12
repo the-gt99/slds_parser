@@ -807,6 +807,9 @@ export interface ExportControlListItem {
   readonly changeSummary: JsonObject;
   readonly error: string | null;
   readonly checkedAt: Timestamp;
+  readonly wordpressCheckedAt: Timestamp | null;
+  readonly wordpressSnapshotFetchedAt: Timestamp | null;
+  readonly usedCachedWordPress: boolean;
   readonly lastExportJob: {
     readonly id: EntityId;
     readonly status: JobStatus;
@@ -862,12 +865,33 @@ export interface SaveExportControlPreflightInput {
   readonly deactivatedVariationCount: number;
   readonly blockers: JsonValue;
   readonly changeSummary: JsonObject;
+  readonly wordpressCheckedAt: Timestamp | null;
+  readonly wordpressStateHash: string | null;
+  readonly usedCachedWordPress: boolean;
+  readonly preflightCache: JsonObject;
   readonly error?: string | null;
 }
 
 export interface ExportControlPreflightCandidate {
   readonly sourceProductId: EntityId;
   readonly internalProductId: EntityId;
+  readonly refreshWordPress: boolean;
+}
+
+export interface CachedExportControlPreflight {
+  readonly status: Exclude<ExportControlStatus, "checking" | "stale">;
+  readonly externalId: string | null;
+  readonly willCreate: boolean | null;
+  readonly matchedBy: string | null;
+  readonly wordpressCheckedAt: Timestamp | null;
+  readonly wordpressStateHash: string | null;
+  readonly preflightCache: JsonObject;
+  readonly riskLevel: ExportControlRiskLevel;
+  readonly changeFlags: readonly string[];
+  readonly variationChangeCount: number;
+  readonly deactivatedVariationCount: number;
+  readonly changeSummary: JsonObject;
+  readonly blockers: JsonValue;
 }
 
 export interface ExportControlExportCandidate {
@@ -880,6 +904,7 @@ export interface ExportControlExportCandidate {
   readonly matchedBy: string | null;
   readonly riskLevel: ExportControlRiskLevel;
   readonly changeFlags: readonly string[];
+  readonly wordpressStateHash: string | null;
 }
 
 export interface ExportControlBatchRecord {

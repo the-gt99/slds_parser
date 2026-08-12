@@ -51,7 +51,11 @@ export class ExportControlService {
     try {
       const jobs = await this.jobs.enqueueMany(candidates.map((candidate) => ({
         jobType: "preflight_product" as const,
-        payload: { sourceProductId: candidate.sourceProductId, targetId: input.targetId },
+        payload: {
+          sourceProductId: candidate.sourceProductId,
+          targetId: input.targetId,
+          refreshWordPress: candidate.refreshWordPress !== false,
+        },
         uniqueKey: `target-product:${input.targetId}:${candidate.sourceProductId}:preflight`,
       })));
       return { queuedCount: jobs.length, sourceProductIds: candidates.map((item) => item.sourceProductId), jobIds: jobs.map((job) => job.id) };

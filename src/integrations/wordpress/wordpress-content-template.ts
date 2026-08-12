@@ -419,7 +419,11 @@ export function validateWordPressContentTemplate(source: string): void {
 export function renderWordPressContentTemplate(source: string, context: JsonObject): string {
   validateWordPressContentTemplate(source);
   const parsed = parseNodes(splitTemplate(source));
-  return sanitizeHtml(renderNodes(parsed.nodes, context), {
+  return sanitizeWordPressContentHtml(renderNodes(parsed.nodes, context));
+}
+
+export function sanitizeWordPressContentHtml(value: string): string {
+  return sanitizeHtml(value, {
     allowedTags: ["h2", "h3", "p", "ul", "ol", "li", "strong", "em", "br", "span", "a"],
     allowedAttributes: { a: ["href", "title", "target", "rel"], span: ["class"] },
     allowedSchemes: ["http", "https"],

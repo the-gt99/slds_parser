@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
+import { hashStableJson } from "../../src/core/utils/index.js";
 import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
@@ -540,6 +541,34 @@ describe("WordPressExporter", () => {
     await expect(exporter.export(input)).rejects.toThrow("Состояние товара WordPress изменилось");
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
+  });
+
+  it("blocks an approved write when the WordPress snapshot changed", async () => {
+    const base = context();
+    const payload = await buildWordPressUpsertPayload(base);
+    const currentSnapshot = { product: { target_id: 321, title: "Изменено вручную" } };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      operation: "product_upsert_lookup",
+      target_id: 321,
+      matched_by: "source_identity",
+      payload_hash: payload.payload_hash,
+      variation_plan: [],
+      snapshot: currentSnapshot,
+    }), { status: 200 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.export({
+      ...base,
+      approval: {
+        payloadHash: String(payload.payload_hash),
+        willCreate: false,
+        externalId: "321",
+        matchedBy: "source_identity",
+        wordpressStateHash: hashStableJson({ externalId: "321", snapshot: { product: { target_id: 321, title: "До изменения" } } }),
+      },
+    })).rejects.toThrow("Товар WordPress изменился");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("preflights an upsert payload without creating a job", async () => {

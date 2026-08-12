@@ -13,11 +13,12 @@ const candidate: ExportControlExportCandidate = {
   matchedBy: "source_identity",
   riskLevel: "danger",
   changeFlags: ["taxonomy_removed:product_tag"],
+  wordpressStateHash: "b".repeat(64),
 };
 
 function setup() {
   const repository = {
-    preparePreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31" }]),
+    preparePreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]),
     listExportCandidates: vi.fn().mockResolvedValue([candidate]),
     createBatch: vi.fn().mockResolvedValue({
       batchId: "51",
@@ -46,7 +47,7 @@ describe("ExportControlService", () => {
     expect(repository.preparePreflightCandidates).toHaveBeenCalledWith({ targetId: "10", limit: 50 });
     expect(jobs.enqueueMany).toHaveBeenCalledWith([{
       jobType: "preflight_product",
-      payload: { sourceProductId: "21", targetId: "10" },
+      payload: { sourceProductId: "21", targetId: "10", refreshWordPress: true },
       uniqueKey: "target-product:10:21:preflight",
     }]);
   });

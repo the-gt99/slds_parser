@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../src/contracts/index.js";
 import {
   contentTemplateContextWithExistingStoryPlaceholder,
+  extractExistingWordPressStory,
   renderWordPressContentTemplate,
   selectWordPressContentTemplate,
   validateWordPressContentTemplate,
@@ -98,6 +99,20 @@ describe("WordPress content templates", () => {
       "<h2>Товар</h2>{% if content.story %}{{ content.story | paragraphs }}{% endif %}<ul><li>Артикул: SKU</li></ul>",
       contentTemplateContextWithExistingStoryPlaceholder(missingStory),
     )).toContain("slds-existing-story-placeholder");
+  });
+
+  it("extracts only the story from legacy WordPress descriptions", () => {
+    expect(extractExistingWordPressStory(
+      '<h2>Старый заголовок</h2>История без p.<ul><li>Цвет: Чёрный</li><li>Артикул: SKU</li></ul><a href="/tag/">Ссылка</a>',
+    )).toBe("История без p.");
+    expect(extractExistingWordPressStory(
+      "<h2>Старый заголовок</h2><p>Первый абзац.</p><p>Второй.</p><ul><li>Артикул: SKU</li></ul>",
+    )).toBe("<p>Первый абзац.</p><p>Второй.</p>");
+  });
+
+  it("rejects an unknown WordPress description structure", () => {
+    expect(() => extractExistingWordPressStory("<p>Нет границ старого шаблона</p>"))
+      .toThrow("expected heading");
   });
 
   it("rejects overlapping category profiles", () => {

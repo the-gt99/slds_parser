@@ -1,6 +1,7 @@
 import type { EntityId, JsonObject } from "../../../contracts/index.js";
 import { IntegrationContractError } from "../../../core/errors/index.js";
 import type {
+  CachedExportControlPreflight,
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
   ExportControlExportCandidate,
@@ -109,6 +110,9 @@ function mapListItem(row: DatabaseRow): ExportControlListItem {
     changeSummary: row.change_summary as JsonObject,
     error: nullableText(row, "error"),
     checkedAt: timestamp(row, "checked_at"),
+    wordpressCheckedAt: nullableTimestamp(row, "wordpress_checked_at"),
+    wordpressSnapshotFetchedAt: nullableTimestamp(row, "wordpress_snapshot_fetched_at"),
+    usedCachedWordPress: row.used_cached_wordpress === true,
     lastExportJob: lastJobId === null ? null : {
       id: lastJobId,
       status: text(row, "last_job_status") as NonNullable<ExportControlListItem["lastExportJob"]>["status"],
@@ -170,6 +174,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          LIMIT ${pageLimit}
        )
        SELECT review.*, page.effective_status,
+              snapshot.fetched_at AS wordpress_snapshot_fetched_at,
               target.name AS target_name, target.enabled AS target_enabled,
               last_job.id AS last_job_id, last_job.status AS last_job_status,
               last_job.created_at AS last_job_created_at,
@@ -183,6 +188,9 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        LEFT JOIN target_products target_product
          ON target_product.target_id = review.target_id
         AND target_product.internal_product_id = review.internal_product_id
+       LEFT JOIN target_product_snapshots snapshot
+         ON snapshot.target_id = review.target_id
+        AND snapshot.source_product_id = review.source_product_id
        LEFT JOIN LATERAL (
          SELECT job.id, job.status, job.created_at, job.finished_at, job.last_error
          FROM jobs job
@@ -276,7 +284,14 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                   source.code AS source_code, source_product.external_id AS source_external_id,
                   COALESCE(NULLIF(internal.data->>'title', ''), source_product.source_key) AS title,
                   NULLIF(internal.data->'images'->0->>'url', '') AS image_url,
-                  revision.revision AS configuration_revision
+                  revision.revision AS configuration_revision,
+                  NOT $3::BOOLEAN
+                    AND review.id IS NOT NULL
+                    AND review.status = 'ready'
+                    AND review.internal_content_hash = internal.content_hash
+                    AND review.remote_revision = revision.remote_revision
+                    AND review.configuration_revision <> revision.revision
+                    AS use_cached_wordpress
            FROM internal_products internal
            JOIN source_products source_product ON source_product.id = internal.source_product_id
            JOIN sources source ON source.id = source_product.source_id
@@ -312,14 +327,16 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            INSERT INTO target_product_preflight_reviews (
              target_id, internal_product_id, source_product_id, source_code,
              source_external_id, title, image_url, search_text, status, phase,
-             internal_content_hash, configuration_revision, checked_at, updated_at
+             internal_content_hash, configuration_revision, used_cached_wordpress,
+             checked_at, updated_at
            )
            SELECT $1, selected.internal_product_id, selected.source_product_id,
                   selected.source_code, selected.source_external_id, selected.title,
                   selected.image_url,
                   CONCAT_WS(' ', selected.source_product_id::TEXT, selected.source_external_id, selected.title),
-                  'checking', 'preflight', selected.content_hash,
-                  selected.configuration_revision, NOW(), NOW()
+                  'checking',
+                  'preflight', selected.content_hash,
+                  selected.configuration_revision, selected.use_cached_wordpress, NOW(), NOW()
            FROM selected
            ON CONFLICT (target_id, internal_product_id) DO UPDATE
            SET source_external_id = EXCLUDED.source_external_id,
@@ -329,17 +346,59 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                status = 'checking', phase = 'preflight', error = NULL,
                internal_content_hash = EXCLUDED.internal_content_hash,
                configuration_revision = EXCLUDED.configuration_revision,
+               used_cached_wordpress = EXCLUDED.used_cached_wordpress,
+               preflight_cache = CASE WHEN EXCLUDED.used_cached_wordpress
+                 THEN target_product_preflight_reviews.preflight_cache
+                   || JSONB_BUILD_OBJECT('_previousStatus', target_product_preflight_reviews.status)
+                 ELSE target_product_preflight_reviews.preflight_cache END,
                checked_at = NOW(), updated_at = NOW()
            RETURNING source_product_id, internal_product_id
          )
-         SELECT * FROM marked`,
+         SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
+         FROM marked
+         JOIN selected USING (source_product_id, internal_product_id)`,
         [input.targetId, input.sourceProductIds ?? null, explicit, input.mode === "stale", input.limit],
       );
       return result.rows.map((row) => ({
         sourceProductId: text(row, "source_product_id"),
         internalProductId: text(row, "internal_product_id"),
+        refreshWordPress: row.refresh_wordpress === true,
       }));
     });
+  }
+
+  async getCachedPreflight(targetId: EntityId, internalProductId: EntityId): Promise<CachedExportControlPreflight | null> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT status, external_id, will_create, matched_by, wordpress_checked_at,
+              wordpress_state_hash, preflight_cache, risk_level, change_flags,
+              variation_change_count, deactivated_variation_count, change_summary, blockers,
+              used_cached_wordpress
+       FROM target_product_preflight_reviews
+       WHERE target_id = $1 AND internal_product_id = $2`,
+      [targetId, internalProductId],
+    );
+    const row = result.rows[0];
+    if (row === undefined || row.status === "stale") return null;
+    const cache = row.preflight_cache as JsonObject;
+    const cachedStatus = row.status === "checking" && row.used_cached_wordpress === true
+      ? cache._previousStatus
+      : row.status;
+    if (cachedStatus !== "ready" && cachedStatus !== "blocked" && cachedStatus !== "error") return null;
+    return {
+      status: String(cachedStatus) as CachedExportControlPreflight["status"],
+      externalId: nullableText(row, "external_id"),
+      willCreate: row.will_create === null || row.will_create === undefined ? null : row.will_create === true,
+      matchedBy: nullableText(row, "matched_by"),
+      wordpressCheckedAt: nullableTimestamp(row, "wordpress_checked_at"),
+      wordpressStateHash: nullableText(row, "wordpress_state_hash"),
+      preflightCache: cache,
+      riskLevel: text(row, "risk_level") as CachedExportControlPreflight["riskLevel"],
+      changeFlags: flags(row.change_flags),
+      variationChangeCount: Number(row.variation_change_count),
+      deactivatedVariationCount: Number(row.deactivated_variation_count),
+      changeSummary: row.change_summary as JsonObject,
+      blockers: row.blockers as CachedExportControlPreflight["blockers"],
+    };
   }
 
   async savePreflight(input: SaveExportControlPreflightInput): Promise<void> {
@@ -363,16 +422,19 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       `INSERT INTO target_product_preflight_reviews (
          target_id, internal_product_id, source_product_id, source_code,
          source_external_id, title, image_url, search_text, status, phase,
-         internal_content_hash, configuration_revision, payload_hash, external_id,
+         internal_content_hash, configuration_revision, remote_revision, payload_hash, external_id,
          will_create, matched_by, risk_level, change_flags, field_change_count,
          taxonomy_added_count, taxonomy_removed_count, image_change_count,
          variation_change_count, deactivated_variation_count, blockers,
-         change_summary, error, checked_at, updated_at
+         change_summary, wordpress_checked_at, wordpress_state_hash,
+         used_cached_wordpress, preflight_cache, error, checked_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7,
          CONCAT_WS(' ', $3::BIGINT::TEXT, $5::TEXT, $6::TEXT), $8, $9,
-         $10, $11::BIGINT, $12, $13, $14, $15, $16, $17::TEXT[], $18, $19,
-         $20, $21, $22, $23, $24::JSONB, $25::JSONB, $26, NOW(), NOW()
+         $10, $11::BIGINT, (SELECT remote_revision FROM target_export_revisions WHERE target_id = $1),
+         $12, $13, $14, $15, $16, $17::TEXT[], $18, $19,
+         $20, $21, $22, $23, $24::JSONB, $25::JSONB, $26, $27,
+         $28, $29::JSONB, $30, NOW(), NOW()
        )
        ON CONFLICT (target_id, internal_product_id) DO UPDATE SET
          source_product_id = EXCLUDED.source_product_id,
@@ -385,6 +447,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          phase = EXCLUDED.phase,
          internal_content_hash = EXCLUDED.internal_content_hash,
          configuration_revision = EXCLUDED.configuration_revision,
+         remote_revision = EXCLUDED.remote_revision,
          payload_hash = EXCLUDED.payload_hash,
          external_id = EXCLUDED.external_id,
          will_create = EXCLUDED.will_create,
@@ -399,6 +462,10 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          deactivated_variation_count = EXCLUDED.deactivated_variation_count,
          blockers = EXCLUDED.blockers,
          change_summary = EXCLUDED.change_summary,
+         wordpress_checked_at = EXCLUDED.wordpress_checked_at,
+         wordpress_state_hash = EXCLUDED.wordpress_state_hash,
+         used_cached_wordpress = EXCLUDED.used_cached_wordpress,
+         preflight_cache = EXCLUDED.preflight_cache,
          error = EXCLUDED.error,
          checked_at = NOW(), updated_at = NOW()`,
       [
@@ -409,7 +476,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         input.changeFlags, input.fieldChangeCount, input.taxonomyAddedCount,
         input.taxonomyRemovedCount, input.imageChangeCount, input.variationChangeCount,
         input.deactivatedVariationCount, JSON.stringify(input.blockers),
-        JSON.stringify(input.changeSummary), input.error ?? null,
+        JSON.stringify(input.changeSummary), input.wordpressCheckedAt, input.wordpressStateHash,
+        input.usedCachedWordPress, JSON.stringify(input.preflightCache), input.error ?? null,
       ],
       );
     });
@@ -447,7 +515,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT review.id, review.source_product_id, review.internal_product_id,
               review.payload_hash, review.will_create, review.external_id,
-              review.matched_by, review.risk_level, review.change_flags
+              review.matched_by, review.risk_level, review.change_flags,
+              review.wordpress_state_hash
        FROM target_product_preflight_reviews review
        JOIN target_export_revisions revision ON revision.target_id = review.target_id
        JOIN internal_products internal
@@ -470,6 +539,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       matchedBy: nullableText(row, "matched_by"),
       riskLevel: text(row, "risk_level") as ExportControlExportCandidate["riskLevel"],
       changeFlags: flags(row.change_flags),
+      wordpressStateHash: nullableText(row, "wordpress_state_hash"),
     }));
   }
 
@@ -501,11 +571,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          INSERT INTO target_export_batch_items (
            batch_id, target_id, preflight_review_id, source_product_id,
            internal_product_id, approved_payload_hash, approved_will_create,
-           approved_external_id, approved_matched_by
+           approved_external_id, approved_matched_by, approved_wordpress_state_hash
          )
          SELECT $1, $2, review.id, review.source_product_id,
                 review.internal_product_id, review.payload_hash, review.will_create,
-                review.external_id, review.matched_by
+                review.external_id, review.matched_by, review.wordpress_state_hash
          FROM requested
          JOIN target_product_preflight_reviews review
            ON review.id = requested.review_id
@@ -550,6 +620,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
               willCreate: candidate.willCreate,
               externalId: candidate.externalId,
               matchedBy: candidate.matchedBy,
+              ...(candidate.wordpressStateHash === null ? {} : { wordpressStateHash: candidate.wordpressStateHash }),
             },
           },
         };

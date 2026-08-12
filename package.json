@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "fastify": "^5.11.0",
+    "htmlparser2": "^12.0.0",
     "pg": "^8.22.0",
     "sanitize-html": "^2.17.6",
     "saxes": "^6.0.0",

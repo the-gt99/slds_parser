@@ -292,10 +292,11 @@ function renderCard(item) {
   }
   if (item.error) main.append(element("p", "form-error", item.error));
   const footer = element("div", "export-card-footer");
-  const meta = element("div", "muted", `Проверен ${date(item.checkedAt)}`);
+  const wordpressDate = item.wordpressCheckedAt || item.wordpressSnapshotFetchedAt;
+  const meta = element("div", "muted", `Расчёт ${date(item.checkedAt)}${wordpressDate ? ` · WordPress ${date(wordpressDate)}${item.usedCachedWordPress ? " (снимок)" : ""}` : ""}`);
   if (item.lastExportJob) meta.append(document.createTextNode(` · экспорт ${jobLabel(item.lastExportJob.status)}${item.lastExportJob.lastError ? `: ${item.lastExportJob.lastError}` : ""}`));
   const actions = element("div", "runtime-actions");
-  const refresh = element("button", "button quiet small-button", "Перепроверить");
+  const refresh = element("button", "button quiet small-button", "Обновить с WordPress");
   refresh.type = "button";
   refresh.addEventListener("click", () => enqueuePreflight([item.sourceProductId]));
   const open = document.createElement("a");

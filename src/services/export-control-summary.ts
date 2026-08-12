@@ -1,5 +1,5 @@
 import type { JsonObject, UniversalProductDTO } from "../contracts/index.js";
-import type { InternalProductRecord, SaveExportControlPreflightInput, SourceProductRecord, SourceRecord, TargetRecord } from "../repositories/index.js";
+import type { CachedExportControlPreflight, InternalProductRecord, SaveExportControlPreflightInput, SourceProductRecord, SourceRecord, TargetRecord } from "../repositories/index.js";
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -56,6 +56,11 @@ export function summarizeExportControlPreflight(input: {
   readonly internal: InternalProductRecord;
   readonly configurationRevision: string;
   readonly preview: unknown;
+  readonly wordpressCheckedAt: string | null;
+  readonly wordpressStateHash: string | null;
+  readonly usedCachedWordPress: boolean;
+  readonly preflightCache: JsonObject;
+  readonly cachedPreflight?: CachedExportControlPreflight;
 }): SaveExportControlPreflightInput {
   const preview = record(input.preview);
   const readiness = record(preview.readiness);
@@ -89,18 +94,33 @@ export function summarizeExportControlPreflight(input: {
   const removedImageItems = imageRows.filter((item) => item.status === "remove").map(removedImageSummary);
   if (addedImages > 0) flags.add("images_added");
   if (removedImages > 0) flags.add("images_removed");
-  const addedVariations = variationRows.filter((item) => item.status === "add").length;
-  const changedVariations = variationRows.filter((item) => item.status === "change").length;
-  const deactivatedVariations = variationRows.filter((item) => item.status === "deactivate").length;
+  const cachedVariationSummary = input.cachedPreflight === undefined
+    ? null
+    : record(input.cachedPreflight.changeSummary.variations);
+  const addedVariations = cachedVariationSummary === null
+    ? variationRows.filter((item) => item.status === "add").length
+    : Number(cachedVariationSummary.added ?? 0);
+  const changedVariations = cachedVariationSummary === null
+    ? variationRows.filter((item) => item.status === "change").length
+    : Number(cachedVariationSummary.changed ?? 0);
+  const deactivatedVariations = cachedVariationSummary === null
+    ? variationRows.filter((item) => item.status === "deactivate").length
+    : input.cachedPreflight!.deactivatedVariationCount;
   const deactivatedVariationItems = variationRows
     .filter((item) => item.status === "deactivate")
     .map(deactivatedVariationSummary);
+  const effectiveDeactivatedVariationItems = cachedVariationSummary === null
+    ? deactivatedVariationItems
+    : list(cachedVariationSummary.deactivatedItems) as readonly JsonObject[];
   if (addedVariations > 0) flags.add("variation_added");
   if (changedVariations > 0) flags.add("variation_changed");
   if (deactivatedVariations > 0) flags.add("variation_deactivated");
   const willCreate = typeof preview.willCreate === "boolean" ? preview.willCreate : null;
   if (willCreate === true) flags.add("new_product");
-  const hasChanges = fields.length + taxonomies.length + imageRows.length + variationRows.length > 0;
+  const variationChangeCount = cachedVariationSummary === null
+    ? variationRows.length
+    : input.cachedPreflight!.variationChangeCount;
+  const hasChanges = fields.length + taxonomies.length + imageRows.length + variationChangeCount > 0;
   if (ready && !hasChanges && willCreate !== true) flags.add("no_changes");
   const identityFieldChanged = fields.some((field) => ["title", "slug", "sku"].includes(String(field.field)));
   const riskLevel = taxonomyRemovedCount > 0 || deactivatedVariations > 0 || removedImages > 0
@@ -134,7 +154,7 @@ export function summarizeExportControlPreflight(input: {
     taxonomyAddedCount,
     taxonomyRemovedCount,
     imageChangeCount: imageRows.length,
-    variationChangeCount: variationRows.length,
+    variationChangeCount,
     deactivatedVariationCount: deactivatedVariations,
     blockers: list(readiness.blockers) as SaveExportControlPreflightInput["blockers"],
     changeSummary: {
@@ -145,8 +165,12 @@ export function summarizeExportControlPreflight(input: {
         added: addedVariations,
         changed: changedVariations,
         deactivated: deactivatedVariations,
-        deactivatedItems: deactivatedVariationItems,
+        deactivatedItems: effectiveDeactivatedVariationItems,
       },
     },
+    wordpressCheckedAt: input.wordpressCheckedAt,
+    wordpressStateHash: input.wordpressStateHash,
+    usedCachedWordPress: input.usedCachedWordPress,
+    preflightCache: input.preflightCache,
   };
 }

@@ -108,6 +108,7 @@ export class ExportRunner {
           willCreate: payload.approval.willCreate,
           externalId: payload.approval.externalId,
           matchedBy: payload.approval.matchedBy,
+          ...(payload.approval.wordpressStateHash === undefined ? {} : { wordpressStateHash: payload.approval.wordpressStateHash }),
         } }),
         ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }),
       });

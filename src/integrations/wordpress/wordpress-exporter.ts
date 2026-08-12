@@ -669,7 +669,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.7.0";
+  readonly version = "1.8.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -768,6 +768,12 @@ export class WordPressExporter {
         || current.externalId !== context.approval.externalId
         || current.matchedBy !== context.approval.matchedBy) {
         throw new IntegrationContractError("Состояние товара WordPress изменилось после подтверждённого preflight");
+      }
+      if (context.approval.wordpressStateHash !== undefined) {
+        const currentStateHash = hashStableJson({ externalId: current.externalId, snapshot: current.snapshot ?? null });
+        if (currentStateHash !== context.approval.wordpressStateHash) {
+          throw new IntegrationContractError("Товар WordPress изменился после сохранённого снимка; обновите preflight перед экспортом");
+        }
       }
     }
     const created = await this.request("upsert-jobs", { method: "POST", body: JSON.stringify({ payload }) });

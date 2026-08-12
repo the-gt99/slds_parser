@@ -47,7 +47,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   const repositories = {
     sources: { getById: vi.fn().mockResolvedValue({ id: "1", code: "goat", name: "GOAT", adapterCode: "goat", config: {}, enabled: true }) },
     sourceProducts: { getById: vi.fn().mockResolvedValue({ id: "2", sourceId: "1", sourceKey: "test", externalId: "100", slug: "test-shoe", url: "https://goat.example/test", discoveryMetadata: {} }) },
-    internalProducts: { findBySourceProductId: vi.fn().mockResolvedValue(options.internalMissing ? null : { id: "7", sourceProductId: "2", data: product }) },
+    internalProducts: { findBySourceProductId: vi.fn().mockResolvedValue(options.internalMissing ? null : { id: "7", sourceProductId: "2", contentHash: "content-hash", data: product }) },
     contentTemplates: { listActive: vi.fn().mockResolvedValue([]) },
     targets: {
       getById: vi.fn().mockResolvedValue({
@@ -111,6 +111,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   const exporters = new TargetExporterRegistry();
   exporters.register(exporter);
   const mappings = {
+    getTargetMappingRevision: vi.fn().mockResolvedValue("7"),
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
     resolveTargetProjections: vi.fn().mockResolvedValue(options.landingProjection ? [{
       resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
@@ -134,6 +135,24 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     }] : []),
   ];
   const dictionaries = { listValuesByExternalIds: vi.fn().mockResolvedValue(dictionaryValues) };
+  const exportControl = {
+    getCachedPreflight: vi.fn().mockResolvedValue({
+      status: "ready",
+      externalId: targetId === 0 ? null : String(targetId),
+      willCreate: targetId === 0,
+      matchedBy,
+      wordpressCheckedAt: "2026-08-06T00:00:00.000Z",
+      wordpressStateHash: null,
+      preflightCache: { variationPlan: [] },
+      riskLevel: "none",
+      changeFlags: [],
+      variationChangeCount: 0,
+      deactivatedVariationCount: 0,
+      changeSummary: { variations: { added: 0, changed: 0, deactivated: 0, deactivatedItems: [] } },
+      blockers: [],
+    }),
+    savePreflight: vi.fn(),
+  };
   const snapshotReader = options.remoteSnapshot || options.remoteSnapshotMissing ? {
     read: vi.fn().mockResolvedValue([options.remoteSnapshotMissing ? {
       sourceExternalId: "100",
@@ -152,10 +171,11 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     }]),
   } : undefined;
   return {
-    service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never, snapshotReader),
+    service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never, snapshotReader, exportControl as never),
     request,
     repositories,
     snapshotReader,
+    exportControl,
   };
 }
 
@@ -308,6 +328,24 @@ describe("WordPressPreviewService", () => {
     });
     expect(repositories.targets.findProductSnapshot).toHaveBeenCalledWith("10", "2");
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("recalculates a stale template from the saved WordPress snapshot without a WordPress request", async () => {
+    const { service, request, exportControl } = setup(321, "source_identity");
+
+    await expect(service.preview("2", "10", [], { saveExportControl: true, refreshWordPress: false })).resolves.toMatchObject({
+      externalId: "321",
+      willCreate: false,
+      readiness: { ready: true },
+      current: { snapshotFetchedAt: "2026-08-06T00:00:00.000Z" },
+    });
+    expect(request).not.toHaveBeenCalled();
+    expect(exportControl.getCachedPreflight).toHaveBeenCalledWith("10", "7");
+    expect(exportControl.savePreflight).toHaveBeenCalledWith(expect.objectContaining({
+      configurationRevision: "7",
+      usedCachedWordPress: true,
+      wordpressCheckedAt: "2026-08-06T00:00:00.000Z",
+    }));
   });
 
   it("keeps visually identical legacy WordPress images despite different URLs", async () => {

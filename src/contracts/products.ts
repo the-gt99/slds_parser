@@ -328,6 +328,7 @@ export interface ExportContext {
     readonly willCreate: boolean;
     readonly externalId: string | null;
     readonly matchedBy: string | null;
+    readonly wordpressStateHash?: string | null;
   };
 }
 

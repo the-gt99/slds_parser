@@ -108,6 +108,10 @@ describe("PostgreSQL repository mapping and SQL", () => {
       deactivatedVariationCount: 0,
       blockers: [],
       changeSummary: {},
+      wordpressCheckedAt: "2026-08-12T10:00:00.000Z",
+      wordpressStateHash: "b".repeat(64),
+      usedCachedWordPress: false,
+      preflightCache: {},
     });
 
     const saveCall = executor.calls[2]!;
@@ -148,13 +152,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("selects only existing stale reviews for automatic preflight maintenance", async () => {
-    const executor = new FakeExecutor([[], [], [], []]);
-    await new PostgresExportControlRepository(pool(executor)).preparePreflightCandidates({ targetId: "10", mode: "stale", limit: 100 });
+    const executor = new FakeExecutor([[], [{ source_product_id: "21", internal_product_id: "31", refresh_wordpress: false }], [], []]);
+    const result = await new PostgresExportControlRepository(pool(executor)).preparePreflightCandidates({ targetId: "10", mode: "stale", limit: 100 });
 
     const selectCall = executor.calls[1]!;
+    expect(result).toEqual([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: false }]);
     expect(selectCall.values).toEqual(["10", null, false, true, 100]);
     expect(selectCall.text).toContain("review.id IS NOT NULL");
     expect(selectCall.text).toContain("review.internal_content_hash <> internal.content_hash");
+    expect(selectCall.text).toContain("review.remote_revision = revision.remote_revision");
   });
 
   it("keeps dictionary rows active during replacement and deactivates only missing values", async () => {
@@ -198,6 +204,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
         matchedBy: "source_identity",
         riskLevel: "danger",
         changeFlags: ["taxonomy_removed:product_tag"],
+        wordpressStateHash: "b".repeat(64),
       }],
     })).resolves.toEqual({
       batchId: "51",

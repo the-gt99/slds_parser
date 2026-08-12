@@ -29,7 +29,7 @@
 
   <main class="export-control-page">
     <section class="export-control-hero">
-      <div><p class="eyebrow">Ручной контур</p><h2>Проверка и управляемая выгрузка</h2><p class="muted">Готовность сохраняется, пока товар и настройки экспорта не изменились. Устаревшие результаты автоматически перепроверяются небольшими пачками.</p></div>
+      <div><p class="eyebrow">Ручной контур</p><h2>Проверка и управляемая выгрузка</h2><p class="muted">Изменения шаблона пересчитываются по сохранённому снимку без запроса к WordPress. Кнопка на товаре явно обновляет данные WordPress.</p></div>
       <div class="export-control-hero-actions">
         <label class="field compact-field"><span>Target</span><select id="target"></select></label>
         <label class="field compact-field"><span>Размер проверки</span><select id="preflight-limit"><option>25</option><option selected>50</option><option>100</option></select></label>
@@ -50,7 +50,7 @@
     <section class="section export-control-filters">
       <form id="filters">
         <label class="field"><span>Поиск</span><input id="search" type="search" placeholder="ID или название"></label>
-        <label class="field"><span>Состояние</span><select id="status"><option value="ready" selected>Готовы</option><option value="checking">Проверяются</option><option value="blocked">Заблокированы</option><option value="stale">Нужно перепроверить</option><option value="error">Ошибка preflight</option><option value="">Все проверенные</option></select></label>
+        <label class="field"><span>Состояние</span><select id="status"><option value="ready">Готовы</option><option value="checking">Проверяются</option><option value="blocked">Заблокированы</option><option value="stale">Нужно пересчитать</option><option value="error">Ошибка preflight</option><option value="" selected>Все проверенные</option></select></label>
         <label class="field"><span>Операция</span><select id="operation"><option value="">Любая</option><option value="update">Обновление</option><option value="create">Возможно создание</option></select></label>
         <label class="field"><span>Риск</span><select id="risk"><option value="">Любой</option><option value="danger">Есть удаления</option><option value="review">Нужен просмотр</option><option value="none">Без опасных изменений</option></select></label>
         <label class="field"><span>Изменение</span><select id="change"><option value="">Любое</option><option value="taxonomy:product_tag">Метки</option><option value="taxonomy_removed:product_tag">Удалятся метки</option><option value="taxonomy:product_cat">Категории</option><option value="field:title">Название</option><option value="field:slug">Slug</option><option value="images">Изображения</option><option value="variation_added">Добавятся вариации</option><option value="variation_changed">Изменятся вариации</option><option value="variation_deactivated">Отключатся вариации</option><option value="new_product">Не найден в WordPress</option><option value="no_changes">Без изменений</option></select></label>

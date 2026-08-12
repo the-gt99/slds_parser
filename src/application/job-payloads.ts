@@ -30,12 +30,14 @@ export interface ExportProductPayload {
     readonly willCreate: boolean;
     readonly externalId: string | null;
     readonly matchedBy: string | null;
+    readonly wordpressStateHash?: string | null;
   };
 }
 
 export interface PreflightProductPayload {
   readonly sourceProductId: string;
   readonly targetId: string;
+  readonly refreshWordPress?: boolean;
 }
 
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
@@ -83,7 +85,8 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
       if (!isObject(value.approval) || typeof value.approval.preflightReviewId !== "string"
         || typeof value.approval.payloadHash !== "string" || typeof value.approval.willCreate !== "boolean"
         || (value.approval.externalId !== null && typeof value.approval.externalId !== "string")
-        || (value.approval.matchedBy !== null && typeof value.approval.matchedBy !== "string")) {
+        || (value.approval.matchedBy !== null && typeof value.approval.matchedBy !== "string")
+        || (value.approval.wordpressStateHash !== undefined && value.approval.wordpressStateHash !== null && typeof value.approval.wordpressStateHash !== "string")) {
         throw new InvalidJobPayloadError("export_product");
       }
       approval = {
@@ -92,6 +95,7 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
         willCreate: value.approval.willCreate,
         externalId: value.approval.externalId,
         matchedBy: value.approval.matchedBy,
+        ...(value.approval.wordpressStateHash === undefined ? {} : { wordpressStateHash: value.approval.wordpressStateHash }),
       };
     }
     return {
@@ -106,8 +110,10 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
 }
 
 export function parsePreflightProductPayload(value: JsonValue): PreflightProductPayload {
-  if (isObject(value) && typeof value.sourceProductId === "string" && typeof value.targetId === "string") {
-    return { sourceProductId: value.sourceProductId, targetId: value.targetId };
+  if (isObject(value) && typeof value.sourceProductId === "string" && typeof value.targetId === "string"
+    && (value.refreshWordPress === undefined || typeof value.refreshWordPress === "boolean")) {
+    return { sourceProductId: value.sourceProductId, targetId: value.targetId,
+      ...(value.refreshWordPress === undefined ? {} : { refreshWordPress: value.refreshWordPress }) };
   }
   throw new InvalidJobPayloadError("preflight_product");
 }

@@ -11,6 +11,10 @@ describe("summarizeExportControlPreflight", () => {
       sourceProduct: { id: "2", sourceKey: "shoe", externalId: "100" } as never,
       internal: { id: "3", contentHash: "content", data: validProduct() } as never,
       configurationRevision: "7",
+      wordpressCheckedAt: "2026-08-12T10:00:00.000Z",
+      wordpressStateHash: "b".repeat(64),
+      usedCachedWordPress: false,
+      preflightCache: {},
       preview: {
         payloadHash: "a".repeat(64),
         externalId: "321",
@@ -91,6 +95,10 @@ describe("summarizeExportControlPreflight", () => {
       sourceProduct: { id: "2", sourceKey: "shoe", externalId: "100" } as never,
       internal: { id: "3", contentHash: "content", data: validProduct() } as never,
       configurationRevision: "7",
+      wordpressCheckedAt: "2026-08-12T10:00:00.000Z",
+      wordpressStateHash: "b".repeat(64),
+      usedCachedWordPress: false,
+      preflightCache: {},
       preview: {
         payloadHash: "a".repeat(64),
         externalId: "321",

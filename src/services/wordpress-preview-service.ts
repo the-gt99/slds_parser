@@ -5,9 +5,12 @@ import { hashStableJson } from "../core/utils/index.js";
 import { perceptualHashDistance } from "../processing/media/index.js";
 import {
   applyWordPressTitlePolicy,
+  extractExistingWordPressStory,
   renderWordPressContentFields,
   type WordPressProductSnapshotReader,
   WordPressExporter,
+  WORDPRESS_EXISTING_STORY_MARKER,
+  type WordPressUpsertPreflightResult,
 } from "../integrations/index.js";
 import type {
   InternalProductRepository,
@@ -18,6 +21,7 @@ import type {
   TargetRepository,
   TargetContentTemplateRepository,
   ExportControlRepository,
+  CachedExportControlPreflight,
 } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
 import { summarizeExportControlPreflight } from "./export-control-summary.js";
@@ -106,6 +110,28 @@ export interface PreviewTerm {
     readonly sourceTypeCode: string;
     readonly sourceLabel: string;
   }[];
+}
+
+function storyReplacement(renderedWithMarker: string, resolved: string): string | null {
+  const markerIndex = renderedWithMarker.indexOf(WORDPRESS_EXISTING_STORY_MARKER);
+  if (markerIndex < 0) return null;
+  const prefix = renderedWithMarker.slice(0, markerIndex);
+  const suffix = renderedWithMarker.slice(markerIndex + WORDPRESS_EXISTING_STORY_MARKER.length);
+  if (!resolved.startsWith(prefix) || !resolved.endsWith(suffix)) return null;
+  return resolved.slice(prefix.length, resolved.length - suffix.length);
+}
+
+function resolveCachedStory(payload: JsonObject, current: Record<string, unknown>, cached: CachedExportControlPreflight): string | undefined {
+  const policy = record(record(payload.content_policy).description_story);
+  if (policy.mode !== "preserve_existing") return undefined;
+  const cachedStory = cached.preflightCache.existingStoryHtml;
+  const story = typeof cachedStory === "string"
+    ? cachedStory
+    : extractExistingWordPressStory(String(current.description_html ?? ""));
+  if (policy.required === true && story.trim() === "") {
+    throw new IntegrationContractError("Neither GOAT nor the existing WordPress product contains a story");
+  }
+  return story;
 }
 
 function snapshotTermMap(value: unknown): Map<string, PreviewTerm> {
@@ -292,7 +318,11 @@ export class WordPressPreviewService {
     private readonly exportControl?: ExportControlRepository,
   ) {}
 
-  async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = [], options: { readonly saveExportControl?: boolean } = {}) {
+  async preview(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[] = [], options: {
+    readonly saveExportControl?: boolean;
+    readonly refreshWordPress?: boolean;
+  } = {}) {
+    const refreshWordPress = options.refreshWordPress !== false;
     const configurationRevision = this.exportControl === undefined || options.saveExportControl !== true
       ? null
       : await this.mappings.getTargetMappingRevision(targetId);
@@ -318,7 +348,7 @@ export class WordPressPreviewService {
     let snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
     let lookupFound: boolean | null = null;
     let lookupMatchedBy: string | null = null;
-    if (this.snapshotReader !== undefined && sourceProduct.externalId !== null) {
+    if (refreshWordPress && this.snapshotReader !== undefined && sourceProduct.externalId !== null) {
       const [remote] = await this.snapshotReader.read(source.code, [sourceProduct.externalId]);
       if (remote === undefined) throw new IntegrationContractError("WordPress snapshot lookup did not return the requested product");
       lookupFound = remote.found;
@@ -363,10 +393,26 @@ export class WordPressPreviewService {
       };
     }
     const targetProduct = await this.repositories.targets.findTargetProduct(target.id, internal.id);
+    const cachedPreflight = refreshWordPress || this.exportControl === undefined
+      ? null
+      : await this.exportControl.getCachedPreflight(target.id, internal.id);
+    if (!refreshWordPress && cachedPreflight === null) {
+      throw new IntegrationContractError("Сохранённый preflight WordPress недоступен; требуется явное обновление с WordPress");
+    }
+    let wordpressCheckedAt = refreshWordPress ? new Date().toISOString() : cachedPreflight?.wordpressCheckedAt ?? null;
+    let wordpressStateHash = refreshWordPress ? null : cachedPreflight?.wordpressStateHash ?? null;
+    const { _previousStatus: _ignoredPreviousStatus, ...cachedPreflightData } = cachedPreflight?.preflightCache ?? {};
+    let preflightCache: JsonObject = refreshWordPress ? {} : cachedPreflightData;
+    let preserveCachedVariationSummary = false;
     const finish = async <Result>(result: Result): Promise<Result> => {
       if (this.exportControl !== undefined && configurationRevision !== null) {
         await this.exportControl.savePreflight(summarizeExportControlPreflight({
           target, source, sourceProduct, internal, configurationRevision, preview: result,
+          wordpressCheckedAt,
+          wordpressStateHash,
+          usedCachedWordPress: !refreshWordPress,
+          preflightCache,
+          ...(preserveCachedVariationSummary && cachedPreflight !== null ? { cachedPreflight } : {}),
         }));
       }
       return result;
@@ -416,11 +462,32 @@ export class WordPressPreviewService {
     const variations = record(payload.variations);
     const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
     const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
-    let preflight = null;
+    let preflight: WordPressUpsertPreflightResult | null = null;
     let preflightError: IntegrationContractError | null = null;
     if (draft.missingRequiredReferences.length === 0) {
       try {
-        preflight = await exporter.preflightPayload(payload);
+        if (refreshWordPress) {
+          preflight = await exporter.preflightPayload(payload);
+        } else if (cachedPreflight?.status === "ready" && cachedPreflight.willCreate !== null && cachedPreflight.matchedBy !== null) {
+          const cachedPlan = Array.isArray(cachedPreflight.preflightCache.variationPlan)
+            ? cachedPreflight.preflightCache.variationPlan.map((item) => record(item) as JsonObject)
+            : [];
+          preserveCachedVariationSummary = !Array.isArray(cachedPreflight.preflightCache.variationPlan);
+          const existingStoryHtml = resolveCachedStory(payload, current, cachedPreflight);
+          preflight = {
+            externalId: cachedPreflight.externalId,
+            willCreate: cachedPreflight.willCreate,
+            matchedBy: cachedPreflight.matchedBy,
+            payloadHash: String(payload.payload_hash ?? ""),
+            variationPlan: cachedPlan,
+            ...(existingStoryHtml === undefined ? {} : {
+              resolvedDescriptionHtml: String(product.description_html ?? "").replace(WORDPRESS_EXISTING_STORY_MARKER, existingStoryHtml),
+              resolvedStorySource: existingStoryHtml.trim() === "" ? "empty" : "wordpress_existing",
+            }),
+          };
+        } else {
+          preflightError = new IntegrationContractError("Сохранённый preflight не был готов; обновите данные с WordPress");
+        }
       } catch (error) {
         if (!(error instanceof IntegrationContractError)) throw error;
         preflightError = error;
@@ -439,10 +506,25 @@ export class WordPressPreviewService {
       current = record(snapshot.payload.product);
       currentSummary = { externalId: snapshot.externalId, snapshotFetchedAt: snapshot.fetchedAt, product: current };
     }
+    if (preflight !== null) {
+      const stateSnapshot = preflight.snapshot ?? snapshot?.payload ?? null;
+      wordpressStateHash = hashStableJson({ externalId: preflight.externalId, snapshot: stateSnapshot });
+      if (refreshWordPress) {
+        wordpressCheckedAt = new Date().toISOString();
+        const existingStoryHtml = preflight.resolvedDescriptionHtml === undefined
+          ? null
+          : storyReplacement(String(product.description_html ?? ""), preflight.resolvedDescriptionHtml);
+        preflightCache = {
+          variationPlan: preflight.variationPlan,
+          ...(existingStoryHtml === null ? {} : { existingStoryHtml }),
+        };
+      }
+    }
     const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
-    const variationResult = preflight === null
+    const variationAvailable = preflight !== null && !preserveCachedVariationSummary;
+    const variationResult = !variationAvailable
       ? { differences: [] as Record<string, unknown>[], deactivated: [] as string[], rows: [] as Record<string, unknown>[] }
-      : variationComparison(preflight.variationPlan, current.variations);
+      : variationComparison(preflight!.variationPlan, current.variations);
     const imageResult = imageDiff(product.images, current.images);
     const termIds = [...new Set([
       ...Object.values(expectedTaxonomies).flat(),
@@ -495,11 +577,19 @@ export class WordPressPreviewService {
     };
     const effectiveCategoryTermIds = payloadTaxonomies(effectiveTaxonomies).product_cat ?? [];
     const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates, effectiveCategoryTermIds);
+    const resolvedStoryHtml = preflight?.resolvedDescriptionHtml === undefined
+      ? null
+      : storyReplacement(String(product.description_html ?? ""), preflight.resolvedDescriptionHtml);
+    const effectiveDescriptionHtml = effectiveContent.descriptionHtml === undefined
+      ? undefined
+      : resolvedStoryHtml === null
+        ? preflight?.resolvedDescriptionHtml ?? effectiveContent.descriptionHtml
+        : effectiveContent.descriptionHtml.replace(WORDPRESS_EXISTING_STORY_MARKER, resolvedStoryHtml);
     const effectiveProduct: Record<string, unknown> = {
       ...product,
       title: effectiveTitle,
-      ...(effectiveContent.descriptionHtml === undefined ? {} : {
-        description_html: preflight?.resolvedDescriptionHtml ?? effectiveContent.descriptionHtml,
+      ...(effectiveDescriptionHtml === undefined ? {} : {
+        description_html: effectiveDescriptionHtml,
       }),
       ...(effectiveContent.shortDescriptionHtml === undefined ? {} : { short_description_html: effectiveContent.shortDescriptionHtml }),
     };
@@ -545,14 +635,14 @@ export class WordPressPreviewService {
         images: Array.isArray(product.images) ? product.images : [],
         variations: preflight?.variationPlan ?? expectedVariations,
         sourceVariationCount: expectedVariations.length,
-        variationPricesReady: ready,
+        variationPricesReady: ready && variationAvailable,
       },
       comparison: {
         fields: fieldRows,
         taxonomies: taxonomyRows,
         images: imageResult,
         variations: {
-          available: ready,
+          available: ready && variationAvailable,
           rows: variationRows,
           expectedCount: preflight?.variationPlan.length ?? expectedVariations.length,
           actualCount: Array.isArray(current.variations) ? current.variations.length : 0,

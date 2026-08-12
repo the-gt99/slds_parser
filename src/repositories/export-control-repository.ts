@@ -2,6 +2,7 @@ import type { EntityId, JsonObject } from "../contracts/index.js";
 import type {
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
+  CachedExportControlPreflight,
   ExportControlExportCandidate,
   ExportControlFilter,
   ExportControlListQuery,
@@ -19,6 +20,7 @@ export interface ExportControlRepository {
     readonly limit: number;
   }): Promise<readonly ExportControlPreflightCandidate[]>;
   savePreflight(input: SaveExportControlPreflightInput): Promise<void>;
+  getCachedPreflight(targetId: EntityId, internalProductId: EntityId): Promise<CachedExportControlPreflight | null>;
   savePreflightError(input: {
     readonly targetId: EntityId;
     readonly sourceProductId: EntityId;
