@@ -4,6 +4,7 @@ import type {
   WordPressCatalogRunItemRecord,
   WordPressCatalogRunRecord,
   WordPressVariationAutoSyncState,
+  WordPressVariationAutoTickOutcome,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
 import type { DatabaseRow } from "./row-mappers.js";
@@ -530,6 +531,81 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       [runId, window],
     );
     if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${runId}`);
+  }
+
+  async replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome> {
+    return transaction(this.pool, async (client) => {
+      const activeRun = await client.query<DatabaseRow>(
+        `SELECT id, variation_auto_window, variation_auto_acknowledged_failed_count
+         FROM wordpress_catalog_runs
+         WHERE variation_auto_status = 'running'
+         LIMIT 1
+         FOR UPDATE`,
+      );
+      const run = activeRun.rows[0];
+      if (run === undefined) return "idle";
+      const runId = text(run, "id");
+      const counts = await client.query<DatabaseRow>(
+        `SELECT (SELECT COUNT(*) FROM wordpress_catalog_run_items
+                 WHERE run_id = $1 AND variation_status IN ('pending', 'refreshing', 'ready', 'submitted')) AS active_count,
+                (SELECT COUNT(*) FROM wordpress_catalog_run_items
+                 WHERE run_id = $1 AND variation_status = 'failed') AS failed_count`,
+        [runId],
+      );
+      const activeCount = Number(counts.rows[0]?.active_count ?? 0);
+      const failedCount = Number(counts.rows[0]?.failed_count ?? 0);
+      if (failedCount > Number(run.variation_auto_acknowledged_failed_count)) {
+        await client.query(
+          `UPDATE wordpress_catalog_runs
+           SET variation_auto_status = 'paused',
+               variation_auto_error = 'Автопрогон остановлен после ошибки товара. Проверьте журнал и возобновите вручную.',
+               updated_at = NOW()
+           WHERE id = $1`,
+          [runId],
+        );
+        return "paused";
+      }
+      const available = Math.max(0, Number(run.variation_auto_window) - activeCount);
+      if (available === 0) return "waiting";
+      const updated = await client.query<DatabaseRow>(
+        `WITH selected AS (
+           SELECT id
+           FROM wordpress_catalog_run_items
+           WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
+             AND variation_status = 'skipped' AND variation_checked_at IS NULL
+           ORDER BY id
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE wordpress_catalog_run_items AS item
+         SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
+         FROM selected
+         WHERE item.id = selected.id
+         RETURNING item.id, item.wordpress_product_id`,
+        [runId, available],
+      );
+      if (updated.rows.length > 0) {
+        await client.query(
+          `INSERT INTO jobs (job_type, payload, status, unique_key)
+           SELECT 'refresh_wordpress_variation_patch',
+                  JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', value.id::TEXT, 'wordpressProductId', value.wordpress_product_id::TEXT),
+                  'pending', 'wordpress-variation-refresh:' || $1::TEXT || ':' || value.id::TEXT
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS value(id BIGINT, wordpress_product_id BIGINT)
+           ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
+          [runId, JSON.stringify(updated.rows)],
+        );
+        return "queued";
+      }
+      if (activeCount > 0) return "waiting";
+      await client.query(
+        `UPDATE wordpress_catalog_runs
+         SET variation_auto_status = 'completed', variation_auto_error = NULL,
+             variation_auto_completed_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [runId],
+      );
+      return "completed";
+    });
   }
 
   async setVariationAutoSyncStatus(input: {

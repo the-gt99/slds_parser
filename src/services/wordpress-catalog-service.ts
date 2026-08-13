@@ -107,23 +107,8 @@ export class WordPressCatalogService {
   }
 
   async tickVariationAutoSync(): Promise<boolean> {
-    const run = await this.repository.getRunningVariationAutoSync();
-    if (run === null) return false;
-    if (run.failedCount > run.acknowledgedFailedCount) {
-      await this.repository.setVariationAutoSyncStatus({
-        runId: run.runId,
-        status: "paused",
-        error: "Автопрогон остановлен после ошибки товара. Проверьте журнал и возобновите вручную.",
-      });
-      return true;
-    }
-    const available = Math.max(0, run.window - run.activeCount);
-    if (available === 0) return false;
-    const queued = await this.repository.enqueueVariationBatch(run.runId, available);
-    if (queued > 0) return true;
-    if (run.activeCount > 0) return false;
-    await this.repository.setVariationAutoSyncStatus({ runId: run.runId, status: "completed" });
-    return true;
+    const outcome = await this.repository.replenishVariationAutoSync();
+    return outcome !== "idle" && outcome !== "waiting";
   }
 
   async enqueueVariationBatch(runId: string, limit: number) {

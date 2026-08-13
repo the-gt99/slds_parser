@@ -16,6 +16,7 @@ export type {
   WordPressCatalogVariationFilter,
   WordPressVariationAutoStatus,
   WordPressVariationAutoSyncState,
+  WordPressVariationAutoTickOutcome,
 } from "./wordpress-catalog-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";
 export type {

@@ -18,7 +18,7 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
   };
 }
 
-function setup(current: WordPressCatalogRunRecord | null) {
+function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "waiting" | "queued" | "paused" | "completed" = "queued") {
   const repository = {
     getRunningVariationAutoSync: vi.fn().mockResolvedValue(current === null ? null : {
       runId: current.id,
@@ -27,6 +27,7 @@ function setup(current: WordPressCatalogRunRecord | null) {
       activeCount: current.variationPendingCount + current.variationSubmittedCount,
       failedCount: current.variationFailedCount,
     }),
+    replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
     enqueueVariationBatch: vi.fn(async (_runId: string, limit: number) => Math.min(limit, current?.variationNotStartedCount ?? 0)),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;
@@ -39,39 +40,29 @@ function setup(current: WordPressCatalogRunRecord | null) {
 }
 
 describe("WordPressCatalogService variation auto-sync", () => {
-  it("keeps only the free part of the configured window queued", async () => {
-    const value = setup(run());
+  it("reports a replenished window as work", async () => {
+    const value = setup(run(), "queued");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
 
-    expect(value.repository.enqueueVariationBatch).toHaveBeenCalledWith("1", 2_000);
-    expect(value.repository.setVariationAutoSyncStatus).not.toHaveBeenCalled();
+    expect(value.repository.replenishVariationAutoSync).toHaveBeenCalledOnce();
   });
 
-  it("does not replenish a full window", async () => {
-    const value = setup(run({ variationPendingCount: 4_000, variationSubmittedCount: 1_000 }));
+  it("reports a full window as waiting", async () => {
+    const value = setup(run(), "waiting");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(false);
-
-    expect(value.repository.enqueueVariationBatch).not.toHaveBeenCalled();
   });
 
-  it("pauses replenishment after a new hard failure", async () => {
-    const value = setup(run({ variationFailedCount: 1 }));
+  it("reports an automatic pause as work", async () => {
+    const value = setup(run(), "paused");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
-
-    expect(value.repository.enqueueVariationBatch).not.toHaveBeenCalled();
-    expect(value.repository.setVariationAutoSyncStatus).toHaveBeenCalledWith(expect.objectContaining({
-      runId: "1", status: "paused",
-    }));
   });
 
-  it("marks the flow completed after the final active jobs finish", async () => {
-    const value = setup(run({ variationNotStartedCount: 0, variationPendingCount: 0, variationSubmittedCount: 0 }));
+  it("reports completion as work", async () => {
+    const value = setup(run(), "completed");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
-
-    expect(value.repository.setVariationAutoSyncStatus).toHaveBeenCalledWith({ runId: "1", status: "completed" });
   });
 });

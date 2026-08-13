@@ -4,6 +4,7 @@ export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "fa
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
 export type WordPressCatalogVariationFilter = "not_started" | "in_progress" | "completed" | "skipped" | "failed";
 export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
+export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "completed";
 
 export interface WordPressVariationAutoSyncState {
   readonly runId: EntityId;
@@ -154,6 +155,7 @@ export interface WordPressCatalogRepository {
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
   enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
   getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null>;
+  replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome>;
   startVariationAutoSync(runId: EntityId, window: number): Promise<void>;
   setVariationAutoSyncStatus(input: {
     readonly runId: EntityId;
