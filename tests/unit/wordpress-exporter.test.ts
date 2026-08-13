@@ -226,6 +226,45 @@ describe("WordPressExporter", () => {
     await expect(buildWordPressUpsertPayload(input)).rejects.toThrow("snapshot is required");
   });
 
+  it("loads a missing target snapshot during a read-only payload preview", async () => {
+    const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { payload: JsonObject };
+      return new Response(JSON.stringify({
+        ok: true,
+        operation: "product_upsert_lookup",
+        target_id: 321,
+        matched_by: "target_id",
+        payload_hash: body.payload.payload_hash,
+        variation_plan: [],
+        snapshot: {
+          product: {
+            taxonomies: {
+              pa_brand: [
+                { term_id: 31, name: "Nike", slug: "nike" },
+                { term_id: 5490, name: "Clarks", slug: "clarks" },
+              ],
+            },
+          },
+        },
+      }), { status: 200 });
+    });
+    const exporter = new WordPressExporter(
+      { baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 },
+      request,
+    );
+
+    const preview = await exporter.previewPayload({
+      ...context({ preserveExistingBrandTerms: true }),
+      existingExternalId: "321",
+    });
+
+    expect((preview.payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31, 5490] },
+      product_cat: { mode: "replace", term_ids: [41] },
+    });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("reads current WordPress brands before writing their union with resolved brands", async () => {
     let writtenPayload: JsonObject | null = null;
     const request = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

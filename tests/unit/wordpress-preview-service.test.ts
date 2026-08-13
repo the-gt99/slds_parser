@@ -110,7 +110,10 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       ...(options.preflightSnapshot ? { snapshot: { product: {
         title: "Legacy SKU title", slug: "legacy-sku-title", sku: "SKU-2",
         description_html: "<p>Legacy SKU</p>", short_description_html: "<p>Сохранить</p>",
-        images: [], taxonomies: {}, variations: [],
+        images: [], taxonomies: options.preserveExistingBrands ? { pa_brand: [
+          { term_id: 31, name: "Nike", slug: "nike" },
+          { term_id: 5490, name: "Clarks", slug: "clarks" },
+        ] } : {}, variations: [],
       } } } : {}),
     }), { status: 200 });
   });
@@ -325,6 +328,24 @@ describe("WordPressPreviewService", () => {
       externalId: "321",
       sourceExternalId: "100",
     }));
+  });
+
+  it("recovers a missing saved snapshot through read-only preflight before preserving brands", async () => {
+    const { service, request } = setup(321, "source_identity", {
+      remoteSnapshotMissing: true,
+      preflightSnapshot: true,
+      preserveExistingBrands: true,
+    });
+
+    const result = await service.preview("2", "10");
+
+    expect(result.readiness).toEqual({ ready: true, phase: "ready", blockers: [] });
+    expect(result.comparison?.taxonomies).toContainEqual(expect.objectContaining({
+      taxonomy: "pa_brand",
+      after: [expect.objectContaining({ termId: 31 }), expect.objectContaining({ termId: 5490 })],
+      removed: [],
+    }));
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it("shows the saved WordPress product before processing without attempting a preflight", async () => {

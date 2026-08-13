@@ -727,7 +727,12 @@ export class WordPressExporter {
   }
 
   async previewPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
-    return previewWordPressUpsertPayload(context, this.sizeConverter);
+    const effectiveContext = preserveExistingBrandTerms(context.target.config)
+      && context.existingTargetSnapshot === undefined
+      && context.existingExternalId !== undefined
+      ? await this.withCurrentBrandSnapshot(context)
+      : context;
+    return previewWordPressUpsertPayload(effectiveContext, this.sizeConverter);
   }
 
   async buildPayload(context: ExportContext): Promise<JsonObject> {
@@ -790,25 +795,9 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    let effectiveContext = context;
-    if (preserveExistingBrandTerms(context.target.config)) {
-      const lookupContext: ExportContext = {
-        ...context,
-        target: {
-          ...context.target,
-          config: { ...context.target.config, preserveExistingBrandTerms: false },
-        },
-      };
-      const lookup = await this.preflightPayload(await this.buildPayload(lookupContext));
-      if (!lookup.willCreate && lookup.snapshot === undefined) {
-        throw new IntegrationContractError("WordPress preflight snapshot is required to preserve existing brand terms");
-      }
-      effectiveContext = {
-        ...context,
-        ...(lookup.externalId === null ? {} : { existingExternalId: lookup.externalId }),
-        ...(lookup.snapshot === undefined ? {} : { existingTargetSnapshot: lookup.snapshot }),
-      };
-    }
+    const effectiveContext = preserveExistingBrandTerms(context.target.config)
+      ? await this.withCurrentBrandSnapshot(context)
+      : context;
     const payload = await this.buildPayload(effectiveContext);
     const expectedPayloadHash = text(payload.payload_hash);
     const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : [];
@@ -857,6 +846,30 @@ export class WordPressExporter {
         payloadHash: text(job.payload_hash),
         matchedBy: text(result.matched_by),
       },
+    };
+  }
+
+  private async withCurrentBrandSnapshot(context: ExportContext): Promise<ExportContext> {
+    const lookupContext: ExportContext = {
+      ...context,
+      target: {
+        ...context.target,
+        config: { ...context.target.config, preserveExistingBrandTerms: false },
+      },
+    };
+    const lookup = await this.preflightPayload(await this.buildPayload(lookupContext));
+    if (!lookup.willCreate && lookup.snapshot === undefined) {
+      throw new IntegrationContractError("WordPress preflight snapshot is required to preserve existing brand terms");
+    }
+    const {
+      existingExternalId: _existingExternalId,
+      existingTargetSnapshot: _existingTargetSnapshot,
+      ...baseContext
+    } = context;
+    return {
+      ...baseContext,
+      ...(lookup.externalId === null ? {} : { existingExternalId: lookup.externalId }),
+      ...(lookup.snapshot === undefined ? {} : { existingTargetSnapshot: lookup.snapshot }),
     };
   }
 
