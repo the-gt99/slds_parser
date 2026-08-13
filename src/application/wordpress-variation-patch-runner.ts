@@ -199,7 +199,7 @@ export class WordPressVariationPatchRunner {
       return null;
     }
     const basis = {
-      contract_version: "slds.wordpress.variation-patch.v1",
+      contract_version: "slds.wordpress.variation-patch.v2",
       mode: "patch_existing_variations",
       identity: buildWordPressVariationPatchIdentity({
         targetId: candidate.item.wordpressProductId,
