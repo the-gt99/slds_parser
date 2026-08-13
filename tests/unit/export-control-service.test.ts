@@ -25,6 +25,9 @@ function setup() {
       items: [{ id: "61", sourceProductId: "21", internalProductId: "31" }],
       jobIds: ["71"],
     }),
+    getRunningCampaign: vi.fn().mockResolvedValue(null),
+    countActivePreflights: vi.fn().mockResolvedValue(0),
+    setCampaignStatus: vi.fn(),
   } as unknown as ExportControlRepository;
   const jobs = {
     enqueueMany: vi.fn(async (inputs: readonly { readonly uniqueKey: string }[]) => inputs.map((input, index) => ({
@@ -72,5 +75,31 @@ describe("ExportControlService", () => {
       candidates: [candidate],
     }));
     expect(jobs.enqueueMany).not.toHaveBeenCalled();
+  });
+
+  it("streams one safe update at a time and keeps the preflight window full", async () => {
+    const { repository, service } = setup();
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([{ ...candidate, riskLevel: "none" }]);
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "81", targetId: "10", status: "running", actor: "admin", reason: "mass",
+      preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, runningCount: 0,
+      completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5,
+      lastError: null, createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+    vi.mocked(repository.countActivePreflights).mockResolvedValue(5);
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).toHaveBeenCalledWith({
+      targetId: "10",
+      filter: { status: "ready", operation: "update", riskLevel: "none" },
+      limit: 1,
+    });
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({
+      campaignId: "81",
+      candidates: [{ ...candidate, riskLevel: "none" }],
+    }));
+    expect(repository.preparePreflightCandidates).toHaveBeenCalledWith({ targetId: "10", limit: 20 });
   });
 });

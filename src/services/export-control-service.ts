@@ -4,6 +4,7 @@ import type { ExportControlFilter, ExportControlListQuery, ExportControlReposito
 
 const maximumPreflightBatch = 100;
 const maximumExportBatch = 5_000;
+const maximumCampaignExports = 200_000;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
@@ -130,5 +131,112 @@ export class ExportControlService {
 
   listBatches(targetId: EntityId, limit: number) {
     return this.repository.listBatches(targetId, limit);
+  }
+
+  listCampaigns(targetId: EntityId, limit: number) {
+    return this.repository.listCampaigns(targetId, limit);
+  }
+
+  listCampaignItems(campaignId: EntityId, limit: number) {
+    return this.repository.listCampaignItems(campaignId, limit);
+  }
+
+  async startCampaign(input: {
+    readonly targetId: EntityId;
+    readonly preflightWindow?: number;
+    readonly maxExports?: number;
+    readonly reason?: string;
+  }, actor: string) {
+    const preflightWindow = input.preflightWindow ?? 100;
+    if (!Number.isInteger(preflightWindow) || preflightWindow < 1 || preflightWindow > maximumPreflightBatch) {
+      throw new IntegrationContractError(`Окно preflight должно быть от 1 до ${maximumPreflightBatch}`);
+    }
+    if (input.maxExports !== undefined
+      && (!Number.isInteger(input.maxExports) || input.maxExports < 1 || input.maxExports > maximumCampaignExports)) {
+      throw new IntegrationContractError(`Лимит выгрузки должен быть от 1 до ${maximumCampaignExports}`);
+    }
+    return this.repository.createCampaign({
+      targetId: input.targetId,
+      actor,
+      preflightWindow,
+      ...(input.maxExports === undefined ? {} : { maxExports: input.maxExports }),
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+    });
+  }
+
+  pauseCampaign(campaignId: EntityId) {
+    return this.repository.setCampaignStatus({ campaignId, status: "paused" });
+  }
+
+  resumeCampaign(campaignId: EntityId) {
+    return this.repository.setCampaignStatus({ campaignId, status: "running" });
+  }
+
+  async tickCampaign(): Promise<boolean> {
+    const campaign = await this.repository.getRunningCampaign();
+    if (campaign === null) return false;
+    if (campaign.failedCount > campaign.acknowledgedFailedCount) {
+      await this.repository.setCampaignStatus({
+        campaignId: campaign.id,
+        status: "paused",
+        error: "Выгрузка остановлена после ошибки товара. Проверьте журнал и возобновите вручную.",
+      });
+      return true;
+    }
+    const exportActive = campaign.pendingCount + campaign.runningCount;
+    const limitReached = campaign.maxExports !== null && campaign.itemCount >= campaign.maxExports;
+    if (limitReached && exportActive === 0) {
+      await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
+      return true;
+    }
+
+    let queuedExport = false;
+    if (exportActive === 0 && !limitReached) {
+      const candidates = await this.repository.listExportCandidates({
+        targetId: campaign.targetId,
+        filter: { status: "ready", operation: "update", riskLevel: "none" },
+        limit: 1,
+      });
+      const candidate = candidates[0];
+      if (candidate !== undefined) {
+        if (candidate.willCreate || candidate.riskLevel !== "none") {
+          throw new IntegrationContractError("Кампания получила товар вне безопасного фильтра");
+        }
+        await this.repository.createBatch({
+          targetId: campaign.targetId,
+          filter: { status: "ready", operation: "update", riskLevel: "none" },
+          actor: campaign.actor,
+          reason: campaign.reason ?? `Безопасная выгрузка #${campaign.id}`,
+          candidates: [candidate],
+          campaignId: campaign.id,
+        });
+        queuedExport = true;
+      }
+    }
+
+    const activePreflights = await this.repository.countActivePreflights(campaign.targetId);
+    let queuedPreflights = 0;
+    if (activePreflights < campaign.preflightWindow && !limitReached) {
+      const result = await this.enqueuePreflights({
+        targetId: campaign.targetId,
+        limit: campaign.preflightWindow - activePreflights,
+      });
+      queuedPreflights = result.queuedCount;
+    }
+
+    if (!queuedExport && exportActive === 0 && queuedPreflights === 0) {
+      const refreshedActive = await this.repository.countActivePreflights(campaign.targetId);
+      if (refreshedActive === 0) {
+        const remaining = await this.repository.listExportCandidates({
+          targetId: campaign.targetId,
+          filter: { status: "ready", operation: "update", riskLevel: "none" },
+          limit: 1,
+        });
+        if (remaining.length === 0) {
+          await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
+        }
+      }
+    }
+    return queuedExport || queuedPreflights > 0;
   }
 }

@@ -7,7 +7,7 @@ import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/in
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
-import { ClassifierAdminService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
+import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -75,6 +75,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const classifier = new ProductClassifier(repositories.classifications);
   const targetMappings = new TargetReferenceMappingService(repositories.references);
   const exportControl = new PostgresExportControlRepository(pool);
+  const exportCampaigns = new ExportControlService(exportControl, repositories.jobs);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
   const operationPipeline = new ProductOperationPipeline(
     operations,
@@ -151,6 +152,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         classificationApplyConcurrency: settings.classificationApplyConcurrency,
       };
     },
+    exportCampaigns,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
     sourceRefresher, exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };

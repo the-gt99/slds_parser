@@ -31,6 +31,7 @@ export type WorkerSleep = (milliseconds: number, signal: AbortSignal) => Promise
 export type WorkerLogger = (message: string) => void;
 export type WorkerClaimPermitProvider = (jobTypes: readonly JobType[]) => Promise<WorkerClaimPermit | null>;
 export type WorkerConcurrencyProvider = () => Promise<WorkerConcurrency>;
+export interface ExportCampaignCoordinator { tickCampaign(): Promise<boolean> }
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -57,7 +58,8 @@ export class Worker {
     private readonly currentTime: () => number = Date.now,
     private readonly logError: WorkerLogger = console.error,
     private readonly claimPermit?: WorkerClaimPermitProvider,
-    private readonly concurrencyProvider?: WorkerConcurrencyProvider) {}
+    private readonly concurrencyProvider?: WorkerConcurrencyProvider,
+    private readonly exportCampaigns?: ExportCampaignCoordinator) {}
 
   async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
     const permit = this.claimPermit === undefined ? undefined : await this.claimPermit(jobTypes ?? []);
@@ -141,10 +143,22 @@ export class Worker {
         ...Array.from({ length: configuredConcurrency.classificationApplyConcurrency }, (_, index) =>
           this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
+        ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);
       stop();
+    }
+  }
+
+  private async runExportCampaignLane(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
+      try {
+        await this.exportCampaigns!.tickCampaign();
+      } catch (error) {
+        this.logError(`Export campaign tick failed: ${errorText(error)}`);
+      }
+      if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
   }
 

@@ -197,6 +197,35 @@ function ignoreUnmappedSizeVariants(config: JsonObject): boolean {
   return value;
 }
 
+function maximumVariantPriceRatio(config: JsonObject): bigint | null {
+  const value = config.maxVariantPriceRatio;
+  if (value === undefined) return null;
+  if (!Number.isSafeInteger(value) || Number(value) < 2 || Number(value) > 100) {
+    throw new IntegrationContractError("target.config.maxVariantPriceRatio must be an integer from 2 to 100");
+  }
+  return BigInt(Number(value));
+}
+
+function assertSafeVariantPriceSpread(variants: readonly ProductVariantDTO[], ratio: bigint | null): void {
+  if (ratio === null) return;
+  const prices = variants
+    .filter((variant) => variant.inventory.availability === "available" && variant.price !== null)
+    .map((variant) => {
+      if (variant.price!.currency.toUpperCase() !== "USD") {
+        throw new IntegrationContractError(`WordPress pricing supports USD only: ${variant.price!.currency}`);
+      }
+      return { variant, minor: BigInt(moneyToMinorUnits(variant.price!.amount)) };
+    });
+  if (prices.length < 2) return;
+  const minimum = prices.reduce((value, item) => item.minor < value ? item.minor : value, prices[0]!.minor);
+  const outliers = prices.filter((item) => item.minor > minimum * ratio);
+  if (outliers.length === 0) return;
+  const examples = outliers.slice(0, 5).map(({ variant }) => `${variant.size.displayValue}: $${variant.price!.amount}`).join(", ");
+  throw new IntegrationContractError(
+    `WordPress export blocked by variant price spread x${ratio}: minimum $${prices.find((item) => item.minor === minimum)!.variant.price!.amount}; ${examples}`,
+  );
+}
+
 function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
   return error instanceof IntegrationContractError
     && (error.message.startsWith("WordPress size mapping is missing:")
@@ -708,6 +737,11 @@ async function buildWordPressPayload(
   if (resolvedVariations.length === 0) {
     throw new IntegrationContractError("WordPress export has no variants with mapped sizes");
   }
+  const resolvedSourceKeys = new Set(resolvedVariations.map((variation) => String(variation.payload.source_variant_key)));
+  assertSafeVariantPriceSpread(
+    outputVariants.filter((variant) => resolvedSourceKeys.has(variant.sourceVariantKey)),
+    maximumVariantPriceRatio(context.target.config),
+  );
   const variations = resolvedVariations.map((variation) => variation.payload);
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
@@ -801,7 +835,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.11.0";
+  readonly version = "1.12.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

@@ -4,6 +4,8 @@ import type {
   CachedExportControlPreflight,
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
+  ExportCampaignItemRecord,
+  ExportCampaignRecord,
   ExportControlExportCandidate,
   ExportControlFilter,
   ExportControlListItem,
@@ -39,6 +41,46 @@ function nullableTimestamp(row: DatabaseRow, key: string): string | null {
 function flags(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
+
+function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
+  return {
+    id: text(row, "id"),
+    targetId: text(row, "target_id"),
+    status: text(row, "status") as ExportCampaignRecord["status"],
+    actor: text(row, "actor"),
+    reason: nullableText(row, "reason"),
+    preflightWindow: Number(row.preflight_window),
+    maxExports: row.max_exports === null || row.max_exports === undefined ? null : Number(row.max_exports),
+    itemCount: Number(row.item_count ?? 0),
+    pendingCount: Number(row.pending_count ?? 0),
+    runningCount: Number(row.running_count ?? 0),
+    completedCount: Number(row.completed_count ?? 0),
+    failedCount: Number(row.failed_count ?? 0),
+    acknowledgedFailedCount: Number(row.acknowledged_failed_count ?? 0),
+    activePreflightCount: Number(row.active_preflight_count ?? 0),
+    lastError: nullableText(row, "last_error"),
+    createdAt: timestamp(row, "created_at"),
+    updatedAt: timestamp(row, "updated_at"),
+    pausedAt: nullableTimestamp(row, "paused_at"),
+    completedAt: nullableTimestamp(row, "completed_at"),
+  };
+}
+
+const campaignProgressSql = `
+  SELECT campaign.*,
+         COUNT(item.id)::INT AS item_count,
+         COUNT(item.id) FILTER (WHERE job.status IN ('pending', 'retry'))::INT AS pending_count,
+         COUNT(item.id) FILTER (WHERE job.status = 'running')::INT AS running_count,
+         COUNT(item.id) FILTER (WHERE job.status = 'completed')::INT AS completed_count,
+         COUNT(item.id) FILTER (WHERE job.status = 'failed')::INT AS failed_count,
+         (SELECT COUNT(*)::INT FROM jobs preflight
+          WHERE preflight.job_type = 'preflight_product'
+            AND preflight.status IN ('pending', 'running', 'retry')
+            AND preflight.payload->>'targetId' = campaign.target_id::TEXT) AS active_preflight_count
+  FROM target_export_campaigns campaign
+  LEFT JOIN target_export_batches batch ON batch.campaign_id = campaign.id
+  LEFT JOIN target_export_batch_items item ON item.batch_id = batch.id
+  LEFT JOIN jobs job ON job.id = item.job_id`;
 
 const effectiveStatusSql = `CASE
   WHEN review.status = 'checking' THEN 'checking'
@@ -549,6 +591,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     readonly actor: string;
     readonly reason?: string;
     readonly candidates: readonly ExportControlExportCandidate[];
+    readonly campaignId?: EntityId;
   }): Promise<{
     readonly batchId: EntityId;
     readonly items: readonly ExportControlBatchItemRecord[];
@@ -557,9 +600,9 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     if (input.candidates.length === 0) throw new IntegrationContractError("Нет готовых товаров для экспорта");
     return transaction(this.pool, async (client) => {
       const batch = await client.query<DatabaseRow>(
-        `INSERT INTO target_export_batches (target_id, filter, actor, reason)
-         VALUES ($1, $2::JSONB, $3, $4) RETURNING id`,
-        [input.targetId, JSON.stringify(input.filter), input.actor, input.reason ?? null],
+        `INSERT INTO target_export_batches (target_id, filter, actor, reason, campaign_id)
+         VALUES ($1, $2::JSONB, $3, $4, $5) RETURNING id`,
+        [input.targetId, JSON.stringify(input.filter), input.actor, input.reason ?? null, input.campaignId ?? null],
       );
       const batchId = text(batch.rows[0]!, "id");
       const reviewIds = input.candidates.map((item) => item.reviewId);
@@ -688,16 +731,153 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        LEFT JOIN target_export_batch_items item ON item.batch_id = selected.id
        LEFT JOIN jobs job ON job.id = item.job_id
        GROUP BY selected.id, selected.target_id, selected.filter, selected.actor,
-                selected.reason, selected.created_at
+                selected.reason, selected.created_at, selected.campaign_id
        ORDER BY selected.created_at DESC, selected.id DESC`,
       [targetId, limit],
     );
     return result.rows.map((row) => ({
       id: text(row, "id"), targetId: text(row, "target_id"), actor: text(row, "actor"),
       reason: nullableText(row, "reason"), createdAt: timestamp(row, "created_at"),
+      campaignId: nullableText(row, "campaign_id"),
       itemCount: Number(row.item_count), pendingCount: Number(row.pending_count),
       runningCount: Number(row.running_count), completedCount: Number(row.completed_count),
       failedCount: Number(row.failed_count),
     }));
+  }
+
+  async createCampaign(input: {
+    readonly targetId: EntityId;
+    readonly actor: string;
+    readonly reason?: string;
+    readonly preflightWindow: number;
+    readonly maxExports?: number;
+  }): Promise<ExportCampaignRecord> {
+    try {
+      const result = await queryPool<DatabaseRow>(this.pool,
+        `WITH inserted AS (
+           INSERT INTO target_export_campaigns (target_id, actor, reason, preflight_window, max_exports)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *
+         )
+         ${campaignProgressSql.replace("FROM target_export_campaigns campaign", "FROM inserted campaign")}
+         GROUP BY campaign.id, campaign.target_id, campaign.status, campaign.actor, campaign.reason,
+                  campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
+                  campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at`,
+        [input.targetId, input.actor, input.reason ?? null, input.preflightWindow, input.maxExports ?? null],
+      );
+      return mapCampaign(result.rows[0]!);
+    } catch (error) {
+      if (error !== null && typeof error === "object" && "code" in error && error.code === "23505") {
+        throw new IntegrationContractError("Для этого target уже запущена выгрузка; сначала остановите её", { cause: error });
+      }
+      throw error;
+    }
+  }
+
+  async listCampaigns(targetId: EntityId, limit: number): Promise<readonly ExportCampaignRecord[]> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `${campaignProgressSql}
+       WHERE campaign.target_id = $1
+       GROUP BY campaign.id
+       ORDER BY campaign.created_at DESC, campaign.id DESC
+       LIMIT $2`,
+      [targetId, limit],
+    );
+    return result.rows.map(mapCampaign);
+  }
+
+  async getRunningCampaign(): Promise<ExportCampaignRecord | null> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `${campaignProgressSql}
+       WHERE campaign.status = 'running'
+       GROUP BY campaign.id
+       ORDER BY campaign.created_at, campaign.id
+       LIMIT 1`,
+    );
+    return result.rows[0] === undefined ? null : mapCampaign(result.rows[0]);
+  }
+
+  async setCampaignStatus(input: {
+    readonly campaignId: EntityId;
+    readonly status: "running" | "paused" | "completed";
+    readonly error?: string;
+  }): Promise<ExportCampaignRecord> {
+    return transaction(this.pool, async (client) => {
+      if (input.status === "running") {
+        const current = await client.query<DatabaseRow>(
+          "SELECT target_id FROM target_export_campaigns WHERE id = $1 FOR UPDATE",
+          [input.campaignId],
+        );
+        if (current.rows[0] === undefined) throw new IntegrationContractError("Кампания выгрузки не найдена");
+      }
+      const updated = await client.query<DatabaseRow>(
+        `UPDATE target_export_campaigns
+         SET status = $2,
+             last_error = CASE WHEN $2 = 'running' THEN NULL ELSE COALESCE($3, last_error) END,
+             acknowledged_failed_count = CASE WHEN $2 = 'running' THEN (
+               SELECT COUNT(*)::INT
+               FROM target_export_batches batch
+               JOIN target_export_batch_items item ON item.batch_id = batch.id
+               JOIN jobs job ON job.id = item.job_id
+               WHERE batch.campaign_id = target_export_campaigns.id AND job.status = 'failed'
+             ) ELSE acknowledged_failed_count END,
+             paused_at = CASE WHEN $2 = 'paused' THEN NOW() ELSE paused_at END,
+             completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE NULL END,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [input.campaignId, input.status, input.error ?? null],
+      );
+      if (updated.rows[0] === undefined) throw new IntegrationContractError("Кампания выгрузки не найдена");
+      const result = await client.query<DatabaseRow>(
+        `${campaignProgressSql}
+         WHERE campaign.id = $1
+         GROUP BY campaign.id`,
+        [input.campaignId],
+      );
+      return mapCampaign(result.rows[0]!);
+    });
+  }
+
+  async listCampaignItems(campaignId: EntityId, limit: number): Promise<readonly ExportCampaignItemRecord[]> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT item.id, item.batch_id, item.source_product_id, item.internal_product_id,
+              review.title, COALESCE(product.external_id, item.approved_external_id) AS wordpress_external_id,
+              job.status, job.created_at, job.finished_at, job.last_error
+       FROM target_export_batch_items item
+       JOIN target_export_batches batch ON batch.id = item.batch_id
+       JOIN target_product_preflight_reviews review ON review.id = item.preflight_review_id
+       LEFT JOIN target_products product
+         ON product.target_id = item.target_id AND product.internal_product_id = item.internal_product_id
+       JOIN jobs job ON job.id = item.job_id
+       WHERE batch.campaign_id = $1
+       ORDER BY item.id DESC
+       LIMIT $2`,
+      [campaignId, limit],
+    );
+    return result.rows.map((row) => ({
+      id: text(row, "id"),
+      batchId: text(row, "batch_id"),
+      sourceProductId: text(row, "source_product_id"),
+      internalProductId: text(row, "internal_product_id"),
+      title: text(row, "title"),
+      wordpressExternalId: nullableText(row, "wordpress_external_id"),
+      status: text(row, "status") as ExportCampaignItemRecord["status"],
+      createdAt: timestamp(row, "created_at"),
+      finishedAt: nullableTimestamp(row, "finished_at"),
+      error: nullableText(row, "last_error"),
+    }));
+  }
+
+  async countActivePreflights(targetId: EntityId): Promise<number> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT COUNT(*)::INT AS count
+       FROM jobs
+       WHERE job_type = 'preflight_product'
+         AND status IN ('pending', 'running', 'retry')
+         AND payload->>'targetId' = $1::TEXT`,
+      [targetId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
   }
 }

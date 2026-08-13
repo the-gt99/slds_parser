@@ -54,6 +54,13 @@ export class PostgresJobRepository implements JobRepository {
              WHERE application_job.job_type = 'apply_target_classification_suggestion'
                AND application_job.status IN ('pending', 'running', 'retry')
            ))
+           AND (jobs.job_type <> 'export_product' OR NOT EXISTS (
+             SELECT 1
+             FROM target_export_batch_items campaign_item
+             JOIN target_export_batches campaign_batch ON campaign_batch.id = campaign_item.batch_id
+             JOIN target_export_campaigns campaign ON campaign.id = campaign_batch.campaign_id
+             WHERE campaign_item.job_id = jobs.id AND campaign.status <> 'running'
+           ))
          ORDER BY locked_at, id
          FOR UPDATE SKIP LOCKED
          LIMIT 1
@@ -82,6 +89,13 @@ export class PostgresJobRepository implements JobRepository {
              SELECT 1 FROM jobs application_job
              WHERE application_job.job_type = 'apply_target_classification_suggestion'
                AND application_job.status IN ('pending', 'running', 'retry')
+           ))
+           AND (jobs.job_type <> 'export_product' OR NOT EXISTS (
+             SELECT 1
+             FROM target_export_batch_items campaign_item
+             JOIN target_export_batches campaign_batch ON campaign_batch.id = campaign_item.batch_id
+             JOIN target_export_campaigns campaign ON campaign.id = campaign_batch.campaign_id
+             WHERE campaign_item.job_id = jobs.id AND campaign.status <> 'running'
            ))
          ORDER BY available_at, id
          FOR UPDATE SKIP LOCKED

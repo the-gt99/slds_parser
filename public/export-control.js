@@ -10,6 +10,7 @@ const state = {
   summary: null,
   refreshTimer: null,
   maintenanceRunning: false,
+  campaignTimer: null,
 };
 
 async function api(url, options = {}) {
@@ -60,6 +61,10 @@ function statusLabel(value) {
 
 function jobLabel(value) {
   return ({ pending: "В очереди", retry: "Ждёт повтора", running: "Выполняется", completed: "Завершён", failed: "Ошибка" })[value] || value;
+}
+
+function campaignStatusLabel(value) {
+  return ({ running: "Работает", paused: "Остановлена", completed: "Завершена" })[value] || value;
 }
 
 function currentFilter() {
@@ -418,11 +423,113 @@ async function loadBatches() {
         element("span", "muted", `${date(batch.createdAt)} · ${batch.actor}`),
         element("span", "", `${batch.itemCount} товаров`),
         element("span", "", `очередь ${batch.pendingCount} · работа ${batch.runningCount} · готово ${batch.completedCount} · ошибки ${batch.failedCount}`),
+        ...(batch.campaignId ? [element("span", "muted", `поток #${batch.campaignId}`)] : []),
       );
       box.append(row);
     }
     if (!box.children.length) box.append(element("p", "muted", "Партии ещё не запускались."));
   } catch (error) { byId("batches").replaceChildren(element("p", "form-error", error.message)); }
+}
+
+async function loadCampaignItems(campaign, container) {
+  container.replaceChildren(element("p", "muted", "Загрузка товаров…"));
+  try {
+    const result = await api(`/api/export-control/campaigns/${encodeURIComponent(campaign.id)}/items?limit=200`);
+    container.replaceChildren();
+    for (const item of result.items || []) {
+      const row = element("div", "export-batch-row");
+      const link = element("a", "", `Товар ${item.sourceProductId} · ${item.title}`);
+      link.href = `/products/${item.sourceProductId}`;
+      row.append(
+        link,
+        element("span", "", jobLabel(item.status)),
+        element("span", "muted", item.wordpressExternalId ? `WordPress #${item.wordpressExternalId}` : "WordPress ID пока нет"),
+        element("span", "muted", date(item.finishedAt || item.createdAt)),
+      );
+      if (item.error) row.append(element("span", "form-error", item.error));
+      container.append(row);
+    }
+    if (!container.children.length) container.append(element("p", "muted", "Экспортов в этой кампании пока нет."));
+  } catch (error) {
+    container.replaceChildren(element("p", "form-error", error.message));
+  }
+}
+
+async function setCampaignStatus(campaign, action) {
+  try {
+    await api(`/api/export-control/campaigns/${encodeURIComponent(campaign.id)}/${action}`, { method: "POST", body: {} });
+    showMessage(action === "pause" ? `Выгрузка #${campaign.id} остановлена.` : `Выгрузка #${campaign.id} продолжена.`, "success");
+    await loadCampaigns();
+  } catch (error) { showMessage(error.message, "error"); }
+}
+
+async function loadCampaigns() {
+  if (!state.targetId) return;
+  if (state.campaignTimer !== null) window.clearTimeout(state.campaignTimer);
+  state.campaignTimer = null;
+  const box = byId("campaigns");
+  try {
+    const result = await api(`/api/export-control/campaigns?targetId=${encodeURIComponent(state.targetId)}&limit=10`);
+    box.replaceChildren();
+    let hasRunning = false;
+    for (const campaign of result.items || []) {
+      hasRunning ||= campaign.status === "running";
+      const wrapper = element("div", "export-batch-row");
+      wrapper.append(
+        element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`),
+        element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`),
+        element("span", "", `проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · работа ${campaign.runningCount}`),
+        element("span", "", `выгружено ${campaign.completedCount} · ошибки ${campaign.failedCount}${campaign.maxExports ? ` · лимит ${campaign.maxExports}` : ""}`),
+      );
+      if (campaign.lastError) wrapper.append(element("span", "form-error", campaign.lastError));
+      const actions = element("div", "runtime-actions");
+      const itemsButton = element("button", "button quiet", "Показать товары");
+      itemsButton.type = "button";
+      const items = element("div", "export-batches");
+      items.hidden = true;
+      itemsButton.addEventListener("click", () => {
+        items.hidden = !items.hidden;
+        itemsButton.textContent = items.hidden ? "Показать товары" : "Скрыть товары";
+        if (!items.hidden) void loadCampaignItems(campaign, items);
+      });
+      actions.append(itemsButton);
+      if (campaign.status === "running") {
+        const pause = element("button", "button secondary", "Остановить");
+        pause.type = "button";
+        pause.addEventListener("click", () => setCampaignStatus(campaign, "pause"));
+        actions.append(pause);
+      } else if (campaign.status === "paused") {
+        const resume = element("button", "button primary", "Продолжить");
+        resume.type = "button";
+        resume.addEventListener("click", () => setCampaignStatus(campaign, "resume"));
+        actions.append(resume);
+      }
+      wrapper.append(actions, items);
+      box.append(wrapper);
+    }
+    if (!box.children.length) box.append(element("p", "muted", "Массовая выгрузка ещё не запускалась."));
+    byId("start-campaign").disabled = hasRunning;
+    if (hasRunning && !document.hidden) state.campaignTimer = window.setTimeout(loadCampaigns, 5_000);
+  } catch (error) { box.replaceChildren(element("p", "form-error", error.message)); }
+}
+
+async function startCampaign() {
+  const rawLimit = byId("campaign-limit").value.trim();
+  const maxExports = rawLimit ? Number(rawLimit) : undefined;
+  const message = maxExports
+    ? `Запустить безопасную выгрузку максимум ${maxExports} товаров?`
+    : "Запустить безопасную выгрузку без общего лимита? Остановить её можно в любой момент.";
+  if (!window.confirm(message)) return;
+  try {
+    const result = await api("/api/export-control/campaigns", { method: "POST", body: {
+      targetId: state.targetId,
+      preflightWindow: Number(byId("campaign-window").value),
+      ...(maxExports === undefined ? {} : { maxExports }),
+      ...(byId("campaign-reason").value.trim() ? { reason: byId("campaign-reason").value.trim() } : {}),
+    } });
+    showMessage(`Безопасная выгрузка #${result.campaign.id} запущена.`, "success");
+    await loadCampaigns();
+  } catch (error) { showMessage(error.message, "error"); }
 }
 
 async function initialize() {
@@ -432,7 +539,7 @@ async function initialize() {
   for (const item of targets.items) byId("target").append(new Option(`${item.name}${item.enabled ? "" : " · автоэкспорт выключен"}`, item.id));
   byId("target").value = target.id;
   state.targetId = target.id;
-  await Promise.all([load(true), loadBatches()]);
+  await Promise.all([load(true), loadBatches(), loadCampaigns()]);
 }
 
 byId("login-form").addEventListener("submit", async (event) => {
@@ -447,9 +554,10 @@ byId("login-form").addEventListener("submit", async (event) => {
 });
 byId("logout-button").addEventListener("click", async () => { try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {} state.session = null; showLogin(); });
 byId("filters").addEventListener("submit", (event) => { event.preventDefault(); load(true); });
-byId("target").addEventListener("change", () => { state.targetId = byId("target").value; state.selected.clear(); Promise.all([load(true), loadBatches()]); });
-byId("refresh").addEventListener("click", () => Promise.all([load(true), loadBatches()]));
+byId("target").addEventListener("change", () => { state.targetId = byId("target").value; state.selected.clear(); Promise.all([load(true), loadBatches(), loadCampaigns()]); });
+byId("refresh").addEventListener("click", () => Promise.all([load(true), loadBatches(), loadCampaigns()]));
 byId("refresh-batches").addEventListener("click", loadBatches);
+byId("start-campaign").addEventListener("click", startCampaign);
 byId("check-next").addEventListener("click", () => enqueuePreflight());
 byId("refresh-selected").addEventListener("click", () => enqueuePreflight([...state.selected]));
 byId("select-page").addEventListener("click", () => { for (const item of state.items) state.selected.add(item.sourceProductId); updateSelection(); });

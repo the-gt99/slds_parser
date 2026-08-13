@@ -68,6 +68,36 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("blocks the whole product when an available variant exceeds the configured x5 price spread", async () => {
+    const base = context({
+      maxVariantPriceRatio: 5,
+      sizeMappings: [
+        { sourceValue: "7", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 107 },
+        { sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 },
+      ],
+    });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        variants: [
+          ...base.product.variants,
+          {
+            ...base.product.variants[0]!,
+            sourceVariantKey: "offer-8",
+            sku: "ROOT-SKU-8",
+            size: { sourceValue: "8", displayValue: "8", system: "us-numeric", audience: "men" },
+            price: { amount: "700.00", currency: "USD" },
+          },
+        ],
+      },
+    };
+
+    await expect(buildWordPressUpsertPayload(input)).rejects.toThrow(
+      "WordPress export blocked by variant price spread x5: minimum $123.45; 8: $700.00",
+    );
+  });
+
   it("builds the strict source-neutral upsert payload", async () => {
     const payload = await buildWordPressUpsertPayload(context());
     const identity = payload.identity as JsonObject;

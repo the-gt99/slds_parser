@@ -164,7 +164,10 @@ interface ExportControlBody {
   readonly limit?: unknown;
   readonly filter?: unknown;
   readonly reason?: unknown;
+  readonly preflightWindow?: unknown;
+  readonly maxExports?: unknown;
 }
+interface ExportCampaignParams { readonly campaignId: string }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -1256,6 +1259,60 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     async (request) => ({ items: await exportControlService().listBatches(
       entityId(request.query.targetId, "targetId"),
       positiveInteger(request.query.limit, 20, 100),
+    ) }),
+  );
+
+  server.get<{ Querystring: { readonly targetId?: string; readonly limit?: string } }>(
+    "/api/export-control/campaigns",
+    { preHandler: requireAdmin },
+    async (request) => ({ items: await exportControlService().listCampaigns(
+      entityId(request.query.targetId, "targetId"),
+      positiveInteger(request.query.limit, 10, 50),
+    ) }),
+  );
+
+  server.post<{ Body: ExportControlBody }>(
+    "/api/export-control/campaigns",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const preflightWindow = positiveInteger(
+        request.body?.preflightWindow === undefined ? undefined : String(request.body.preflightWindow),
+        100,
+        100,
+      );
+      const maxExports = request.body?.maxExports === undefined || request.body.maxExports === ""
+        ? undefined
+        : positiveInteger(String(request.body.maxExports), 0, 200_000);
+      if (preflightWindow === 0) throw new HttpInputError("preflightWindow must be positive");
+      if (maxExports === 0) throw new HttpInputError("maxExports must be positive");
+      const reason = optionalString(request.body?.reason);
+      return { campaign: await exportControlService().startCampaign({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        preflightWindow,
+        ...(maxExports === undefined ? {} : { maxExports }),
+        ...(reason === undefined ? {} : { reason }),
+      }, actor(request)) };
+    },
+  );
+
+  server.post<{ Params: ExportCampaignParams }>(
+    "/api/export-control/campaigns/:campaignId/pause",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ campaign: await exportControlService().pauseCampaign(entityId(request.params.campaignId, "campaignId")) }),
+  );
+
+  server.post<{ Params: ExportCampaignParams }>(
+    "/api/export-control/campaigns/:campaignId/resume",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ campaign: await exportControlService().resumeCampaign(entityId(request.params.campaignId, "campaignId")) }),
+  );
+
+  server.get<{ Params: ExportCampaignParams; Querystring: { readonly limit?: string } }>(
+    "/api/export-control/campaigns/:campaignId/items",
+    { preHandler: requireAdmin },
+    async (request) => ({ items: await exportControlService().listCampaignItems(
+      entityId(request.params.campaignId, "campaignId"),
+      positiveInteger(request.query.limit, 100, 500),
     ) }),
   );
 

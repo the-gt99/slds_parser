@@ -37,6 +37,17 @@
       </div>
     </section>
 
+    <section class="section export-batches-section">
+      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Безопасная массовая выгрузка</h2><p class="muted">Проверяет товары окном, записывает строго по одному и только обновления с риском «без опасных изменений». При первой ошибке автоматически останавливается.</p></div></div>
+      <div class="runtime-actions">
+        <label class="field compact-field"><span>Окно preflight</span><select id="campaign-window"><option>25</option><option>50</option><option selected>100</option></select></label>
+        <label class="field compact-field"><span>Лимит товаров</span><input id="campaign-limit" type="number" min="1" max="200000" placeholder="без лимита"></label>
+        <label class="field"><span>Комментарий</span><input id="campaign-reason" maxlength="300" placeholder="Безопасная массовая выгрузка"></label>
+        <button id="start-campaign" class="button primary" type="button">Запустить</button>
+      </div>
+      <div id="campaigns" class="export-batches"></div>
+    </section>
+
     <section class="export-readiness-summary" aria-label="Готовность товаров к экспорту">
       <article class="export-readiness-card primary"><span>Можно экспортировать</span><strong id="summary-exportable">—</strong><small>актуальный preflight, нет активного экспорта</small></article>
       <article class="export-readiness-card"><span>Готовы</span><strong id="summary-ready">—</strong><small>успешно прошли preflight</small></article>

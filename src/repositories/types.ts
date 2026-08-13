@@ -921,12 +921,50 @@ export interface ExportControlBatchRecord {
   readonly runningCount: number;
   readonly completedCount: number;
   readonly failedCount: number;
+  readonly campaignId: EntityId | null;
 }
 
 export interface ExportControlBatchItemRecord {
   readonly id: EntityId;
   readonly sourceProductId: EntityId;
   readonly internalProductId: EntityId;
+}
+
+export type ExportCampaignStatus = "running" | "paused" | "completed";
+
+export interface ExportCampaignRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly status: ExportCampaignStatus;
+  readonly actor: string;
+  readonly reason: string | null;
+  readonly preflightWindow: number;
+  readonly maxExports: number | null;
+  readonly itemCount: number;
+  readonly pendingCount: number;
+  readonly runningCount: number;
+  readonly completedCount: number;
+  readonly failedCount: number;
+  readonly acknowledgedFailedCount: number;
+  readonly activePreflightCount: number;
+  readonly lastError: string | null;
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+  readonly pausedAt: Timestamp | null;
+  readonly completedAt: Timestamp | null;
+}
+
+export interface ExportCampaignItemRecord {
+  readonly id: EntityId;
+  readonly batchId: EntityId;
+  readonly sourceProductId: EntityId;
+  readonly internalProductId: EntityId;
+  readonly title: string;
+  readonly wordpressExternalId: string | null;
+  readonly status: JobStatus;
+  readonly createdAt: Timestamp;
+  readonly finishedAt: Timestamp | null;
+  readonly error: string | null;
 }
 
 export interface ClassificationReviewExamplesQuery {

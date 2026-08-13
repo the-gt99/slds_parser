@@ -2,6 +2,8 @@ import type { EntityId, JsonObject } from "../contracts/index.js";
 import type {
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
+  ExportCampaignItemRecord,
+  ExportCampaignRecord,
   CachedExportControlPreflight,
   ExportControlExportCandidate,
   ExportControlFilter,
@@ -38,10 +40,27 @@ export interface ExportControlRepository {
     readonly actor: string;
     readonly reason?: string;
     readonly candidates: readonly ExportControlExportCandidate[];
+    readonly campaignId?: EntityId;
   }): Promise<{
     readonly batchId: EntityId;
     readonly items: readonly ExportControlBatchItemRecord[];
     readonly jobIds: readonly EntityId[];
   }>;
   listBatches(targetId: EntityId, limit: number): Promise<readonly ExportControlBatchRecord[]>;
+  createCampaign(input: {
+    readonly targetId: EntityId;
+    readonly actor: string;
+    readonly reason?: string;
+    readonly preflightWindow: number;
+    readonly maxExports?: number;
+  }): Promise<ExportCampaignRecord>;
+  listCampaigns(targetId: EntityId, limit: number): Promise<readonly ExportCampaignRecord[]>;
+  getRunningCampaign(): Promise<ExportCampaignRecord | null>;
+  setCampaignStatus(input: {
+    readonly campaignId: EntityId;
+    readonly status: "running" | "paused" | "completed";
+    readonly error?: string;
+  }): Promise<ExportCampaignRecord>;
+  listCampaignItems(campaignId: EntityId, limit: number): Promise<readonly ExportCampaignItemRecord[]>;
+  countActivePreflights(targetId: EntityId): Promise<number>;
 }
