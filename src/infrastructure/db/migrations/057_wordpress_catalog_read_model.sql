@@ -6,38 +6,38 @@ AS $$
   SELECT COALESCE(ARRAY(
     SELECT DISTINCT flag
     FROM (
-      SELECT 'field:' || field->>'field' AS flag
-      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'fields', '[]'::JSONB)) field
-      WHERE field->>'changed' = 'true'
+      SELECT 'field:' || field_item.value->>'field' AS flag
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'fields', '[]'::JSONB)) AS field_item(value)
+      WHERE field_item.value->>'changed' = 'true'
 
       UNION ALL
 
-      SELECT 'taxonomy:' || taxonomy->>'taxonomy'
-      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) taxonomy
-      WHERE taxonomy->>'changed' = 'true'
+      SELECT 'taxonomy:' || taxonomy_item.value->>'taxonomy'
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
+      WHERE taxonomy_item.value->>'changed' = 'true'
 
       UNION ALL
 
-      SELECT 'taxonomy_added:' || taxonomy->>'taxonomy'
-      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) taxonomy
-      WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy->'added', '[]'::JSONB)) > 0
+      SELECT 'taxonomy_added:' || taxonomy_item.value->>'taxonomy'
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
+      WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'added', '[]'::JSONB)) > 0
 
       UNION ALL
 
-      SELECT 'taxonomy_removed:' || taxonomy->>'taxonomy'
-      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) taxonomy
-      WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy->'removed', '[]'::JSONB)) > 0
+      SELECT 'taxonomy_removed:' || taxonomy_item.value->>'taxonomy'
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
+      WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'removed', '[]'::JSONB)) > 0
 
       UNION ALL SELECT 'term_added'
       WHERE EXISTS (
-        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) taxonomy
-        WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy->'added', '[]'::JSONB)) > 0
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
+        WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'added', '[]'::JSONB)) > 0
       )
 
       UNION ALL SELECT 'term_removed'
       WHERE EXISTS (
-        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) taxonomy
-        WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy->'removed', '[]'::JSONB)) > 0
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
+        WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'removed', '[]'::JSONB)) > 0
       )
 
       UNION ALL SELECT 'images'
@@ -50,15 +50,15 @@ AS $$
       UNION ALL SELECT 'variation:price'
       WHERE JSONB_ARRAY_LENGTH(COALESCE(result->'variations'->'after', '[]'::JSONB)) > 0
          OR EXISTS (
-        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'variations'->'items', '[]'::JSONB)) variation
-        WHERE variation->>'price_managed' = 'true'
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'variations'->'items', '[]'::JSONB)) AS variation_item(value)
+        WHERE variation_item.value->>'price_managed' = 'true'
       )
 
       UNION ALL SELECT 'variation:stock'
       WHERE JSONB_ARRAY_LENGTH(COALESCE(result->'variations'->'after', '[]'::JSONB)) > 0
          OR EXISTS (
-        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'variations'->'items', '[]'::JSONB)) variation
-        WHERE variation->>'stock_changed' = 'true'
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'variations'->'items', '[]'::JSONB)) AS variation_item(value)
+        WHERE variation_item.value->>'stock_changed' = 'true'
       )
 
       UNION ALL SELECT 'variations'
