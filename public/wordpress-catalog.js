@@ -75,18 +75,17 @@ function termName(row, id) {
 }
 
 function changeSummary(item) {
-  const audit = asObject(item.auditResult);
   const result = node("div", "catalog-change-summary");
-  for (const field of asArray(audit.fields).filter((row) => row.changed).slice(0, 4)) result.append(badge(fieldLabels[field.field] || field.field, "change"));
-  for (const row of asArray(audit.taxonomies).filter((value) => value.changed).slice(0, 5)) {
-    const added = asArray(row.added).map((id) => termName(row, id));
-    const removed = asArray(row.removed).map((id) => termName(row, id));
-    const text = `${taxonomyName(row.taxonomy)}${added.length ? ` +${added.join(", ")}` : ""}${removed.length ? ` −${removed.join(", ")}` : ""}`;
-    result.append(badge(text, removed.length ? "danger" : "add"));
+  const flags = new Set(asArray(item.changeFlags));
+  for (const flag of flags) {
+    if (flag.startsWith("field:")) result.append(badge(fieldLabels[flag.slice(6)] || flag.slice(6), "change"));
+    else if (flag.startsWith("taxonomy_removed:")) result.append(badge(`${taxonomyName(flag.slice(17))}: удаление`, "danger"));
+    else if (flag.startsWith("taxonomy_added:")) result.append(badge(`${taxonomyName(flag.slice(15))}: добавление`, "add"));
+    else if (flag === "images") result.append(badge("Изображения", "change"));
+    else if (flag === "variation:size") result.append(badge("Состав размеров", "danger"));
+    else if (flag === "variation:price") result.append(badge("Цена пересчитается", "change"));
+    else if (flag === "variation:stock") result.append(badge("Остаток синхронизируется", "change"));
   }
-  if (audit.images?.changed) result.append(badge("Изображения", "change"));
-  if (asArray(audit.variations?.added).length) result.append(badge(`Размеры +${audit.variations.added.length}`, "add"));
-  if (asArray(audit.variations?.removed).length) result.append(badge(`Размеры −${audit.variations.removed.length}`, "danger"));
   if (!result.children.length && item.auditStatus === "ready") result.append(badge("Изменений нет", "safe"));
   return result;
 }
@@ -117,8 +116,8 @@ function renderItem(item) {
   heading.append(titleBox, statuses);
   main.append(heading, changeSummary(item));
   if (item.auditError) main.append(node("p", "form-error", item.auditError));
-  const blockers = asArray(item.auditResult?.blockers);
-  if (blockers.length) { const list = node("ul", "export-blockers"); blockers.forEach((blocker) => list.append(node("li", "", blocker.message || blocker.code || String(blocker)))); main.append(list); }
+  if (item.auditStatus === "blocked" && !item.auditError) main.append(node("p", "form-error", "Не выполнены требования экспорта. Точная причина показана в полном diff."));
+  if (item.variationError) main.append(node("p", "form-error", item.variationError));
 
   const footer = node("div", "export-card-footer");
   const freshness = node("div", "catalog-freshness");

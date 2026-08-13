@@ -78,13 +78,10 @@ export interface WordPressCatalogRunItemSummaryRecord {
   readonly wordpressImageCount: number;
   readonly auditStatus: string;
   readonly auditRisk: string | null;
-  readonly auditResult: JsonObject | null;
   readonly auditError: string | null;
   readonly changeFlags: readonly string[];
   readonly variationStatus: string;
-  readonly variationNotices: readonly JsonObject[];
   readonly wordpressJobId: string | null;
-  readonly variationResult: JsonObject | null;
   readonly variationError: string | null;
   readonly snapshotFetchedAt: string;
   readonly variationCheckedAt: string | null;
