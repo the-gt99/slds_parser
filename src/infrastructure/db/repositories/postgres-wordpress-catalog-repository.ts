@@ -178,6 +178,16 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       parameters.push(input.matchStatus);
       where.push(`item.match_status = $${parameters.length}`);
     }
+    if (input.variationFilter === "not_started") {
+      where.push("item.variation_status = 'skipped' AND item.variation_checked_at IS NULL");
+    } else if (input.variationFilter === "in_progress") {
+      where.push("item.variation_status IN ('pending', 'refreshing', 'ready', 'submitted')");
+    } else if (input.variationFilter === "skipped") {
+      where.push("item.variation_status = 'skipped' AND item.variation_checked_at IS NOT NULL");
+    } else if (input.variationFilter !== undefined) {
+      parameters.push(input.variationFilter);
+      where.push(`item.variation_status = $${parameters.length}`);
+    }
     parameters.push(input.limit, input.offset);
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT item.*, snapshot.payload, snapshot.fetched_at, COUNT(*) OVER()::BIGINT AS total

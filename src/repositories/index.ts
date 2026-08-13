@@ -13,6 +13,7 @@ export type {
   WordPressCatalogRunRecord,
   WordPressCatalogRunStatus,
   WordPressCatalogVariationCandidate,
+  WordPressCatalogVariationFilter,
 } from "./wordpress-catalog-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";
 export type {

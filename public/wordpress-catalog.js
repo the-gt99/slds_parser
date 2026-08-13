@@ -67,7 +67,7 @@ function renderItem(item) {
 async function loadItems(append = false) {
   if (!state.run) return;
   if (!append) { state.offset = 0; byId("items").replaceChildren(); }
-  const query = new URLSearchParams({ limit: "50", offset: String(state.offset), ...(byId("match").value ? { match: byId("match").value } : {}) });
+  const query = new URLSearchParams({ limit: "50", offset: String(state.offset), ...(byId("match").value ? { match: byId("match").value } : {}), ...(byId("variation-filter").value ? { variation: byId("variation-filter").value } : {}) });
   const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/items?${query}`);
   data.items.forEach((item) => byId("items").append(renderItem(item)));
   state.offset += data.items.length;

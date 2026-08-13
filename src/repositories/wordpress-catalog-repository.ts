@@ -2,6 +2,7 @@ import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO, Univ
 
 export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "failed";
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
+export type WordPressCatalogVariationFilter = "not_started" | "in_progress" | "completed" | "skipped" | "failed";
 
 export interface WordPressCatalogRunRecord {
   readonly id: EntityId;
@@ -91,6 +92,7 @@ export interface WordPressCatalogRepository {
   listItems(input: {
     readonly runId: EntityId;
     readonly matchStatus?: WordPressCatalogMatchStatus;
+    readonly variationFilter?: WordPressCatalogVariationFilter;
     readonly limit: number;
     readonly offset: number;
   }): Promise<{ readonly items: readonly WordPressCatalogRunItemRecord[]; readonly total: number }>;

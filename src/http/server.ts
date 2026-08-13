@@ -172,7 +172,7 @@ interface ExportControlBody {
 interface ExportCampaignParams { readonly campaignId: string }
 interface WordPressCatalogRunParams { readonly runId: string }
 interface WordPressCatalogQuery { readonly targetId?: string; readonly limit?: string }
-interface WordPressCatalogItemsQuery { readonly match?: string; readonly limit?: string; readonly offset?: string }
+interface WordPressCatalogItemsQuery { readonly match?: string; readonly variation?: string; readonly limit?: string; readonly offset?: string }
 interface WordPressCatalogRunBody {
   readonly targetId?: unknown;
   readonly sourceCode?: unknown;
@@ -1263,9 +1263,14 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       if (match !== undefined && match !== "matched" && match !== "unmatched" && match !== "ambiguous") {
         throw new HttpInputError("match must be matched, unmatched or ambiguous");
       }
+      const variation = optionalString(request.query.variation);
+      if (variation !== undefined && !["not_started", "in_progress", "completed", "skipped", "failed"].includes(variation)) {
+        throw new HttpInputError("variation must be not_started, in_progress, completed, skipped or failed");
+      }
       return wordpressCatalogService().listItems({
         runId: entityId(request.params.runId, "runId"),
         ...(match === undefined ? {} : { matchStatus: match }),
+        ...(variation === undefined ? {} : { variationFilter: variation as "not_started" | "in_progress" | "completed" | "skipped" | "failed" }),
         limit: positiveInteger(request.query.limit, 50, 200),
         offset: positiveInteger(request.query.offset, 0, 1_000_000),
       });

@@ -4,6 +4,7 @@ import type {
   TargetRepository,
   WordPressCatalogMatchStatus,
   WordPressCatalogRepository,
+  WordPressCatalogVariationFilter,
 } from "../repositories/index.js";
 
 export class WordPressCatalogService {
@@ -45,6 +46,7 @@ export class WordPressCatalogService {
   async listItems(input: {
     readonly runId: string;
     readonly matchStatus?: WordPressCatalogMatchStatus;
+    readonly variationFilter?: WordPressCatalogVariationFilter;
     readonly limit: number;
     readonly offset: number;
   }) {
