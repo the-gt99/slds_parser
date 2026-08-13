@@ -10,7 +10,7 @@ export class WordPressCatalogSyncRunner {
   constructor(
     private readonly repository: WordPressCatalogRepository,
     private readonly client: WordPressCatalogClient,
-    private readonly pageSize = 250,
+    private readonly pageSize = 500,
   ) {}
 
   async sync(payload: SyncWordPressCatalogPayload): Promise<RunnerResult> {
