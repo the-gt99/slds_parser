@@ -72,8 +72,8 @@ AS $$
 $$;
 
 CREATE TABLE wordpress_catalog_item_read_models (
-  item_id BIGINT PRIMARY KEY REFERENCES wordpress_catalog_run_items(id) ON DELETE CASCADE,
-  run_id BIGINT NOT NULL REFERENCES wordpress_catalog_runs(id) ON DELETE CASCADE,
+  item_id BIGINT PRIMARY KEY,
+  run_id BIGINT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
   search_text TEXT NOT NULL DEFAULT '',
   image_url TEXT,
