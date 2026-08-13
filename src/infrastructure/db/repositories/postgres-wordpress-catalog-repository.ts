@@ -124,7 +124,7 @@ const runSelect = `
          ,COUNT(item.id) FILTER (WHERE item.variation_status IN ('pending', 'refreshing', 'ready'))::BIGINT AS variation_pending_count
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'submitted')::BIGINT AS variation_submitted_count
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'completed')::BIGINT AS variation_completed_count
-         ,COUNT(item.id) FILTER (WHERE item.variation_status = 'skipped')::BIGINT AS variation_skipped_count
+         ,COUNT(item.id) FILTER (WHERE item.variation_status = 'skipped' AND item.variation_checked_at IS NOT NULL)::BIGINT AS variation_skipped_count
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'failed')::BIGINT AS variation_failed_count
          ,COUNT(item.id) FILTER (WHERE item.audit_status IN ('pending', 'running'))::BIGINT AS audit_pending_count
          ,COUNT(item.id) FILTER (WHERE item.audit_status = 'ready')::BIGINT AS audit_ready_count
@@ -481,7 +481,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         `UPDATE wordpress_catalog_run_items
          SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
          WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
-           AND variation_status IN ('skipped', 'failed')
+           AND variation_status = 'skipped' AND variation_checked_at IS NULL
          RETURNING id, wordpress_product_id`,
         [runId],
       );
@@ -507,7 +507,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            SELECT id
            FROM wordpress_catalog_run_items
            WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
-             AND variation_status IN ('skipped', 'failed')
+             AND variation_status = 'skipped' AND variation_checked_at IS NULL
            ORDER BY id
            LIMIT $2
            FOR UPDATE SKIP LOCKED
