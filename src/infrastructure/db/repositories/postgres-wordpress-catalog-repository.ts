@@ -121,6 +121,7 @@ function mapItem(row: DatabaseRow): WordPressCatalogRunItemRecord {
     variationError: nullableText(row, "variation_error"),
     payload: row.payload as JsonObject,
     targetTermLabels: row.target_term_labels === null || row.target_term_labels === undefined ? {} : row.target_term_labels as JsonObject,
+    proposedImages: Array.isArray(row.proposed_images) ? row.proposed_images as JsonObject[] : [],
     fetchedAt: timestamp(row, "fetched_at"),
     variationCheckedAt: nullableTimestamp(row, "variation_checked_at"),
     updatedAt: timestamp(row, "updated_at"),
@@ -287,6 +288,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   async getItem(runId: string, itemId: string): Promise<WordPressCatalogRunItemRecord | null> {
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT item.*, snapshot.payload, snapshot.fetched_at,
+              COALESCE(internal.data->'images', '[]'::JSONB) AS proposed_images,
               COALESCE((
                 SELECT JSONB_OBJECT_AGG(dictionary.external_id, dictionary.name)
                 FROM target_dictionary_values dictionary
@@ -300,6 +302,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
        FROM wordpress_catalog_run_items item
        JOIN wordpress_catalog_runs run ON run.id = item.run_id
        JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
+       LEFT JOIN internal_products internal ON internal.id = item.internal_product_id
        WHERE item.run_id = $1 AND item.id = $2`, [runId, itemId]);
     return result.rows[0] === undefined ? null : mapItem(result.rows[0]);
   }

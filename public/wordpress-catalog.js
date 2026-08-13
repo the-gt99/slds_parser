@@ -258,7 +258,12 @@ function renderCatalogVisualDiff(item) {
   const current = asObject(item.payload?.product);
   const labels = asObject(item.targetTermLabels);
   const fields = new Map(asArray(audit.fields).map((row) => [row.field, row.after]));
-  const afterImages = asArray(audit.images?.after_items);
+  const proposedImageByHash = new Map(asArray(item.proposedImages)
+    .filter((image) => image?.contentHash && image?.url)
+    .map((image) => [String(image.contentHash), image]));
+  const afterImages = asArray(audit.images?.after_items).length
+    ? asArray(audit.images.after_items)
+    : asArray(audit.images?.after).map((hash) => proposedImageByHash.get(String(hash))).filter(Boolean);
   const afterVariations = asArray(audit.variations?.after);
   const proposed = { ...current, ...Object.fromEntries(fields), images: afterImages, variations: afterVariations };
   const wrapper = node("div", "catalog-visual-diff");

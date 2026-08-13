@@ -823,7 +823,11 @@ function safeDescriptionPreview(value) {
     preview.append(element("span", "preview-empty", "Пусто"));
     return preview;
   }
-  const documentValue = new DOMParser().parseFromString(html, "text/html");
+  // The preview never preserves HTML attributes. Remove inline styles before
+  // parsing as well, otherwise the browser reports CSP violations even though
+  // those attributes are discarded before anything is added to the page.
+  const htmlWithoutInlineStyles = html.replace(/\sstyle\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  const documentValue = new DOMParser().parseFromString(htmlWithoutInlineStyles, "text/html");
   const allowed = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "UL", "OL", "LI", "STRONG", "EM", "B", "I", "BR", "BLOCKQUOTE"]);
   const dropped = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH"]);
   const appendSafe = (source, target) => {

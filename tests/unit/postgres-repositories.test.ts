@@ -118,6 +118,17 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(count.values).not.toContain(80);
   });
 
+  it("returns locally stored proposed images with WordPress catalog item details", async () => {
+    const executor = new FakeExecutor([[]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await repository.getItem("1", "247");
+
+    expect(executor.calls[0]?.text).toContain("internal.data->'images'");
+    expect(executor.calls[0]?.text).toContain("LEFT JOIN internal_products internal");
+    expect(executor.calls[0]?.values).toEqual(["1", "247"]);
+  });
+
   it("keeps source product id typed as bigint while building preflight search text", async () => {
     const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
     const repository = new PostgresExportControlRepository(pool(executor));
