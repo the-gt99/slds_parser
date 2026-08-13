@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean; readonly preserveExistingBrands?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean; readonly preserveExistingBrands?: boolean; readonly unmappedSizeVariant?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -27,7 +27,14 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       price: { amount: "100.00", currency: "USD" },
       inventory: { availability: "available" as const },
       attributes: {},
-    }],
+    }, ...(options.unmappedSizeVariant ? [{
+      sourceVariantKey: "offer-12.5",
+      sku: "SKU-2-12.5",
+      size: { sourceValue: "12.5", displayValue: "12.5", system: "us-numeric", audience: "youth" as const },
+      price: { amount: "2463.00", currency: "USD" },
+      inventory: { availability: "available" as const },
+      attributes: {},
+    }] : [])],
     referenceCandidates: [],
     classification: {
       status: "complete" as const,
@@ -55,6 +62,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
         config: {
           requiredReferenceTypes: options.missingCategory ? ["brand", "category"] : ["brand"],
           sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }],
+          ...(options.unmappedSizeVariant ? { ignoreUnmappedSizeVariants: true } : {}),
           ...(options.preserveExistingBrands ? { preserveExistingBrandTerms: true } : {}),
           ...(options.missingCategory ? { titlePrefixByCategoryTermId: { "75": "Кроссовки" } } : {}),
         },
@@ -219,6 +227,24 @@ describe("WordPressPreviewService", () => {
     }));
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");
+  });
+
+  it("shows source variants omitted by the temporary unmapped-size policy", async () => {
+    const { service } = setup(321, "source_identity", { unmappedSizeVariant: true });
+
+    const result = await service.preview("2", "10");
+
+    expect(result.readiness).toMatchObject({
+      ready: true,
+      notices: [expect.objectContaining({ code: "unmapped_size_variants_ignored" })],
+    });
+    expect(result.proposed).toMatchObject({ sourceVariationCount: 2 });
+    expect(result.proposed?.ignoredSizeVariants).toEqual([
+      expect.objectContaining({ sourceValue: "12.5", audience: "youth" }),
+    ]);
+    expect(result.comparison?.variations).toMatchObject({
+      ignored: [expect.objectContaining({ sourceValue: "12.5" })],
+    });
   });
 
   it("marks where an automatically added landing tag came from", async () => {

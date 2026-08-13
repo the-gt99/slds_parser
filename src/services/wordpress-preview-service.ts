@@ -625,6 +625,10 @@ export class WordPressPreviewService {
         ready,
         phase: ready ? "ready" : preflightError === null ? "classification" : "payload",
         blockers: readinessBlockers,
+        ...(draft.ignoredSizeVariants.length === 0 ? {} : { notices: [{
+          code: "unmapped_size_variants_ignored",
+          message: `Временно пропущено вариантов без точного WordPress size mapping: ${draft.ignoredSizeVariants.length}.`,
+        }] }),
       },
       current: currentSummary,
       proposed: {
@@ -635,7 +639,8 @@ export class WordPressPreviewService {
         taxonomies: taxonomyRows.map((row) => ({ taxonomy: row.taxonomy, terms: row.after, managed: row.managed })),
         images: Array.isArray(product.images) ? product.images : [],
         variations: preflight?.variationPlan ?? expectedVariations,
-        sourceVariationCount: expectedVariations.length,
+        sourceVariationCount: expectedVariations.length + draft.ignoredSizeVariants.length,
+        ignoredSizeVariants: draft.ignoredSizeVariants,
         variationPricesReady: ready && variationAvailable,
       },
       comparison: {
@@ -649,12 +654,14 @@ export class WordPressPreviewService {
           actualCount: Array.isArray(current.variations) ? current.variations.length : 0,
           differences: variationResult.differences,
           deactivated: variationResult.deactivated,
+          ignored: draft.ignoredSizeVariants,
         },
       },
       payload: {
         fields: Object.fromEntries(previewFields.flatMap((field) => Object.hasOwn(effectiveProduct, field) ? [[field, effectiveProduct[field] ?? null]] : [])),
         managedFields: [...managedFields],
         taxonomies: product.taxonomies ?? {}, images: product.images ?? [], activeVariations: expectedVariations,
+        ignoredSizeVariants: draft.ignoredSizeVariants,
       },
       diff: {
         snapshotFetchedAt: snapshot?.fetchedAt ?? null,

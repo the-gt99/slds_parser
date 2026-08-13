@@ -860,6 +860,48 @@ describe("WordPressExporter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("temporarily omits unmapped size variants when the target policy explicitly allows it", async () => {
+    const base = context({ ignoreUnmappedSizeVariants: true });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        variants: [
+          ...base.product.variants,
+          {
+            sourceVariantKey: "offer-12.5",
+            sku: "ROOT-SKU-12.5",
+            size: { sourceValue: "12.5", displayValue: "12.5", system: "us-numeric", audience: "youth" },
+            price: { amount: "2463.00", currency: "USD" },
+            inventory: { availability: "available" },
+            attributes: {},
+          },
+        ],
+      },
+    };
+
+    const preview = await previewWordPressUpsertPayload(input);
+    const variations = preview.payload.variations as JsonObject;
+
+    expect(variations.items).toHaveLength(1);
+    expect(preview.ignoredSizeVariants).toEqual([expect.objectContaining({
+      sourceVariantKey: "offer-12.5",
+      sourceValue: "12.5",
+      audience: "youth",
+      price: { amount: "2463.00", currency: "USD" },
+      reason: "WordPress size mapping is missing: us-numeric/youth/12.5/12.5",
+    })]);
+  });
+
+  it("still blocks when every source variant has an unmapped size", async () => {
+    const base = context({
+      ignoreUnmappedSizeVariants: true,
+      sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }],
+    });
+
+    await expect(buildWordPressUpsertPayload(base)).rejects.toThrow("WordPress export has no variants with mapped sizes");
+  });
+
   it("blocks products without images or variants before any WordPress request", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);

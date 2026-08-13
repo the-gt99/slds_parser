@@ -85,6 +85,16 @@ export interface WordPressUpsertPreflightResult {
 export interface WordPressUpsertPayloadPreview {
   readonly payload: JsonObject;
   readonly missingRequiredReferences: readonly string[];
+  readonly ignoredSizeVariants: readonly {
+    readonly sourceVariantKey: string;
+    readonly sku: string;
+    readonly sourceValue: string;
+    readonly displayValue: string;
+    readonly system: string | null;
+    readonly audience: ProductSizeDTO["audience"] | null;
+    readonly price: JsonObject | null;
+    readonly reason: string;
+  }[];
   readonly contentContext: JsonObject;
   readonly contentTemplateSelections: Readonly<Record<WordPressContentTemplateDefinition["field"], WordPressContentTemplateSelection>>;
   readonly taxonomyOrigins: readonly {
@@ -176,6 +186,37 @@ function resolveSize(size: ProductSizeDTO, mappings: readonly SizeMapping[]): Si
   if (mapping !== null) return mapping;
   const key = [size.system ?? "", size.audience ?? "", size.sourceValue, size.displayValue].join("/");
   throw new IntegrationContractError(`WordPress size mapping is missing: ${key}`);
+}
+
+function ignoreUnmappedSizeVariants(config: JsonObject): boolean {
+  const value = config.ignoreUnmappedSizeVariants;
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new IntegrationContractError("target.config.ignoreUnmappedSizeVariants must be a boolean");
+  }
+  return value;
+}
+
+function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
+  return error instanceof IntegrationContractError
+    && (error.message.startsWith("WordPress size mapping is missing:")
+      || error.message.startsWith("WordPress size mapping is missing after conversion:"));
+}
+
+function ignoredSizeVariant(
+  variant: ProductVariantDTO,
+  reason: string,
+): WordPressUpsertPayloadPreview["ignoredSizeVariants"][number] {
+  return {
+    sourceVariantKey: variant.sourceVariantKey,
+    sku: variant.sku,
+    sourceValue: variant.size.sourceValue,
+    displayValue: variant.size.displayValue,
+    system: variant.size.system ?? null,
+    audience: variant.size.audience ?? null,
+    price: variant.price === null ? null : { amount: variant.price.amount, currency: variant.price.currency },
+    reason,
+  };
 }
 
 function mappedTargetScope(config: JsonObject, defaultScope: string): string {
@@ -339,6 +380,31 @@ async function variationPayload(
       ...(variant.inventory.quantity === undefined ? {} : { quantity: variant.inventory.quantity }),
     },
   }, size: resolvedSize.size, availability: variant.inventory.availability };
+}
+
+async function resolveVariationSet(
+  variants: readonly ProductVariantDTO[],
+  identityKey: string,
+  mappings: readonly SizeMapping[],
+  converter: WordPressSizeConverterLike | undefined,
+  conversionIdentity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
+  ignoreMissingMappings: boolean,
+): Promise<{
+  readonly resolved: readonly Awaited<ReturnType<typeof variationPayload>>[];
+  readonly ignored: WordPressUpsertPayloadPreview["ignoredSizeVariants"];
+}> {
+  const rows = await Promise.all(variants.map(async (variant) => {
+    try {
+      return { resolved: await variationPayload(variant, identityKey, mappings, converter, conversionIdentity), ignored: null };
+    } catch (error) {
+      if (!ignoreMissingMappings || !isMissingSizeMappingError(error)) throw error;
+      return { resolved: null, ignored: ignoredSizeVariant(variant, error.message) };
+    }
+  }));
+  return {
+    resolved: rows.flatMap((row) => row.resolved === null ? [] : [row.resolved]),
+    ignored: rows.flatMap((row) => row.ignored === null ? [] : [row.ignored]),
+  };
 }
 
 function classifiedValues(product: UniversalProductDTO, typeCode: string): readonly string[] {
@@ -617,6 +683,7 @@ async function buildWordPressPayload(
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
+  const ignoreMissingSizeMappings = ignoreUnmappedSizeVariants(context.target.config);
   const taxonomyResult = await taxonomyPayload(context, required, allowMissingRequired);
   const { missingRequired, taxonomyOrigins, modelTagLink, primaryBrandTermId } = taxonomyResult;
   const taxonomies = mergePreservedBrandTerms(context, taxonomyResult.taxonomies);
@@ -629,9 +696,18 @@ async function buildWordPressPayload(
   const conversionIdentity = needsConversion && converter !== undefined
     ? sizeConversionIdentity(taxonomies, context.target.config, primaryBrandTermId)
     : undefined;
-  const resolvedVariations = await Promise.all(outputVariants.map(
-    (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
-  ));
+  const outputResolution = await resolveVariationSet(
+    outputVariants,
+    externalKey,
+    mappings,
+    converter,
+    conversionIdentity,
+    ignoreMissingSizeMappings,
+  );
+  const resolvedVariations = outputResolution.resolved;
+  if (resolvedVariations.length === 0) {
+    throw new IntegrationContractError("WordPress export has no variants with mapped sizes");
+  }
   const variations = resolvedVariations.map((variation) => variation.payload);
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
@@ -640,11 +716,17 @@ async function buildWordPressPayload(
   if (targetSizes.size !== variations.length) throw new IntegrationContractError("More than one product variant resolves to the same WordPress size");
   const targetId = context.existingExternalId === undefined ? 0 : positiveInteger(context.existingExternalId, "existingExternalId");
   const title = applyWordPressTitlePolicy(context.product.title, taxonomies, context.target.config);
-  const contentVariations = context.liveVariants === undefined
-    ? resolvedVariations
-    : await Promise.all(context.product.variants.map(
-      (variant) => variationPayload(variant, externalKey, mappings, converter, conversionIdentity),
-    ));
+  const contentResolution = context.liveVariants === undefined
+    ? outputResolution
+    : await resolveVariationSet(
+      context.product.variants,
+      externalKey,
+      mappings,
+      converter,
+      conversionIdentity,
+      ignoreMissingSizeMappings,
+    );
+  const contentVariations = contentResolution.resolved;
   const contentContext = wordpressContentContext(context.product, title, contentVariations, modelTagLink);
   const contentTemplates = context.contentTemplates ?? [];
   const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
@@ -680,6 +762,10 @@ async function buildWordPressPayload(
   return {
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
+    ignoredSizeVariants: [...new Map(
+      [...outputResolution.ignored, ...contentResolution.ignored]
+        .map((variant) => [variant.sourceVariantKey, variant]),
+    ).values()],
     contentContext,
     contentTemplateSelections: content.selections,
     taxonomyOrigins,
@@ -715,7 +801,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.10.0";
+  readonly version = "1.11.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

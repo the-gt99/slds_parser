@@ -758,6 +758,11 @@ function renderReadiness(item) {
     for (const blocker of item.readiness.blockers) list.append(element("li", "", blocker.message));
     body.append(list);
   }
+  if (item.readiness?.notices?.length) {
+    const list = element("ul", "preview-notices");
+    for (const notice of item.readiness.notices) list.append(element("li", "", notice.message));
+    body.append(list);
+  }
   box.append(icon, body);
   return box;
 }
@@ -879,8 +884,25 @@ function variationStateText(value) {
 function renderVariationChanges(comparison, currentProduct) {
   const section = element("section", "preview-diff-section");
   const heading = element("div", "preview-diff-heading");
-  heading.append(element("h3", "", "Вариации и размеры"), element("span", "count-pill", `${comparison?.expectedCount || 0} после merge / ${comparison?.actualCount || 0} сейчас`));
+  const ignoredCount = comparison?.ignored?.length || 0;
+  heading.append(element("h3", "", "Вариации и размеры"), element(
+    "span",
+    "count-pill",
+    `${comparison?.expectedCount || 0} после merge / ${comparison?.actualCount || 0} сейчас${ignoredCount ? ` / ${ignoredCount} пропущено` : ""}`,
+  ));
   section.append(heading);
+  if (ignoredCount) {
+    const notice = element("div", "inline-message ignored-size-variants");
+    notice.append(element("strong", "", "Временно не передаются в WordPress:"));
+    const list = document.createElement("ul");
+    for (const variant of comparison.ignored) {
+      const context = [variant.system, variant.audience].filter(Boolean).join(" / ");
+      const price = variant.price?.amount ? ` · ${variant.price.amount} ${variant.price.currency || ""}` : "";
+      list.append(element("li", "", `${variant.displayValue || variant.sourceValue}${context ? ` (${context})` : ""}${price} — нет точного size mapping`));
+    }
+    notice.append(list);
+    section.append(notice);
+  }
   if (!comparison?.available) {
     section.append(element("p", "inline-message", "Финальные цены, остатки и отключаемые размеры появятся после устранения блокеров и успешного WordPress preflight."));
     return section;
