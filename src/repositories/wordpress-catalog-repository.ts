@@ -133,4 +133,6 @@ export interface WordPressCatalogRepository {
     readonly result?: JsonObject;
     readonly error?: string;
   }): Promise<void>;
+  enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
+  enableVariationSync(runId: EntityId): Promise<number>;
 }

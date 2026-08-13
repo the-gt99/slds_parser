@@ -52,4 +52,19 @@ export class WordPressCatalogService {
       offset: Math.max(0, input.offset),
     });
   }
+
+  async enqueueVariationCanary(runId: string, itemId: string) {
+    await this.getRun(runId);
+    const queuedCount = await this.repository.enqueueVariationItems(runId, [itemId]);
+    if (queuedCount !== 1) throw new IntegrationContractError("Товар нельзя поставить в canary: он не сопоставлен, уже выполняется или уже завершён");
+    return { queuedCount };
+  }
+
+  async enableVariationSync(runId: string) {
+    const run = await this.getRun(runId);
+    if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
+      throw new IntegrationContractError("Полный поток нельзя включить до успешного canary без ошибок");
+    }
+    return { queuedCount: await this.repository.enableVariationSync(runId) };
+  }
 }

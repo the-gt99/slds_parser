@@ -250,6 +250,7 @@ API запускается отдельным процессом после `npm
 - `GET /api/export-control/campaigns` и `/api/export-control/campaigns/:id/items` показывают состояние потока и точный список записанных/ошибочных товаров; поток можно остановить и продолжить отдельными endpoints;
 - `GET/POST /api/wordpress-catalog/runs` — история и запуск возобновляемой выгрузки полного компактного каталога WordPress в PostgreSQL;
 - `GET /api/wordpress-catalog/runs/:id/items` — сохранённые снимки, строгие результаты сопоставления, локальный аудит и состояние отдельной очереди цен/остатков;
+- `POST /api/wordpress-catalog/runs/:id/variation-canary` обновляет один выбранный товар, а `POST .../variation-sync` включает поток для уже сохранённых и следующих страниц только после успешного canary;
 - `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
 - `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
 - `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.

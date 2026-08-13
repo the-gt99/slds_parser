@@ -444,4 +444,59 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
        WHERE id = $1`,
       [input.itemId, input.status, input.result === undefined ? null : JSON.stringify(input.result), input.error ?? null]);
   }
+
+  async enqueueVariationItems(runId: string, itemIds: readonly string[]): Promise<number> {
+    if (itemIds.length === 0) return 0;
+    return transaction(this.pool, async (client) => {
+      const updated = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_run_items
+         SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
+         WHERE run_id = $1 AND id = ANY($2::BIGINT[])
+           AND match_status = 'matched' AND internal_product_id IS NOT NULL
+           AND variation_status IN ('skipped', 'failed')
+         RETURNING id, wordpress_product_id`,
+        [runId, itemIds],
+      );
+      if (updated.rows.length > 0) {
+        await client.query(
+          `INSERT INTO jobs (job_type, payload, status, unique_key)
+           SELECT 'refresh_wordpress_variation_patch',
+                  JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', value.id::TEXT, 'wordpressProductId', value.wordpress_product_id::TEXT),
+                  'pending', 'wordpress-variation-refresh:' || $1::TEXT || ':' || value.id::TEXT
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS value(id BIGINT, wordpress_product_id BIGINT)
+           ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
+          [runId, JSON.stringify(updated.rows)],
+        );
+      }
+      return updated.rows.length;
+    });
+  }
+
+  async enableVariationSync(runId: string): Promise<number> {
+    return transaction(this.pool, async (client) => {
+      const run = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_runs SET variation_sync_requested = TRUE, updated_at = NOW() WHERE id = $1 RETURNING id`, [runId]);
+      if (run.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${runId}`);
+      const updated = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_run_items
+         SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
+         WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
+           AND variation_status IN ('skipped', 'failed')
+         RETURNING id, wordpress_product_id`,
+        [runId],
+      );
+      if (updated.rows.length > 0) {
+        await client.query(
+          `INSERT INTO jobs (job_type, payload, status, unique_key)
+           SELECT 'refresh_wordpress_variation_patch',
+                  JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', value.id::TEXT, 'wordpressProductId', value.wordpress_product_id::TEXT),
+                  'pending', 'wordpress-variation-refresh:' || $1::TEXT || ':' || value.id::TEXT
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS value(id BIGINT, wordpress_product_id BIGINT)
+           ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
+          [runId, JSON.stringify(updated.rows)],
+        );
+      }
+      return updated.rows.length;
+    });
+  }
 }

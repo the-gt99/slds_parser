@@ -32,6 +32,8 @@ function renderRun() {
   byId("cursor").textContent = `${run.status} · cursor ${count(run.catalogCursor)} · ${date(run.updatedAt)}`;
   byId("start").disabled = run.status === "running";
   byId("start").textContent = run.status === "running" ? "Каталог скачивается" : "Скачать новый каталог";
+  byId("enable-sync").disabled = run.variationSyncRequested || run.variationCompletedCount < 1 || run.variationFailedCount > 0;
+  byId("enable-sync").textContent = run.variationSyncRequested ? "Поток цен включён" : "Включить весь поток цен";
 }
 
 function renderItem(item) {
@@ -47,6 +49,11 @@ function renderItem(item) {
   const audit = node("p", "muted", `Аудит: ${item.auditStatus}${item.auditResult?.risk ? ` · риск ${item.auditResult.risk}` : ""}${item.auditError ? ` · ${item.auditError}` : ""}`);
   const variation = node("p", "muted", `Цены/остатки: ${item.variationStatus}${item.wordpressJobId ? ` · WP job #${item.wordpressJobId}` : ""}${item.variationError ? ` · ${item.variationError}` : ""}`);
   card.append(title, identity, details, audit, variation);
+  if (item.matchStatus === "matched" && (item.variationStatus === "skipped" || item.variationStatus === "failed")) {
+    const canary = node("button", "button quiet", "Canary цен/остатков"); canary.type = "button";
+    canary.addEventListener("click", async () => { if (!window.confirm(`Обновить только существующие цены и остатки WordPress #${item.wordpressProductId}?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-canary`, { method: "POST", body: { itemId: item.id } }); message(`Canary WordPress #${item.wordpressProductId} поставлен в очередь.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
+    card.append(canary);
+  }
   return card;
 }
 
@@ -93,4 +100,5 @@ byId("refresh").addEventListener("click", refresh);
 byId("filters").addEventListener("submit", async (event) => { event.preventDefault(); await loadItems(); });
 byId("more").addEventListener("click", () => loadItems(true));
 byId("start").addEventListener("click", async () => { try { const writes = byId("variation-sync").value === "true"; if (writes && !window.confirm("Запустить параллельное обновление только существующих цен и остатков? Названия, термины, фото и размеры не изменяются.")) return; const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: writes, reason: writes ? "Каталог и безопасное обновление цен/остатков" : "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message(writes ? "Каталог скачивается; безопасные patch-задачи цен и остатков идут отдельной очередью." : "Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); await loadItems(); state.timer = window.setTimeout(refresh, 3000); } catch (error) { message(error.message, "error"); } });
+byId("enable-sync").addEventListener("click", async () => { if (!state.run || !window.confirm("Canary завершён без ошибок. Включить обновление цен и остатков для всех сопоставленных товаров этой загрузки и следующих страниц?")) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST" }); message(`Поток включён, поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
 void initialize().catch((error) => { byId("error").textContent = error.message; byId("error").hidden = false; });

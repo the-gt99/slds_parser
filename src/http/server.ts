@@ -180,6 +180,7 @@ interface WordPressCatalogRunBody {
   readonly variationSyncRequested?: unknown;
   readonly reason?: unknown;
 }
+interface WordPressCatalogCanaryBody { readonly itemId?: unknown }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -1268,6 +1269,21 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         offset: positiveInteger(request.query.offset, 0, 1_000_000),
       });
     },
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogCanaryBody }>(
+    "/api/wordpress-catalog/runs/:runId/variation-canary",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().enqueueVariationCanary(
+      entityId(request.params.runId, "runId"),
+      entityId(request.body?.itemId, "itemId"),
+    ) }),
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams }>(
+    "/api/wordpress-catalog/runs/:runId/variation-sync",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().enableVariationSync(entityId(request.params.runId, "runId")) }),
   );
 
   server.post<{ Body: ExportControlBody }>(
