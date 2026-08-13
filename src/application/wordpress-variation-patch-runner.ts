@@ -25,6 +25,27 @@ function jobId(value: JsonObject): string | null {
   return /^\d+$/u.test(id) ? id : null;
 }
 
+export function buildWordPressVariationPatchIdentity(input: {
+  readonly targetId: string;
+  readonly sourceCode: string;
+  readonly sourceExternalId: string;
+  readonly matchMethod: string | null;
+  readonly sku: string | null;
+}): JsonObject {
+  const identity: JsonObject = {
+    target_id: Number(input.targetId),
+    source_code: input.sourceCode,
+    source_external_id: input.sourceExternalId,
+    external_key: `${input.sourceCode}:${input.sourceExternalId}`,
+  };
+  if (input.matchMethod === "unique_sku") {
+    const expectedSku = input.sku?.trim() ?? "";
+    if (expectedSku === "") throw new IntegrationContractError("Legacy SKU match does not contain a SKU");
+    return { ...identity, expected_sku: expectedSku };
+  }
+  return identity;
+}
+
 export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
@@ -174,12 +195,13 @@ export class WordPressVariationPatchRunner {
     const basis = {
       contract_version: "slds.wordpress.variation-patch.v1",
       mode: "patch_existing_variations",
-      identity: {
-        target_id: Number(candidate.item.wordpressProductId),
-        source_code: candidate.source.code,
-        source_external_id: candidate.sourceProduct.externalId!,
-        external_key: `${candidate.source.code}:${candidate.sourceProduct.externalId!}`,
-      },
+      identity: buildWordPressVariationPatchIdentity({
+        targetId: candidate.item.wordpressProductId,
+        sourceCode: candidate.source.code,
+        sourceExternalId: candidate.sourceProduct.externalId!,
+        matchMethod: candidate.item.matchMethod,
+        sku: candidate.item.sku,
+      }),
       variations: { items: matched.items },
     } as JsonObject;
     const patchPayload = { ...basis, idempotency_key: `catalog-${runId}-${candidate.item.id}-${hashStableJson(basis).slice(0, 32)}` } as JsonObject;
