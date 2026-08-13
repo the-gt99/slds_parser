@@ -46,6 +46,12 @@ export function buildWordPressVariationPatchIdentity(input: {
   return identity;
 }
 
+export function wordpressVariationJobOutcome(status: string): "completed" | "failed" | "pending" {
+  if (status === "done") return "completed";
+  if (status === "error") return "failed";
+  return "pending";
+}
+
 export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
@@ -223,9 +229,10 @@ export class WordPressVariationPatchRunner {
       const id = item.wordpressJobId!;
       const job = byId.get(id);
       const status = String(job?.status ?? "");
-      if (status === "completed") {
+      const outcome = wordpressVariationJobOutcome(status);
+      if (outcome === "completed") {
         await this.repository.saveVariationJobResult({ itemId: item.id, status: "completed", result: job! });
-      } else if (status === "failed" || status === "error") {
+      } else if (outcome === "failed") {
         await this.repository.saveVariationJobResult({ itemId: item.id, status: "failed", result: job!, error: String(job?.last_error ?? "WordPress job failed") });
       } else {
         remaining.push(id);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
-import { buildWordPressVariationPatchIdentity } from "../../src/application/wordpress-variation-patch-runner.js";
+import { buildWordPressVariationPatchIdentity, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("buildWordPressVariationPatchIdentity", () => {
   it("adds an exact SKU only for an explicit legacy SKU match", () => {
@@ -37,5 +37,13 @@ describe("buildWordPressVariationPatchIdentity", () => {
       matchMethod: "unique_sku",
       sku: null,
     })).toThrow(IntegrationContractError);
+  });
+});
+
+describe("wordpressVariationJobOutcome", () => {
+  it("uses the real WordPress queue terminal statuses", () => {
+    expect(wordpressVariationJobOutcome("done")).toBe("completed");
+    expect(wordpressVariationJobOutcome("error")).toBe("failed");
+    expect(wordpressVariationJobOutcome("running")).toBe("pending");
   });
 });

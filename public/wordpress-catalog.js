@@ -47,8 +47,16 @@ function renderItem(item) {
   const identity = node("p", "muted", `GOAT: ${item.sourceExternalId || item.legacyGoatId || "—"} · SKU: ${item.sku || "—"} · способ: ${item.matchMethod || "—"}`);
   const details = node("p", "muted", `Вариаций: ${(product.variations || []).length} · фото: ${(product.images || []).length} · parser product: ${item.sourceProductId || "—"}`);
   const audit = node("p", "muted", `Аудит: ${item.auditStatus}${item.auditResult?.risk ? ` · риск ${item.auditResult.risk}` : ""}${item.auditError ? ` · ${item.auditError}` : ""}`);
-  const variation = node("p", "muted", `Цены/остатки: ${item.variationStatus}${item.wordpressJobId ? ` · WP job #${item.wordpressJobId}` : ""}${item.variationError ? ` · ${item.variationError}` : ""}`);
+  const patchResult = item.variationResult?.result;
+  const skippedPrices = Number(patchResult?.price_skipped_count || 0);
+  const variation = node("p", "muted", `Цены/остатки: ${item.variationStatus}${item.wordpressJobId ? ` · WP job #${item.wordpressJobId}` : ""}${skippedPrices > 0 ? ` · цен пропущено: ${count(skippedPrices)}` : ""}${item.variationError ? ` · ${item.variationError}` : ""}`);
   card.append(title, identity, details, audit, variation);
+  if ((item.variationNotices || []).length > 0 || item.variationResult) {
+    const trace = node("details");
+    trace.append(node("summary", "", "Причины и технический результат"));
+    trace.append(node("pre", "technical-result", JSON.stringify({ notices: item.variationNotices || [], wordpress: item.variationResult }, null, 2)));
+    card.append(trace);
+  }
   if (item.matchStatus === "matched" && (item.variationStatus === "skipped" || item.variationStatus === "failed")) {
     const canary = node("button", "button quiet", "Canary цен/остатков"); canary.type = "button";
     canary.addEventListener("click", async () => { if (!window.confirm(`Обновить только существующие цены и остатки WordPress #${item.wordpressProductId}?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-canary`, { method: "POST", body: { itemId: item.id } }); message(`Canary WordPress #${item.wordpressProductId} поставлен в очередь.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
