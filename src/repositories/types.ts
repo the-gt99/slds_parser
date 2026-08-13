@@ -947,6 +947,8 @@ export interface ExportCampaignRecord {
   readonly failedCount: number;
   readonly acknowledgedFailedCount: number;
   readonly activePreflightCount: number;
+  readonly scanBeforeInternalProductId: EntityId | null;
+  readonly scanComplete: boolean;
   readonly lastError: string | null;
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;

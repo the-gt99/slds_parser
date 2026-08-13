@@ -27,6 +27,7 @@ function setup() {
     }),
     getRunningCampaign: vi.fn().mockResolvedValue(null),
     countActivePreflights: vi.fn().mockResolvedValue(0),
+    prepareCampaignPreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]),
     setCampaignStatus: vi.fn(),
   } as unknown as ExportControlRepository;
   const jobs = {
@@ -78,12 +79,13 @@ describe("ExportControlService", () => {
   });
 
   it("streams one safe update at a time and keeps the preflight window full", async () => {
-    const { repository, service } = setup();
+    const { repository, jobs, service } = setup();
     vi.mocked(repository.listExportCandidates).mockResolvedValue([{ ...candidate, riskLevel: "none" }]);
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "81", targetId: "10", status: "running", actor: "admin", reason: "mass",
       preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, runningCount: 0,
       completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5,
+      scanBeforeInternalProductId: null, scanComplete: false,
       lastError: null, createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z",
       pausedAt: null, completedAt: null,
     });
@@ -100,6 +102,11 @@ describe("ExportControlService", () => {
       campaignId: "81",
       candidates: [{ ...candidate, riskLevel: "none" }],
     }));
-    expect(repository.preparePreflightCandidates).toHaveBeenCalledWith({ targetId: "10", limit: 20 });
+    expect(repository.prepareCampaignPreflightCandidates).toHaveBeenCalledWith({ campaignId: "81", limit: 20 });
+    expect(jobs.enqueueMany).toHaveBeenCalledWith([{
+      jobType: "preflight_product",
+      payload: { sourceProductId: "21", targetId: "10", refreshWordPress: true },
+      uniqueKey: "target-product:10:21:preflight",
+    }]);
   });
 });

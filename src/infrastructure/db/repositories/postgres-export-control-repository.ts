@@ -58,6 +58,8 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
     failedCount: Number(row.failed_count ?? 0),
     acknowledgedFailedCount: Number(row.acknowledged_failed_count ?? 0),
     activePreflightCount: Number(row.active_preflight_count ?? 0),
+    scanBeforeInternalProductId: nullableText(row, "scan_before_internal_product_id"),
+    scanComplete: row.scan_complete === true,
     lastError: nullableText(row, "last_error"),
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
@@ -879,5 +881,107 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       [targetId],
     );
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async prepareCampaignPreflightCandidates(input: {
+    readonly campaignId: EntityId;
+    readonly limit: number;
+  }): Promise<readonly ExportControlPreflightCandidate[]> {
+    return transaction(this.pool, async (client) => {
+      const campaign = await client.query<DatabaseRow>(
+        `SELECT id, target_id, scan_before_internal_product_id, scan_complete
+         FROM target_export_campaigns
+         WHERE id = $1 AND status = 'running'
+         FOR UPDATE`,
+        [input.campaignId],
+      );
+      const state = campaign.rows[0];
+      if (state === undefined || state.scan_complete === true) return [];
+      const targetId = text(state, "target_id");
+      const result = await client.query<DatabaseRow>(
+        `WITH selected AS MATERIALIZED (
+           SELECT internal.id AS internal_product_id, internal.source_product_id,
+                  internal.content_hash, source.code AS source_code,
+                  source_product.external_id AS source_external_id,
+                  COALESCE(NULLIF(internal.data->>'title', ''), source_product.source_key) AS title,
+                  NULLIF(internal.data->'images'->0->>'url', '') AS image_url,
+                  revision.revision AS configuration_revision,
+                  review.id IS NOT NULL
+                    AND review.status = 'ready'
+                    AND review.internal_content_hash = internal.content_hash
+                    AND review.remote_revision = revision.remote_revision
+                    AND review.configuration_revision <> revision.revision AS use_cached_wordpress
+           FROM internal_products internal
+           JOIN source_products source_product ON source_product.id = internal.source_product_id
+           JOIN sources source ON source.id = source_product.source_id
+           JOIN target_export_revisions revision ON revision.target_id = $2
+           LEFT JOIN target_product_preflight_reviews review
+             ON review.target_id = $2 AND review.internal_product_id = internal.id
+           WHERE internal.status = 'classified'
+             AND internal.data->'classification'->>'status' = 'complete'
+             AND ($3::BIGINT IS NULL OR internal.id < $3::BIGINT)
+             AND (review.id IS NULL OR review.status IN ('stale', 'error')
+               OR review.configuration_revision <> revision.revision
+               OR review.internal_content_hash <> internal.content_hash)
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs job
+               WHERE job.job_type = 'preflight_product'
+                 AND job.status IN ('pending', 'running', 'retry')
+                 AND job.payload->>'targetId' = $2::TEXT
+                 AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
+             )
+           ORDER BY internal.id DESC
+           LIMIT $4
+           FOR UPDATE OF internal SKIP LOCKED
+         ), marked AS (
+           INSERT INTO target_product_preflight_reviews (
+             target_id, internal_product_id, source_product_id, source_code,
+             source_external_id, title, image_url, search_text, status, phase,
+             internal_content_hash, configuration_revision, used_cached_wordpress,
+             checked_at, updated_at
+           )
+           SELECT $2, selected.internal_product_id, selected.source_product_id,
+                  selected.source_code, selected.source_external_id, selected.title,
+                  selected.image_url,
+                  CONCAT_WS(' ', selected.source_product_id::TEXT, selected.source_external_id, selected.title),
+                  'checking', 'preflight', selected.content_hash,
+                  selected.configuration_revision, selected.use_cached_wordpress, NOW(), NOW()
+           FROM selected
+           ON CONFLICT (target_id, internal_product_id) DO UPDATE
+           SET source_external_id = EXCLUDED.source_external_id,
+               title = EXCLUDED.title,
+               image_url = EXCLUDED.image_url,
+               search_text = EXCLUDED.search_text,
+               status = 'checking', phase = 'preflight', error = NULL,
+               internal_content_hash = EXCLUDED.internal_content_hash,
+               configuration_revision = EXCLUDED.configuration_revision,
+               used_cached_wordpress = EXCLUDED.used_cached_wordpress,
+               preflight_cache = CASE WHEN EXCLUDED.used_cached_wordpress
+                 THEN target_product_preflight_reviews.preflight_cache
+                   || JSONB_BUILD_OBJECT('_previousStatus', target_product_preflight_reviews.status)
+                 ELSE target_product_preflight_reviews.preflight_cache END,
+               checked_at = NOW(), updated_at = NOW()
+           RETURNING source_product_id, internal_product_id
+         )
+         SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
+         FROM marked JOIN selected USING (source_product_id, internal_product_id)
+         ORDER BY marked.internal_product_id DESC`,
+        [input.campaignId, targetId, nullableText(state, "scan_before_internal_product_id"), input.limit],
+      );
+      const last = result.rows.at(-1);
+      await client.query(
+        `UPDATE target_export_campaigns
+         SET scan_before_internal_product_id = COALESCE($2, scan_before_internal_product_id),
+             scan_complete = $3,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [input.campaignId, last === undefined ? null : text(last, "internal_product_id"), last === undefined],
+      );
+      return result.rows.map((row) => ({
+        sourceProductId: text(row, "source_product_id"),
+        internalProductId: text(row, "internal_product_id"),
+        refreshWordPress: row.refresh_wordpress === true,
+      }));
+    });
   }
 }

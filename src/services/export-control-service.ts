@@ -216,23 +216,42 @@ export class ExportControlService {
 
     const activePreflights = await this.repository.countActivePreflights(campaign.targetId);
     let queuedPreflights = 0;
-    if (activePreflights < campaign.preflightWindow && !limitReached) {
-      const result = await this.enqueuePreflights({
-        targetId: campaign.targetId,
+    if (activePreflights < campaign.preflightWindow && !limitReached && !campaign.scanComplete) {
+      const candidates = await this.repository.prepareCampaignPreflightCandidates({
+        campaignId: campaign.id,
         limit: campaign.preflightWindow - activePreflights,
       });
-      queuedPreflights = result.queuedCount;
+      try {
+        const jobs = await this.jobs.enqueueMany(candidates.map((candidate) => ({
+          jobType: "preflight_product" as const,
+          payload: {
+            sourceProductId: candidate.sourceProductId,
+            targetId: campaign.targetId,
+            refreshWordPress: candidate.refreshWordPress !== false,
+          },
+          uniqueKey: `target-product:${campaign.targetId}:${candidate.sourceProductId}:preflight`,
+        })));
+        queuedPreflights = jobs.length;
+      } catch (error) {
+        await Promise.allSettled(candidates.map((candidate) => this.repository.savePreflightError({
+          targetId: campaign.targetId,
+          sourceProductId: candidate.sourceProductId,
+          error: error instanceof Error ? error.message : String(error),
+        })));
+        throw error;
+      }
     }
 
     if (!queuedExport && exportActive === 0 && queuedPreflights === 0) {
       const refreshedActive = await this.repository.countActivePreflights(campaign.targetId);
       if (refreshedActive === 0) {
+        const refreshedCampaign = await this.repository.getRunningCampaign();
         const remaining = await this.repository.listExportCandidates({
           targetId: campaign.targetId,
           filter: { status: "ready", operation: "update", riskLevel: "none" },
           limit: 1,
         });
-        if (remaining.length === 0) {
+        if (remaining.length === 0 && refreshedCampaign?.id === campaign.id && refreshedCampaign.scanComplete) {
           await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
         }
       }

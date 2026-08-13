@@ -63,4 +63,8 @@ export interface ExportControlRepository {
   }): Promise<ExportCampaignRecord>;
   listCampaignItems(campaignId: EntityId, limit: number): Promise<readonly ExportCampaignItemRecord[]>;
   countActivePreflights(targetId: EntityId): Promise<number>;
+  prepareCampaignPreflightCandidates(input: {
+    readonly campaignId: EntityId;
+    readonly limit: number;
+  }): Promise<readonly ExportControlPreflightCandidate[]>;
 }
