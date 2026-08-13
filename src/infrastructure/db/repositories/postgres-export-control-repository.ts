@@ -914,12 +914,12 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            FROM internal_products internal
            JOIN source_products source_product ON source_product.id = internal.source_product_id
            JOIN sources source ON source.id = source_product.source_id
-           JOIN target_export_revisions revision ON revision.target_id = $2
+           JOIN target_export_revisions revision ON revision.target_id = $1
            LEFT JOIN target_product_preflight_reviews review
-             ON review.target_id = $2 AND review.internal_product_id = internal.id
+             ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE internal.status = 'classified'
              AND internal.data->'classification'->>'status' = 'complete'
-             AND ($3::BIGINT IS NULL OR internal.id < $3::BIGINT)
+             AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
              AND (review.id IS NULL OR review.status IN ('stale', 'error')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)
@@ -927,11 +927,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                SELECT 1 FROM jobs job
                WHERE job.job_type = 'preflight_product'
                  AND job.status IN ('pending', 'running', 'retry')
-                 AND job.payload->>'targetId' = $2::TEXT
+                 AND job.payload->>'targetId' = $1::TEXT
                  AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
              )
            ORDER BY internal.id DESC
-           LIMIT $4
+           LIMIT $3
            FOR UPDATE OF internal SKIP LOCKED
          ), marked AS (
            INSERT INTO target_product_preflight_reviews (
@@ -940,7 +940,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              internal_content_hash, configuration_revision, used_cached_wordpress,
              checked_at, updated_at
            )
-           SELECT $2, selected.internal_product_id, selected.source_product_id,
+           SELECT $1, selected.internal_product_id, selected.source_product_id,
                   selected.source_code, selected.source_external_id, selected.title,
                   selected.image_url,
                   CONCAT_WS(' ', selected.source_product_id::TEXT, selected.source_external_id, selected.title),
@@ -966,7 +966,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
-        [input.campaignId, targetId, nullableText(state, "scan_before_internal_product_id"), input.limit],
+        [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit],
       );
       const last = result.rows.at(-1);
       await client.query(
