@@ -21,6 +21,9 @@ export class WordPressCatalogService {
     readonly actor: string;
     readonly reason?: string;
   }) {
+    if (input.variationSyncRequested) {
+      throw new IntegrationContractError("Параллельную запись нельзя включить до успешного canary; сначала создайте снимок, затем запускайте ограниченные пакеты");
+    }
     const target = await this.targets.getById(input.targetId);
     if (target === null) throw new EntityNotFoundError("target", input.targetId);
     const sourceCode = input.sourceCode.trim().toLocaleLowerCase("en-US");
@@ -66,5 +69,13 @@ export class WordPressCatalogService {
       throw new IntegrationContractError("Полный поток нельзя включить до успешного canary без ошибок");
     }
     return { queuedCount: await this.repository.enableVariationSync(runId) };
+  }
+
+  async enqueueVariationBatch(runId: string, limit: number) {
+    const run = await this.getRun(runId);
+    if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
+      throw new IntegrationContractError("Пакет нельзя запустить до успешного canary без ошибок");
+    }
+    return { queuedCount: await this.repository.enqueueVariationBatch(runId, Math.max(1, Math.min(5_000, limit))) };
   }
 }

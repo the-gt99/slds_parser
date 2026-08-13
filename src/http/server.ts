@@ -181,6 +181,7 @@ interface WordPressCatalogRunBody {
   readonly reason?: unknown;
 }
 interface WordPressCatalogCanaryBody { readonly itemId?: unknown }
+interface WordPressCatalogBatchBody { readonly limit?: unknown }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -1284,6 +1285,16 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     "/api/wordpress-catalog/runs/:runId/variation-sync",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => ({ result: await wordpressCatalogService().enableVariationSync(entityId(request.params.runId, "runId")) }),
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogBatchBody }>(
+    "/api/wordpress-catalog/runs/:runId/variation-batch",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const limit = positiveInteger(String(request.body?.limit ?? "1000"), 1_000, 5_000);
+      if (limit === 0) throw new HttpInputError("Expected an integer from 1 to 5000");
+      return { result: await wordpressCatalogService().enqueueVariationBatch(entityId(request.params.runId, "runId"), limit) };
+    },
   );
 
   server.post<{ Body: ExportControlBody }>(

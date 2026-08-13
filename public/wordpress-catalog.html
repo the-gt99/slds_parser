@@ -29,9 +29,9 @@
       <div><p class="eyebrow">Постоянный снимок</p><h2>Полный каталог WordPress</h2><p class="muted">Данные сохраняются в PostgreSQL. Запуск на этой странице ничего не изменяет в WordPress.</p></div>
       <div class="export-control-hero-actions">
         <label class="field compact-field"><span>Target</span><select id="target"></select></label>
-        <label class="field compact-field"><span>Запись</span><select id="variation-sync"><option value="false" selected>Только снимок</option><option value="true">Цены и остатки параллельно</option></select></label>
         <button id="start" class="button primary" type="button">Скачать каталог</button>
-        <button id="enable-sync" class="button secondary" type="button" disabled>Включить весь поток цен</button>
+        <label class="field compact-field"><span>Пакет цен</span><select id="batch-limit"><option value="100">100</option><option value="1000" selected>1000</option><option value="5000">5000</option></select></label>
+        <button id="batch-sync" class="button secondary" type="button" disabled>Запустить пакет</button>
       </div>
     </section>
     <div id="message" class="inline-message" hidden></div>

@@ -499,4 +499,38 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       return updated.rows.length;
     });
   }
+
+  async enqueueVariationBatch(runId: string, limit: number): Promise<number> {
+    return transaction(this.pool, async (client) => {
+      const updated = await client.query<DatabaseRow>(
+        `WITH selected AS (
+           SELECT id
+           FROM wordpress_catalog_run_items
+           WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
+             AND variation_status IN ('skipped', 'failed')
+           ORDER BY id
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE wordpress_catalog_run_items AS item
+         SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
+         FROM selected
+         WHERE item.id = selected.id
+         RETURNING item.id, item.wordpress_product_id`,
+        [runId, limit],
+      );
+      if (updated.rows.length > 0) {
+        await client.query(
+          `INSERT INTO jobs (job_type, payload, status, unique_key)
+           SELECT 'refresh_wordpress_variation_patch',
+                  JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', value.id::TEXT, 'wordpressProductId', value.wordpress_product_id::TEXT),
+                  'pending', 'wordpress-variation-refresh:' || $1::TEXT || ':' || value.id::TEXT
+           FROM JSONB_TO_RECORDSET($2::JSONB) AS value(id BIGINT, wordpress_product_id BIGINT)
+           ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
+          [runId, JSON.stringify(updated.rows)],
+        );
+      }
+      return updated.rows.length;
+    });
+  }
 }

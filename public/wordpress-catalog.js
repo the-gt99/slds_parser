@@ -32,8 +32,7 @@ function renderRun() {
   byId("cursor").textContent = `${run.status} · cursor ${count(run.catalogCursor)} · ${date(run.updatedAt)}`;
   byId("start").disabled = run.status === "running";
   byId("start").textContent = run.status === "running" ? "Каталог скачивается" : "Скачать новый каталог";
-  byId("enable-sync").disabled = run.variationSyncRequested || run.variationCompletedCount < 1 || run.variationFailedCount > 0;
-  byId("enable-sync").textContent = run.variationSyncRequested ? "Поток цен включён" : "Включить весь поток цен";
+  byId("batch-sync").disabled = run.variationCompletedCount < 1 || run.variationFailedCount > 0;
 }
 
 function renderItem(item) {
@@ -107,6 +106,6 @@ byId("target").addEventListener("change", async () => { state.targetId = byId("t
 byId("refresh").addEventListener("click", refresh);
 byId("filters").addEventListener("submit", async (event) => { event.preventDefault(); await loadItems(); });
 byId("more").addEventListener("click", () => loadItems(true));
-byId("start").addEventListener("click", async () => { try { const writes = byId("variation-sync").value === "true"; if (writes && !window.confirm("Запустить параллельное обновление только существующих цен и остатков? Названия, термины, фото и размеры не изменяются.")) return; const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: writes, reason: writes ? "Каталог и безопасное обновление цен/остатков" : "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message(writes ? "Каталог скачивается; безопасные patch-задачи цен и остатков идут отдельной очередью." : "Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); await loadItems(); state.timer = window.setTimeout(refresh, 3000); } catch (error) { message(error.message, "error"); } });
-byId("enable-sync").addEventListener("click", async () => { if (!state.run || !window.confirm("Canary завершён без ошибок. Включить обновление цен и остатков для всех сопоставленных товаров этой загрузки и следующих страниц?")) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST" }); message(`Поток включён, поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
+byId("start").addEventListener("click", async () => { try { const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: false, reason: "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message("Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); await loadItems(); state.timer = window.setTimeout(refresh, 3000); } catch (error) { message(error.message, "error"); } });
+byId("batch-sync").addEventListener("click", async () => { const limit = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Поставить в очередь ${count(limit)} сопоставленных товаров? Изменятся только цены и остатки существующих вариаций.`)) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-batch`, { method: "POST", body: { limit } }); message(`Поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
 void initialize().catch((error) => { byId("error").textContent = error.message; byId("error").hidden = false; });

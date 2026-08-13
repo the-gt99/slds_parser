@@ -134,5 +134,6 @@ export interface WordPressCatalogRepository {
     readonly error?: string;
   }): Promise<void>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
+  enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
   enableVariationSync(runId: EntityId): Promise<number>;
 }
