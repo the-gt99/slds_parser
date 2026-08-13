@@ -14,6 +14,7 @@ import {
   PostgresSourceRunRepository,
   PostgresTargetContentTemplateRepository,
   PostgresTargetDictionaryRepository,
+  PostgresTargetAssignmentRuleRepository,
   PostgresTargetRepository,
   PostgresWordPressCatalogRepository,
   DatabaseRetentionService,
@@ -79,6 +80,22 @@ const contentTemplateRow = {
 };
 
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("matches target assignment source facts directly and treats missing facts as non-matches", async () => {
+    const executor = new FakeExecutor([[{ product_count: 1, examples: [{ sourceProductId: "13791", title: "Obsidian", sku: "921948 400" }] }]]);
+    const repository = new PostgresTargetAssignmentRuleRepository(pool(executor));
+
+    const result = await repository.preview({
+      targetId: "1", name: "Designer", groupCode: "designer_tag", priority: 100,
+      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+      actions: [{ targetScope: "product.tag", dictionaryValueId: "10", mode: "add" }],
+    });
+
+    expect(result.productCount).toBe(1);
+    expect(executor.calls[0]?.text).toContain("COALESCE(internal.data#>>ARRAY");
+    expect(executor.calls[0]?.text).not.toContain("JSONB_ARRAY_ELEMENTS($1::JSONB)");
+    expect(executor.calls[0]?.values).toEqual([["wilson smith"], "sourceFacts", "designer"]);
+  });
+
   it("pages the WordPress catalog through the compact read model and counts separately", async () => {
     const executor = new FakeExecutor([[], [{ total: "98632" }]]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));

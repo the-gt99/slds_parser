@@ -38,49 +38,57 @@ WHERE rule.target_id = $1 AND ($2::BIGINT IS NULL OR rule.id = $2)
 GROUP BY rule.id
 ORDER BY rule.group_code, rule.priority DESC, rule.id`;
 
-const matchedProductsSql = `WITH conditions AS MATERIALIZED (
-  SELECT item FROM JSONB_ARRAY_ELEMENTS($1::JSONB) item
-), matched AS MATERIALIZED (
+function matchedProductsQuery(conditions: TargetAssignmentRuleDraft["conditions"]): { readonly sql: string; readonly parameters: readonly unknown[] } {
+  const parameters: unknown[] = [];
+  const parameter = (value: unknown): string => {
+    parameters.push(value);
+    return `$${parameters.length}`;
+  };
+  const clauses = conditions.map((condition) => {
+    const parts = condition.field.split(".");
+    const values = parameter(condition.values.map((value) => value.trim().toLocaleLowerCase("en-US")));
+    if (parts[0] === "resolved" && parts.length === 2) {
+      const typeCode = parameter(parts[1]);
+      return `EXISTS (
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data#>'{classification,resolved}', '[]'::JSONB)) resolved
+        WHERE resolved->>'typeCode' = ${typeCode}
+          AND LOWER(COALESCE(resolved->>'referenceValueId', '')) = ANY(${values}::TEXT[])
+      )`;
+    }
+    if (parts[0] === "candidate" && parts.length >= 3) {
+      const typeCode = parameter(parts[1]);
+      const valuePath = parts.length === 3 && parts[2] === "sourceValue"
+        ? "candidate->>'sourceValue'"
+        : parts.length === 4 && (parts[2] === "context" || parts[2] === "evidence")
+          ? `candidate#>>ARRAY[${parameter(parts[2])}::TEXT, ${parameter(parts[3])}::TEXT]`
+          : null;
+      if (valuePath === null) throw new Error(`Unsupported target assignment field: ${condition.field}`);
+      return `EXISTS (
+        SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
+        WHERE candidate->>'typeCode' = ${typeCode}
+          AND LOWER(COALESCE(${valuePath}, '')) = ANY(${values}::TEXT[])
+      )`;
+    }
+    if (parts[0] === "product" && parts.length === 3 && ["attribute", "metadata", "fact"].includes(parts[1]!)) {
+      const section = parts[1] === "attribute" ? "attributes" : parts[1] === "metadata" ? "metadata" : "sourceFacts";
+      return `LOWER(COALESCE(internal.data#>>ARRAY[${parameter(section)}::TEXT, ${parameter(parts[2])}::TEXT], '')) = ANY(${values}::TEXT[])`;
+    }
+    throw new Error(`Unsupported target assignment field: ${condition.field}`);
+  });
+  return {
+    parameters,
+    sql: `WITH matched AS MATERIALIZED (
   SELECT internal.source_product_id, COALESCE(internal.data->>'title', '') AS title, COALESCE(internal.data->>'sku', '') AS sku
   FROM internal_products internal
   WHERE internal.status = 'classified'
-    AND NOT EXISTS (
-      SELECT 1 FROM conditions condition
-      WHERE NOT CASE
-        WHEN condition.item->>'field' LIKE 'resolved.%' THEN EXISTS (
-          SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data#>'{classification,resolved}', '[]'::JSONB)) resolved
-          WHERE resolved->>'typeCode' = SPLIT_PART(condition.item->>'field', '.', 2)
-            AND LOWER(resolved->>'referenceValueId') IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        )
-        WHEN condition.item->>'field' LIKE 'candidate.%.sourceValue' THEN EXISTS (
-          SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
-          WHERE candidate->>'typeCode' = SPLIT_PART(condition.item->>'field', '.', 2)
-            AND LOWER(candidate->>'sourceValue') IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        )
-        WHEN condition.item->>'field' LIKE 'candidate.%.context.%' THEN EXISTS (
-          SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
-          WHERE candidate->>'typeCode' = SPLIT_PART(condition.item->>'field', '.', 2)
-            AND LOWER(candidate#>>ARRAY['context', SPLIT_PART(condition.item->>'field', '.', 4)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        )
-        WHEN condition.item->>'field' LIKE 'candidate.%.evidence.%' THEN EXISTS (
-          SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
-          WHERE candidate->>'typeCode' = SPLIT_PART(condition.item->>'field', '.', 2)
-            AND LOWER(candidate#>>ARRAY['evidence', SPLIT_PART(condition.item->>'field', '.', 4)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        )
-        WHEN condition.item->>'field' LIKE 'product.attribute.%' THEN
-          LOWER(internal.data#>>ARRAY['attributes', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        WHEN condition.item->>'field' LIKE 'product.metadata.%' THEN
-          LOWER(internal.data#>>ARRAY['metadata', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        WHEN condition.item->>'field' LIKE 'product.fact.%' THEN
-          LOWER(internal.data#>>ARRAY['sourceFacts', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
-        ELSE FALSE
-      END
-    )
+    ${clauses.map((clause) => `AND ${clause}`).join("\n    ")}
 )
 SELECT (SELECT COUNT(*)::INTEGER FROM matched) AS product_count,
   COALESCE((SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example."sourceProductId"::BIGINT) FROM (
     SELECT source_product_id::TEXT AS "sourceProductId", title, sku FROM matched ORDER BY source_product_id DESC LIMIT 10
-  ) example), '[]'::JSONB) AS examples`;
+  ) example), '[]'::JSONB) AS examples`,
+  };
+}
 
 export class PostgresTargetAssignmentRuleRepository implements TargetAssignmentRuleRepository {
   constructor(private readonly pool: SqlPool) {}
@@ -91,7 +99,8 @@ export class PostgresTargetAssignmentRuleRepository implements TargetAssignmentR
 
   async preview(draft: TargetAssignmentRuleDraft): Promise<TargetAssignmentRulePreview> {
     return withClient(this.pool, async (client) => {
-      const row = (await client.query<DatabaseRow>(matchedProductsSql, [JSON.stringify(draft.conditions)])).rows[0]!;
+      const query = matchedProductsQuery(draft.conditions);
+      const row = (await client.query<DatabaseRow>(query.sql, [...query.parameters])).rows[0]!;
       return { productCount: Number(row.product_count), examples: row.examples as TargetAssignmentRulePreview["examples"] };
     });
   }
