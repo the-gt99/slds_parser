@@ -6,25 +6,25 @@ AS $$
   SELECT COALESCE(ARRAY(
     SELECT DISTINCT flag
     FROM (
-      SELECT 'field:' || field_item.value->>'field' AS flag
+      SELECT 'field:' || (field_item.value->>'field') AS flag
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'fields', '[]'::JSONB)) AS field_item(value)
       WHERE field_item.value->>'changed' = 'true'
 
       UNION ALL
 
-      SELECT 'taxonomy:' || taxonomy_item.value->>'taxonomy'
+      SELECT 'taxonomy:' || (taxonomy_item.value->>'taxonomy')
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
       WHERE taxonomy_item.value->>'changed' = 'true'
 
       UNION ALL
 
-      SELECT 'taxonomy_added:' || taxonomy_item.value->>'taxonomy'
+      SELECT 'taxonomy_added:' || (taxonomy_item.value->>'taxonomy')
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
       WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'added', '[]'::JSONB)) > 0
 
       UNION ALL
 
-      SELECT 'taxonomy_removed:' || taxonomy_item.value->>'taxonomy'
+      SELECT 'taxonomy_removed:' || (taxonomy_item.value->>'taxonomy')
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(result->'taxonomies', '[]'::JSONB)) AS taxonomy_item(value)
       WHERE JSONB_ARRAY_LENGTH(COALESCE(taxonomy_item.value->'removed', '[]'::JSONB)) > 0
 
