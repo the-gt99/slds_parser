@@ -33,6 +33,8 @@ export interface ExportControlRepository {
     readonly sourceProductIds?: readonly EntityId[];
     readonly filter?: ExportControlFilter;
     readonly limit: number;
+    readonly campaignId?: EntityId;
+    readonly excludeNoChanges?: boolean;
   }): Promise<readonly ExportControlExportCandidate[]>;
   createBatch(input: {
     readonly targetId: EntityId;

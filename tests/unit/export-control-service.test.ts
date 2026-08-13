@@ -97,6 +97,8 @@ describe("ExportControlService", () => {
       targetId: "10",
       filter: { status: "ready", operation: "update", riskLevel: "none" },
       limit: 1,
+      campaignId: "81",
+      excludeNoChanges: true,
     });
     expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({
       campaignId: "81",

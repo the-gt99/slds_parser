@@ -196,6 +196,8 @@ export class ExportControlService {
         targetId: campaign.targetId,
         filter: { status: "ready", operation: "update", riskLevel: "none" },
         limit: 1,
+        campaignId: campaign.id,
+        excludeNoChanges: true,
       });
       const candidate = candidates[0];
       if (candidate !== undefined) {
@@ -250,6 +252,8 @@ export class ExportControlService {
           targetId: campaign.targetId,
           filter: { status: "ready", operation: "update", riskLevel: "none" },
           limit: 1,
+          campaignId: campaign.id,
+          excludeNoChanges: true,
         });
         if (remaining.length === 0 && refreshedCampaign?.id === campaign.id && refreshedCampaign.scanComplete) {
           await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });

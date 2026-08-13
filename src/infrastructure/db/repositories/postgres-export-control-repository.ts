@@ -542,6 +542,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     readonly sourceProductIds?: readonly EntityId[];
     readonly filter?: ExportControlFilter;
     readonly limit: number;
+    readonly campaignId?: EntityId;
+    readonly excludeNoChanges?: boolean;
   }): Promise<readonly ExportControlExportCandidate[]> {
     if (input.filter?.status !== undefined && input.filter.status !== "ready") return [];
     const parameters: unknown[] = [];
@@ -554,6 +556,16 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       "NOT EXISTS (SELECT 1 FROM jobs active_job WHERE active_job.job_type = 'export_product' AND active_job.status IN ('pending', 'running', 'retry') AND active_job.payload->>'targetId' = review.target_id::TEXT AND active_job.payload->>'internalProductId' = review.internal_product_id::TEXT)",
     ];
     if (input.sourceProductIds !== undefined) where.push(`review.source_product_id = ANY(${add(input.sourceProductIds)}::BIGINT[])`);
+    if (input.excludeNoChanges === true) where.push("NOT review.change_flags @> ARRAY['no_changes']::TEXT[]");
+    if (input.campaignId !== undefined) {
+      where.push(`NOT EXISTS (
+        SELECT 1
+        FROM target_export_batch_items previous_item
+        JOIN target_export_batches previous_batch ON previous_batch.id = previous_item.batch_id
+        WHERE previous_batch.campaign_id = ${add(input.campaignId)}::BIGINT
+          AND previous_item.internal_product_id = review.internal_product_id
+      )`);
+    }
     where.push(...filterSql(input.filter ?? {}, add, { includeStatus: false }));
     const limit = add(input.limit);
     const result = await queryPool<DatabaseRow>(this.pool,
