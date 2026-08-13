@@ -98,6 +98,63 @@ export class PostgresJobRepository implements JobRepository {
     return available.rows[0] ? mapJob(available.rows[0]) : null;
   }
 
+  async claimMany(workerId: string, lockTimeoutMs: number, jobType: JobType, limit: number): Promise<readonly JobRecord[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new RangeError("Job claim batch limit must be an integer from 1 to 100");
+    }
+    const expired = await this.executor.query<DatabaseRow>(
+      `WITH candidate AS (
+         SELECT id
+         FROM jobs
+         WHERE job_type = $3
+           AND status = 'running'
+           AND locked_at < NOW() - ($2::DOUBLE PRECISION * INTERVAL '1 millisecond')
+           AND ($3 <> 'reclassify_product' OR NOT EXISTS (
+             SELECT 1 FROM jobs application_job
+             WHERE application_job.job_type = 'apply_target_classification_suggestion'
+               AND application_job.status IN ('pending', 'running', 'retry')
+           ))
+         ORDER BY locked_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT $4
+       )
+       UPDATE jobs
+       SET status = 'running', started_at = NOW(), locked_at = NOW(), locked_by = $1,
+           attempts = attempts + 1, finished_at = NULL, updated_at = NOW()
+       FROM candidate
+       WHERE jobs.id = candidate.id
+       RETURNING jobs.*`,
+      [workerId, lockTimeoutMs, jobType, limit],
+    );
+    if (expired.rows.length > 0) return expired.rows.map(mapJob);
+
+    const available = await this.executor.query<DatabaseRow>(
+      `WITH candidate AS (
+         SELECT id
+         FROM jobs
+         WHERE job_type = $2
+           AND status IN ('pending', 'retry')
+           AND available_at <= NOW()
+           AND ($2 <> 'reclassify_product' OR NOT EXISTS (
+             SELECT 1 FROM jobs application_job
+             WHERE application_job.job_type = 'apply_target_classification_suggestion'
+               AND application_job.status IN ('pending', 'running', 'retry')
+           ))
+         ORDER BY available_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT $3
+       )
+       UPDATE jobs
+       SET status = 'running', started_at = NOW(), locked_at = NOW(), locked_by = $1,
+           attempts = attempts + 1, finished_at = NULL, updated_at = NOW()
+       FROM candidate
+       WHERE jobs.id = candidate.id
+       RETURNING jobs.*`,
+      [workerId, jobType, limit],
+    );
+    return available.rows.map(mapJob);
+  }
+
   async claimById(id: EntityId, workerId: string, jobTypes: readonly JobType[]): Promise<JobRecord | null> {
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE jobs

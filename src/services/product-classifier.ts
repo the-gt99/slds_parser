@@ -40,6 +40,41 @@ interface RuleMatch {
   readonly score: readonly [number, number];
 }
 
+interface CompiledRuleSet {
+  readonly revision: string;
+  readonly brandFamily: ReadonlyMap<string, readonly ClassificationRuleRecord[]>;
+  readonly generalByType: ReadonlyMap<string, readonly ClassificationRuleRecord[]>;
+}
+
+function exactConditionValue(rule: ClassificationRuleRecord, field: string): string | null {
+  const condition = rule.conditions.find((item) => item.field === field && item.operator === "equals");
+  return condition === undefined ? null : normalizeClassificationValue(condition.value);
+}
+
+function brandFamilyRuleKey(typeCode: string, brand: string, family: string): string {
+  return `${typeCode}\u0000${normalizeClassificationValue(brand)}\u0000${normalizeClassificationValue(family)}`;
+}
+
+function compileRuleSet(revision: string, rules: readonly ClassificationRuleRecord[]): CompiledRuleSet {
+  const brandFamily = new Map<string, ClassificationRuleRecord[]>();
+  const generalByType = new Map<string, ClassificationRuleRecord[]>();
+  for (const rule of rules) {
+    const brand = exactConditionValue(rule, "context.brand");
+    const family = exactConditionValue(rule, "context.family");
+    if (rule.conditions.length === 2 && brand !== null && family !== null) {
+      const key = brandFamilyRuleKey(rule.typeCode, brand, family);
+      const indexed = brandFamily.get(key) ?? [];
+      indexed.push(rule);
+      brandFamily.set(key, indexed);
+    } else {
+      const general = generalByType.get(rule.typeCode) ?? [];
+      general.push(rule);
+      generalByType.set(rule.typeCode, general);
+    }
+  }
+  return { revision, brandFamily, generalByType };
+}
+
 interface CandidateOutcome {
   readonly prepared: PreparedCandidate;
   readonly resolved?: ClassifiedReferenceDTO;
@@ -247,8 +282,42 @@ function ruleOutcome(prepared: PreparedCandidate, rules: readonly Classification
 
 export class ProductClassifier {
   readonly version = "1.0.0";
+  private readonly ruleSets = new Map<EntityId, CompiledRuleSet>();
+  private readonly ruleSetLoads = new Map<EntityId, Promise<CompiledRuleSet>>();
 
   constructor(private readonly repository: ClassificationRepository) {}
+
+  private candidateRules(candidate: ReferenceCandidateDTO, ruleSet: CompiledRuleSet): readonly ClassificationRuleRecord[] {
+    const brand = candidate.context.brand;
+    const family = candidate.context.family;
+    const indexed = typeof brand === "string" && typeof family === "string"
+      ? ruleSet.brandFamily.get(brandFamilyRuleKey(candidate.typeCode, brand, family)) ?? []
+      : [];
+    return [...indexed, ...(ruleSet.generalByType.get(candidate.typeCode) ?? [])];
+  }
+
+  private async getRuleSet(sourceId: EntityId, revision: string): Promise<CompiledRuleSet> {
+    const cached = this.ruleSets.get(sourceId);
+    if (cached?.revision === revision) return cached;
+
+    const activeLoad = this.ruleSetLoads.get(sourceId);
+    if (activeLoad !== undefined) {
+      const loaded = await activeLoad;
+      if (loaded.revision === revision) return loaded;
+      return this.getRuleSet(sourceId, revision);
+    }
+
+    const load = this.repository.listAllActiveRules(sourceId)
+      .then((rules) => compileRuleSet(revision, rules));
+    this.ruleSetLoads.set(sourceId, load);
+    try {
+      const loaded = await load;
+      this.ruleSets.set(sourceId, loaded);
+      return loaded;
+    } finally {
+      if (this.ruleSetLoads.get(sourceId) === load) this.ruleSetLoads.delete(sourceId);
+    }
+  }
 
   async classify(sourceId: EntityId, product: UniversalProductDTO): Promise<ProductClassifierRun> {
     const prepared = prepareCandidates(product.referenceCandidates);
@@ -256,7 +325,7 @@ export class ProductClassifier {
     const typeDefinitions = await this.repository.listReferenceTypes(typeCodes);
     validateReferenceTypes(prepared, typeDefinitions);
 
-    const [mappingMatches, rules] = await Promise.all([
+    const [mappingMatches, revision] = await Promise.all([
       this.repository.findSourceDecisions(sourceId, prepared.map(({ candidate, normalizedSourceValue, contextKey }) => ({
         candidateKey: candidate.key,
         typeCode: candidate.typeCode,
@@ -264,12 +333,13 @@ export class ProductClassifier {
         normalizedSourceValue,
         contextKey,
       }))),
-      this.repository.listActiveRules(sourceId, typeCodes),
+      this.repository.getActiveRuleSetRevision(sourceId),
     ]);
+    const ruleSet = await this.getRuleSet(sourceId, revision);
     const mappings = new Map(mappingMatches.map((mapping) => [mapping.candidateKey, mapping]));
     const outcomes = prepared.map((candidate) => {
       const mapping = mappings.get(candidate.candidate.key);
-      return mapping === undefined ? ruleOutcome(candidate, rules) : mappingOutcome(candidate, mapping);
+      return mapping === undefined ? ruleOutcome(candidate, this.candidateRules(candidate.candidate, ruleSet)) : mappingOutcome(candidate, mapping);
     });
     const resolved = outcomes.flatMap((outcome) => outcome.resolved === undefined ? [] : [outcome.resolved]);
     const ignored = outcomes.flatMap((outcome) => outcome.ignored === undefined ? [] : [outcome.ignored]);

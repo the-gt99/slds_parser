@@ -39,6 +39,20 @@ describe("Worker", () => {
     expect(await jobs.claimNext("worker", 100, ["reclassify_product"])).toMatchObject({ id: reclassify.id });
   });
 
+  it("claims and completes reclassification jobs in a bounded batch", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 20; index += 1) {
+      await jobs.enqueue({ jobType: "reclassify_product", payload: { sourceProductId: String(index) }, uniqueKey: `reclassify-${index}` });
+    }
+    const handler: JobHandler = { dispatch: vi.fn().mockResolvedValue({ status: "completed" }), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options);
+
+    expect(await worker.processMany("reclassify_product", "worker:process-1", 16)).toBe(true);
+    expect([...store.jobs.values()].filter((job) => job.status === "completed")).toHaveLength(16);
+    expect([...store.jobs.values()].filter((job) => job.status === "pending")).toHaveLength(4);
+  });
+
   it("runs the configured number of WordPress preflight lanes", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);

@@ -85,6 +85,8 @@ function repositories(
     listReferenceTypes: vi.fn(),
     findSourceDecisions: vi.fn(),
     listActiveRules: vi.fn().mockResolvedValue(rules),
+    getActiveRuleSetRevision: vi.fn().mockResolvedValue("1"),
+    listAllActiveRules: vi.fn().mockResolvedValue(rules),
     saveProductResult: vi.fn(),
   } satisfies ClassificationRepository;
   return { admin, classification };

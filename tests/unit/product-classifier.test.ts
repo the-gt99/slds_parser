@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ReferenceCandidateDTO, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
@@ -80,6 +80,58 @@ describe("ProductClassifier", () => {
 
     expect(trail.product.classification.resolved[0]?.referenceValueId).toBe("model-acg");
     expect(air.product.classification.resolved[0]?.referenceValueId).toBe("model-2005");
+  });
+
+  it("loads and compiles the rule set once while its revision is unchanged", async () => {
+    const store = new MemoryStore();
+    store.classificationRules.push({ id: "1", sourceId: "goat", typeCode: "model", name: "Air Max 90", priority: 100, conditions: [
+      { field: "context.brand", operator: "equals", value: "Nike" },
+      { field: "context.family", operator: "equals", value: "Air Max 90" },
+    ], referenceValueId: "air-max-90", revision: "1" });
+    const repository = createMemoryRepositories(store).classifications;
+    const load = vi.spyOn(repository, "listAllActiveRules");
+    const classifier = new ProductClassifier(repository);
+
+    await classifier.classify("goat", productWith(modelCandidate("Nike Air Max 90", "Nike", "Air Max 90")));
+    await classifier.classify("goat", productWith(modelCandidate("Nike Air Max 90 Premium", "Nike", "Air Max 90")));
+
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  it("shares the initial rule-set load between concurrent classifications", async () => {
+    const store = new MemoryStore();
+    store.classificationRules.push({ id: "1", sourceId: "goat", typeCode: "model", name: "Air Max 90", priority: 100, conditions: [
+      { field: "context.brand", operator: "equals", value: "Nike" },
+      { field: "context.family", operator: "equals", value: "Air Max 90" },
+    ], referenceValueId: "air-max-90", revision: "1" });
+    const repository = createMemoryRepositories(store).classifications;
+    const load = vi.spyOn(repository, "listAllActiveRules");
+    const classifier = new ProductClassifier(repository);
+
+    await Promise.all(Array.from({ length: 10 }, (_, index) => classifier.classify(
+      "goat",
+      productWith(modelCandidate(`Nike Air Max 90 ${index}`, "Nike", "Air Max 90")),
+    )));
+
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates the compiled rule index when the rule-set revision changes", async () => {
+    const store = new MemoryStore();
+    const repository = createMemoryRepositories(store).classifications;
+    const load = vi.spyOn(repository, "listAllActiveRules");
+    const classifier = new ProductClassifier(repository);
+    const candidate = productWith(modelCandidate("Nike Air Max 90", "Nike", "Air Max 90"));
+    await classifier.classify("goat", candidate);
+    store.classificationRules.push({ id: "1", sourceId: "goat", typeCode: "model", name: "Air Max 90", priority: 100, conditions: [
+      { field: "context.brand", operator: "equals", value: "Nike" },
+      { field: "context.family", operator: "equals", value: "Air Max 90" },
+    ], referenceValueId: "air-max-90", revision: "1" });
+
+    const result = await classifier.classify("goat", candidate);
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(result.product.classification.resolved[0]?.referenceValueId).toBe("air-max-90");
   });
 
   it("separates Surge Golf and Surge 4 using contains and regex rules", async () => {

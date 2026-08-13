@@ -125,24 +125,50 @@ export class PostgresClassificationRepository implements ClassificationRepositor
     }));
   }
 
+  async getActiveRuleSetRevision(sourceId: EntityId): Promise<string> {
+    const result = await this.executor.query<DatabaseRow>(
+      "SELECT revision FROM classification_rule_set_revisions WHERE source_id = $1",
+      [sourceId],
+    );
+    return String(result.rows[0]?.revision ?? "0");
+  }
+
+  async listAllActiveRules(sourceId: EntityId): Promise<readonly ClassificationRuleRecord[]> {
+    const result = await this.executor.query<DatabaseRow>(
+      `SELECT
+        rule.id,
+        rule.source_id,
+        type.code AS type_code,
+        rule.name,
+        rule.priority,
+        rule.conditions,
+        rule.reference_value_id,
+        rule.revision
+      FROM source_reference_rules rule
+      JOIN reference_types type ON type.id = rule.reference_type_id
+      JOIN reference_values value
+        ON value.id = rule.reference_value_id
+        AND value.type_id = type.id
+        AND value.enabled = TRUE
+      WHERE rule.enabled = TRUE
+        AND rule.deleted_at IS NULL
+        AND rule.source_id = $1
+      ORDER BY rule.priority DESC, JSONB_ARRAY_LENGTH(rule.conditions) DESC, rule.id`,
+      [sourceId],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      sourceId: String(row.source_id),
+      typeCode: String(row.type_code),
+      name: String(row.name),
+      priority: Number(row.priority),
+      conditions: parseConditions(row.conditions),
+      referenceValueId: String(row.reference_value_id),
+      revision: String(row.revision),
+    }));
+  }
+
   async saveProductResult(input: SaveProductClassificationInput): Promise<void> {
-    const previousContributions = await this.executor.query<DatabaseRow>(
-      "SELECT * FROM classification_review_product_contributions($1)",
-      [input.sourceProductId],
-    );
-    await this.executor.query(
-      `DELETE FROM classification_review_rule_coverage coverage
-       USING source_product_classification_links observation
-       WHERE observation.id = coverage.observation_id
-         AND observation.source_product_id = $1`,
-      [input.sourceProductId],
-    );
-    await this.executor.query(
-      `UPDATE source_product_classification_links
-       SET active = FALSE, updated_at = NOW()
-       WHERE source_product_id = $1 AND active = TRUE`,
-      [input.sourceProductId],
-    );
     const rows = input.observations.map((observation) => ({
       candidate_key: observation.candidate.key,
       type_code: observation.candidate.typeCode,
@@ -162,6 +188,41 @@ export class PostgresClassificationRepository implements ClassificationRepositor
       resolution_revision: observation.resolutionRevision,
       matched_rule_ids: observation.matchedRuleIds ?? [],
     }));
+    const previousContributions = await this.executor.query<DatabaseRow>(
+      "SELECT * FROM classification_review_product_contributions($1)",
+      [input.sourceProductId],
+    );
+    await this.executor.query(
+      `WITH incoming AS (
+         SELECT candidate_key, matched_rule_ids
+         FROM JSONB_TO_RECORDSET($2::JSONB) AS item(candidate_key TEXT, matched_rule_ids JSONB)
+       )
+       DELETE FROM classification_review_rule_coverage coverage
+       USING source_product_classification_links observation
+       WHERE observation.id = coverage.observation_id
+         AND observation.source_product_id = $1
+         AND NOT EXISTS (
+           SELECT 1
+           FROM incoming
+           CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(incoming.matched_rule_ids) matched(rule_id)
+           WHERE incoming.candidate_key = observation.candidate_key
+             AND matched.rule_id::BIGINT = coverage.rule_id
+         )`,
+      [input.sourceProductId, JSON.stringify(rows)],
+    );
+    await this.executor.query(
+      `WITH incoming AS (
+         SELECT candidate_key
+         FROM JSONB_TO_RECORDSET($2::JSONB) AS item(candidate_key TEXT)
+       )
+       UPDATE source_product_classification_links
+       SET active = FALSE, updated_at = NOW()
+       WHERE source_product_id = $1 AND active = TRUE
+         AND NOT EXISTS (
+           SELECT 1 FROM incoming WHERE incoming.candidate_key = source_product_classification_links.candidate_key
+         )`,
+      [input.sourceProductId, JSON.stringify(rows)],
+    );
 
     await this.executor.query(
       `WITH incoming AS (
@@ -320,23 +381,57 @@ export class PostgresClassificationRepository implements ClassificationRepositor
           active = TRUE,
           last_seen_at = NOW(),
           updated_at = NOW()
-        RETURNING id, candidate_key, status
+        WHERE (
+          source_product_classification_links.candidate_id,
+          source_product_classification_links.evidence_id,
+          source_product_classification_links.subject_kind,
+          source_product_classification_links.subject_key,
+          source_product_classification_links.source_value,
+          source_product_classification_links.status,
+          source_product_classification_links.issue_reason,
+          source_product_classification_links.resolved_reference_value_id,
+          source_product_classification_links.mapping_id,
+          source_product_classification_links.rule_id,
+          source_product_classification_links.resolution_revision,
+          source_product_classification_links.active
+        ) IS DISTINCT FROM (
+          EXCLUDED.candidate_id,
+          EXCLUDED.evidence_id,
+          EXCLUDED.subject_kind,
+          EXCLUDED.subject_key,
+          EXCLUDED.source_value,
+          EXCLUDED.status,
+          EXCLUDED.issue_reason,
+          EXCLUDED.resolved_reference_value_id,
+          EXCLUDED.mapping_id,
+          EXCLUDED.rule_id,
+          EXCLUDED.resolution_revision,
+          TRUE
+        )
+        RETURNING id
+      ), selected_observations AS (
+        SELECT observation.id, incoming.candidate_key, observation.status
+        FROM incoming
+        JOIN source_product_classification_links observation
+          ON observation.source_product_id = $2::BIGINT
+         AND observation.candidate_key = incoming.candidate_key
       )
       INSERT INTO classification_review_rule_coverage (
         observation_id, rule_id, rule_revision
       )
-      SELECT upserted.id, rule.id, rule.revision
-      FROM upserted
-      JOIN incoming ON incoming.candidate_key = upserted.candidate_key
+      SELECT selected_observations.id, rule.id, rule.revision
+      FROM selected_observations
+      JOIN incoming ON incoming.candidate_key = selected_observations.candidate_key
       CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(incoming.matched_rule_ids) matched(rule_id)
       JOIN source_reference_rules rule
         ON rule.id = matched.rule_id::BIGINT
        AND rule.enabled = TRUE
        AND rule.deleted_at IS NULL
-      WHERE upserted.status IN ('unresolved', 'ambiguous')
+      WHERE selected_observations.status IN ('unresolved', 'ambiguous')
       ON CONFLICT (observation_id, rule_id) DO UPDATE SET
         rule_revision = EXCLUDED.rule_revision,
-        updated_at = NOW()`,
+        updated_at = NOW()
+      WHERE classification_review_rule_coverage.rule_revision IS DISTINCT FROM EXCLUDED.rule_revision`,
       [input.sourceId, input.sourceProductId, JSON.stringify(rows)],
     );
 

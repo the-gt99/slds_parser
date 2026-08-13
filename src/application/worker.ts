@@ -50,6 +50,8 @@ function errorText(error: unknown): string {
 }
 
 export class Worker {
+  private static readonly reclassificationBatchSize = 16;
+
   constructor(private readonly jobs: JobRepository, private readonly dispatcher: JobHandler,
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
     private readonly currentTime: () => number = Date.now,
@@ -74,6 +76,12 @@ export class Worker {
     if (job === null) return false;
     await this.processClaimed(job);
     return true;
+  }
+
+  async processMany(jobType: JobType, workerId: string, limit: number): Promise<boolean> {
+    const jobs = await this.jobs.claimMany(workerId, this.options.lockTimeoutMs, jobType, limit);
+    for (const job of jobs) await this.processClaimed(job);
+    return jobs.length > 0;
   }
 
   private async processClaimed(job: JobRecord, permit?: WorkerClaimPermit): Promise<void> {
@@ -126,7 +134,7 @@ export class Worker {
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
-          this.runLane(controller.signal, ["reclassify_product", "process_product"], `${this.options.workerId}:process-${index + 1}`)),
+          this.runProcessingLane(controller.signal, `${this.options.workerId}:process-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),
@@ -143,6 +151,18 @@ export class Worker {
   private async runLane(signal: AbortSignal, jobTypes: readonly JobType[], workerId: string): Promise<void> {
     while (!signal.aborted) {
       const processed = await this.processNext(jobTypes, workerId);
+      if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+    }
+  }
+
+  private async runProcessingLane(signal: AbortSignal, workerId: string): Promise<void> {
+    while (!signal.aborted) {
+      const processedProduct = await this.processNext(["process_product"], workerId);
+      const processed = processedProduct || await this.processMany(
+        "reclassify_product",
+        workerId,
+        Worker.reclassificationBatchSize,
+      );
       if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
   }
