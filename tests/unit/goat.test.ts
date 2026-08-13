@@ -29,7 +29,7 @@ describe("GOAT adapter and processor", () => {
   it("keeps the classification version stable across content-only DTO changes", () => {
     const processor = new GoatSourceProcessor();
 
-    expect(processor.version).toBe("3.0.0");
+    expect(processor.version).toBe("3.1.0");
     expect(processor.classificationVersion).toBe("2.9.0");
   });
 
@@ -183,6 +183,7 @@ describe("GOAT adapter and processor", () => {
     });
     expect(product.referenceCandidates.some((candidate) => candidate.scope === "product.tag.activity")).toBe(false);
     expect(product.referenceCandidates.some((candidate) => candidate.typeCode === "brand" && candidate.sourceValue === "Jane Designer")).toBe(false);
+    expect(product.sourceFacts).toEqual({ designer: "Jane Designer" });
     expect(product.referenceCandidates.filter((candidate) => candidate.scope === "product.tag.technology" && candidate.sourceValue === "Foam")).toHaveLength(1);
     expect(product.metadata).toMatchObject({ route: "sneakers" });
     expect(product.referenceCandidates.map((candidate) => candidate.typeCode)).not.toEqual(

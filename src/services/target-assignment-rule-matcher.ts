@@ -21,6 +21,9 @@ export function targetAssignmentFieldValues(product: UniversalProductDTO, field:
   if (parts[0] === "product" && parts[1] === "metadata" && parts.length === 3) {
     return scalar(product.metadata[parts[2]!]);
   }
+  if (parts[0] === "product" && parts[1] === "fact" && parts.length === 3) {
+    return scalar(product.sourceFacts?.[parts[2]!]);
+  }
   if (parts[0] !== "candidate" || parts.length < 3) {
     throw new IntegrationContractError(`Unsupported target assignment field: ${field}`);
   }

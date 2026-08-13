@@ -223,7 +223,7 @@ function parseVariants(product: JsonObject, offersPayload: JsonObject): {
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "3.0.0";
+  readonly version = "3.1.0";
   readonly classificationVersion = "2.9.0";
 
   async processExportRefresh(context: ProcessingContext) {
@@ -255,6 +255,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     const sizeUnit = text(product.sizeUnit);
     const ageGroups = textList(product.ageGroups);
     const composition = text(product.composition);
+    const designer = text(product.designer).trim();
     const taxonomy: Record<string, JsonValue> = {};
     for (const key of ["taxonomyLevel1", "taxonomyLevel2", "taxonomyLevel3", "taxonomyLevel4"] as const) {
       if (product[key] !== undefined) taxonomy[key] = product[key]!;
@@ -293,6 +294,7 @@ export class GoatSourceProcessor implements SourceProcessor {
       candidate(`product:tag:source:${index}`, "tag", "product.tag.source", value, {}, productEvidence)));
     return { sourceProductId: context.sourceProduct.id, title, description, sku: text(product.sku),
       images: images(product.images, title), variants, referenceCandidates,
+      sourceFacts: facts({ designer }),
       attributes: { brand: product.brandName ?? product.brand ?? null, family, gender, color: product.color ?? null,
         story: product.story ?? null, details: product.details ?? null, upperMaterial: product.upperMaterial ?? null,
         midsole: product.midsole ?? null, composition: product.composition ?? null, ageGroups, categoryRaw,

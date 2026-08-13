@@ -63,4 +63,17 @@ describe("TargetAssignmentAdminService", () => {
     await expect(service.create(draft)).rejects.toThrow("conflicts");
     expect(repository.create).not.toHaveBeenCalled();
   });
+
+  it("accepts a neutral source fact as a rule condition", async () => {
+    const { repository, service } = setup([]);
+
+    await service.preview({
+      ...draft,
+      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+    });
+
+    expect(repository.preview).toHaveBeenCalledWith(expect.objectContaining({
+      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+    }));
+  });
 });

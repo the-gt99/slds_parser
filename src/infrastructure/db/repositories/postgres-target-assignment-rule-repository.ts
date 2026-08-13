@@ -71,6 +71,8 @@ const matchedProductsSql = `WITH conditions AS MATERIALIZED (
           LOWER(internal.data#>>ARRAY['attributes', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
         WHEN condition.item->>'field' LIKE 'product.metadata.%' THEN
           LOWER(internal.data#>>ARRAY['metadata', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
+        WHEN condition.item->>'field' LIKE 'product.fact.%' THEN
+          LOWER(internal.data#>>ARRAY['sourceFacts', SPLIT_PART(condition.item->>'field', '.', 3)]) IN (SELECT LOWER(value) FROM JSONB_ARRAY_ELEMENTS_TEXT(condition.item->'values') value)
         ELSE FALSE
       END
     )

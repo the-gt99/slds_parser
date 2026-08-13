@@ -260,6 +260,8 @@ export interface UniversalProductDTO {
   readonly referenceCandidates: readonly ReferenceCandidateDTO[];
   readonly classification?: ProductClassificationDTO;
   readonly translatedContent?: ProductTranslatedContentDTO;
+  /** Source-provided scalar facts that may be used by source-neutral business rules. */
+  readonly sourceFacts?: JsonObject;
   readonly attributes: JsonObject;
   readonly metadata: JsonObject;
 }

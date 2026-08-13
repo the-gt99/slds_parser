@@ -241,7 +241,8 @@ API запускается отдельным процессом после `npm
 - `GET /api/runtime`, `POST /api/runtime/start`, `POST /api/runtime/stop` — состояние и управление единственным production worker `slds-parser-worker.service`;
 - `POST /api/runtime/settings` — сохранить collection, processing, применение связей классификатора и WordPress preflight concurrency; `restart=true` применяет новую ревизию перезапуском активного worker;
 - `GET /api/wordpress-snapshots` — поиск и пагинация сохранённых снимков WordPress;
-- `GET /api/products/:productId/wordpress-preview?targetId=...` — сборка общего payload экспортера и реальный read-only WordPress preflight;
+- `GET /api/products/:productId/wordpress-preview?targetId=...` — локальная пересборка preview по последнему сохранённому WordPress preflight без внешнего запроса;
+- `POST /api/products/:productId/wordpress-preflight` — явное read-only обновление сохранённого preflight с WordPress;
 - `GET /api/export-control` — курсорный список сохранённых результатов preflight без live-запросов в WordPress и без полного подсчёта строк;
 - `POST /api/export-control/preflights` — поставить выбранные либо следующие устаревшие товары в отдельную ограниченную очередь проверки;
 - `POST /api/export-control/export/preview` и `POST /api/export-control/export` — проверить состав и атомарно поставить подтверждённую партию на ручной экспорт;

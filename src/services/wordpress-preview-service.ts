@@ -404,10 +404,14 @@ export class WordPressPreviewService {
     const { _previousStatus: _ignoredPreviousStatus, ...cachedPreflightData } = cachedPreflight?.preflightCache ?? {};
     let preflightCache: JsonObject = refreshWordPress ? {} : cachedPreflightData;
     let preserveCachedVariationSummary = false;
-    const finish = async <Result>(result: Result): Promise<Result> => {
+    const finish = async <Result extends Record<string, unknown>>(result: Result): Promise<Result & {
+      readonly wordpressCheckedAt: string | null;
+      readonly usedCachedWordPress: boolean;
+    }> => {
+      const enriched = { ...result, wordpressCheckedAt, usedCachedWordPress: !refreshWordPress };
       if (this.exportControl !== undefined && configurationRevision !== null) {
         await this.exportControl.savePreflight(summarizeExportControlPreflight({
-          target, source, sourceProduct, internal, configurationRevision, preview: result,
+          target, source, sourceProduct, internal, configurationRevision, preview: enriched,
           wordpressCheckedAt,
           wordpressStateHash,
           usedCachedWordPress: !refreshWordPress,
@@ -415,7 +419,7 @@ export class WordPressPreviewService {
           ...(preserveCachedVariationSummary && cachedPreflight !== null ? { cachedPreflight } : {}),
         }));
       }
-      return result;
+      return enriched;
     };
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {

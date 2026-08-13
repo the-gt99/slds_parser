@@ -111,6 +111,7 @@ export interface WordPressCatalogRunItemRecord {
   readonly variationResult: JsonObject | null;
   readonly variationError: string | null;
   readonly payload: JsonObject;
+  readonly targetTermLabels?: JsonObject;
   readonly fetchedAt: string;
   readonly variationCheckedAt: string | null;
   readonly updatedAt: string;

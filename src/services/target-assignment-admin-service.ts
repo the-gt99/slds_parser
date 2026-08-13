@@ -77,7 +77,7 @@ export class TargetAssignmentAdminService {
     if (!Number.isInteger(draft.priority) || draft.priority < -10_000 || draft.priority > 10_000) throw new IntegrationContractError("priority is out of range");
     if (draft.conditions.length === 0) throw new IntegrationContractError("At least one target assignment condition is required");
     for (const condition of draft.conditions) {
-      if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:attribute|metadata)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
+      if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
         throw new IntegrationContractError(`Unsupported target assignment field: ${condition.field}`);
       }
       if (condition.operator !== "equals" && condition.operator !== "one_of") throw new IntegrationContractError(`Unsupported condition operator: ${condition.operator}`);

@@ -6,6 +6,7 @@ import { resolveTargetAssignments } from "../../src/services/index.js";
 
 const product = {
   sourceProductId: "1", title: "Sandal model", description: "", sku: "SKU", images: [], variants: [], attributes: { gender: "women" }, metadata: {},
+  sourceFacts: { designer: "Wilson Smith" },
   referenceCandidates: [
     { key: "category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "sandals", context: { audience: "women" }, evidence: {} },
     { key: "marketing", typeCode: "merchandising_category", scope: "product.merchandising_category", subjectKind: "product", sourceValue: "Sandal", context: {}, evidence: {} },
@@ -53,5 +54,14 @@ describe("target assignment rules", () => {
     ], "715")]);
 
     expect(result).toEqual([{ ruleId: "collaboration", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
+  });
+
+  it("uses a source fact without creating a classifier candidate", () => {
+    const result = resolveTargetAssignments(product, [rule("designer", 100, [
+      { field: "product.fact.designer", operator: "equals", values: ["wilson smith"] },
+    ], "715")]);
+
+    expect(result).toEqual([{ ruleId: "designer", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
+    expect(product.referenceCandidates.some((candidate) => candidate.sourceValue === "Wilson Smith")).toBe(false);
   });
 });

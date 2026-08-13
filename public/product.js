@@ -994,33 +994,49 @@ function renderProduct(item) {
   byId("product-content").hidden = false;
 }
 
-async function loadPreview() {
+function showPreview(item, refreshed) {
+  const box = byId("preview-state"); const content = byId("preview-content"); const button = byId("load-preview");
+  const checkedAt = item.wordpressCheckedAt ? formatDate(item.wordpressCheckedAt) : "дата неизвестна";
+  const sourceLabel = refreshed ? `Preflight обновлён с WordPress ${checkedAt}` : `Показан сохранённый preflight от ${checkedAt}`;
+  box.textContent = item.readiness?.ready
+    ? item.willCreate
+      ? `${sourceLabel} · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
+      : `${sourceLabel} · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`
+    : `${sourceLabel} · найден товар WP ${item.externalId || "—"} · экспорт заблокирован`;
+  const blocks = [renderVisualPreview(item)];
+  if (item.payload) {
+    blocks.push(
+      jsonDetails("Технический payload: основные поля", item.payload.fields),
+      jsonDetails("Технический payload: таксономии", item.payload.taxonomies),
+      jsonDetails(`Технический payload: изображения (${item.payload.images.length})`, item.payload.images),
+      jsonDetails(`Технический payload: исходные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
+    );
+  }
+  blocks.push(jsonDetails("Технический результат сравнения", { readiness: item.readiness, comparison: item.comparison, diff: item.diff }));
+  content.replaceChildren(...blocks); content.hidden = false; button.disabled = false;
+}
+
+async function loadPreview(refreshWordPress = true) {
   const box = byId("preview-state"); const content = byId("preview-content"); const button = byId("load-preview");
   const target = state.product?.targets?.find((item) => item.exporterCode === "wordpress");
   if (!target) { box.textContent = "WordPress target не настроен для preview."; return; }
-  button.disabled = true; box.textContent = "WordPress выполняет read-only preflight…"; box.classList.remove("error"); content.hidden = true;
+  button.disabled = true;
+  box.textContent = refreshWordPress ? "WordPress выполняет read-only preflight…" : "Загружаем сохранённый preflight…";
+  box.classList.remove("error"); content.hidden = true;
   try {
-    const { item } = await api(`/api/products/${productId}/wordpress-preflight`, {
-      method: "POST",
-      body: { targetId: target.id },
-    });
-    box.textContent = item.readiness?.ready
-      ? item.willCreate
-        ? `Preflight сохранён без записи в WordPress · товар будет создан · target ${item.target.enabled ? "включён" : "выключен"}`
-        : `Preflight сохранён без записи в WordPress · найден товар WP ${item.externalId} · target ${item.target.enabled ? "включён" : "выключен"}`
-      : `Проверка сохранена без записи в WordPress · найден товар WP ${item.externalId || "—"} · экспорт заблокирован`;
-    const blocks = [renderVisualPreview(item)];
-    if (item.payload) {
-      blocks.push(
-        jsonDetails("Технический payload: основные поля", item.payload.fields),
-        jsonDetails("Технический payload: таксономии", item.payload.taxonomies),
-        jsonDetails(`Технический payload: изображения (${item.payload.images.length})`, item.payload.images),
-        jsonDetails(`Технический payload: исходные вариации (${item.payload.activeVariations.length})`, item.payload.activeVariations),
-      );
+    const response = refreshWordPress
+      ? await api(`/api/products/${productId}/wordpress-preflight`, { method: "POST", body: { targetId: target.id } })
+      : await api(`/api/products/${productId}/wordpress-preview?targetId=${encodeURIComponent(target.id)}`);
+    showPreview(response.item, refreshWordPress);
+  } catch (error) {
+    if (!refreshWordPress && error.message.includes("Сохранённый preflight")) {
+      box.textContent = "Сохранённого preflight пока нет. Нажмите «Обновить с WordPress», чтобы выполнить read-only проверку.";
+      box.classList.remove("error");
+    } else {
+      box.textContent = `Preview заблокирован: ${error.message}`;
+      box.classList.add("error");
     }
-    blocks.push(jsonDetails("Технический результат сравнения", { readiness: item.readiness, comparison: item.comparison, diff: item.diff }));
-    content.replaceChildren(...blocks); content.hidden = false;
-  } catch (error) { box.textContent = `Preview заблокирован: ${error.message}`; box.classList.add("error"); }
+  }
   finally { button.disabled = false; }
 }
 
@@ -1038,6 +1054,7 @@ async function loadProduct() {
     const response = await api(`/api/products/${productId}`);
     state.product = response.item;
     renderProduct(state.product);
+    void loadPreview(false);
   } catch (requestError) {
     if (requestError.status === 401) return showLogin();
     showError(error, requestError.message);
@@ -1049,7 +1066,7 @@ async function loadProduct() {
 byId("login-form").addEventListener("submit", login);
 byId("logout-button").addEventListener("click", logout);
 byId("refresh-product").addEventListener("click", loadProduct);
-byId("load-preview").addEventListener("click", loadPreview);
+byId("load-preview").addEventListener("click", () => loadPreview(true));
 
 restoreSession().catch((error) => {
   byId("product-loading").hidden = true;

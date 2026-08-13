@@ -490,7 +490,7 @@ describe("HTTP server", () => {
     expect(response.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
     expect(preflight.statusCode).toBe(200);
-    expect(wordpressPreview.preview).toHaveBeenNthCalledWith(1, "3", "10");
+    expect(wordpressPreview.preview).toHaveBeenNthCalledWith(1, "3", "10", [], { refreshWordPress: false });
     expect(wordpressPreview.preview).toHaveBeenNthCalledWith(2, "3", "10", [], { saveExportControl: true });
     await server.close();
   });

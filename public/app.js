@@ -2628,6 +2628,7 @@ const targetConditionFields = [
   ["candidate.model.context.family", "Семейство модели источника"],
   ["resolved.brand", "Распознанный бренд"],
   ["resolved.model", "Распознанная модель"],
+  ["product.fact.designer", "Дизайнер источника"],
   ["product.metadata.source", "Источник товара"],
   ["product.attribute.gender", "Пол из DTO"],
 ];

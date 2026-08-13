@@ -1652,6 +1652,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       return { item: await dependencies.wordpressPreview.preview(
         entityId(request.params.productId, "productId"),
         entityId(request.query.targetId, "targetId"),
+        [],
+        { refreshWordPress: false },
       ) };
     },
   );

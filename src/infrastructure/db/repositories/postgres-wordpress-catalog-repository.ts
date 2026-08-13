@@ -120,6 +120,7 @@ function mapItem(row: DatabaseRow): WordPressCatalogRunItemRecord {
     variationResult: row.variation_result === null || row.variation_result === undefined ? null : row.variation_result as JsonObject,
     variationError: nullableText(row, "variation_error"),
     payload: row.payload as JsonObject,
+    targetTermLabels: row.target_term_labels === null || row.target_term_labels === undefined ? {} : row.target_term_labels as JsonObject,
     fetchedAt: timestamp(row, "fetched_at"),
     variationCheckedAt: nullableTimestamp(row, "variation_checked_at"),
     updatedAt: timestamp(row, "updated_at"),
@@ -285,8 +286,19 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
 
   async getItem(runId: string, itemId: string): Promise<WordPressCatalogRunItemRecord | null> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `SELECT item.*, snapshot.payload, snapshot.fetched_at
+      `SELECT item.*, snapshot.payload, snapshot.fetched_at,
+              COALESCE((
+                SELECT JSONB_OBJECT_AGG(dictionary.external_id, dictionary.name)
+                FROM target_dictionary_values dictionary
+                WHERE dictionary.target_id = run.target_id
+                  AND dictionary.external_id IN (
+                    SELECT DISTINCT term.term_id
+                    FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result->'taxonomies', '[]'::JSONB)) AS taxonomy(row),
+                         LATERAL JSONB_ARRAY_ELEMENTS_TEXT(COALESCE(taxonomy.row->'after', '[]'::JSONB)) AS term(term_id)
+                  )
+              ), '{}'::JSONB) AS target_term_labels
        FROM wordpress_catalog_run_items item
+       JOIN wordpress_catalog_runs run ON run.id = item.run_id
        JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
        WHERE item.run_id = $1 AND item.id = $2`, [runId, itemId]);
     return result.rows[0] === undefined ? null : mapItem(result.rows[0]);
