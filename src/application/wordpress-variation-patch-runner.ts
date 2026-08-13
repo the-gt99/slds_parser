@@ -112,7 +112,23 @@ export class WordPressVariationPatchRunner {
       if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
-      const patchPayload = await this.buildPatchPayload(candidate, payload.runId, liveVariants);
+      const refreshedProduct = await this.sourceProducts.getById(sourceProduct.id);
+      if (refreshedProduct?.externalId === null || refreshedProduct === null) {
+        throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${sourceProduct.id}`);
+      }
+      const effectiveCandidate: WordPressCatalogVariationCandidate = {
+        ...candidate,
+        sourceProduct: {
+          id: refreshedProduct.id,
+          sourceId: refreshedProduct.sourceId,
+          sourceKey: refreshedProduct.sourceKey,
+          externalId: refreshedProduct.externalId,
+          ...(refreshedProduct.slug === null ? {} : { slug: refreshedProduct.slug }),
+          ...(refreshedProduct.url === null ? {} : { url: refreshedProduct.url }),
+          metadata: refreshedProduct.discoveryMetadata,
+        },
+      };
+      const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, liveVariants);
       if (patchPayload === null) return { status: "skipped" };
       const [submission] = await this.client.submitVariationPatches([patchPayload]);
       if (submission === undefined) throw new IntegrationContractError("WordPress did not return a variation patch result");
