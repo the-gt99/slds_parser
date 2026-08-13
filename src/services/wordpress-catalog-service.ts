@@ -2,8 +2,11 @@ import { EntityNotFoundError, IntegrationContractError } from "../core/errors/in
 import type {
   SourceRepository,
   TargetRepository,
+  WordPressCatalogAuditFilter,
   WordPressCatalogMatchStatus,
+  WordPressCatalogOperationFilter,
   WordPressCatalogRepository,
+  WordPressCatalogRiskFilter,
   WordPressCatalogVariationFilter,
 } from "../repositories/index.js";
 
@@ -45,7 +48,12 @@ export class WordPressCatalogService {
 
   async listItems(input: {
     readonly runId: string;
+    readonly search?: string;
     readonly matchStatus?: WordPressCatalogMatchStatus;
+    readonly auditStatus?: WordPressCatalogAuditFilter;
+    readonly risk?: WordPressCatalogRiskFilter;
+    readonly operation?: WordPressCatalogOperationFilter;
+    readonly changeFlag?: string;
     readonly variationFilter?: WordPressCatalogVariationFilter;
     readonly limit: number;
     readonly offset: number;
@@ -53,9 +61,17 @@ export class WordPressCatalogService {
     await this.getRun(input.runId);
     return this.repository.listItems({
       ...input,
+      ...(input.search?.trim() ? { search: input.search.trim().slice(0, 200) } : {}),
       limit: Math.max(1, Math.min(200, input.limit)),
       offset: Math.max(0, input.offset),
     });
+  }
+
+  async getItem(runId: string, itemId: string) {
+    await this.getRun(runId);
+    const item = await this.repository.getItem(runId, itemId);
+    if (item === null) throw new EntityNotFoundError("wordpress catalog item", itemId);
+    return item;
   }
 
   async enqueueVariationCanary(runId: string, itemId: string) {

@@ -172,7 +172,18 @@ interface ExportControlBody {
 interface ExportCampaignParams { readonly campaignId: string }
 interface WordPressCatalogRunParams { readonly runId: string }
 interface WordPressCatalogQuery { readonly targetId?: string; readonly limit?: string }
-interface WordPressCatalogItemsQuery { readonly match?: string; readonly variation?: string; readonly limit?: string; readonly offset?: string }
+interface WordPressCatalogItemsQuery {
+  readonly search?: string;
+  readonly match?: string;
+  readonly audit?: string;
+  readonly risk?: string;
+  readonly operation?: string;
+  readonly change?: string;
+  readonly variation?: string;
+  readonly limit?: string;
+  readonly offset?: string;
+}
+interface WordPressCatalogItemParams extends WordPressCatalogRunParams { readonly itemId: string }
 interface WordPressCatalogRunBody {
   readonly targetId?: unknown;
   readonly sourceCode?: unknown;
@@ -420,6 +431,33 @@ function exportControlRisk(value: unknown): "none" | "review" | "danger" | undef
 function exportControlChange(value: unknown): string | undefined {
   const change = optionalString(value);
   if (change !== undefined && !/^[a-z0-9_:.-]{1,80}$/u.test(change)) throw new HttpInputError("Invalid change filter");
+  return change;
+}
+
+function catalogAudit(value: unknown): "ready" | "blocked" | "error" {
+  if (value !== "ready" && value !== "blocked" && value !== "error") {
+    throw new HttpInputError("audit must be ready, blocked or error");
+  }
+  return value;
+}
+
+function catalogRisk(value: unknown): "safe" | "review" | "danger" | "blocked" {
+  if (value !== "safe" && value !== "review" && value !== "danger" && value !== "blocked") {
+    throw new HttpInputError("risk must be safe, review, danger or blocked");
+  }
+  return value;
+}
+
+function catalogOperation(value: unknown): "update" | "new" | "unmatched" {
+  if (value !== "update" && value !== "new" && value !== "unmatched") {
+    throw new HttpInputError("operation must be update, new or unmatched");
+  }
+  return value;
+}
+
+function catalogChange(value: unknown): string {
+  const change = optionalString(value);
+  if (change === undefined || !/^[a-z0-9_:.-]{1,80}$/u.test(change)) throw new HttpInputError("Invalid catalog change filter");
   return change;
 }
 
@@ -1270,12 +1308,26 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       }
       return wordpressCatalogService().listItems({
         runId: entityId(request.params.runId, "runId"),
+        ...(optionalString(request.query.search) === undefined ? {} : { search: optionalString(request.query.search)! }),
         ...(match === undefined ? {} : { matchStatus: match }),
+        ...(optionalString(request.query.audit) === undefined ? {} : { auditStatus: catalogAudit(request.query.audit) }),
+        ...(optionalString(request.query.risk) === undefined ? {} : { risk: catalogRisk(request.query.risk) }),
+        ...(optionalString(request.query.operation) === undefined ? {} : { operation: catalogOperation(request.query.operation) }),
+        ...(optionalString(request.query.change) === undefined ? {} : { changeFlag: catalogChange(request.query.change) }),
         ...(variation === undefined ? {} : { variationFilter: variation as "not_started" | "in_progress" | "completed" | "skipped" | "failed" }),
         limit: positiveInteger(request.query.limit, 50, 200),
         offset: positiveInteger(request.query.offset, 0, 1_000_000),
       });
     },
+  );
+
+  server.get<{ Params: WordPressCatalogItemParams }>(
+    "/api/wordpress-catalog/runs/:runId/items/:itemId",
+    { preHandler: requireAdmin },
+    async (request) => ({ item: await wordpressCatalogService().getItem(
+      entityId(request.params.runId, "runId"),
+      entityId(request.params.itemId, "itemId"),
+    ) }),
   );
 
   server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogCanaryBody }>(

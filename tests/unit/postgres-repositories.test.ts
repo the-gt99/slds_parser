@@ -15,6 +15,7 @@ import {
   PostgresTargetContentTemplateRepository,
   PostgresTargetDictionaryRepository,
   PostgresTargetRepository,
+  PostgresWordPressCatalogRepository,
   DatabaseRetentionService,
 } from "../../src/infrastructure/db/index.js";
 import type { SqlExecutor, SqlPool, SqlResult } from "../../src/infrastructure/db/index.js";
@@ -78,6 +79,28 @@ const contentTemplateRow = {
 };
 
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("pages the WordPress catalog through the compact read model and counts separately", async () => {
+    const executor = new FakeExecutor([[], [{ total: "98632" }]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    const result = await repository.listItems({
+      runId: "1", search: "nike", auditStatus: "ready", risk: "danger",
+      operation: "update", changeFlag: "taxonomy_removed:product_tag",
+      variationFilter: "completed", limit: 40, offset: 80,
+    });
+
+    expect(result).toEqual({ items: [], total: 98632 });
+    expect(executor.calls).toHaveLength(2);
+    const page = executor.calls.find((call) => call.text.includes("WITH page AS MATERIALIZED"))!;
+    const count = executor.calls.find((call) => call.text.includes("SELECT COUNT(*)::BIGINT AS total"))!;
+    expect(page.text).toContain("wordpress_catalog_item_read_models");
+    expect(page.text).not.toContain("COUNT(*) OVER()");
+    expect(page.text).not.toContain("snapshot.payload");
+    expect(page.text).toContain("model.change_flags @> ARRAY[");
+    expect(count.values).not.toContain(40);
+    expect(count.values).not.toContain(80);
+  });
+
   it("keeps source product id typed as bigint while building preflight search text", async () => {
     const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
     const repository = new PostgresExportControlRepository(pool(executor));

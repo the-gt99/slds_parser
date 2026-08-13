@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../contracts/index.js";
 import type {
   WordPressCatalogRepository,
   WordPressCatalogRunItemRecord,
+  WordPressCatalogRunItemSummaryRecord,
   WordPressCatalogRunRecord,
   WordPressVariationAutoSyncState,
   WordPressVariationAutoTickOutcome,
@@ -120,6 +121,38 @@ function mapItem(row: DatabaseRow): WordPressCatalogRunItemRecord {
     variationError: nullableText(row, "variation_error"),
     payload: row.payload as JsonObject,
     fetchedAt: timestamp(row, "fetched_at"),
+    variationCheckedAt: nullableTimestamp(row, "variation_checked_at"),
+    updatedAt: timestamp(row, "updated_at"),
+  };
+}
+
+function mapItemSummary(row: DatabaseRow): WordPressCatalogRunItemSummaryRecord {
+  return {
+    id: text(row, "id"),
+    wordpressProductId: text(row, "wordpress_product_id"),
+    sourceExternalId: nullableText(row, "source_external_id"),
+    legacyGoatId: nullableText(row, "legacy_goat_id"),
+    sku: nullableText(row, "sku"),
+    sourceProductId: nullableText(row, "source_product_id"),
+    internalProductId: nullableText(row, "internal_product_id"),
+    matchStatus: text(row, "match_status") as WordPressCatalogRunItemSummaryRecord["matchStatus"],
+    matchMethod: nullableText(row, "match_method"),
+    title: text(row, "title"),
+    imageUrl: nullableText(row, "image_url"),
+    wordpressVariationCount: Number(row.wordpress_variation_count),
+    wordpressImageCount: Number(row.wordpress_image_count),
+    auditStatus: text(row, "audit_status"),
+    auditRisk: nullableText(row, "audit_risk"),
+    auditResult: row.audit_result === null || row.audit_result === undefined ? null : row.audit_result as JsonObject,
+    auditError: nullableText(row, "audit_error"),
+    changeFlags: Array.isArray(row.change_flags) ? row.change_flags.map(String) : [],
+    variationStatus: text(row, "variation_status"),
+    variationNotices: Array.isArray(row.variation_notices) ? row.variation_notices as JsonObject[] : [],
+    wordpressJobId: nullableText(row, "wordpress_job_id"),
+    variationResult: row.variation_result === null || row.variation_result === undefined ? null : row.variation_result as JsonObject,
+    variationError: nullableText(row, "variation_error"),
+    snapshotFetchedAt: timestamp(row, "fetched_at"),
+    variationCheckedAt: nullableTimestamp(row, "variation_checked_at"),
     updatedAt: timestamp(row, "updated_at"),
   };
 }
@@ -182,12 +215,32 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
     return result.rows.map(mapRun);
   }
 
-  async listItems(input: Parameters<WordPressCatalogRepository["listItems"]>[0]): Promise<{ readonly items: readonly WordPressCatalogRunItemRecord[]; readonly total: number }> {
+  async listItems(input: Parameters<WordPressCatalogRepository["listItems"]>[0]): Promise<{ readonly items: readonly WordPressCatalogRunItemSummaryRecord[]; readonly total: number }> {
     const parameters: unknown[] = [input.runId];
     const where = ["item.run_id = $1"];
+    if (input.search !== undefined) {
+      parameters.push(`%${input.search.trim().toLocaleLowerCase("ru-RU")}%`);
+      where.push(`LOWER(model.search_text) LIKE $${parameters.length}`);
+    }
     if (input.matchStatus !== undefined) {
       parameters.push(input.matchStatus);
       where.push(`item.match_status = $${parameters.length}`);
+    }
+    if (input.auditStatus !== undefined) {
+      parameters.push(input.auditStatus);
+      where.push(`item.audit_status = $${parameters.length}`);
+    }
+    if (input.risk === "safe") where.push("model.audit_risk = 'none'");
+    else if (input.risk !== undefined) {
+      parameters.push(input.risk);
+      where.push(`model.audit_risk = $${parameters.length}`);
+    }
+    if (input.operation === "update") where.push("item.match_status = 'matched'");
+    else if (input.operation === "unmatched") where.push("item.match_status = 'unmatched'");
+    else if (input.operation === "new") where.push("FALSE");
+    if (input.changeFlag !== undefined) {
+      parameters.push(input.changeFlag);
+      where.push(`model.change_flags @> ARRAY[$${parameters.length}]::TEXT[]`);
     }
     if (input.variationFilter === "not_started") {
       where.push("item.variation_status = 'skipped' AND item.variation_checked_at IS NULL");
@@ -199,17 +252,47 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       parameters.push(input.variationFilter);
       where.push(`item.variation_status = $${parameters.length}`);
     }
+    const countParameters = [...parameters];
     parameters.push(input.limit, input.offset);
+    const [page, count] = await Promise.all([
+      queryPool<DatabaseRow>(this.pool,
+        `WITH page AS MATERIALIZED (
+           SELECT item.id
+           FROM wordpress_catalog_run_items item
+           JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
+           WHERE ${where.join(" AND ")}
+           ORDER BY item.id
+           LIMIT $${parameters.length - 1} OFFSET $${parameters.length}
+         )
+         SELECT item.id, item.wordpress_product_id, item.source_external_id, item.legacy_goat_id,
+                item.sku, item.source_product_id, item.internal_product_id, item.match_status,
+                item.match_method, item.audit_status, item.audit_result, item.audit_error,
+                item.variation_status, item.variation_notices, item.wordpress_job_id,
+                item.variation_result, item.variation_error, item.variation_checked_at, item.updated_at,
+                model.title, model.image_url, model.wordpress_variation_count,
+                model.wordpress_image_count, model.audit_risk, model.change_flags,
+                snapshot.fetched_at
+         FROM page
+         JOIN wordpress_catalog_run_items item ON item.id = page.id
+         JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
+         JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
+         ORDER BY item.id`, parameters),
+      queryPool<DatabaseRow>(this.pool,
+        `SELECT COUNT(*)::BIGINT AS total
+         FROM wordpress_catalog_run_items item
+         JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
+         WHERE ${where.join(" AND ")}`, countParameters),
+    ]);
+    return { items: page.rows.map(mapItemSummary), total: Number(count.rows[0]?.total ?? 0) };
+  }
+
+  async getItem(runId: string, itemId: string): Promise<WordPressCatalogRunItemRecord | null> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `SELECT item.*, snapshot.payload, snapshot.fetched_at, COUNT(*) OVER()::BIGINT AS total
+      `SELECT item.*, snapshot.payload, snapshot.fetched_at
        FROM wordpress_catalog_run_items item
        JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
-       WHERE ${where.join(" AND ")}
-       ORDER BY item.wordpress_product_id ASC
-       LIMIT $${parameters.length - 1} OFFSET $${parameters.length}`,
-      parameters,
-    );
-    return { items: result.rows.map(mapItem), total: Number(result.rows[0]?.total ?? 0) };
+       WHERE item.run_id = $1 AND item.id = $2`, [runId, itemId]);
+    return result.rows[0] === undefined ? null : mapItem(result.rows[0]);
   }
 
   async savePage(input: Parameters<WordPressCatalogRepository["savePage"]>[0]): Promise<WordPressCatalogRunRecord> {
@@ -329,6 +412,33 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              match_details = EXCLUDED.match_details,
              updated_at = NOW()`,
           [input.runId, JSON.stringify(rows), input.fetchedAt],
+        );
+        await client.query(
+          `INSERT INTO wordpress_catalog_item_read_models (
+             item_id, run_id, title, search_text, image_url,
+             wordpress_variation_count, wordpress_image_count, audit_risk, change_flags, updated_at
+           )
+           SELECT item.id, item.run_id,
+                  COALESCE(snapshot.payload->'product'->>'title', ''),
+                  CONCAT_WS(' ', snapshot.payload->'product'->>'title', item.wordpress_product_id::TEXT,
+                    item.source_product_id::TEXT, item.internal_product_id::TEXT,
+                    item.source_external_id, item.legacy_goat_id, item.sku),
+                  COALESCE(snapshot.payload->'product'->'images'->0->>'url',
+                    snapshot.payload->'product'->'images'->0->>'source_url',
+                    snapshot.payload->'product'->'images'->0->>'origin_url'),
+                  JSONB_ARRAY_LENGTH(COALESCE(snapshot.payload->'product'->'variations', '[]'::JSONB)),
+                  JSONB_ARRAY_LENGTH(COALESCE(snapshot.payload->'product'->'images', '[]'::JSONB)),
+                  CASE WHEN item.audit_status = 'blocked' THEN 'blocked'
+                       WHEN item.audit_result->>'risk' IN ('none', 'review', 'danger') THEN item.audit_result->>'risk' END,
+                  wordpress_catalog_audit_change_flags(item.audit_result), NOW()
+           FROM wordpress_catalog_run_items item
+           JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
+           WHERE item.run_id = $1 AND item.wordpress_product_id = ANY($2::BIGINT[])
+           ON CONFLICT (item_id) DO UPDATE SET
+             title = EXCLUDED.title, search_text = EXCLUDED.search_text, image_url = EXCLUDED.image_url,
+             wordpress_variation_count = EXCLUDED.wordpress_variation_count,
+             wordpress_image_count = EXCLUDED.wordpress_image_count, updated_at = NOW()`,
+          [input.runId, input.items.map((item) => item.wordpressProductId)],
         );
       }
 
@@ -460,9 +570,17 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
 
   async saveAudit(input: Parameters<WordPressCatalogRepository["saveAudit"]>[0]): Promise<void> {
     await queryPool(this.pool,
-      `UPDATE wordpress_catalog_run_items
-       SET audit_status = $2, audit_result = $3::JSONB, audit_error = $4, updated_at = NOW()
-       WHERE id = $1`,
+      `WITH saved AS (
+         UPDATE wordpress_catalog_run_items
+         SET audit_status = $2, audit_result = $3::JSONB, audit_error = $4, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id
+       )
+       UPDATE wordpress_catalog_item_read_models model
+       SET audit_risk = CASE WHEN $2 = 'blocked' THEN 'blocked'
+                             WHEN $3::JSONB->>'risk' IN ('none', 'review', 'danger') THEN $3::JSONB->>'risk' END,
+           change_flags = wordpress_catalog_audit_change_flags($3::JSONB), updated_at = NOW()
+       FROM saved WHERE model.item_id = saved.id`,
       [input.itemId, input.status, input.result === undefined ? null : JSON.stringify(input.result), input.error ?? null]);
   }
 

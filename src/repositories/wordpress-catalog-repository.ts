@@ -3,6 +3,9 @@ import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO, Univ
 export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "failed";
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
 export type WordPressCatalogVariationFilter = "not_started" | "in_progress" | "completed" | "skipped" | "failed";
+export type WordPressCatalogAuditFilter = "ready" | "blocked" | "error";
+export type WordPressCatalogRiskFilter = "safe" | "review" | "danger" | "blocked";
+export type WordPressCatalogOperationFilter = "update" | "new" | "unmatched";
 export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
 export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "completed";
 
@@ -59,6 +62,35 @@ export interface WordPressCatalogPageInput {
   readonly contentHash: string;
 }
 
+export interface WordPressCatalogRunItemSummaryRecord {
+  readonly id: EntityId;
+  readonly wordpressProductId: string;
+  readonly sourceExternalId: string | null;
+  readonly legacyGoatId: string | null;
+  readonly sku: string | null;
+  readonly sourceProductId: EntityId | null;
+  readonly internalProductId: EntityId | null;
+  readonly matchStatus: WordPressCatalogMatchStatus;
+  readonly matchMethod: string | null;
+  readonly title: string;
+  readonly imageUrl: string | null;
+  readonly wordpressVariationCount: number;
+  readonly wordpressImageCount: number;
+  readonly auditStatus: string;
+  readonly auditRisk: string | null;
+  readonly auditResult: JsonObject | null;
+  readonly auditError: string | null;
+  readonly changeFlags: readonly string[];
+  readonly variationStatus: string;
+  readonly variationNotices: readonly JsonObject[];
+  readonly wordpressJobId: string | null;
+  readonly variationResult: JsonObject | null;
+  readonly variationError: string | null;
+  readonly snapshotFetchedAt: string;
+  readonly variationCheckedAt: string | null;
+  readonly updatedAt: string;
+}
+
 export interface WordPressCatalogRunItemRecord {
   readonly id: EntityId;
   readonly runId: EntityId;
@@ -83,6 +115,7 @@ export interface WordPressCatalogRunItemRecord {
   readonly variationError: string | null;
   readonly payload: JsonObject;
   readonly fetchedAt: string;
+  readonly variationCheckedAt: string | null;
   readonly updatedAt: string;
 }
 
@@ -108,11 +141,17 @@ export interface WordPressCatalogRepository {
   listRuns(targetId: EntityId, limit: number): Promise<readonly WordPressCatalogRunRecord[]>;
   listItems(input: {
     readonly runId: EntityId;
+    readonly search?: string;
     readonly matchStatus?: WordPressCatalogMatchStatus;
+    readonly auditStatus?: WordPressCatalogAuditFilter;
+    readonly risk?: WordPressCatalogRiskFilter;
+    readonly operation?: WordPressCatalogOperationFilter;
+    readonly changeFlag?: string;
     readonly variationFilter?: WordPressCatalogVariationFilter;
     readonly limit: number;
     readonly offset: number;
-  }): Promise<{ readonly items: readonly WordPressCatalogRunItemRecord[]; readonly total: number }>;
+  }): Promise<{ readonly items: readonly WordPressCatalogRunItemSummaryRecord[]; readonly total: number }>;
+  getItem(runId: EntityId, itemId: EntityId): Promise<WordPressCatalogRunItemRecord | null>;
   savePage(input: {
     readonly runId: EntityId;
     readonly expectedCursor: string;

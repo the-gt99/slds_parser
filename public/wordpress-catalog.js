@@ -1,17 +1,34 @@
+import { buildCatalogQuery, catalogPagination, priceIsNewerThanSnapshot } from "/assets/wordpress-catalog-model.js";
+
 const byId = (id) => document.getElementById(id);
-const state = { session: null, targetId: null, run: null, offset: 0, total: 0, timer: null };
+const pageSize = 40;
+const state = { session: null, targets: [], targetId: null, run: null, page: 1, total: 0, timer: null, request: null };
 
 async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/json", "Content-Type": "application/json", ...(options.method && state.session?.csrfToken ? { "X-CSRF-Token": state.session.csrfToken } : {}) }, ...options, ...(options.body ? { body: JSON.stringify(options.body) } : {}) });
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...(options.method && state.session?.csrfToken ? { "X-CSRF-Token": state.session.csrfToken } : {}) },
+    ...options,
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.message || `Ошибка HTTP ${response.status}`);
   return data;
 }
 
 const count = (value) => new Intl.NumberFormat("ru-RU").format(Number(value || 0));
-const date = (value) => value ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value)) : "—";
-function node(tag, className, value) { const result = document.createElement(tag); if (className) result.className = className; if (value !== undefined) result.textContent = value; return result; }
+const date = (value) => value ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+function node(tag, className = "", value) { const result = document.createElement(tag); if (className) result.className = className; if (value !== undefined) result.textContent = value; return result; }
 function message(value, kind = "") { byId("message").textContent = value; byId("message").className = `inline-message ${kind}`; byId("message").hidden = false; }
+function badge(value, kind = "") { return node("span", `export-badge ${kind}`, value); }
+function asObject(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+function asArray(value) { return Array.isArray(value) ? value : []; }
+
+const auditLabels = { pending: "Ожидает", running: "Выполняется", ready: "Аудит готов", blocked: "Заблокирован", error: "Ошибка", skipped: "Не применим" };
+const riskLabels = { none: "Без изменений", review: "Нужен просмотр", danger: "Опасные изменения", blocked: "Заблокировано" };
+const variationLabels = { pending: "В очереди", refreshing: "Получает GOAT offers", ready: "Готов к WordPress", submitted: "В WordPress", completed: "Обновлено", skipped: "Пропущено", failed: "Ошибка" };
+const taxonomyLabels = { pa_brand: "Бренды", pa_model: "Модели", product_cat: "Категории", product_tag: "Метки", pa_tsvet: "Цвет", pa_material: "Материал", pa_vid: "Назначение", pa_shoe_height: "Высота", pa_season: "Сезон" };
+const fieldLabels = { title: "Название", slug: "Slug", sku: "SKU", description_html: "Описание", short_description_html: "Краткое описание" };
 
 function renderRun() {
   const run = state.run;
@@ -21,21 +38,29 @@ function renderRun() {
   byId("matched").textContent = count(run.matchedCount);
   byId("unmatched").textContent = count(run.unmatchedCount);
   byId("ambiguous").textContent = count(run.ambiguousCount);
+
+  const snapshotLabels = { running: "Скачивается", completed: "Завершён", paused: "На паузе", failed: "Ошибка" };
+  byId("snapshot-status").textContent = snapshotLabels[run.status] || run.status;
+  byId("snapshot-meta").textContent = `${count(run.totalCount)} товаров · обновлён ${date(run.completedAt || run.updatedAt)}`;
+
+  const auditActive = Number(run.auditPendingCount || 0);
+  byId("audit-status").textContent = run.auditErrorCount > 0 ? "Есть ошибки" : auditActive > 0 ? "Выполняется" : "Завершён";
+  byId("audit-ready").textContent = count(run.auditReadyCount);
+  byId("audit-blocked").textContent = count(run.auditBlockedCount);
+  byId("audit-meta").textContent = `ожидает ${count(auditActive)} · ошибок ${count(run.auditErrorCount)}`;
+
   byId("variation-completed").textContent = count(run.variationCompletedCount);
-  const activeVariations = Number(run.variationPendingCount || 0) + Number(run.variationSubmittedCount || 0);
-  byId("variation-submitted").textContent = `в работе: ${count(activeVariations)} · WordPress: ${count(run.variationSubmittedCount)}`;
   byId("variation-skipped").textContent = count(run.variationSkippedCount);
   byId("variation-failed").textContent = `ошибок: ${count(run.variationFailedCount)}`;
-  const autoLabels = { inactive: "не запущен", running: "выполняется", paused: "остановлен", completed: "завершён" };
+  const active = Number(run.variationPendingCount || 0) + Number(run.variationSubmittedCount || 0);
+  const autoLabels = { inactive: "Не запущен", running: "Выполняется", paused: "Приостановлен", completed: "Завершён" };
   byId("variation-auto-status").textContent = autoLabels[run.variationAutoStatus] || run.variationAutoStatus;
-  byId("variation-auto-progress").textContent = `осталось: ${count(run.variationNotStartedCount)} · окно: ${count(run.variationAutoWindow)}${run.variationAutoError ? ` · ${run.variationAutoError}` : ""}`;
-  byId("audit-ready").textContent = count(run.auditReadyCount);
-  byId("audit-pending").textContent = `ожидают: ${count(run.auditPendingCount)}`;
-  byId("audit-blocked").textContent = count(run.auditBlockedCount);
-  byId("audit-errors").textContent = `ошибок: ${count(run.auditErrorCount)}`;
-  byId("cursor").textContent = `${run.status} · cursor ${count(run.catalogCursor)} · ${date(run.updatedAt)}`;
+  byId("variation-auto-progress").textContent = `в работе ${count(active)} · осталось ${count(run.variationNotStartedCount)} · окно ${count(run.variationAutoWindow)}`;
+  byId("variation-error").hidden = !run.variationAutoError;
+  byId("variation-error").textContent = run.variationAutoError || "";
+
   byId("start").disabled = run.status === "running";
-  byId("start").textContent = run.status === "running" ? "Каталог скачивается" : "Скачать новый каталог";
+  byId("start").textContent = run.status === "running" ? "Снимок скачивается" : "Скачать новый снимок";
   const autoActive = run.variationAutoStatus === "running" || run.variationAutoStatus === "paused";
   byId("batch-sync").disabled = run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive;
   byId("auto-sync").disabled = !run.catalogComplete || run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive || run.variationNotStartedCount < 1;
@@ -43,81 +68,205 @@ function renderRun() {
   byId("auto-resume").hidden = run.variationAutoStatus !== "paused";
 }
 
+function taxonomyName(taxonomy) { return taxonomyLabels[taxonomy] || taxonomy; }
+function termName(row, id) {
+  const current = asArray(row.before_terms).find((item) => Number(item.term_id) === Number(id));
+  return current?.name || `#${id}`;
+}
+
+function changeSummary(item) {
+  const audit = asObject(item.auditResult);
+  const result = node("div", "catalog-change-summary");
+  for (const field of asArray(audit.fields).filter((row) => row.changed).slice(0, 4)) result.append(badge(fieldLabels[field.field] || field.field, "change"));
+  for (const row of asArray(audit.taxonomies).filter((value) => value.changed).slice(0, 5)) {
+    const added = asArray(row.added).map((id) => termName(row, id));
+    const removed = asArray(row.removed).map((id) => termName(row, id));
+    const text = `${taxonomyName(row.taxonomy)}${added.length ? ` +${added.join(", ")}` : ""}${removed.length ? ` −${removed.join(", ")}` : ""}`;
+    result.append(badge(text, removed.length ? "danger" : "add"));
+  }
+  if (audit.images?.changed) result.append(badge("Изображения", "change"));
+  if (asArray(audit.variations?.added).length) result.append(badge(`Размеры +${audit.variations.added.length}`, "add"));
+  if (asArray(audit.variations?.removed).length) result.append(badge(`Размеры −${audit.variations.removed.length}`, "danger"));
+  if (!result.children.length && item.auditStatus === "ready") result.append(badge("Изменений нет", "safe"));
+  return result;
+}
+
+function selectedTarget() { return state.targets.find((target) => String(target.id) === String(state.targetId)); }
+function wordpressEditUrl(item) {
+  const baseUrl = selectedTarget()?.config?.baseUrl;
+  if (typeof baseUrl !== "string" || !baseUrl.startsWith("http")) return null;
+  return `${baseUrl.replace(/\/$/u, "")}/wp-admin/post.php?post=${encodeURIComponent(item.wordpressProductId)}&action=edit`;
+}
+
 function renderItem(item) {
-  const product = item.payload?.product || {};
-  const card = node("article", "section");
-  const title = node("div", "section-title");
-  const main = node("div");
-  main.append(node("p", "eyebrow", `WordPress #${item.wordpressProductId}`), node("h3", "", product.title || "Без названия"));
-  const badge = node("span", `export-badge ${item.matchStatus === "matched" ? "success" : item.matchStatus === "ambiguous" ? "danger" : "warning"}`, item.matchStatus);
-  title.append(main, badge);
-  const identity = node("p", "muted", `GOAT: ${item.sourceExternalId || item.legacyGoatId || "—"} · SKU: ${item.sku || "—"} · способ: ${item.matchMethod || "—"}`);
-  const details = node("p", "muted", `Вариаций: ${(product.variations || []).length} · фото: ${(product.images || []).length} · parser product: ${item.sourceProductId || "—"}`);
-  const audit = node("p", "muted", `Аудит: ${item.auditStatus}${item.auditResult?.risk ? ` · риск ${item.auditResult.risk}` : ""}${item.auditError ? ` · ${item.auditError}` : ""}`);
-  const patchResult = item.variationResult?.result;
-  const skippedPrices = Number(patchResult?.price_skipped_count || 0);
-  const variation = node("p", "muted", `Цены/остатки: ${item.variationStatus}${item.wordpressJobId ? ` · WP job #${item.wordpressJobId}` : ""}${skippedPrices > 0 ? ` · цен пропущено: ${count(skippedPrices)}` : ""}${item.variationError ? ` · ${item.variationError}` : ""}`);
-  card.append(title, identity, details, audit, variation);
-  if ((item.variationNotices || []).length > 0 || item.variationResult) {
-    const trace = node("details");
-    trace.append(node("summary", "", "Причины и технический результат"));
-    trace.append(node("pre", "technical-result", JSON.stringify({ notices: item.variationNotices || [], wordpress: item.variationResult }, null, 2)));
-    card.append(trace);
-  }
+  const card = node("article", `export-card catalog-card risk-${item.auditRisk || "none"}`);
+  const media = node("div", "export-card-media");
+  if (item.imageUrl) { const image = document.createElement("img"); image.src = item.imageUrl; image.alt = ""; image.loading = "lazy"; media.append(image); }
+  else media.append(node("span", "muted", "Нет фото"));
+
+  const main = node("div", "export-card-main");
+  const heading = node("div", "export-card-heading");
+  const titleBox = node("div");
+  const title = node("a", "export-card-title", item.title || "Без названия");
+  title.href = item.sourceProductId ? `/products/${item.sourceProductId}` : "#";
+  titleBox.append(title, node("p", "muted", `WordPress #${item.wordpressProductId} · parser ${item.sourceProductId || "—"} · internal ${item.internalProductId || "—"} · GOAT ${item.sourceExternalId || item.legacyGoatId || "—"} · SKU ${item.sku || "—"}`));
+  const statuses = node("div", "export-card-statuses");
+  statuses.append(badge(auditLabels[item.auditStatus] || item.auditStatus, item.auditStatus === "blocked" || item.auditStatus === "error" ? "danger" : item.auditStatus === "ready" ? "safe" : "review"));
+  if (item.auditRisk) statuses.append(badge(riskLabels[item.auditRisk] || item.auditRisk, item.auditRisk === "danger" || item.auditRisk === "blocked" ? "danger" : item.auditRisk === "review" ? "review" : "safe"));
+  statuses.append(badge(variationLabels[item.variationStatus] || item.variationStatus, item.variationStatus === "failed" ? "danger" : item.variationStatus === "completed" ? "safe" : ""));
+  heading.append(titleBox, statuses);
+  main.append(heading, changeSummary(item));
+  if (item.auditError) main.append(node("p", "form-error", item.auditError));
+  const blockers = asArray(item.auditResult?.blockers);
+  if (blockers.length) { const list = node("ul", "export-blockers"); blockers.forEach((blocker) => list.append(node("li", "", blocker.message || blocker.code || String(blocker)))); main.append(list); }
+
+  const footer = node("div", "export-card-footer");
+  const freshness = node("div", "catalog-freshness");
+  freshness.append(node("span", "muted", `Снимок WordPress: ${date(item.snapshotFetchedAt)}`));
+  freshness.append(node("span", "muted", `Последняя price-проверка: ${date(item.variationCheckedAt)}`));
+  if (priceIsNewerThanSnapshot(item.snapshotFetchedAt, item.variationCheckedAt)) freshness.append(badge("Цена свежее снимка", "review"));
+  const actions = node("div", "runtime-actions");
+  if (item.sourceProductId) { const parser = node("a", "button quiet small-button", "Карточка parser"); parser.href = `/products/${item.sourceProductId}`; actions.append(parser); }
+  const editUrl = wordpressEditUrl(item);
+  if (editUrl) { const edit = node("a", "button quiet small-button", "Правка WordPress ↗"); edit.href = editUrl; edit.target = "_blank"; edit.rel = "noopener noreferrer"; actions.append(edit); }
+  const diff = node("button", "button secondary small-button", "Полный diff"); diff.type = "button"; diff.addEventListener("click", () => openDiff(item)); actions.append(diff);
   if (item.matchStatus === "matched" && (item.variationStatus === "skipped" || item.variationStatus === "failed")) {
-    const canary = node("button", "button quiet", "Canary цен/остатков"); canary.type = "button";
-    canary.addEventListener("click", async () => { if (!window.confirm(`Обновить только существующие цены и остатки WordPress #${item.wordpressProductId}?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-canary`, { method: "POST", body: { itemId: item.id } }); message(`Canary WordPress #${item.wordpressProductId} поставлен в очередь.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
-    card.append(canary);
+    const canary = node("button", "button quiet small-button", "Canary цены"); canary.type = "button";
+    canary.addEventListener("click", () => enqueueCanary(item)); actions.append(canary);
   }
+  footer.append(freshness, actions);
+  card.append(media, main, footer);
   return card;
 }
 
-async function loadItems(append = false) {
-  if (!state.run) return;
-  if (!append) { state.offset = 0; byId("items").replaceChildren(); }
-  const query = new URLSearchParams({ limit: "50", offset: String(state.offset), ...(byId("match").value ? { match: byId("match").value } : {}), ...(byId("variation-filter").value ? { variation: byId("variation-filter").value } : {}) });
-  const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/items?${query}`);
-  data.items.forEach((item) => byId("items").append(renderItem(item)));
-  state.offset += data.items.length;
-  state.total = data.total;
-  byId("empty").hidden = state.total !== 0;
-  byId("more").hidden = state.offset >= state.total;
+function currentFilters() {
+  return {
+    search: byId("search").value.trim(), audit: byId("audit-filter").value, risk: byId("risk-filter").value,
+    operation: byId("operation-filter").value, change: byId("change-filter").value, variation: byId("variation-filter").value,
+  };
 }
 
-async function refresh() {
+function renderPagination() {
+  const pagination = catalogPagination(state.total, state.page, pageSize);
+  const pages = pagination.totalPages;
+  state.page = pagination.page;
+  byId("catalog-pagination").hidden = state.total === 0;
+  byId("page-info").textContent = state.total ? `${count(pagination.first)}–${count(pagination.last)} из ${count(state.total)}` : "";
+  byId("page-number").value = String(state.page);
+  byId("page-number").max = String(pages);
+  byId("page-total").textContent = `из ${count(pages)}`;
+  byId("prev-page").disabled = state.page <= 1;
+  byId("next-page").disabled = state.page >= pages;
+}
+
+async function loadItems() {
+  if (!state.run) return;
+  state.request?.abort();
+  state.request = new AbortController();
+  byId("loading").hidden = false; byId("error").hidden = true; byId("empty").hidden = true; byId("items").replaceChildren();
+  try {
+    const query = buildCatalogQuery(currentFilters(), state.page, pageSize);
+    const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/items?${query}`, { signal: state.request.signal });
+    state.total = Number(data.total || 0);
+    for (const item of data.items || []) byId("items").append(renderItem(item));
+    byId("empty").hidden = state.total !== 0;
+    if (state.total === 0 && byId("operation-filter").value === "new") byId("empty").textContent = "Новые parser-only товары не входят в снимок существующего WordPress-каталога. Их создание анализируется в разделе «Контроль экспорта».";
+    else byId("empty").textContent = "По выбранным условиям товаров нет.";
+    renderPagination();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    byId("error").textContent = error.message; byId("error").hidden = false;
+  } finally { byId("loading").hidden = true; }
+}
+
+function scheduleRunRefresh() {
+  if (state.timer) window.clearTimeout(state.timer);
+  const run = state.run;
+  const active = Number(run?.variationPendingCount || 0) + Number(run?.variationSubmittedCount || 0);
+  if (!document.hidden && (run?.status === "running" || run?.variationAutoStatus === "running" || active > 0)) state.timer = window.setTimeout(() => refresh(false), 5000);
+}
+
+async function refresh(reloadItems = true) {
   if (!state.targetId) return;
-  byId("loading").hidden = false; byId("error").hidden = true;
+  byId("error").hidden = true;
   try {
     const runs = await api(`/api/wordpress-catalog/runs?targetId=${encodeURIComponent(state.targetId)}&limit=1`);
     state.run = runs.items[0] || null;
     renderRun();
-    await loadItems();
-    if (state.timer) window.clearTimeout(state.timer);
-    const variationActive = Number(state.run?.variationPendingCount || 0) + Number(state.run?.variationSubmittedCount || 0);
-    if (state.run?.status === "running" || state.run?.variationAutoStatus === "running" || variationActive > 0) state.timer = window.setTimeout(refresh, 5000);
-  } catch (error) { byId("error").textContent = error.message; byId("error").hidden = false; }
-  finally { byId("loading").hidden = true; }
+    if (reloadItems) await loadItems();
+    scheduleRunRefresh();
+  } catch (error) { byId("loading").hidden = true; byId("error").textContent = error.message; byId("error").hidden = false; }
+}
+
+function valueBlock(value) {
+  const pre = node("pre", "catalog-diff-value");
+  pre.textContent = value === null || value === undefined ? "—" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return pre;
+}
+
+function diffSection(title) { const section = node("section", "catalog-diff-section"); section.append(node("h3", "", title)); return section; }
+function comparison(before, after) { const box = node("div", "catalog-diff-columns"); const left = node("article"); left.append(node("span", "catalog-diff-label", "Сейчас в WordPress"), valueBlock(before)); const right = node("article"); right.append(node("span", "catalog-diff-label", "После merge"), valueBlock(after)); box.append(left, right); return box; }
+
+function renderFullDiff(item) {
+  const audit = asObject(item.auditResult);
+  const content = byId("diff-content"); content.replaceChildren();
+  byId("diff-title").textContent = asObject(item.payload?.product).title || `WordPress #${item.wordpressProductId}`;
+  byId("diff-meta").textContent = `WordPress #${item.wordpressProductId} · parser ${item.sourceProductId || "—"} · снимок ${date(item.fetchedAt)} · price job ${date(item.variationCheckedAt)}`;
+  if (priceIsNewerThanSnapshot(item.fetchedAt, item.variationCheckedAt)) {
+    const warning = node("p", "inline-message warning", "Сохранённый полный snapshot старше последнего price-only job. Поля и taxonomy diff актуальны для даты снимка; текущая цена в WordPress могла уже измениться."); warning.hidden = false; content.append(warning);
+  }
+  if (item.auditError) content.append(node("p", "form-error", item.auditError));
+  const blockers = asArray(audit.blockers);
+  if (blockers.length) { const section = diffSection("Причины блокировки"); const list = node("ul", "export-blockers"); blockers.forEach((row) => list.append(node("li", "", row.message || row.code || String(row)))); section.append(list); content.append(section); }
+
+  const fields = asArray(audit.fields);
+  if (fields.length) { const section = diffSection("Поля товара"); fields.forEach((row) => { const details = node("details", "catalog-diff-row"); if (row.changed) details.open = true; details.append(node("summary", "", `${fieldLabels[row.field] || row.field} · ${row.changed ? "изменится" : "без изменений"}`), comparison(row.before, row.after)); section.append(details); }); content.append(section); }
+
+  const taxonomies = asArray(audit.taxonomies);
+  if (taxonomies.length) { const section = diffSection("Категории, метки и атрибуты"); for (const row of taxonomies) { const before = asArray(row.before).map((id) => termName(row, id)); const after = asArray(row.after).map((id) => termName(row, id)); const details = node("details", "catalog-diff-row"); if (row.changed) details.open = true; details.append(node("summary", "", `${taxonomyName(row.taxonomy)} · +${asArray(row.added).length} / −${asArray(row.removed).length}`), comparison(before, after)); section.append(details); } content.append(section); }
+
+  if (audit.images) { const section = diffSection("Изображения"); const beforeImages = asArray(audit.images.before_items).length ? asArray(audit.images.before_items).map((row) => row.url || row.key) : asArray(audit.images.before); const afterImages = asArray(audit.images.after_items).length ? asArray(audit.images.after_items).map((row) => row.url || row.key) : asArray(audit.images.after); section.append(comparison(beforeImages, afterImages)); content.append(section); }
+
+  const variations = asArray(audit.variations?.items);
+  if (audit.variations) { const section = diffSection("Вариации, размеры, цены и остатки"); section.append(node("p", "muted", "В полном локальном аудите будущая цена хранится в исходной валюте. Итоговую цену в рублях WordPress рассчитывает при записи; price-only прогон перед этим получает свежие GOAT offers.")); if (!variations.length) section.append(comparison(asArray(audit.variations.before), asArray(audit.variations.after))); else { const table = node("div", "table-wrap"); const html = node("table", "admin-table catalog-variation-table"); const head = node("thead"); const headRow = node("tr"); ["Размер", "Сейчас", "После merge", "Изменение"].forEach((label) => headRow.append(node("th", "", label))); head.append(headRow); const body = node("tbody"); for (const row of variations) { const tr = node("tr"); tr.append(node("td", "", row.size), node("td", "", row.before ? `${row.before.regular_price || "—"} · ${row.before.stock_status || "—"}${row.before.stock_quantity === null ? "" : ` · ${row.before.stock_quantity}`}` : "нет"), node("td", "", row.after ? `${row.after.price?.source_minor_amount || "без цены"} ${row.after.price?.source_currency || ""} · ${row.after.inventory?.availability || "—"}${row.after.inventory?.quantity === undefined ? "" : ` · ${row.after.inventory.quantity}`}` : "будет отключён"), node("td", "", row.state === "added" ? "добавится" : row.state === "removed" ? "удалится" : row.stock_changed ? "остаток изменится" : row.price_managed ? "цена пересчитается" : "без изменений")); body.append(tr); } html.append(head, body); table.append(html); section.append(table); } content.append(section); }
+}
+
+async function openDiff(summary) {
+  const dialog = byId("diff-dialog"); dialog.showModal(); byId("diff-loading").hidden = false; byId("diff-error").hidden = true; byId("diff-content").replaceChildren();
+  try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/items/${summary.id}`); renderFullDiff(data.item); }
+  catch (error) { byId("diff-error").textContent = error.message; byId("diff-error").hidden = false; }
+  finally { byId("diff-loading").hidden = true; }
+}
+
+async function enqueueCanary(item) {
+  if (!window.confirm(`Обновить только существующие цены и остатки WordPress #${item.wordpressProductId}?`)) return;
+  try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-canary`, { method: "POST", body: { itemId: item.id } }); message(`Canary WordPress #${item.wordpressProductId} поставлен в очередь.`, "success"); await refresh(true); }
+  catch (error) { message(error.message, "error"); }
 }
 
 async function initialize() {
   const session = await api("/api/auth/session");
   if (!session.authenticated) { byId("login-view").hidden = false; return; }
   state.session = session; byId("operator-name").textContent = session.operator; byId("app-view").hidden = false;
-  const targets = await api("/api/targets");
-  for (const target of targets.items) { const option = node("option", "", target.name); option.value = target.id; byId("target").append(option); }
+  const targets = await api("/api/targets"); state.targets = targets.items || [];
+  for (const target of state.targets) { const option = new Option(target.name, target.id); byId("target").append(option); }
   state.targetId = byId("target").value || null;
-  await refresh();
+  await refresh(true);
 }
 
 byId("login-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/api/auth/login", { method: "POST", body: { username: byId("login-username").value, password: byId("login-password").value } }); location.reload(); } catch (error) { byId("login-error").textContent = error.message; byId("login-error").hidden = false; } });
 byId("logout-button").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST" }); location.reload(); });
-byId("target").addEventListener("change", async () => { state.targetId = byId("target").value; await refresh(); });
-byId("refresh").addEventListener("click", refresh);
-byId("filters").addEventListener("submit", async (event) => { event.preventDefault(); await loadItems(); });
-byId("more").addEventListener("click", () => loadItems(true));
-byId("start").addEventListener("click", async () => { try { const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: false, reason: "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message("Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); await loadItems(); state.timer = window.setTimeout(refresh, 3000); } catch (error) { message(error.message, "error"); } });
-byId("batch-sync").addEventListener("click", async () => { const limit = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Поставить в очередь ${count(limit)} сопоставленных товаров? Изменятся только цены и остатки существующих вариаций.`)) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-batch`, { method: "POST", body: { limit } }); message(`Поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
-byId("auto-sync").addEventListener("click", async () => { const windowSize = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Запустить обновление всех ${count(state.run.variationNotStartedCount)} оставшихся сопоставленных товаров? Одновременно в работе будет не больше ${count(windowSize)}. Изменятся только цены и остатки существующих вариаций.`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST", body: { window: windowSize } }); message("Автопрогон запущен. Новые задачи будут добавляться по мере освобождения окна.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
-byId("auto-pause").addEventListener("click", async () => { if (!state.run || !window.confirm("Остановить добавление новых задач? Уже поставленные задачи завершатся.")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/pause`, { method: "POST" }); message("Пополнение очереди остановлено. Уже поставленные задачи продолжают выполняться.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
-byId("auto-resume").addEventListener("click", async () => { if (!state.run || !window.confirm("Возобновить автопрогон и считать уже просмотренные ошибки подтверждёнными?")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/resume`, { method: "POST" }); message("Автопрогон возобновлён.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
-void initialize().catch((error) => { byId("error").textContent = error.message; byId("error").hidden = false; });
+byId("target").addEventListener("change", async () => { state.targetId = byId("target").value; state.page = 1; await refresh(true); });
+byId("refresh").addEventListener("click", () => refresh(true));
+byId("filters").addEventListener("submit", async (event) => { event.preventDefault(); state.page = 1; await loadItems(); });
+byId("prev-page").addEventListener("click", async () => { if (state.page > 1) { state.page -= 1; await loadItems(); scrollTo({ top: byId("filters").offsetTop - 20, behavior: "smooth" }); } });
+byId("next-page").addEventListener("click", async () => { if (state.page * pageSize < state.total) { state.page += 1; await loadItems(); scrollTo({ top: byId("filters").offsetTop - 20, behavior: "smooth" }); } });
+byId("page-jump").addEventListener("submit", async (event) => { event.preventDefault(); const pages = Math.max(1, Math.ceil(state.total / pageSize)); state.page = Math.max(1, Math.min(pages, Number(byId("page-number").value) || 1)); await loadItems(); });
+byId("close-diff").addEventListener("click", () => byId("diff-dialog").close());
+byId("start").addEventListener("click", async () => { try { const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: false, reason: "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message("Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); scheduleRunRefresh(); } catch (error) { message(error.message, "error"); } });
+byId("batch-sync").addEventListener("click", async () => { const limit = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Поставить в очередь ${count(limit)} товаров? Изменятся только цены и остатки существующих вариаций.`)) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-batch`, { method: "POST", body: { limit } }); message(`Поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-sync").addEventListener("click", async () => { const windowSize = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Запустить price-only автопрогон для ${count(state.run.variationNotStartedCount)} товаров с окном ${count(windowSize)}?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST", body: { window: windowSize } }); message("Автопрогон запущен.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-pause").addEventListener("click", async () => { if (!state.run || !window.confirm("Остановить пополнение? Уже поставленные задачи завершатся.")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/pause`, { method: "POST" }); message("Пополнение очереди остановлено.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-resume").addEventListener("click", async () => { if (!state.run || !window.confirm("Возобновить автопрогон после проверки журнала?")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/resume`, { method: "POST" }); message("Автопрогон возобновлён.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+document.addEventListener("visibilitychange", () => { if (document.hidden && state.timer) window.clearTimeout(state.timer); else scheduleRunRefresh(); });
+void initialize().catch((error) => { byId("loading").hidden = true; byId("error").textContent = error.message; byId("error").hidden = false; });

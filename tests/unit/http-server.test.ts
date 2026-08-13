@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService, WordPressCatalogService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -327,6 +327,7 @@ describe("HTTP server", () => {
     const server = createHttpServer({ ...dependencies(database), runtime });
 
     const page = await server.inject({ method: "GET", url: "/runtime" });
+    const navigation = await server.inject({ method: "GET", url: "/assets/admin-shell.js" });
     const unauthorized = await server.inject({ method: "GET", url: "/api/runtime" });
     const authorized = await server.inject({ method: "GET", url: "/api/runtime", headers: { authorization: `Bearer ${adminToken}` } });
     const login = await server.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "test-admin-password" } });
@@ -337,7 +338,8 @@ describe("HTTP server", () => {
     const settingsSaved = await server.inject({ method: "POST", url: "/api/runtime/settings", headers: { cookie, "x-csrf-token": login.json().csrfToken }, payload: { collectionConcurrency: 15, processConcurrency: 10, preflightConcurrency: 4, classificationApplyConcurrency: 4, restart: true } });
 
     expect(page.statusCode).toBe(200);
-    expect(page.body).toContain("/runtime");
+    expect(page.body).toContain("/assets/admin-shell.js");
+    expect(navigation.body).toContain('["/runtime", "Парсер"');
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
@@ -597,6 +599,36 @@ describe("HTTP server", () => {
       sourceProductIds: ["3"],
       reason: "smoke",
     }), "admin");
+    await server.close();
+  });
+
+  it("validates WordPress catalog analysis filters and serves a separate full diff", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const wordpressCatalog = {
+      listItems: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      getItem: vi.fn().mockResolvedValue({ id: "7", auditResult: { risk: "danger" } }),
+    } as unknown as WordPressCatalogService;
+    const server = createHttpServer({ ...dependencies(database), wordpressCatalog });
+
+    const page = await server.inject({ method: "GET", url: "/wordpress-catalog" });
+    const list = await server.inject({
+      method: "GET",
+      url: "/api/wordpress-catalog/runs/1/items?search=Nike&audit=ready&risk=danger&operation=update&change=taxonomy_removed%3Aproduct_tag&variation=completed&limit=40&offset=80",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const detail = await server.inject({ method: "GET", url: "/api/wordpress-catalog/runs/1/items/7", headers: { authorization: `Bearer ${adminToken}` } });
+    const invalid = await server.inject({ method: "GET", url: "/api/wordpress-catalog/runs/1/items?risk=unknown", headers: { authorization: `Bearer ${adminToken}` } });
+
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("/assets/admin-shell.js");
+    expect(list.statusCode).toBe(200);
+    expect(detail.statusCode).toBe(200);
+    expect(invalid.statusCode).toBe(400);
+    expect(wordpressCatalog.listItems).toHaveBeenCalledWith({
+      runId: "1", search: "Nike", auditStatus: "ready", risk: "danger", operation: "update",
+      changeFlag: "taxonomy_removed:product_tag", variationFilter: "completed", limit: 40, offset: 80,
+    });
+    expect(wordpressCatalog.getItem).toHaveBeenCalledWith("1", "7");
     await server.close();
   });
 

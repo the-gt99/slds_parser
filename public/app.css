@@ -89,16 +89,65 @@ h3 { font-size: 17px; line-height: 1.3; }
 .export-card-footer { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .export-load-more { display: flex; justify-content: center; }
 .export-batches-section { margin-top: 8px; }
+.export-batches-section > .runtime-actions { display: grid; grid-template-columns: 170px 170px minmax(260px, 1fr) auto; align-items: end; }
+.export-batches-section > .runtime-actions .field { min-width: 0; }
 .export-batches { display: grid; gap: 8px; }
 .export-batch-row { display: grid; grid-template-columns: 130px minmax(180px, 1fr) 110px minmax(280px, 1.5fr); gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
 .export-dialog { width: min(620px, calc(100vw - 32px)); }
 .export-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 18px; }
 .export-preview-summary p { margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-soft); }
 
+.catalog-hero { align-items: center; }
+.catalog-target-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.catalog-process-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(360px, 1.35fr); gap: 12px; }
+.catalog-process-card { min-width: 0; display: grid; align-content: start; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.catalog-process-card[data-process="snapshot"] { border-top: 4px solid #6e8ca7; }
+.catalog-process-card[data-process="audit"] { border-top: 4px solid #9b7a48; }
+.catalog-process-card[data-process="price"] { border-top: 4px solid var(--accent); }
+.catalog-process-heading { display: flex; align-items: center; gap: 11px; }
+.catalog-step { flex: 0 0 32px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-soft); color: var(--muted); font-size: 13px; font-weight: 800; }
+.catalog-process-heading h3 { margin-top: 3px; }
+.catalog-process-card > strong { font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.catalog-process-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.catalog-inline-counts { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: 12px; }
+.catalog-inline-counts strong { display: block; margin-bottom: 3px; color: var(--text); font-size: 25px; line-height: 1; }
+.catalog-price-progress { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
+.catalog-price-progress strong { font-size: 34px; color: var(--accent); }
+.catalog-price-progress .muted { flex-basis: 100%; font-size: 12px; }
+.catalog-price-actions { display: grid; grid-template-columns: minmax(145px, 1fr) repeat(2, auto); align-items: end; gap: 8px; }
+.catalog-price-actions .danger, .catalog-price-actions .secondary:last-child { grid-column: 2 / -1; }
+.catalog-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.catalog-overview article { display: grid; gap: 5px; min-width: 0; padding: 15px 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+.catalog-overview span { color: var(--muted); font-size: 11px; font-weight: 750; }
+.catalog-overview strong { font-size: 25px; font-variant-numeric: tabular-nums; }
+.catalog-overview small { color: var(--muted); line-height: 1.35; }
+.wordpress-catalog-page .export-control-filters form { grid-template-columns: minmax(270px, 1.7fr) repeat(2, minmax(145px, 1fr)) minmax(150px, 1fr); }
+.wordpress-catalog-page .export-control-filters .button { align-self: end; }
+.catalog-card { grid-template-columns: 124px minmax(0, 1fr); }
+.catalog-card > .export-card-footer { grid-column: 1 / -1; }
+.catalog-change-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.catalog-change-summary .export-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.catalog-freshness { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; font-size: 12px; }
+.catalog-pagination { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.catalog-diff-dialog { width: min(1220px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.catalog-diff-dialog .dialog-card { max-height: calc(100vh - 64px); overflow: auto; }
+.catalog-diff-section { display: grid; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.catalog-diff-row { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; background: var(--surface); }
+.catalog-diff-row summary { padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.catalog-diff-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.catalog-diff-columns article { min-width: 0; padding: 12px; background: var(--surface-soft); }
+.catalog-diff-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.catalog-diff-value { max-height: 320px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, monospace; }
+.catalog-variation-table td { min-width: 150px; }
+
 @media (max-width: 1050px) {
   .export-readiness-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .export-control-filters form { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
   .export-control-hero, .export-selection-panel { align-items: stretch; flex-direction: column; }
+  .catalog-process-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .catalog-price-card { grid-column: 1 / -1; }
+  .wordpress-catalog-page .export-control-filters form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .export-batches-section > .runtime-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 700px) {
@@ -110,6 +159,12 @@ h3 { font-size: 17px; line-height: 1.3; }
   .export-card-heading, .export-card-footer { flex-direction: column; align-items: stretch; }
   .export-card-statuses, .export-change-chips { justify-content: flex-start; }
   .export-batch-row, .export-preview-summary { grid-template-columns: 1fr; }
+  .catalog-process-grid, .catalog-overview, .wordpress-catalog-page .export-control-filters form, .catalog-diff-columns, .export-batches-section > .runtime-actions { grid-template-columns: 1fr; }
+  .catalog-price-card { grid-column: auto; }
+  .catalog-price-actions { grid-template-columns: 1fr; }
+  .catalog-price-actions .danger, .catalog-price-actions .secondary:last-child { grid-column: auto; }
+  .catalog-card { grid-template-columns: 88px minmax(0, 1fr); }
+  .catalog-card .export-card-media { width: 88px; height: 82px; }
 }
 .admin-page { width: min(100% - 32px, 1500px); margin: 24px auto 50px; }
 .admin-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(130px, 1fr)) auto; gap: 10px; align-items: end; margin-bottom: 16px; }

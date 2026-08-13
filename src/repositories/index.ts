@@ -7,11 +7,15 @@ export type { ProductAdminRepository } from "./product-admin-repository.js";
 export type { ExportControlRepository } from "./export-control-repository.js";
 export type {
   WordPressCatalogMatchStatus,
+  WordPressCatalogAuditFilter,
+  WordPressCatalogOperationFilter,
   WordPressCatalogPageInput,
   WordPressCatalogRepository,
   WordPressCatalogRunItemRecord,
+  WordPressCatalogRunItemSummaryRecord,
   WordPressCatalogRunRecord,
   WordPressCatalogRunStatus,
+  WordPressCatalogRiskFilter,
   WordPressCatalogVariationCandidate,
   WordPressCatalogVariationFilter,
   WordPressVariationAutoStatus,
