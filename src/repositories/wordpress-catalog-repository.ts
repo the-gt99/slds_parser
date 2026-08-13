@@ -3,6 +3,15 @@ import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO, Univ
 export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "failed";
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
 export type WordPressCatalogVariationFilter = "not_started" | "in_progress" | "completed" | "skipped" | "failed";
+export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
+
+export interface WordPressVariationAutoSyncState {
+  readonly runId: EntityId;
+  readonly window: number;
+  readonly acknowledgedFailedCount: number;
+  readonly activeCount: number;
+  readonly failedCount: number;
+}
 
 export interface WordPressCatalogRunRecord {
   readonly id: EntityId;
@@ -14,6 +23,12 @@ export interface WordPressCatalogRunRecord {
   readonly catalogComplete: boolean;
   readonly auditRequested: boolean;
   readonly variationSyncRequested: boolean;
+  readonly variationAutoStatus: WordPressVariationAutoStatus;
+  readonly variationAutoWindow: number;
+  readonly variationAutoAcknowledgedFailedCount: number;
+  readonly variationAutoError: string | null;
+  readonly variationAutoStartedAt: string | null;
+  readonly variationAutoCompletedAt: string | null;
   readonly actor: string;
   readonly reason: string | null;
   readonly lastError: string | null;
@@ -25,6 +40,7 @@ export interface WordPressCatalogRunRecord {
   readonly unmatchedCount: number;
   readonly ambiguousCount: number;
   readonly variationPendingCount: number;
+  readonly variationNotStartedCount: number;
   readonly variationSubmittedCount: number;
   readonly variationCompletedCount: number;
   readonly variationSkippedCount: number;
@@ -137,5 +153,12 @@ export interface WordPressCatalogRepository {
   }): Promise<void>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
   enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
-  enableVariationSync(runId: EntityId): Promise<number>;
+  getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null>;
+  startVariationAutoSync(runId: EntityId, window: number): Promise<void>;
+  setVariationAutoSyncStatus(input: {
+    readonly runId: EntityId;
+    readonly status: "running" | "paused" | "completed";
+    readonly error?: string;
+    readonly acknowledgeFailures?: number;
+  }): Promise<void>;
 }

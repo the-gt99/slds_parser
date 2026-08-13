@@ -182,6 +182,7 @@ interface WordPressCatalogRunBody {
 }
 interface WordPressCatalogCanaryBody { readonly itemId?: unknown }
 interface WordPressCatalogBatchBody { readonly limit?: unknown }
+interface WordPressCatalogAutoSyncBody { readonly window?: unknown }
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -1286,10 +1287,26 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     ) }),
   );
 
-  server.post<{ Params: WordPressCatalogRunParams }>(
+  server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogAutoSyncBody }>(
     "/api/wordpress-catalog/runs/:runId/variation-sync",
     { preHandler: [requireAdmin, requireMutationAccess] },
-    async (request) => ({ result: await wordpressCatalogService().enableVariationSync(entityId(request.params.runId, "runId")) }),
+    async (request) => {
+      const window = positiveInteger(String(request.body?.window ?? "5000"), 5_000, 5_000);
+      if (window === 0) throw new HttpInputError("Expected an integer from 1 to 5000");
+      return { result: await wordpressCatalogService().startVariationAutoSync(entityId(request.params.runId, "runId"), window) };
+    },
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams }>(
+    "/api/wordpress-catalog/runs/:runId/variation-sync/pause",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().pauseVariationAutoSync(entityId(request.params.runId, "runId")) }),
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams }>(
+    "/api/wordpress-catalog/runs/:runId/variation-sync/resume",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().resumeVariationAutoSync(entityId(request.params.runId, "runId")) }),
   );
 
   server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogBatchBody }>(

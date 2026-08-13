@@ -30,8 +30,11 @@
       <div class="export-control-hero-actions">
         <label class="field compact-field"><span>Target</span><select id="target"></select></label>
         <button id="start" class="button primary" type="button">Скачать каталог</button>
-        <label class="field compact-field"><span>Пакет цен</span><select id="batch-limit"><option value="100">100</option><option value="1000" selected>1000</option><option value="5000">5000</option></select></label>
+        <label class="field compact-field"><span>Пакет / окно</span><select id="batch-limit"><option value="100">100</option><option value="1000">1000</option><option value="5000" selected>5000</option></select></label>
         <button id="batch-sync" class="button secondary" type="button" disabled>Запустить пакет</button>
+        <button id="auto-sync" class="button primary" type="button" disabled>Обновить всё</button>
+        <button id="auto-pause" class="button danger" type="button" hidden>Остановить пополнение</button>
+        <button id="auto-resume" class="button secondary" type="button" hidden>Возобновить</button>
       </div>
     </section>
     <div id="message" class="inline-message" hidden></div>
@@ -42,6 +45,7 @@
       <article class="export-readiness-card danger"><span>Неоднозначно</span><strong id="ambiguous">0</strong><small>требуют ручной проверки</small></article>
       <article class="export-readiness-card primary"><span>Цены обновлены</span><strong id="variation-completed">0</strong><small id="variation-submitted">в очереди WordPress: 0</small></article>
       <article class="export-readiness-card warning"><span>Цены пропущены</span><strong id="variation-skipped">0</strong><small id="variation-failed">ошибок: 0</small></article>
+      <article class="export-readiness-card"><span>Автопрогон</span><strong id="variation-auto-status">не запущен</strong><small id="variation-auto-progress">осталось: 0</small></article>
       <article class="export-readiness-card"><span>Локальный аудит</span><strong id="audit-ready">0</strong><small id="audit-pending">ожидают: 0</small></article>
       <article class="export-readiness-card danger"><span>Аудит заблокирован</span><strong id="audit-blocked">0</strong><small id="audit-errors">ошибок: 0</small></article>
     </section>

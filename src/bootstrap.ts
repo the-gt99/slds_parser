@@ -7,7 +7,7 @@ import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/in
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
-import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
+import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -88,6 +88,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
   const wordpressCatalog = new PostgresWordPressCatalogRepository(pool);
+  const wordpressCatalogService = new WordPressCatalogService(wordpressCatalog, repositories.sources, repositories.targets);
   const wordpressCatalogSync = wordpress === null
     ? undefined
     : new WordPressCatalogSyncRunner(wordpressCatalog, new WordPressCatalogClient(wordpress));
@@ -162,6 +163,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
       };
     },
     exportCampaigns,
+    wordpress === null ? undefined : wordpressCatalogService,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
     sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, dispatcher, worker, close: () => pool.end() };

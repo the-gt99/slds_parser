@@ -65,16 +65,72 @@ export class WordPressCatalogService {
     return { queuedCount };
   }
 
-  async enableVariationSync(runId: string) {
+  async startVariationAutoSync(runId: string, window = 5_000) {
     const run = await this.getRun(runId);
+    if (!run.catalogComplete) throw new IntegrationContractError("Автопрогон нельзя запустить до полного сохранения каталога WordPress");
     if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
       throw new IntegrationContractError("Полный поток нельзя включить до успешного canary без ошибок");
     }
-    return { queuedCount: await this.repository.enableVariationSync(runId) };
+    if (!Number.isInteger(window) || window < 1 || window > 5_000) {
+      throw new IntegrationContractError("Окно автопрогона должно быть от 1 до 5000 товаров");
+    }
+    const active = await this.repository.getRunningVariationAutoSync();
+    if (active !== null && active.runId !== runId) {
+      throw new IntegrationContractError(`Уже выполняется автопрогон каталога #${active.runId}`);
+    }
+    await this.repository.startVariationAutoSync(runId, window);
+    await this.tickVariationAutoSync();
+    return this.getRun(runId);
+  }
+
+  async pauseVariationAutoSync(runId: string) {
+    const run = await this.getRun(runId);
+    if (run.variationAutoStatus !== "running") {
+      throw new IntegrationContractError("Автопрогон сейчас не выполняется");
+    }
+    await this.repository.setVariationAutoSyncStatus({ runId, status: "paused" });
+    return this.getRun(runId);
+  }
+
+  async resumeVariationAutoSync(runId: string) {
+    const run = await this.getRun(runId);
+    if (run.variationAutoStatus !== "paused") {
+      throw new IntegrationContractError("Возобновить можно только остановленный автопрогон");
+    }
+    await this.repository.setVariationAutoSyncStatus({
+      runId,
+      status: "running",
+      acknowledgeFailures: run.variationFailedCount,
+    });
+    await this.tickVariationAutoSync();
+    return this.getRun(runId);
+  }
+
+  async tickVariationAutoSync(): Promise<boolean> {
+    const run = await this.repository.getRunningVariationAutoSync();
+    if (run === null) return false;
+    if (run.failedCount > run.acknowledgedFailedCount) {
+      await this.repository.setVariationAutoSyncStatus({
+        runId: run.runId,
+        status: "paused",
+        error: "Автопрогон остановлен после ошибки товара. Проверьте журнал и возобновите вручную.",
+      });
+      return true;
+    }
+    const available = Math.max(0, run.window - run.activeCount);
+    if (available === 0) return false;
+    const queued = await this.repository.enqueueVariationBatch(run.runId, available);
+    if (queued > 0) return true;
+    if (run.activeCount > 0) return false;
+    await this.repository.setVariationAutoSyncStatus({ runId: run.runId, status: "completed" });
+    return true;
   }
 
   async enqueueVariationBatch(runId: string, limit: number) {
     const run = await this.getRun(runId);
+    if (run.variationAutoStatus === "running" || run.variationAutoStatus === "paused") {
+      throw new IntegrationContractError("Ручной пакет недоступен, пока автопрогон выполняется или остановлен для проверки");
+    }
     if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
       throw new IntegrationContractError("Пакет нельзя запустить до успешного canary без ошибок");
     }

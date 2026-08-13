@@ -22,9 +22,13 @@ function renderRun() {
   byId("unmatched").textContent = count(run.unmatchedCount);
   byId("ambiguous").textContent = count(run.ambiguousCount);
   byId("variation-completed").textContent = count(run.variationCompletedCount);
-  byId("variation-submitted").textContent = `в очереди WordPress: ${count(run.variationSubmittedCount)}`;
+  const activeVariations = Number(run.variationPendingCount || 0) + Number(run.variationSubmittedCount || 0);
+  byId("variation-submitted").textContent = `в работе: ${count(activeVariations)} · WordPress: ${count(run.variationSubmittedCount)}`;
   byId("variation-skipped").textContent = count(run.variationSkippedCount);
   byId("variation-failed").textContent = `ошибок: ${count(run.variationFailedCount)}`;
+  const autoLabels = { inactive: "не запущен", running: "выполняется", paused: "остановлен", completed: "завершён" };
+  byId("variation-auto-status").textContent = autoLabels[run.variationAutoStatus] || run.variationAutoStatus;
+  byId("variation-auto-progress").textContent = `осталось: ${count(run.variationNotStartedCount)} · окно: ${count(run.variationAutoWindow)}${run.variationAutoError ? ` · ${run.variationAutoError}` : ""}`;
   byId("audit-ready").textContent = count(run.auditReadyCount);
   byId("audit-pending").textContent = `ожидают: ${count(run.auditPendingCount)}`;
   byId("audit-blocked").textContent = count(run.auditBlockedCount);
@@ -32,7 +36,11 @@ function renderRun() {
   byId("cursor").textContent = `${run.status} · cursor ${count(run.catalogCursor)} · ${date(run.updatedAt)}`;
   byId("start").disabled = run.status === "running";
   byId("start").textContent = run.status === "running" ? "Каталог скачивается" : "Скачать новый каталог";
-  byId("batch-sync").disabled = run.variationCompletedCount < 1 || run.variationFailedCount > 0;
+  const autoActive = run.variationAutoStatus === "running" || run.variationAutoStatus === "paused";
+  byId("batch-sync").disabled = run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive;
+  byId("auto-sync").disabled = !run.catalogComplete || run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive || run.variationNotStartedCount < 1;
+  byId("auto-pause").hidden = run.variationAutoStatus !== "running";
+  byId("auto-resume").hidden = run.variationAutoStatus !== "paused";
 }
 
 function renderItem(item) {
@@ -85,7 +93,8 @@ async function refresh() {
     renderRun();
     await loadItems();
     if (state.timer) window.clearTimeout(state.timer);
-    if (state.run?.status === "running") state.timer = window.setTimeout(refresh, 5000);
+    const variationActive = Number(state.run?.variationPendingCount || 0) + Number(state.run?.variationSubmittedCount || 0);
+    if (state.run?.status === "running" || state.run?.variationAutoStatus === "running" || variationActive > 0) state.timer = window.setTimeout(refresh, 5000);
   } catch (error) { byId("error").textContent = error.message; byId("error").hidden = false; }
   finally { byId("loading").hidden = true; }
 }
@@ -108,4 +117,7 @@ byId("filters").addEventListener("submit", async (event) => { event.preventDefau
 byId("more").addEventListener("click", () => loadItems(true));
 byId("start").addEventListener("click", async () => { try { const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: false, reason: "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message("Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); await loadItems(); state.timer = window.setTimeout(refresh, 3000); } catch (error) { message(error.message, "error"); } });
 byId("batch-sync").addEventListener("click", async () => { const limit = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Поставить в очередь ${count(limit)} сопоставленных товаров? Изменятся только цены и остатки существующих вариаций.`)) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-batch`, { method: "POST", body: { limit } }); message(`Поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
+byId("auto-sync").addEventListener("click", async () => { const windowSize = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Запустить обновление всех ${count(state.run.variationNotStartedCount)} оставшихся сопоставленных товаров? Одновременно в работе будет не больше ${count(windowSize)}. Изменятся только цены и остатки существующих вариаций.`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST", body: { window: windowSize } }); message("Автопрогон запущен. Новые задачи будут добавляться по мере освобождения окна.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
+byId("auto-pause").addEventListener("click", async () => { if (!state.run || !window.confirm("Остановить добавление новых задач? Уже поставленные задачи завершатся.")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/pause`, { method: "POST" }); message("Пополнение очереди остановлено. Уже поставленные задачи продолжают выполняться.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
+byId("auto-resume").addEventListener("click", async () => { if (!state.run || !window.confirm("Возобновить автопрогон и считать уже просмотренные ошибки подтверждёнными?")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/resume`, { method: "POST" }); message("Автопрогон возобновлён.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } });
 void initialize().catch((error) => { byId("error").textContent = error.message; byId("error").hidden = false; });

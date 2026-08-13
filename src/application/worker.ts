@@ -32,6 +32,7 @@ export type WorkerLogger = (message: string) => void;
 export type WorkerClaimPermitProvider = (jobTypes: readonly JobType[]) => Promise<WorkerClaimPermit | null>;
 export type WorkerConcurrencyProvider = () => Promise<WorkerConcurrency>;
 export interface ExportCampaignCoordinator { tickCampaign(): Promise<boolean> }
+export interface WordPressVariationAutoCoordinator { tickVariationAutoSync(): Promise<boolean> }
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -59,7 +60,8 @@ export class Worker {
     private readonly logError: WorkerLogger = console.error,
     private readonly claimPermit?: WorkerClaimPermitProvider,
     private readonly concurrencyProvider?: WorkerConcurrencyProvider,
-    private readonly exportCampaigns?: ExportCampaignCoordinator) {}
+    private readonly exportCampaigns?: ExportCampaignCoordinator,
+    private readonly wordpressVariationAuto?: WordPressVariationAutoCoordinator) {}
 
   async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
     const permit = this.claimPermit === undefined ? undefined : await this.claimPermit(jobTypes ?? []);
@@ -153,6 +155,7 @@ export class Worker {
           this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
         this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
+        ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);
@@ -166,6 +169,17 @@ export class Worker {
         await this.exportCampaigns!.tickCampaign();
       } catch (error) {
         this.logError(`Export campaign tick failed: ${errorText(error)}`);
+      }
+      if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+    }
+  }
+
+  private async runWordPressVariationAutoLane(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
+      try {
+        await this.wordpressVariationAuto!.tickVariationAutoSync();
+      } catch (error) {
+        this.logError(`WordPress variation auto-sync tick failed: ${errorText(error)}`);
       }
       if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
