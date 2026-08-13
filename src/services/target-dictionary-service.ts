@@ -93,6 +93,15 @@ export class TargetDictionaryService {
     });
   }
 
+  async setPreserveExistingBrandTerms(targetId: EntityId, enabled: boolean) {
+    const target = (await this.repository.listTargets()).find((item) => item.id === targetId);
+    if (target === undefined) throw new EntityNotFoundError("Target", targetId);
+    if (target.exporterCode !== "wordpress") {
+      throw new IntegrationContractError("Сохранение существующих брендов доступно только для WordPress target");
+    }
+    return this.repository.setPreserveExistingBrandTerms(targetId, enabled);
+  }
+
   listValues(query: TargetDictionaryQuery) {
     return this.repository.listValues(query);
   }

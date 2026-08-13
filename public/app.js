@@ -2220,6 +2220,7 @@ async function switchClassificationView(view, updateUrl = true) {
   if (view === "rules") await loadRules(true);
   if (view === "wordpress") {
     populateCatalogFilters();
+    renderWordPressSafetySettings();
     await Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]);
   }
 }
@@ -2531,6 +2532,36 @@ function populateWordPressEntities() {
   const current = entity.value;
   entity.replaceChildren(...(target?.dictionary?.supportedEntityTypes ?? []).map((value) => new Option(targetEntityLabel(value), value)));
   if ([...entity.options].some((option) => option.value === current)) entity.value = current;
+}
+
+function renderWordPressSafetySettings() {
+  const target = state.targets.find((item) => item.id === byId("wordpress-target")?.value) ?? activeTarget();
+  const checkbox = byId("preserve-existing-brand-terms");
+  checkbox.checked = target?.config?.preserveExistingBrandTerms === true;
+  checkbox.disabled = !target;
+  clearError(byId("wordpress-safety-error"));
+}
+
+async function saveWordPressSafetySettings() {
+  const targetId = byId("wordpress-target").value;
+  const checkbox = byId("preserve-existing-brand-terms");
+  if (!targetId) return;
+  checkbox.disabled = true;
+  clearError(byId("wordpress-safety-error"));
+  try {
+    const response = await api(`/api/targets/${targetId}/wordpress-settings`, {
+      method: "PATCH",
+      body: { preserveExistingBrandTerms: checkbox.checked },
+    });
+    const index = state.targets.findIndex((item) => item.id === targetId);
+    if (index >= 0) state.targets[index] = { ...state.targets[index], ...response.target };
+    showToast(checkbox.checked ? "Существующие бренды будут сохранены." : "Сохранение существующих брендов отключено.");
+  } catch (error) {
+    checkbox.checked = !checkbox.checked;
+    showError(byId("wordpress-safety-error"), error.message);
+  } finally {
+    checkbox.disabled = false;
+  }
 }
 
 function targetEntityLabel(value) {
@@ -3059,7 +3090,8 @@ byId("new-rule-button").addEventListener("click", async () => {
   await switchClassificationView("references");
   showToast("Выберите внутреннее значение и нажмите «+ Правило распознавания».");
 });
-byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); void Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]); });
+byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); renderWordPressSafetySettings(); void Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]); });
+byId("preserve-existing-brand-terms").addEventListener("change", saveWordPressSafetySettings);
 byId("wordpress-entity").addEventListener("change", () => loadWordPressValues(true));
 byId("wordpress-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);

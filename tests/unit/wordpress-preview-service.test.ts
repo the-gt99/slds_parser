@@ -4,7 +4,7 @@ import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean; readonly preserveExistingBrands?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -55,6 +55,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
         config: {
           requiredReferenceTypes: options.missingCategory ? ["brand", "category"] : ["brand"],
           sizeMappings: [{ sourceValue: "7", taxonomy: "pa_razmer", termId: 107 }],
+          ...(options.preserveExistingBrands ? { preserveExistingBrandTerms: true } : {}),
           ...(options.missingCategory ? { titlePrefixByCategoryTermId: { "75": "Кроссовки" } } : {}),
         },
       }),
@@ -73,7 +74,13 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
             ...(options.matchingPerceptualImages ? { perceptual_hash: "00000000000007ff" } : {}),
             ...(options.mismatchedStoredOrigin ? { origin_url: "https://source.example/old.png" } : {}),
           }],
-          taxonomies: options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {},
+          taxonomies: {
+            ...(options.missingCategory ? { product_cat: [{ term_id: 75, name: "Кроссовки женские", slug: "sneakers-w" }] } : {}),
+            ...(options.preserveExistingBrands ? { pa_brand: [
+              { term_id: 31, name: "Nike", slug: "nike" },
+              { term_id: 5490, name: "Clarks", slug: "clarks" },
+            ] } : {}),
+          },
           variations: options.existingSizeVariation ? [{
             regular_price: "93450",
             stock_status: "instock",
@@ -222,6 +229,20 @@ describe("WordPressPreviewService", () => {
         termId: 2968,
         origins: [{ relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" }],
       })],
+    }));
+  });
+
+  it("does not propose removing an existing WordPress brand when preservation is enabled", async () => {
+    const { service } = setup(321, "source_identity", { preserveExistingBrands: true });
+
+    const result = await service.preview("2", "10");
+
+    expect(result.comparison?.taxonomies).toContainEqual(expect.objectContaining({
+      taxonomy: "pa_brand",
+      before: [expect.objectContaining({ termId: 31 }), expect.objectContaining({ termId: 5490 })],
+      after: [expect.objectContaining({ termId: 31 }), expect.objectContaining({ termId: 5490 })],
+      removed: [],
+      changed: false,
     }));
   });
 

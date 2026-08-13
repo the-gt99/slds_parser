@@ -9,6 +9,7 @@ import type {
 
 export interface TargetDictionaryRepository {
   listTargets(): Promise<readonly TargetRecord[]>;
+  setPreserveExistingBrandTerms(targetId: EntityId, enabled: boolean): Promise<TargetRecord>;
   getValue(targetId: EntityId, valueId: EntityId): Promise<TargetDictionaryValueRecord | null>;
   listValuesByExternalIds(targetId: EntityId, externalIds: readonly string[]): Promise<readonly TargetDictionaryValueRecord[]>;
   listValues(query: TargetDictionaryQuery): Promise<readonly TargetDictionaryValueRecord[]>;

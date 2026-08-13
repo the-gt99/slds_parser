@@ -29,6 +29,11 @@ function setup() {
       id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
       config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     }]),
+    setPreserveExistingBrandTerms: vi.fn().mockImplementation(async (_targetId, enabled) => ({
+      id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
+      config: { preserveExistingBrandTerms: enabled }, enabled: false,
+      createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    })),
     getValue: vi.fn(),
     listValuesByExternalIds: vi.fn(),
     listValues: vi.fn(),
@@ -52,6 +57,15 @@ function setup() {
 }
 
 describe("TargetDictionaryService", () => {
+  it("updates the explicit WordPress brand preservation setting", async () => {
+    const { repository, service } = setup();
+
+    await expect(service.setPreserveExistingBrandTerms("10", true)).resolves.toMatchObject({
+      config: { preserveExistingBrandTerms: true },
+    });
+    expect(repository.setPreserveExistingBrandTerms).toHaveBeenCalledWith("10", true);
+  });
+
   it("loads every target dictionary page before replacing the local snapshot", async () => {
     const { provider, repository, service } = setup();
 

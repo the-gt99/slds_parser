@@ -323,6 +323,8 @@ export interface ExportContext {
   readonly references: TargetReferenceResolver;
   readonly contentTemplates?: readonly TargetContentTemplateDTO[];
   readonly existingExternalId?: string;
+  /** Read-only target snapshot used when payload policy depends on existing target data. */
+  readonly existingTargetSnapshot?: JsonObject;
   readonly approval?: {
     readonly payloadHash: string;
     readonly willCreate: boolean;

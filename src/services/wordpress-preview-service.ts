@@ -434,6 +434,7 @@ export class WordPressPreviewService {
       },
       contentTemplates,
       ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),
+      ...(snapshot === null ? {} : { existingTargetSnapshot: snapshot.payload }),
     } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
     let draft;
     try {

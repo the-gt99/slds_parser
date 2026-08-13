@@ -183,6 +183,7 @@ interface TargetAssignmentRuleBody {
   readonly actions?: unknown;
   readonly reason?: unknown;
 }
+interface WordPressTargetSettingsBody { readonly preserveExistingBrandTerms?: unknown }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
@@ -1098,6 +1099,17 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get("/api/targets", { preHandler: requireAdmin }, async () => ({
     items: await dependencies.targetDictionaries.listTargets(),
   }));
+
+  server.patch<{ Params: TargetParams; Body: WordPressTargetSettingsBody }>(
+    "/api/targets/:targetId/wordpress-settings",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({
+      target: await dependencies.targetDictionaries.setPreserveExistingBrandTerms(
+        entityId(request.params.targetId, "targetId"),
+        optionalBoolean(request.body?.preserveExistingBrandTerms, "preserveExistingBrandTerms"),
+      ),
+    }),
+  );
 
   server.get("/api/content-templates/catalog", { preHandler: requireAdmin }, async () => contentTemplateService().catalog());
 

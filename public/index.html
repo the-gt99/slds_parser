@@ -304,6 +304,13 @@
         <div><p class="eyebrow">Справочник target</p><h2>WordPress</h2><p id="wordpress-sync-state" class="muted">Здесь показаны реальные термины, полученные с target.</p></div>
         <button id="wordpress-sync-button" class="button secondary" type="button">Обновить справочники</button>
       </section>
+      <section class="section wordpress-safety-section">
+        <label class="confirm-check wordpress-safety-setting">
+          <input id="preserve-existing-brand-terms" type="checkbox">
+          <span><strong>Не удалять существующие бренды</strong><small>При обновлении товара parser добавит рассчитанные бренды к текущим pa_brand в WordPress. Настройка не влияет на остальные атрибуты.</small></span>
+        </label>
+        <p id="wordpress-safety-error" class="form-error" hidden></p>
+      </section>
       <section class="section catalog-table-section assignment-rules-section">
         <div class="section-title mapping-title">
           <div><p class="eyebrow">Условная раскладка</p><h3>Правила назначений</h3><p class="muted">Правила исполняются после классификации; в каждой группе побеждает одно правило с наибольшим приоритетом.</p></div>

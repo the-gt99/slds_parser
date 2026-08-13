@@ -430,6 +430,44 @@ export function renderWordPressContentFields(
   };
 }
 
+function preserveExistingBrandTerms(config: JsonObject): boolean {
+  const value = config.preserveExistingBrandTerms;
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new IntegrationContractError("target.config.preserveExistingBrandTerms must be a boolean");
+  }
+  return value;
+}
+
+function snapshotTaxonomyTermIds(snapshot: JsonObject, taxonomy: string): readonly number[] {
+  const product = record(snapshot.product, "WordPress target snapshot product");
+  const taxonomies = record(product.taxonomies, "WordPress target snapshot product.taxonomies");
+  const terms = taxonomies[taxonomy];
+  if (terms === undefined) return [];
+  if (!Array.isArray(terms)) {
+    throw new IntegrationContractError(`WordPress target snapshot taxonomy ${taxonomy} must be a list`);
+  }
+  return [...new Set(terms.map((term, index) => positiveInteger(
+    record(term, `WordPress target snapshot taxonomy ${taxonomy}[${index}]`).term_id,
+    `WordPress target snapshot taxonomy ${taxonomy}[${index}].term_id`,
+  )))];
+}
+
+function mergePreservedBrandTerms(context: ExportContext, taxonomies: JsonObject): JsonObject {
+  if (!preserveExistingBrandTerms(context.target.config)) return taxonomies;
+  if (context.existingTargetSnapshot === undefined) {
+    if (context.existingExternalId === undefined) return taxonomies;
+    throw new IntegrationContractError("WordPress target snapshot is required to preserve existing brand terms");
+  }
+  const existing = snapshotTaxonomyTermIds(context.existingTargetSnapshot, "pa_brand");
+  if (existing.length === 0) return taxonomies;
+  const resolved = taxonomyTermIds(taxonomies, "pa_brand");
+  return {
+    ...taxonomies,
+    pa_brand: { mode: "replace", term_ids: [...new Set([...existing, ...resolved])] },
+  };
+}
+
 async function taxonomyPayload(
   context: ExportContext,
   required: readonly ReferenceType[],
@@ -579,7 +617,9 @@ async function buildWordPressPayload(
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
   const mappings = sizeMappings(context.target.config);
-  const { taxonomies, missingRequired, taxonomyOrigins, modelTagLink, primaryBrandTermId } = await taxonomyPayload(context, required, allowMissingRequired);
+  const taxonomyResult = await taxonomyPayload(context, required, allowMissingRequired);
+  const { missingRequired, taxonomyOrigins, modelTagLink, primaryBrandTermId } = taxonomyResult;
+  const taxonomies = mergePreservedBrandTerms(context, taxonomyResult.taxonomies);
   const variantsForConversion = context.liveVariants === undefined
     ? context.product.variants
     : [...context.product.variants, ...context.liveVariants];
@@ -675,7 +715,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.9.0";
+  readonly version = "1.10.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -750,7 +790,26 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    const payload = await this.buildPayload(context);
+    let effectiveContext = context;
+    if (preserveExistingBrandTerms(context.target.config)) {
+      const lookupContext: ExportContext = {
+        ...context,
+        target: {
+          ...context.target,
+          config: { ...context.target.config, preserveExistingBrandTerms: false },
+        },
+      };
+      const lookup = await this.preflightPayload(await this.buildPayload(lookupContext));
+      if (!lookup.willCreate && lookup.snapshot === undefined) {
+        throw new IntegrationContractError("WordPress preflight snapshot is required to preserve existing brand terms");
+      }
+      effectiveContext = {
+        ...context,
+        ...(lookup.externalId === null ? {} : { existingExternalId: lookup.externalId }),
+        ...(lookup.snapshot === undefined ? {} : { existingTargetSnapshot: lookup.snapshot }),
+      };
+    }
+    const payload = await this.buildPayload(effectiveContext);
     const expectedPayloadHash = text(payload.payload_hash);
     const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : [];
     if (!managedFields.includes("description") && context.approval === undefined) {
@@ -763,9 +822,9 @@ export class WordPressExporter {
       if (!managedFields.includes("description") && context.approval.willCreate) {
         throw new IntegrationContractError("Нельзя создать товар без управляемого описания: для нового товара нечего сохранять без изменений");
       }
-      const approvedPayload = context.liveVariants === undefined
+      const approvedPayload = effectiveContext.liveVariants === undefined
         ? payload
-        : await this.buildPayload(withoutLiveVariants(context));
+        : await this.buildPayload(withoutLiveVariants(effectiveContext));
       if (text(approvedPayload.payload_hash) !== context.approval.payloadHash) {
         throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
       }

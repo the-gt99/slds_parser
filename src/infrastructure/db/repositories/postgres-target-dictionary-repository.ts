@@ -65,6 +65,20 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
     });
   }
 
+  async setPreserveExistingBrandTerms(targetId: string, enabled: boolean): Promise<TargetRecord> {
+    return withClient(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE targets
+         SET config = JSONB_SET(config, '{preserveExistingBrandTerms}', $2::JSONB, TRUE),
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [targetId, JSON.stringify(enabled)],
+      );
+      return mapTarget(requireRow(result.rows, "target", targetId));
+    });
+  }
+
   async getValue(targetId: string, valueId: string): Promise<TargetDictionaryValueRecord | null> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(

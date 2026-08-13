@@ -774,4 +774,36 @@ describe("HTTP server", () => {
     );
     await server.close();
   });
+
+  it("updates the WordPress brand preservation setting with CSRF confirmation", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const targetDictionaries = {
+      setPreserveExistingBrandTerms: vi.fn().mockResolvedValue({
+        id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
+        config: { preserveExistingBrandTerms: true }, enabled: false,
+      }),
+    } as unknown as TargetDictionaryService;
+    const server = createHttpServer({ ...dependencies(database), targetDictionaries });
+    const login = await server.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "admin", password: "test-admin-password" },
+    });
+    const headers = {
+      cookie: String(login.headers["set-cookie"]).split(";")[0],
+      "x-csrf-token": login.json().csrfToken,
+    };
+
+    const response = await server.inject({
+      method: "PATCH",
+      url: "/api/targets/10/wordpress-settings",
+      headers,
+      payload: { preserveExistingBrandTerms: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ target: { config: { preserveExistingBrandTerms: true } } });
+    expect(targetDictionaries.setPreserveExistingBrandTerms).toHaveBeenCalledWith("10", true);
+    await server.close();
+  });
 });

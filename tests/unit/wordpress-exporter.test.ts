@@ -193,6 +193,92 @@ describe("WordPressExporter", () => {
     });
   });
 
+  it("keeps existing WordPress brands when the target setting is enabled", async () => {
+    const input: ExportContext = {
+      ...context({ preserveExistingBrandTerms: true }),
+      existingExternalId: "321",
+      existingTargetSnapshot: {
+        product: {
+          taxonomies: {
+            pa_brand: [
+              { term_id: 31, name: "Nike", slug: "nike" },
+              { term_id: 5490, name: "Clarks", slug: "clarks" },
+            ],
+          },
+        },
+      },
+    };
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect((payload.product as JsonObject).taxonomies).toEqual({
+      pa_brand: { mode: "replace", term_ids: [31, 5490] },
+      product_cat: { mode: "replace", term_ids: [41] },
+    });
+  });
+
+  it("requires a target snapshot before preserving brands on an existing product", async () => {
+    const input: ExportContext = {
+      ...context({ preserveExistingBrandTerms: true }),
+      existingExternalId: "321",
+    };
+
+    await expect(buildWordPressUpsertPayload(input)).rejects.toThrow("snapshot is required");
+  });
+
+  it("reads current WordPress brands before writing their union with resolved brands", async () => {
+    let writtenPayload: JsonObject | null = null;
+    const request = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { payload: JsonObject };
+      if (String(url).includes("slds_target_import_api=upsert-lookup")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          operation: "product_upsert_lookup",
+          target_id: 321,
+          matched_by: "source_identity",
+          payload_hash: body.payload.payload_hash,
+          variation_plan: [],
+          snapshot: {
+            product: {
+              taxonomies: {
+                pa_brand: [
+                  { term_id: 31, name: "Nike", slug: "nike" },
+                  { term_id: 5490, name: "Clarks", slug: "clarks" },
+                ],
+              },
+            },
+          },
+        }), { status: 200 });
+      }
+      writtenPayload = body.payload;
+      return new Response(JSON.stringify({
+        ok: true,
+        job: {
+          job_id: 9,
+          status: "done",
+          payload_hash: body.payload.payload_hash,
+          result: { operation: "updated", target_id: 321, matched_by: "source_identity" },
+        },
+      }), { status: 202 });
+    });
+    const exporter = new WordPressExporter(
+      { baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 },
+      request,
+      async () => {},
+    );
+
+    await expect(exporter.export({
+      ...context({ preserveExistingBrandTerms: true }),
+      existingExternalId: "321",
+    })).resolves.toMatchObject({ externalId: "321", operation: "updated" });
+
+    expect(((writtenPayload!.product as JsonObject).taxonomies as JsonObject).pa_brand).toEqual({
+      mode: "replace",
+      term_ids: [31, 5490],
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it("uses the primary source brand for size conversion when an additional brand is assigned", async () => {
     const base = context({
       sizeConversionCategoryTermIds: [41],
