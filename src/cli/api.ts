@@ -17,10 +17,11 @@ import {
   PostgresTargetAssignmentRuleRepository,
   PostgresTargetClassificationImportRepository,
   PostgresUnitOfWork,
+  PostgresWordPressCatalogRepository,
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressPreviewService } from "../services/index.js";
+import { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -105,6 +106,9 @@ async function main(): Promise<void> {
     const exportControl = wordpressPreview === undefined
       ? undefined
       : new ExportControlService(exportControlRepository, repositories.jobs);
+    const wordpressCatalog = wordpress === null
+      ? undefined
+      : new WordPressCatalogService(new PostgresWordPressCatalogRepository(pool), repositories.sources, repositories.targets);
     const contentTemplates = wordpressPreview === undefined
       ? undefined
       : new ContentTemplateAdminService(repositories.contentTemplates, repositories.targets, wordpressPreview, new PostgresUnitOfWork(pool));
@@ -112,7 +116,7 @@ async function main(): Promise<void> {
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }) });
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

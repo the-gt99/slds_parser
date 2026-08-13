@@ -15,6 +15,7 @@ const assets = new Map([
   ["/assets/content-templates.js", { file: "content-templates.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/content-template-preview.js", { file: "content-template-preview.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/export-control.js", { file: "export-control.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/wordpress-catalog.js", { file: "wordpress-catalog.js", type: "text/javascript; charset=utf-8" }],
   ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/classifier-config", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/operations", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
@@ -24,6 +25,7 @@ const assets = new Map([
   ["/proxies", { file: "proxies.html", type: "text/html; charset=utf-8" }],
   ["/content-templates", { file: "content-templates.html", type: "text/html; charset=utf-8" }],
   ["/export-control", { file: "export-control.html", type: "text/html; charset=utf-8" }],
+  ["/wordpress-catalog", { file: "wordpress-catalog.html", type: "text/html; charset=utf-8" }],
 ] as const);
 
 function securityHeaders(reply: FastifyReply): FastifyReply {

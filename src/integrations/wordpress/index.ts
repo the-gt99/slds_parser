@@ -4,12 +4,20 @@ export {
   applyWordPressTitlePolicy,
   renderWordPressContentFields,
   previewWordPressUpsertPayload,
+  previewWordPressVariationPatchItems,
   WordPressExporter,
   WORDPRESS_PRODUCT_UPSERT_CONTRACT,
   type WordPressUpsertPayloadPreview,
   type WordPressUpsertPreflightResult,
+  type WordPressVariationPatchDraft,
 } from "./wordpress-exporter.js";
 export { WordPressProductSnapshotReader, type WordPressProductSnapshotResult } from "./wordpress-product-snapshot-reader.js";
+export {
+  WordPressCatalogClient,
+  type WordPressCatalogPage,
+  type WordPressCatalogPageItem,
+  type WordPressPatchSubmission,
+} from "./wordpress-catalog-client.js";
 export {
   WordPressClassificationAssignmentReader,
   type WordPressClassificationAssignmentItem,
@@ -20,6 +28,7 @@ export {
   type WordPressSizeConversionInput,
   type WordPressSizeConverterLike,
 } from "./wordpress-size-converter.js";
+export { matchExistingWordPressVariations } from "./wordpress-variation-patch-builder.js";
 export {
   contentTemplateCatalog,
   contentTemplateContextWithExistingStoryPlaceholder,

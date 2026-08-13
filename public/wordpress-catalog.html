@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SLDS · Каталог WordPress</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/wordpress-catalog.js"></script>
+</head>
+<body>
+<div id="login-view" class="login-shell" hidden>
+  <form id="login-form" class="login-card">
+    <div class="brand-mark">S</div>
+    <div><p class="eyebrow">SLDS Parser</p><h1>Каталог WordPress</h1></div>
+    <label class="field"><span>Пользователь</span><input id="login-username" required autocomplete="username"></label>
+    <label class="field"><span>Пароль</span><input id="login-password" type="password" required autocomplete="current-password"></label>
+    <p id="login-error" class="form-error" hidden></p>
+    <button class="button primary wide" type="submit">Войти</button>
+  </form>
+</div>
+<div id="app-view" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="brand-line"><a class="brand-mark small brand-link" href="/products">S</a><div><p class="eyebrow">SLDS Parser</p><h1>Каталог WordPress</h1></div></div>
+    <div class="topbar-actions"><span id="operator-name" class="operator"></span><button id="refresh" class="icon-button" type="button">↻</button><button id="logout-button" class="button quiet">Выйти</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Основные разделы"><a href="/classifier">Классификация</a><a href="/products">Товары</a><a href="/export-control">Контроль экспорта</a><a class="active" href="/wordpress-catalog">Каталог WordPress</a><a href="/jobs">Очередь и ошибки</a></nav>
+  <main class="export-control-page">
+    <section class="export-control-hero">
+      <div><p class="eyebrow">Постоянный снимок</p><h2>Полный каталог WordPress</h2><p class="muted">Данные сохраняются в PostgreSQL. Запуск на этой странице ничего не изменяет в WordPress.</p></div>
+      <div class="export-control-hero-actions">
+        <label class="field compact-field"><span>Target</span><select id="target"></select></label>
+        <label class="field compact-field"><span>Запись</span><select id="variation-sync"><option value="false" selected>Только снимок</option><option value="true">Цены и остатки параллельно</option></select></label>
+        <button id="start" class="button primary" type="button">Скачать каталог</button>
+      </div>
+    </section>
+    <div id="message" class="inline-message" hidden></div>
+    <section id="run" class="export-readiness-summary" hidden>
+      <article class="export-readiness-card primary"><span>Получено</span><strong id="total">0</strong><small id="cursor">cursor 0</small></article>
+      <article class="export-readiness-card"><span>Сопоставлено</span><strong id="matched">0</strong><small>строгое identity или уникальный SKU</small></article>
+      <article class="export-readiness-card warning"><span>Не найдено</span><strong id="unmatched">0</strong><small>остаются без изменений</small></article>
+      <article class="export-readiness-card danger"><span>Неоднозначно</span><strong id="ambiguous">0</strong><small>требуют ручной проверки</small></article>
+      <article class="export-readiness-card primary"><span>Цены обновлены</span><strong id="variation-completed">0</strong><small id="variation-submitted">в очереди WordPress: 0</small></article>
+      <article class="export-readiness-card warning"><span>Цены пропущены</span><strong id="variation-skipped">0</strong><small id="variation-failed">ошибок: 0</small></article>
+      <article class="export-readiness-card"><span>Локальный аудит</span><strong id="audit-ready">0</strong><small id="audit-pending">ожидают: 0</small></article>
+      <article class="export-readiness-card danger"><span>Аудит заблокирован</span><strong id="audit-blocked">0</strong><small id="audit-errors">ошибок: 0</small></article>
+    </section>
+    <section class="section export-control-filters">
+      <form id="filters">
+        <label class="field"><span>Сопоставление</span><select id="match"><option value="">Все</option><option value="matched">Сопоставлены</option><option value="unmatched">Не найдены</option><option value="ambiguous">Неоднозначные</option></select></label>
+        <button class="button primary" type="submit">Применить</button>
+      </form>
+    </section>
+    <div id="loading" class="product-message">Загрузка…</div>
+    <div id="error" class="product-message error" hidden></div>
+    <div id="empty" class="product-message" hidden>Записей пока нет.</div>
+    <section id="items" class="export-control-grid"></section>
+    <div class="export-load-more"><button id="more" class="button quiet" type="button" hidden>Показать ещё</button></div>
+  </main>
+</div>
+</body>
+</html>

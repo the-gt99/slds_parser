@@ -55,6 +55,29 @@ export interface ApplyTargetClassificationSuggestionPayload {
   readonly actor: string;
 }
 
+export interface SyncWordPressCatalogPayload {
+  readonly runId: string;
+  readonly cursor: string;
+}
+
+export interface PrepareWordPressVariationPatchesPayload {
+  readonly runId: string;
+  readonly afterCursor: string;
+  readonly throughCursor: string;
+}
+
+export interface PollWordPressVariationPatchesPayload {
+  readonly runId: string;
+  readonly jobIds: readonly string[];
+  readonly poll: number;
+}
+
+export interface RefreshWordPressVariationPatchPayload {
+  readonly runId: string;
+  readonly itemId: string;
+  readonly wordpressProductId: string;
+}
+
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -155,4 +178,38 @@ export function parseApplyTargetClassificationSuggestionPayload(value: JsonValue
     return { runId: value.runId, suggestionId: value.suggestionId, actor: value.actor };
   }
   throw new InvalidJobPayloadError("apply_target_classification_suggestion");
+}
+
+export function parseSyncWordPressCatalogPayload(value: JsonValue): SyncWordPressCatalogPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.cursor === "string"
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.cursor)) {
+    return { runId: value.runId, cursor: value.cursor };
+  }
+  throw new InvalidJobPayloadError("sync_wordpress_catalog");
+}
+
+export function parsePrepareWordPressVariationPatchesPayload(value: JsonValue): PrepareWordPressVariationPatchesPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.afterCursor === "string" && typeof value.throughCursor === "string"
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.afterCursor) && /^\d+$/u.test(value.throughCursor)) {
+    return { runId: value.runId, afterCursor: value.afterCursor, throughCursor: value.throughCursor };
+  }
+  throw new InvalidJobPayloadError("prepare_wordpress_variation_patches");
+}
+
+export function parsePollWordPressVariationPatchesPayload(value: JsonValue): PollWordPressVariationPatchesPayload {
+  if (isObject(value) && typeof value.runId === "string" && /^\d+$/u.test(value.runId)
+    && isStringArray(value.jobIds) && value.jobIds.length > 0 && value.jobIds.length <= 500
+    && value.jobIds.every((id) => /^\d+$/u.test(id))
+    && typeof value.poll === "number" && Number.isSafeInteger(value.poll) && value.poll >= 0 && value.poll <= 720) {
+    return { runId: value.runId, jobIds: value.jobIds, poll: value.poll };
+  }
+  throw new InvalidJobPayloadError("poll_wordpress_variation_patches");
+}
+
+export function parseRefreshWordPressVariationPatchPayload(value: JsonValue): RefreshWordPressVariationPatchPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.itemId === "string" && typeof value.wordpressProductId === "string"
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)) {
+    return { runId: value.runId, itemId: value.itemId, wordpressProductId: value.wordpressProductId };
+  }
+  throw new InvalidJobPayloadError("refresh_wordpress_variation_patch");
 }

@@ -5,6 +5,15 @@ export type { JobRepository } from "./job-repository.js";
 export type { ProductOperationHistoryRepository } from "./product-operation-history-repository.js";
 export type { ProductAdminRepository } from "./product-admin-repository.js";
 export type { ExportControlRepository } from "./export-control-repository.js";
+export type {
+  WordPressCatalogMatchStatus,
+  WordPressCatalogPageInput,
+  WordPressCatalogRepository,
+  WordPressCatalogRunItemRecord,
+  WordPressCatalogRunRecord,
+  WordPressCatalogRunStatus,
+  WordPressCatalogVariationCandidate,
+} from "./wordpress-catalog-repository.js";
 export type { ReferenceRepository } from "./reference-repository.js";
 export type {
   AppliedWorkerConcurrencySettings,

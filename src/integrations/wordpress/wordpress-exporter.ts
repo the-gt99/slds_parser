@@ -226,6 +226,21 @@ function assertSafeVariantPriceSpread(variants: readonly ProductVariantDTO[], ra
   );
 }
 
+function unsafeVariantPriceKeys(variants: readonly ProductVariantDTO[], ratio: bigint | null): ReadonlySet<string> {
+  if (ratio === null) return new Set();
+  const prices = variants
+    .filter((variant) => variant.inventory.availability === "available" && variant.price !== null)
+    .map((variant) => {
+      if (variant.price!.currency.toUpperCase() !== "USD") {
+        throw new IntegrationContractError(`WordPress pricing supports USD only: ${variant.price!.currency}`);
+      }
+      return { key: variant.sourceVariantKey, minor: BigInt(moneyToMinorUnits(variant.price!.amount)) };
+    });
+  if (prices.length < 2) return new Set();
+  const minimum = prices.reduce((value, item) => item.minor < value ? item.minor : value, prices[0]!.minor);
+  return new Set(prices.filter((item) => item.minor > minimum * ratio).map((item) => item.key));
+}
+
 function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
   return error instanceof IntegrationContractError
     && (error.message.startsWith("WordPress size mapping is missing:")
@@ -811,6 +826,65 @@ export async function previewWordPressUpsertPayload(
   converter?: WordPressSizeConverterLike,
 ): Promise<WordPressUpsertPayloadPreview> {
   return buildWordPressPayload(context, true, converter);
+}
+
+export interface WordPressVariationPatchDraft {
+  readonly items: readonly JsonObject[];
+  readonly sourceTargetSizes: readonly string[];
+  readonly knownTargetSizes: readonly string[];
+  readonly ignored: readonly { readonly sourceVariantKey: string; readonly size: string; readonly reason: string }[];
+}
+
+export async function previewWordPressVariationPatchItems(
+  context: ExportContext,
+  converter?: WordPressSizeConverterLike,
+): Promise<WordPressVariationPatchDraft> {
+  const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
+  if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress variation patch");
+  const variants = context.liveVariants ?? context.product.variants;
+  if (variants.length === 0) throw new IntegrationContractError("WordPress variation patch has no source variants");
+  const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
+  const externalKey = `${sourceCode}:${sourceExternalId}`;
+  const mappings = sizeMappings(context.target.config);
+  const ignoreMissing = ignoreUnmappedSizeVariants(context.target.config);
+  const taxonomyResult = await taxonomyPayload(context, requiredReferenceTypes(context.target.config), true);
+  const taxonomies = mergePreservedBrandTerms(context, taxonomyResult.taxonomies);
+  const needsConversion = converter !== undefined && variants.some(
+    (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
+  );
+  const conversionIdentity = needsConversion && converter !== undefined
+    ? sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId)
+    : undefined;
+  const resolution = await resolveVariationSet(variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
+  const unsafeKeys = unsafeVariantPriceKeys(variants, maximumVariantPriceRatio(context.target.config));
+  const safe = resolution.resolved.filter((item) => !unsafeKeys.has(String(item.payload.source_variant_key)));
+  const targetSizes = safe.map((item) => {
+    const size = item.payload.size as JsonObject;
+    return `${String(size.taxonomy)}:${String(size.term_id)}`;
+  });
+  if (new Set(targetSizes).size !== targetSizes.length) {
+    throw new IntegrationContractError("More than one source variant resolves to the same WordPress size");
+  }
+  const variantByKey = new Map(variants.map((variant) => [variant.sourceVariantKey, variant]));
+  return {
+    items: safe.map((item) => item.payload),
+    sourceTargetSizes: [...new Set(resolution.resolved.map((item) => {
+      const size = item.payload.size as JsonObject;
+      return `${String(size.taxonomy)}:${String(size.term_id)}`;
+    }))],
+    knownTargetSizes: [...new Set(mappings.map((mapping) => `${mapping.taxonomy}:${mapping.termId}`))],
+    ignored: [
+      ...resolution.ignored.map((item) => ({ sourceVariantKey: item.sourceVariantKey, size: item.displayValue, reason: item.reason })),
+      ...[...unsafeKeys].map((key) => {
+        const variant = variantByKey.get(key)!;
+        return {
+          sourceVariantKey: key,
+          size: variant.size.displayValue,
+          reason: `Цена выше безопасного порога x${maximumVariantPriceRatio(context.target.config)?.toString() ?? "—"}; вариация сохранена без изменений`,
+        };
+      }),
+    ],
+  };
 }
 
 export async function buildWordPressUpsertPayload(

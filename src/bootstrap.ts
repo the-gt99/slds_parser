@@ -1,11 +1,11 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressPreviewService } from "./services/index.js";
 
@@ -87,6 +87,14 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const exportRunner = new ExportRunner(repositories, exporters, targetMappings, sourceRefresher, () => refreshSourceBeforeExport);
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
+  const wordpressCatalog = new PostgresWordPressCatalogRepository(pool);
+  const wordpressCatalogSync = wordpress === null
+    ? undefined
+    : new WordPressCatalogSyncRunner(wordpressCatalog, new WordPressCatalogClient(wordpress));
+  const wordpressVariationPatches = wordpress === null
+    ? undefined
+    : new WordPressVariationPatchRunner(wordpressCatalog, repositories.jobs, targetMappings, repositories.contentTemplates,
+      repositories.sources, repositories.sourceProducts, sourceRefresher, new WordPressCatalogClient(wordpress), wordpress);
   const preflightRunner = wordpress === null
     ? undefined
     : new PreflightRunner(new WordPressPreviewService(
@@ -118,7 +126,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         );
       })();
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
-    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner);
+    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync, wordpressVariationPatches);
   const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,
@@ -131,7 +139,8 @@ export function createApplication(environment: ApplicationEnvironment = process.
       ? undefined
       : async (jobTypes) => {
         const needsGoatProxy = jobTypes.length === 1
-          && (jobTypes[0] === "collect_product" || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
+          && (jobTypes[0] === "collect_product" || jobTypes[0] === "refresh_wordpress_variation_patch"
+            || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
         return needsGoatProxy
           ? proxyPool.reserveClaim()
           : { run: async (callback) => callback(), releaseUnused: async () => {} };
@@ -155,5 +164,5 @@ export function createApplication(environment: ApplicationEnvironment = process.
     exportCampaigns,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
-    sourceRefresher, exportRunner, preflightRunner, exportControl, dispatcher, worker, close: () => pool.end() };
+    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, dispatcher, worker, close: () => pool.end() };
 }

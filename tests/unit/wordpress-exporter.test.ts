@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
 import { hashStableJson } from "../../src/core/utils/index.js";
-import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
+import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, previewWordPressVariationPatchItems, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
   sourceProductId: "2",
@@ -96,6 +96,29 @@ describe("WordPressExporter", () => {
     await expect(buildWordPressUpsertPayload(input)).rejects.toThrow(
       "WordPress export blocked by variant price spread x5: minimum $123.45; 8: $700.00",
     );
+  });
+
+  it("skips only the x5 price outlier in a variation-only patch", async () => {
+    const base = context({
+      maxVariantPriceRatio: 5,
+      sizeMappings: [
+        { sourceValue: "7", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 107 },
+        { sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 },
+      ],
+    });
+    const input: ExportContext = {
+      ...base,
+      liveVariants: [
+        base.product.variants[0]!,
+        { ...base.product.variants[0]!, sourceVariantKey: "offer-8", sku: "ROOT-SKU-8",
+          size: { sourceValue: "8", displayValue: "8", system: "us-numeric", audience: "men" },
+          price: { amount: "700.00", currency: "USD" } },
+      ],
+    };
+    const draft = await previewWordPressVariationPatchItems(input);
+    expect(draft.items).toHaveLength(1);
+    expect(draft.items[0]?.source_variant_key).toBe("offer-7");
+    expect(draft.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "offer-8", reason: expect.stringContaining("x5") })]);
   });
 
   it("builds the strict source-neutral upsert payload", async () => {

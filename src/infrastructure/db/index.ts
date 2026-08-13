@@ -34,4 +34,5 @@ export {
   PostgresTargetDictionaryRepository,
   PostgresTargetAssignmentRuleRepository,
   PostgresTargetClassificationImportRepository,
+  PostgresWordPressCatalogRepository,
 } from "./repositories/index.js";

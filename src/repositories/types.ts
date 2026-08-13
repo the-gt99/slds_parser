@@ -20,6 +20,10 @@ export type JobType =
   | "sync_target_classifications"
   | "apply_target_classification_suggestion"
   | "preflight_product"
+  | "sync_wordpress_catalog"
+  | "prepare_wordpress_variation_patches"
+  | "refresh_wordpress_variation_patch"
+  | "poll_wordpress_variation_patches"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";
 

@@ -30,6 +30,7 @@ import type {
   TargetAssignmentAdminService,
   TargetClassificationImportService,
   WordPressPreviewService,
+  WordPressCatalogService,
 } from "../services/index.js";
 import { targetClassificationSuggestionStatus } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
@@ -52,6 +53,7 @@ export interface HttpServerDependencies {
   readonly contentTemplates?: ContentTemplateAdminService;
   readonly targetAssignments?: TargetAssignmentAdminService;
   readonly targetClassificationImport?: TargetClassificationImportService;
+  readonly wordpressCatalog?: WordPressCatalogService;
 }
 
 interface QueueQuery {
@@ -168,6 +170,16 @@ interface ExportControlBody {
   readonly maxExports?: unknown;
 }
 interface ExportCampaignParams { readonly campaignId: string }
+interface WordPressCatalogRunParams { readonly runId: string }
+interface WordPressCatalogQuery { readonly targetId?: string; readonly limit?: string }
+interface WordPressCatalogItemsQuery { readonly match?: string; readonly limit?: string; readonly offset?: string }
+interface WordPressCatalogRunBody {
+  readonly targetId?: unknown;
+  readonly sourceCode?: unknown;
+  readonly auditRequested?: unknown;
+  readonly variationSyncRequested?: unknown;
+  readonly reason?: unknown;
+}
 interface DictionaryQuery { readonly entityType?: string; readonly search?: string; readonly limit?: string; readonly offset?: string }
 interface ProjectionQuery { readonly targetId?: string; readonly resolutionKind?: string; readonly resolutionId?: string }
 interface ProjectionParams { readonly targetId: string; readonly projectionId: string }
@@ -644,6 +656,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   const targetClassificationImportService = (): TargetClassificationImportService => {
     if (dependencies.targetClassificationImport === undefined) throw new HttpInputError("WordPress classification import is not configured");
     return dependencies.targetClassificationImport;
+  };
+  const wordpressCatalogService = (): WordPressCatalogService => {
+    if (dependencies.wordpressCatalog === undefined) throw new HttpInputError("WordPress catalog is not configured");
+    return dependencies.wordpressCatalog;
   };
 
   registerStaticUi(server);
@@ -1205,6 +1221,54 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       limit,
     });
   });
+
+  server.get<{ Querystring: WordPressCatalogQuery }>(
+    "/api/wordpress-catalog/runs",
+    { preHandler: requireAdmin },
+    async (request) => ({ items: await wordpressCatalogService().listRuns(
+      entityId(request.query.targetId, "targetId"),
+      positiveInteger(request.query.limit, 20, 100),
+    ) }),
+  );
+
+  server.post<{ Body: WordPressCatalogRunBody }>(
+    "/api/wordpress-catalog/runs",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      const reason = optionalString(request.body?.reason);
+      return { item: await wordpressCatalogService().createRun({
+        targetId: entityId(request.body?.targetId, "targetId"),
+        sourceCode: requiredString(request.body?.sourceCode, "sourceCode"),
+        auditRequested: optionalBoolean(request.body?.auditRequested, "auditRequested", true),
+        variationSyncRequested: optionalBoolean(request.body?.variationSyncRequested, "variationSyncRequested", false),
+        actor: actor(request),
+        ...(reason === undefined ? {} : { reason }),
+      }) };
+    },
+  );
+
+  server.get<{ Params: WordPressCatalogRunParams }>(
+    "/api/wordpress-catalog/runs/:runId",
+    { preHandler: requireAdmin },
+    async (request) => ({ item: await wordpressCatalogService().getRun(entityId(request.params.runId, "runId")) }),
+  );
+
+  server.get<{ Params: WordPressCatalogRunParams; Querystring: WordPressCatalogItemsQuery }>(
+    "/api/wordpress-catalog/runs/:runId/items",
+    { preHandler: requireAdmin },
+    async (request) => {
+      const match = optionalString(request.query.match);
+      if (match !== undefined && match !== "matched" && match !== "unmatched" && match !== "ambiguous") {
+        throw new HttpInputError("match must be matched, unmatched or ambiguous");
+      }
+      return wordpressCatalogService().listItems({
+        runId: entityId(request.params.runId, "runId"),
+        ...(match === undefined ? {} : { matchStatus: match }),
+        limit: positiveInteger(request.query.limit, 50, 200),
+        offset: positiveInteger(request.query.offset, 0, 1_000_000),
+      });
+    },
+  );
 
   server.post<{ Body: ExportControlBody }>(
     "/api/export-control/preflights",
