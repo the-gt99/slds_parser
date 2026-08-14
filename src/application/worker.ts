@@ -1,6 +1,7 @@
 import { PermanentError, RetryableError } from "../core/errors/index.js";
 import type { JobRepository, JobRecord, JobType } from "../repositories/index.js";
 import type { JobHandler } from "./job-dispatcher.js";
+import { parsePollWordPressVariationPatchesPayload, type PollWordPressVariationPatchesPayload } from "./job-payloads.js";
 
 export interface WorkerClaimPermit {
   run<Result>(callback: () => Promise<Result>): Promise<Result>;
@@ -53,6 +54,8 @@ function errorText(error: unknown): string {
 
 export class Worker {
   private static readonly reclassificationBatchSize = 16;
+  private static readonly wordpressVariationPollClaimBatchSize = 100;
+  private static readonly wordpressVariationPollRequestSize = 500;
 
   constructor(private readonly jobs: JobRepository, private readonly dispatcher: JobHandler,
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
@@ -88,6 +91,30 @@ export class Worker {
     return jobs.length > 0;
   }
 
+  async processWordPressVariationPollBatch(workerId: string): Promise<boolean> {
+    const jobs = await this.jobs.claimMany(
+      workerId,
+      this.options.lockTimeoutMs,
+      "poll_wordpress_variation_patches",
+      Worker.wordpressVariationPollClaimBatchSize,
+    );
+    if (jobs.length === 0) return false;
+
+    const valid: Array<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }> = [];
+    for (const job of jobs) {
+      try {
+        valid.push({ job, payload: parsePollWordPressVariationPatchesPayload(job.payload) });
+      } catch {
+        await this.processClaimed(job);
+      }
+    }
+
+    for (const batch of this.buildWordPressVariationPollBatches(valid)) {
+      await this.processWordPressVariationPollJobs(batch);
+    }
+    return true;
+  }
+
   private async processClaimed(job: JobRecord, permit?: WorkerClaimPermit): Promise<void> {
     const process = async (): Promise<void> => {
       await this.dispatcher.dispatch(job);
@@ -97,18 +124,78 @@ export class Worker {
       if (permit === undefined) await process();
       else await permit.run(process);
     } catch (error) {
-      if (error instanceof RetryableError && job.attempts < this.options.maxJobAttempts) {
-        const delay = Math.min(this.options.retryMaxMs, this.options.retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
-        await this.jobs.retry(job.id, { error: errorText(error), availableAt: new Date(this.currentTime() + delay).toISOString() });
+      await this.handleClaimedFailure(job, error);
+    }
+  }
+
+  private async handleClaimedFailure(job: JobRecord, error: unknown): Promise<void> {
+    if (error instanceof RetryableError && job.attempts < this.options.maxJobAttempts) {
+      const delay = Math.min(this.options.retryMaxMs, this.options.retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
+      await this.jobs.retry(job.id, { error: errorText(error), availableAt: new Date(this.currentTime() + delay).toISOString() });
+      return;
+    }
+    await this.jobs.fail(job.id, errorText(error));
+    if (error instanceof PermanentError || !(error instanceof RetryableError) || job.attempts >= this.options.maxJobAttempts) {
+      try {
+        await this.dispatcher.handleTerminalFailure(job, error);
+      } catch (cleanupError) {
+        this.logError(`Terminal cleanup failed for job ${job.id}: ${errorText(cleanupError)}`);
+      }
+    }
+  }
+
+  private buildWordPressVariationPollBatches(
+    entries: ReadonlyArray<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }>,
+  ): Array<ReadonlyArray<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }>> {
+    const batches: Array<Array<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }>> = [];
+    const byRunAndPoll = new Map<string, Array<Array<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }>>>();
+    for (const entry of entries) {
+      const groupKey = `${entry.payload.runId}:${entry.payload.poll}`;
+      let runBatches = byRunAndPoll.get(groupKey);
+      if (runBatches === undefined) {
+        runBatches = [];
+        byRunAndPoll.set(groupKey, runBatches);
+      }
+      const current = runBatches.at(-1);
+      const currentIds = current === undefined
+        ? new Set<string>()
+        : new Set(current.flatMap((item) => item.payload.jobIds));
+      const combinedIds = new Set([...currentIds, ...entry.payload.jobIds]);
+      if (current === undefined || combinedIds.size > Worker.wordpressVariationPollRequestSize) {
+        const next = [entry];
+        runBatches.push(next);
+        batches.push(next);
       } else {
-        await this.jobs.fail(job.id, errorText(error));
-        if (error instanceof PermanentError || !(error instanceof RetryableError) || job.attempts >= this.options.maxJobAttempts) {
-          try {
-            await this.dispatcher.handleTerminalFailure(job, error);
-          } catch (cleanupError) {
-            this.logError(`Terminal cleanup failed for job ${job.id}: ${errorText(cleanupError)}`);
-          }
-        }
+        current.push(entry);
+      }
+    }
+    return batches;
+  }
+
+  private async processWordPressVariationPollJobs(
+    entries: ReadonlyArray<{ job: JobRecord; payload: PollWordPressVariationPatchesPayload }>,
+  ): Promise<void> {
+    const first = entries[0];
+    if (first === undefined) return;
+    const payload: PollWordPressVariationPatchesPayload = {
+      runId: first.payload.runId,
+      jobIds: [...new Set(entries.flatMap((entry) => entry.payload.jobIds))],
+      poll: first.payload.poll,
+    };
+    try {
+      await this.dispatcher.dispatch({
+        ...first.job,
+        payload: { runId: payload.runId, jobIds: [...payload.jobIds], poll: payload.poll },
+      });
+    } catch (error) {
+      for (const entry of entries) await this.handleClaimedFailure(entry.job, error);
+      return;
+    }
+    for (const entry of entries) {
+      try {
+        await this.jobs.complete(entry.job.id);
+      } catch (error) {
+        await this.handleClaimedFailure(entry.job, error);
       }
     }
   }
@@ -122,7 +209,6 @@ export class Worker {
     const classificationApplyJobTypes = ["apply_target_classification_suggestion"] satisfies readonly JobType[];
     const wordpressCatalogJobTypes = ["sync_wordpress_catalog"] satisfies readonly JobType[];
     const wordpressVariationJobTypes = ["prepare_wordpress_variation_patches"] satisfies readonly JobType[];
-    const wordpressVariationPollJobTypes = ["poll_wordpress_variation_patches"] satisfies readonly JobType[];
     const wordpressVariationRefreshJobTypes = ["refresh_wordpress_variation_patch"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
@@ -148,7 +234,7 @@ export class Worker {
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),
         this.runLane(controller.signal, wordpressCatalogJobTypes, `${this.options.workerId}:wordpress-catalog`),
         this.runLane(controller.signal, wordpressVariationJobTypes, `${this.options.workerId}:wordpress-variations`),
-        this.runLane(controller.signal, wordpressVariationPollJobTypes, `${this.options.workerId}:wordpress-variation-poll`),
+        this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:wordpress-variation-poll`),
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:wordpress-variation-refresh-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.classificationApplyConcurrency }, (_, index) =>
@@ -182,6 +268,13 @@ export class Worker {
         this.logError(`WordPress variation auto-sync tick failed: ${errorText(error)}`);
       }
       if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+    }
+  }
+
+  private async runWordPressVariationPollLane(signal: AbortSignal, workerId: string): Promise<void> {
+    while (!signal.aborted) {
+      const processed = await this.processWordPressVariationPollBatch(workerId);
+      if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
   }
 

@@ -53,6 +53,102 @@ describe("Worker", () => {
     expect([...store.jobs.values()].filter((job) => job.status === "pending")).toHaveLength(4);
   });
 
+  it("polls one hundred WordPress variation jobs with one request", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 100; index += 1) {
+      await jobs.enqueue({
+        jobType: "poll_wordpress_variation_patches",
+        payload: { runId: "1", jobIds: [String(index)], poll: 2 },
+        uniqueKey: `poll-${index}`,
+      });
+    }
+    const handler: JobHandler = { dispatch: vi.fn().mockResolvedValue({ status: "completed" }), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options);
+
+    expect(await worker.processWordPressVariationPollBatch("worker:poll")).toBe(true);
+    expect(handler.dispatch).toHaveBeenCalledOnce();
+    expect(vi.mocked(handler.dispatch).mock.calls[0]?.[0]).toMatchObject({
+      jobType: "poll_wordpress_variation_patches",
+      payload: { runId: "1", poll: 2 },
+    });
+    expect((vi.mocked(handler.dispatch).mock.calls[0]?.[0].payload as { jobIds: string[] }).jobIds).toHaveLength(100);
+    expect([...store.jobs.values()].filter((job) => job.status === "completed")).toHaveLength(100);
+  });
+
+  it("keeps WordPress variation poll runs in separate requests", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "1", jobIds: ["11"], poll: 0 }, uniqueKey: "poll-1" });
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "2", jobIds: ["22"], poll: 0 }, uniqueKey: "poll-2" });
+    const handler: JobHandler = { dispatch: vi.fn().mockResolvedValue({ status: "completed" }), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options);
+
+    await worker.processWordPressVariationPollBatch("worker:poll");
+
+    expect(handler.dispatch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(handler.dispatch).mock.calls.map(([job]) => job.payload)).toEqual([
+      { runId: "1", jobIds: ["11"], poll: 0 },
+      { runId: "2", jobIds: ["22"], poll: 0 },
+    ]);
+  });
+
+  it("keeps WordPress variation poll counters in separate requests", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "1", jobIds: ["11"], poll: 1 }, uniqueKey: "poll-1" });
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "1", jobIds: ["22"], poll: 719 }, uniqueKey: "poll-2" });
+    const handler: JobHandler = { dispatch: vi.fn().mockResolvedValue({ status: "completed" }), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options);
+
+    await worker.processWordPressVariationPollBatch("worker:poll");
+
+    expect(handler.dispatch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(handler.dispatch).mock.calls.map(([job]) => job.payload)).toEqual([
+      { runId: "1", jobIds: ["11"], poll: 1 },
+      { runId: "1", jobIds: ["22"], poll: 719 },
+    ]);
+  });
+
+  it("does not exceed the WordPress limit of five hundred job ids per poll", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    await jobs.enqueue({
+      jobType: "poll_wordpress_variation_patches",
+      payload: { runId: "1", jobIds: Array.from({ length: 300 }, (_, index) => String(index + 1)), poll: 1 },
+      uniqueKey: "poll-1",
+    });
+    await jobs.enqueue({
+      jobType: "poll_wordpress_variation_patches",
+      payload: { runId: "1", jobIds: Array.from({ length: 250 }, (_, index) => String(index + 301)), poll: 1 },
+      uniqueKey: "poll-2",
+    });
+    const handler: JobHandler = { dispatch: vi.fn().mockResolvedValue({ status: "completed" }), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options);
+
+    await worker.processWordPressVariationPollBatch("worker:poll");
+
+    expect(handler.dispatch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(handler.dispatch).mock.calls.map(([job]) => (job.payload as { jobIds: string[] }).jobIds.length)).toEqual([300, 250]);
+  });
+
+  it("preserves retry state for every job in a failed WordPress poll batch", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "1", jobIds: ["11"], poll: 0 }, uniqueKey: "poll-1" });
+    await jobs.enqueue({ jobType: "poll_wordpress_variation_patches", payload: { runId: "1", jobIds: ["22"], poll: 0 }, uniqueKey: "poll-2" });
+    const handler: JobHandler = { dispatch: vi.fn().mockRejectedValue(new RetryableError("later", { code: "LATER" })), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options, async () => {}, () => Date.parse("2026-01-01T00:00:00.000Z"));
+
+    await worker.processWordPressVariationPollBatch("worker:poll");
+
+    expect([...store.jobs.values()]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ uniqueKey: "poll-1", status: "retry", availableAt: "2026-01-01T00:00:01.000Z" }),
+      expect.objectContaining({ uniqueKey: "poll-2", status: "retry", availableAt: "2026-01-01T00:00:01.000Z" }),
+    ]));
+    expect(handler.handleTerminalFailure).not.toHaveBeenCalled();
+  });
+
   it("runs the configured number of WordPress preflight lanes", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
