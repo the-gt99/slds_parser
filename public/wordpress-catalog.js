@@ -364,6 +364,20 @@ function variationSizeKey(value) {
   return attribute ? `${attribute.taxonomy}:${attribute.term_id}` : null;
 }
 
+function sizeLabelFromSlug(value) {
+  const match = String(value || "").match(/^([a-z]{2})-(\d+)(?:-(\d+))?([a-z]+)?$/iu);
+  if (!match) return null;
+  const [, system, whole, fraction, audience] = match;
+  return `${system.toUpperCase()} ${whole}${fraction ? `,${fraction}` : ""}${audience ? audience.toUpperCase() : ""}`;
+}
+
+function catalogVariationSizeLabel(item, row, labels) {
+  const current = asArray(item.payload?.product?.variations).find((value) => variationSizeKey(value) === row.size);
+  const attribute = asArray(current?.attributes).find((value) => value?.term_slug);
+  const id = String(row.size || "").split(":").at(-1);
+  return sizeLabelFromSlug(attribute?.term_slug) || labels[id] || row.size || "—";
+}
+
 function restoredCatalogVariationRows(item, audit) {
   const comparison = asObject(audit.variations);
   const stored = asArray(comparison.items);
@@ -408,9 +422,8 @@ function renderCatalogVariationChanges(item, audit, labels) {
   const head = node("thead"); const headRow = node("tr"); ["Размер", "Сейчас", "После merge", "Результат"].forEach((title) => headRow.append(node("th", "", title))); head.append(headRow);
   const body = node("tbody");
   for (const row of rows) {
-    const id = String(row.size || "").split(":").at(-1);
     const status = variationStatus(row); const tr = node("tr");
-    tr.append(node("td", "", labels[id] || row.size || "—"), node("td", "", formatCurrentVariation(row.before)), node("td", "", formatProposedVariation(row.after)));
+    tr.append(node("td", "", catalogVariationSizeLabel(item, row, labels)), node("td", "", formatCurrentVariation(row.before)), node("td", "", formatProposedVariation(row.after)));
     const statusCell = node("td"); statusCell.append(node("span", `preview-state-badge ${status.tone}`, status.text)); tr.append(statusCell); body.append(tr);
   }
   table.append(head, body); wrap.append(table); section.append(wrap);
