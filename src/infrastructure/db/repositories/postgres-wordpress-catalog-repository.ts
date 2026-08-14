@@ -296,7 +296,10 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                    AND dictionary.external_id IN (
                      SELECT DISTINCT term.term_id
                      FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result->'taxonomies', '[]'::JSONB)) AS taxonomy(row),
-                          LATERAL JSONB_ARRAY_ELEMENTS_TEXT(COALESCE(taxonomy.row->'after', '[]'::JSONB)) AS term(term_id)
+                          LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
+                            COALESCE(taxonomy.row->'after', '[]'::JSONB)
+                            || COALESCE(taxonomy.row->'before', '[]'::JSONB)
+                          ) AS term(term_id)
                      UNION
                      SELECT DISTINCT SPLIT_PART(variation.row->>'size', ':', 2)
                      FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result#>'{variations,items}', '[]'::JSONB)) AS variation(row)

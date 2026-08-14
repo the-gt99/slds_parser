@@ -294,7 +294,8 @@ function renderCatalogFieldChanges(audit) {
   const section = node("section", "preview-diff-section");
   section.append(node("h3", "", "Основные поля"));
   const list = node("div", "preview-field-list");
-  for (const row of asArray(audit.fields)) {
+  const structuralFields = new Set(["images", "taxonomies", "variations"]);
+  for (const row of asArray(audit.fields).filter((entry) => !structuralFields.has(entry.field))) {
     const item = node("div", `preview-field-row ${row.changed ? "changed" : "unchanged"}`);
     item.append(node("strong", "", fieldLabels[row.field] || row.field));
     if (String(row.field).includes("description")) {
@@ -356,7 +357,37 @@ function variationStatus(row) {
   return { tone: "unchanged", text: "Без изменений" };
 }
 
-function renderCatalogVariationChanges(audit, labels) {
+function variationSizeKey(value) {
+  const size = asObject(value?.size);
+  if (size.taxonomy && size.term_id) return `${size.taxonomy}:${size.term_id}`;
+  const attribute = asArray(value?.attributes).find((item) => item?.taxonomy && item?.term_id);
+  return attribute ? `${attribute.taxonomy}:${attribute.term_id}` : null;
+}
+
+function restoredCatalogVariationRows(item, audit) {
+  const comparison = asObject(audit.variations);
+  const stored = asArray(comparison.items);
+  if (stored.length) return { rows: stored, restored: false };
+  const beforeKeys = asArray(comparison.before).map(String);
+  const afterKeys = asArray(comparison.after).map(String);
+  const currentBySize = new Map(asArray(item.payload?.product?.variations).map((value) => [variationSizeKey(value), value]).filter(([key]) => key));
+  const patchBySize = new Map(asArray(item.variationPayload?.variations).map((value) => [variationSizeKey(value), value]).filter(([key]) => key));
+  const beforeSet = new Set(beforeKeys);
+  const afterSet = new Set(afterKeys);
+  const keys = [...new Set([...beforeKeys, ...afterKeys])];
+  const rows = keys.map((size) => {
+    const before = beforeSet.has(size) ? currentBySize.get(size) || null : null;
+    const after = afterSet.has(size) ? patchBySize.get(size) || { price: null, inventory: null } : null;
+    const state = !beforeSet.has(size) ? "added" : !afterSet.has(size) ? "removed" : "existing";
+    const expectedStatus = after?.inventory?.availability === "available" ? "instock" : after?.inventory?.availability === "unavailable" ? "outofstock" : after?.inventory?.availability === "backorder" ? "onbackorder" : null;
+    const expectedQuantity = typeof after?.inventory?.quantity === "number" ? after.inventory.quantity : null;
+    const stockChanged = before !== null && after !== null && ((expectedStatus !== null && before.stock_status !== expectedStatus) || (expectedQuantity !== null && before.stock_quantity !== expectedQuantity));
+    return { size, before, after, state, stock_changed: stockChanged, price_managed: Boolean(after?.price) };
+  });
+  return { rows, restored: rows.length > 0 };
+}
+
+function renderCatalogVariationChanges(item, audit, labels) {
   const comparison = asObject(audit.variations);
   const section = node("section", "preview-diff-section");
   const heading = node("div", "preview-diff-heading");
@@ -369,8 +400,10 @@ function renderCatalogVariationChanges(audit, labels) {
     for (const variant of ignored) list.append(node("li", "", `${variant.displayValue || variant.sourceValue || "Размер"} — нет точного size mapping`));
     notice.append(list); section.append(notice);
   }
-  const rows = asArray(comparison.items);
+  const variationRows = restoredCatalogVariationRows(item, audit);
+  const rows = variationRows.rows;
   if (!rows.length) { section.append(node("p", "preview-empty", "Вариаций нет")); return section; }
+  if (variationRows.restored) section.append(node("p", "muted", "Строки восстановлены из сохранённого WordPress snapshot и локального ценового payload; состав размеров взят из полного аудита."));
   const wrap = node("div", "table-wrap"); const table = node("table", "variants-table preview-variation-table");
   const head = node("thead"); const headRow = node("tr"); ["Размер", "Сейчас", "После merge", "Результат"].forEach((title) => headRow.append(node("th", "", title))); head.append(headRow);
   const body = node("tbody");
@@ -446,7 +479,8 @@ function renderCatalogVisualDiff(item) {
   const audit = asObject(item.auditResult);
   const current = asObject(item.payload?.product);
   const labels = asObject(item.targetTermLabels);
-  const fields = new Map(asArray(audit.fields).map((row) => [row.field, row.after]));
+  const structuralFields = new Set(["images", "taxonomies", "variations"]);
+  const fields = new Map(asArray(audit.fields).filter((row) => !structuralFields.has(row.field)).map((row) => [row.field, row.after]));
   const afterImages = visualAuditImages(item, audit);
   const afterVariations = asArray(audit.variations?.after);
   const proposed = { ...current, ...Object.fromEntries(fields), images: afterImages, variations: afterVariations };
@@ -484,7 +518,7 @@ function renderCatalogVisualDiff(item) {
   wrapper.append(
     renderCatalogTaxonomyChanges(audit, labels),
     renderCatalogFieldChanges(audit),
-    renderCatalogVariationChanges(audit, labels),
+    renderCatalogVariationChanges(item, audit, labels),
     renderCatalogImageChanges(item, audit, afterImages),
   );
   return wrapper;
