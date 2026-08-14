@@ -305,9 +305,25 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                      FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result#>'{variations,items}', '[]'::JSONB)) AS variation(row)
                      WHERE variation.row->>'size' ~ '^pa_[a-z0-9_-]+:[0-9]+$'
                    )
+              ), '{}'::JSONB)
+              || COALESCE((
+                SELECT JSONB_OBJECT_AGG(
+                  mapping.row->>'termId',
+                  COALESCE(NULLIF(mapping.row->>'displayValue', ''), mapping.row->>'sourceValue')
+                )
+                FROM JSONB_ARRAY_ELEMENTS(COALESCE(target.config->'sizeMappings', '[]'::JSONB)) AS mapping(row)
+                WHERE mapping.row->>'termId' IN (
+                  SELECT SPLIT_PART(size.value, ':', 2)
+                  FROM JSONB_ARRAY_ELEMENTS_TEXT(
+                    COALESCE(item.audit_result#>'{variations,before}', '[]'::JSONB)
+                    || COALESCE(item.audit_result#>'{variations,after}', '[]'::JSONB)
+                  ) AS size(value)
+                  WHERE size.value ~ '^pa_[a-z0-9_-]+:[0-9]+$'
+                )
               ), '{}'::JSONB) AS target_term_labels
        FROM wordpress_catalog_run_items item
        JOIN wordpress_catalog_runs run ON run.id = item.run_id
+       JOIN targets target ON target.id = run.target_id
        JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
        LEFT JOIN internal_products internal ON internal.id = item.internal_product_id
        WHERE item.run_id = $1 AND item.id = $2`, [runId, itemId]);

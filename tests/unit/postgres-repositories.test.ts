@@ -127,6 +127,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("internal.data->'images'");
     expect(executor.calls[0]?.text).toContain("LEFT JOIN internal_products internal");
     expect(executor.calls[0]?.text).toContain("item.audit_result#>'{variations,items}'");
+    expect(executor.calls[0]?.text).toContain("target.config->'sizeMappings'");
     expect(executor.calls[0]?.values).toEqual(["1", "247"]);
   });
 
