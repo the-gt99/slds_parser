@@ -221,6 +221,195 @@ function proposedCatalogTerms(audit, taxonomy, labels) {
   return row ? asArray(row.after).map((id) => termName(row, id, labels)) : [];
 }
 
+function visualAuditImages(item, audit) {
+  const proposedImageByHash = new Map(asArray(item.proposedImages)
+    .filter((image) => image?.contentHash && image?.url)
+    .map((image) => [String(image.contentHash), image]));
+  const saved = asArray(audit.images?.after_items);
+  if (saved.length && saved.every((image) => image?.url)) return saved;
+  return asArray(audit.images?.after).map((hash, index) => proposedImageByHash.get(String(hash)) || saved[index] || null);
+}
+
+function visualTermChips(row, values, tone, labels) {
+  const list = node("div", "preview-term-list");
+  for (const value of values) list.append(node("span", `preview-term ${tone}`, termName(row, value, labels)));
+  return list;
+}
+
+function renderCatalogTaxonomyChanges(audit, labels) {
+  const section = node("section", "preview-diff-section");
+  section.append(node("h3", "", "Категории, метки и атрибуты"));
+  const list = node("div", "preview-taxonomy-list");
+  for (const row of asArray(audit.taxonomies).filter((entry) => entry.taxonomy !== "pa_razmer" && entry.taxonomy !== "pa_size")) {
+    const before = asArray(row.before).map(Number);
+    const after = asArray(row.after).map(Number);
+    const beforeSet = new Set(before);
+    const afterSet = new Set(after);
+    const added = after.filter((id) => !beforeSet.has(id));
+    const removed = before.filter((id) => !afterSet.has(id));
+    const unchanged = after.filter((id) => beforeSet.has(id));
+    const item = node("article", `preview-taxonomy-row ${row.changed ? "changed" : "unchanged"}`);
+    const heading = node("div", "preview-taxonomy-heading");
+    heading.append(
+      node("strong", "", taxonomyName(row.taxonomy)),
+      node("span", `preview-state-badge ${row.changed ? "change" : "unchanged"}`, row.changed ? "Изменится" : "Без изменений"),
+    );
+    item.append(heading);
+    const groups = node("div", "preview-term-groups");
+    for (const [title, values, tone] of [["Добавятся", added, "added"], ["Снимутся", removed, "removed"], ["Останутся", unchanged, "unchanged"]]) {
+      if (!values.length) continue;
+      const group = node("div");
+      group.append(node("span", "preview-group-label", title), visualTermChips(row, values, tone, labels));
+      groups.append(group);
+    }
+    if (!groups.childElementCount) groups.append(node("span", "preview-empty", "Значений нет"));
+    item.append(groups); list.append(item);
+  }
+  if (!list.childElementCount) list.append(node("span", "preview-empty", "Управляемых терминов нет"));
+  section.append(list);
+  return section;
+}
+
+function safeCatalogDescription(value) {
+  const preview = node("div", "preview-description-content");
+  const html = typeof value === "string" ? value.trim() : "";
+  if (!html) { preview.append(node("span", "preview-empty", "Пусто")); return preview; }
+  const cleaned = html.replace(/\sstyle\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  const source = new DOMParser().parseFromString(cleaned, "text/html");
+  const allowed = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "UL", "OL", "LI", "STRONG", "EM", "B", "I", "BR", "BLOCKQUOTE"]);
+  const dropped = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH"]);
+  const appendSafe = (sourceNode, target) => {
+    if (sourceNode.nodeType === Node.TEXT_NODE) { target.append(document.createTextNode(sourceNode.textContent || "")); return; }
+    if (sourceNode.nodeType !== Node.ELEMENT_NODE || dropped.has(sourceNode.nodeName)) return;
+    const destination = allowed.has(sourceNode.nodeName) ? document.createElement(sourceNode.nodeName.toLowerCase()) : target;
+    for (const child of sourceNode.childNodes) appendSafe(child, destination);
+    if (destination !== target) target.append(destination);
+  };
+  for (const child of source.body.childNodes) appendSafe(child, preview);
+  if (!preview.childNodes.length) preview.append(node("span", "preview-empty", "Пусто"));
+  return preview;
+}
+
+function renderCatalogFieldChanges(audit) {
+  const section = node("section", "preview-diff-section");
+  section.append(node("h3", "", "Основные поля"));
+  const list = node("div", "preview-field-list");
+  for (const row of asArray(audit.fields)) {
+    const item = node("div", `preview-field-row ${row.changed ? "changed" : "unchanged"}`);
+    item.append(node("strong", "", fieldLabels[row.field] || row.field));
+    if (String(row.field).includes("description")) {
+      const values = node("div", "preview-description-comparison");
+      for (const [title, value] of [["Сейчас", row.before], ["После merge", row.after]]) {
+        const side = node("div", "preview-description-side");
+        side.append(node("span", "preview-group-label", title), safeCatalogDescription(value)); values.append(side);
+      }
+      item.append(values);
+    } else {
+      const values = node("div", "preview-before-after");
+      values.append(node("span", "before", row.before ?? "—"), node("span", "arrow", "→"), node("span", "after", row.after ?? "—"));
+      item.append(values);
+    }
+    item.append(node("span", `preview-state-badge ${row.changed ? "change" : "unchanged"}`, row.changed ? "Изменится" : "Без изменений"));
+    list.append(item);
+  }
+  if (!list.childElementCount) list.append(node("span", "preview-empty", "Управляемых полей нет"));
+  section.append(list);
+  return section;
+}
+
+function formatCurrentVariation(value) {
+  if (!value) return "Нет";
+  const numericPrice = Number(value.regular_price);
+  const price = Number.isFinite(numericPrice) && numericPrice > 0 ? `${new Intl.NumberFormat("ru-RU").format(numericPrice)} ₽` : "без цены";
+  const stock = value.stock_status === "instock" ? "в наличии" : value.stock_status === "outofstock" ? "нет в наличии" : value.stock_status === "onbackorder" ? "предзаказ" : value.stock_status || "—";
+  const quantity = value.stock_quantity === null || value.stock_quantity === undefined ? "" : ` · остаток ${value.stock_quantity}`;
+  return `${price} · ${stock}${quantity}`;
+}
+
+function formatSourcePrice(value) {
+  if (!value) return "без цены";
+  const currency = typeof value.source_currency === "string" ? value.source_currency : typeof value.currency === "string" ? value.currency : "";
+  const minor = String(value.source_minor_amount ?? "");
+  if (/^\d+$/u.test(minor)) {
+    const amount = Number(minor) / 100;
+    if (Number.isFinite(amount)) {
+      try { return new Intl.NumberFormat("ru-RU", { style: "currency", currency: currency || "USD" }).format(amount); }
+      catch { return `${amount.toFixed(2)} ${currency}`.trim(); }
+    }
+  }
+  if (value.amount !== undefined) return `${value.amount} ${currency}`.trim();
+  return "без цены";
+}
+
+function formatProposedVariation(value) {
+  if (!value) return "Нет";
+  const inventory = asObject(value.inventory);
+  const stock = inventory.availability === "available" ? "в наличии" : inventory.availability === "unavailable" ? "нет в наличии" : inventory.availability === "backorder" ? "предзаказ" : inventory.availability || "—";
+  const quantity = inventory.quantity === null || inventory.quantity === undefined ? "" : ` · остаток ${inventory.quantity}`;
+  return `${formatSourcePrice(value.price)} · ${stock}${quantity}`;
+}
+
+function variationStatus(row) {
+  if (row.state === "added") return { tone: "add", text: "Добавится" };
+  if (row.state === "removed") return row.before?.stock_status === "outofstock" ? { tone: "unchanged", text: "Уже отключена" } : { tone: "remove", text: "Отключится" };
+  if (row.stock_changed || row.price_managed) return { tone: "change", text: "Изменится" };
+  return { tone: "unchanged", text: "Без изменений" };
+}
+
+function renderCatalogVariationChanges(audit, labels) {
+  const comparison = asObject(audit.variations);
+  const section = node("section", "preview-diff-section");
+  const heading = node("div", "preview-diff-heading");
+  heading.append(node("h3", "", "Вариации и размеры"), node("span", "count-pill", `${asArray(comparison.after).length} после merge / ${asArray(comparison.before).length} сейчас`));
+  section.append(heading);
+  const ignored = asArray(audit.ignored_size_variants);
+  if (ignored.length) {
+    const notice = node("div", "inline-message ignored-size-variants"); notice.append(node("strong", "", "Временно не передаются в WordPress:"));
+    const list = node("ul");
+    for (const variant of ignored) list.append(node("li", "", `${variant.displayValue || variant.sourceValue || "Размер"} — нет точного size mapping`));
+    notice.append(list); section.append(notice);
+  }
+  const rows = asArray(comparison.items);
+  if (!rows.length) { section.append(node("p", "preview-empty", "Вариаций нет")); return section; }
+  const wrap = node("div", "table-wrap"); const table = node("table", "variants-table preview-variation-table");
+  const head = node("thead"); const headRow = node("tr"); ["Размер", "Сейчас", "После merge", "Результат"].forEach((title) => headRow.append(node("th", "", title))); head.append(headRow);
+  const body = node("tbody");
+  for (const row of rows) {
+    const id = String(row.size || "").split(":").at(-1);
+    const status = variationStatus(row); const tr = node("tr");
+    tr.append(node("td", "", labels[id] || row.size || "—"), node("td", "", formatCurrentVariation(row.before)), node("td", "", formatProposedVariation(row.after)));
+    const statusCell = node("td"); statusCell.append(node("span", `preview-state-badge ${status.tone}`, status.text)); tr.append(statusCell); body.append(tr);
+  }
+  table.append(head, body); wrap.append(table); section.append(wrap);
+  return section;
+}
+
+function imageUrl(value) { return value?.url || value?.source_url || value?.sourceUrl || value?.origin_url || ""; }
+
+function renderCatalogImageChanges(item, audit, afterImages) {
+  const section = node("section", "preview-diff-section"); section.append(node("h3", "", "Изображения"));
+  const grid = node("div", "preview-image-grid");
+  const currentImages = asArray(asObject(item.payload?.product).images);
+  const beforeKeys = asArray(audit.images?.before); const afterKeys = asArray(audit.images?.after);
+  const positions = Math.max(beforeKeys.length, afterKeys.length, currentImages.length, afterImages.length);
+  for (let index = 0; index < positions; index += 1) {
+    const before = currentImages[index] || asArray(audit.images?.before_items)[index] || null;
+    const after = afterImages[index] || null;
+    const status = !beforeKeys[index] ? { tone: "add", text: "Добавится" } : !afterKeys[index] ? { tone: "remove", text: "Удалится" } : beforeKeys[index] === afterKeys[index] ? { tone: "unchanged", text: "Без изменений" } : { tone: "change", text: "Изменится" };
+    const card = node("article", `preview-image-change ${status.tone}`); card.append(node("span", `preview-state-badge ${status.tone}`, `${index + 1}. ${status.text}`));
+    const pair = node("div", "preview-image-pair");
+    for (const [title, image] of [["Сейчас", before], ["После", after]]) {
+      const side = node("div"); side.append(node("span", "preview-group-label", title)); const url = imageUrl(image);
+      if (url) { const picture = node("img"); picture.src = url; picture.alt = `${title}, изображение ${index + 1}`; picture.loading = "lazy"; side.append(picture); }
+      else side.append(node("div", "preview-image-empty", "Нет"));
+      pair.append(side);
+    }
+    card.append(pair); grid.append(card);
+  }
+  if (!positions) grid.append(node("span", "preview-empty", "Изображений нет"));
+  section.append(grid); return section;
+}
+
 function catalogPriceRange(variations) {
   const prices = asArray(variations).map((item) => Number(item.regular_price)).filter((value) => Number.isFinite(value) && value > 0);
   if (!prices.length) return "Цена не указана";
@@ -258,12 +447,7 @@ function renderCatalogVisualDiff(item) {
   const current = asObject(item.payload?.product);
   const labels = asObject(item.targetTermLabels);
   const fields = new Map(asArray(audit.fields).map((row) => [row.field, row.after]));
-  const proposedImageByHash = new Map(asArray(item.proposedImages)
-    .filter((image) => image?.contentHash && image?.url)
-    .map((image) => [String(image.contentHash), image]));
-  const afterImages = asArray(audit.images?.after_items).length
-    ? asArray(audit.images.after_items)
-    : asArray(audit.images?.after).map((hash) => proposedImageByHash.get(String(hash))).filter(Boolean);
+  const afterImages = visualAuditImages(item, audit);
   const afterVariations = asArray(audit.variations?.after);
   const proposed = { ...current, ...Object.fromEntries(fields), images: afterImages, variations: afterVariations };
   const wrapper = node("div", "catalog-visual-diff");
@@ -297,6 +481,12 @@ function renderCatalogVisualDiff(item) {
     node("div", Number(summary.variation_added_count) || Number(summary.variation_removed_count) ? "changed" : "unchanged", `+${count(summary.variation_added_count)} / −${count(summary.variation_removed_count)} размеров`),
   );
   wrapper.append(summaryRow);
+  wrapper.append(
+    renderCatalogTaxonomyChanges(audit, labels),
+    renderCatalogFieldChanges(audit),
+    renderCatalogVariationChanges(audit, labels),
+    renderCatalogImageChanges(item, audit, afterImages),
+  );
   return wrapper;
 }
 

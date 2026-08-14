@@ -293,11 +293,15 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                 SELECT JSONB_OBJECT_AGG(dictionary.external_id, dictionary.name)
                 FROM target_dictionary_values dictionary
                 WHERE dictionary.target_id = run.target_id
-                  AND dictionary.external_id IN (
-                    SELECT DISTINCT term.term_id
-                    FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result->'taxonomies', '[]'::JSONB)) AS taxonomy(row),
-                         LATERAL JSONB_ARRAY_ELEMENTS_TEXT(COALESCE(taxonomy.row->'after', '[]'::JSONB)) AS term(term_id)
-                  )
+                   AND dictionary.external_id IN (
+                     SELECT DISTINCT term.term_id
+                     FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result->'taxonomies', '[]'::JSONB)) AS taxonomy(row),
+                          LATERAL JSONB_ARRAY_ELEMENTS_TEXT(COALESCE(taxonomy.row->'after', '[]'::JSONB)) AS term(term_id)
+                     UNION
+                     SELECT DISTINCT SPLIT_PART(variation.row->>'size', ':', 2)
+                     FROM JSONB_ARRAY_ELEMENTS(COALESCE(item.audit_result#>'{variations,items}', '[]'::JSONB)) AS variation(row)
+                     WHERE variation.row->>'size' ~ '^pa_[a-z0-9_-]+:[0-9]+$'
+                   )
               ), '{}'::JSONB) AS target_term_labels
        FROM wordpress_catalog_run_items item
        JOIN wordpress_catalog_runs run ON run.id = item.run_id
