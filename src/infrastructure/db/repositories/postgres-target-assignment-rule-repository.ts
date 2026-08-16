@@ -256,12 +256,13 @@ GROUP BY match_set.id ORDER BY match_set.name, match_set.id`;
 
 async function replaceMatchSetValues(client: SqlClient, matchSetId: unknown, values: readonly string[]): Promise<void> {
   await client.query("DELETE FROM target_assignment_match_set_values WHERE match_set_id = $1", [matchSetId]);
-  for (const [position, value] of uniqueValues(values).entries()) {
-    await client.query(
-      `INSERT INTO target_assignment_match_set_values (match_set_id, position, value, normalized_value) VALUES ($1, $2, $3, $4)`,
-      [matchSetId, position, value, normalize(value)],
-    );
-  }
+  const prepared = uniqueValues(values);
+  await client.query(
+    `INSERT INTO target_assignment_match_set_values (match_set_id, position, value, normalized_value)
+     SELECT $1, (entry.ordinality - 1)::INTEGER, entry.value, entry.normalized_value
+     FROM UNNEST($2::TEXT[], $3::TEXT[]) WITH ORDINALITY entry(value, normalized_value, ordinality)`,
+    [matchSetId, prepared, prepared.map(normalize)],
+  );
 }
 
 export class PostgresTargetAssignmentRuleRepository implements TargetAssignmentRuleRepository {
