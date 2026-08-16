@@ -224,7 +224,10 @@ interface TargetAssignmentMatchSetBody {
   readonly revision?: unknown;
   readonly reason?: unknown;
 }
-interface WordPressTargetSettingsBody { readonly preserveExistingBrandTerms?: unknown }
+interface WordPressTargetSettingsBody {
+  readonly preserveExistingBrandTerms?: unknown;
+  readonly preserveExistingTagTerms?: unknown;
+}
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
@@ -1207,9 +1210,12 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     "/api/targets/:targetId/wordpress-settings",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => ({
-      target: await dependencies.targetDictionaries.setPreserveExistingBrandTerms(
+      target: await dependencies.targetDictionaries.setWordPressTaxonomyPreservation(
         entityId(request.params.targetId, "targetId"),
-        optionalBoolean(request.body?.preserveExistingBrandTerms, "preserveExistingBrandTerms"),
+        {
+          preserveExistingBrandTerms: optionalBoolean(request.body?.preserveExistingBrandTerms, "preserveExistingBrandTerms"),
+          preserveExistingTagTerms: optionalBoolean(request.body?.preserveExistingTagTerms, "preserveExistingTagTerms"),
+        },
       ),
     }),
   );

@@ -93,13 +93,16 @@ export class TargetDictionaryService {
     });
   }
 
-  async setPreserveExistingBrandTerms(targetId: EntityId, enabled: boolean) {
+  async setWordPressTaxonomyPreservation(targetId: EntityId, input: {
+    readonly preserveExistingBrandTerms: boolean;
+    readonly preserveExistingTagTerms: boolean;
+  }) {
     const target = (await this.repository.listTargets()).find((item) => item.id === targetId);
     if (target === undefined) throw new EntityNotFoundError("Target", targetId);
     if (target.exporterCode !== "wordpress") {
-      throw new IntegrationContractError("Сохранение существующих брендов доступно только для WordPress target");
+      throw new IntegrationContractError("Сохранение существующих таксономий доступно только для WordPress target");
     }
-    return this.repository.setPreserveExistingBrandTerms(targetId, enabled);
+    return this.repository.setWordPressTaxonomyPreservation(targetId, input);
   }
 
   listValues(query: TargetDictionaryQuery) {

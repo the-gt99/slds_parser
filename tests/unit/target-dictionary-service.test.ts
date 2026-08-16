@@ -29,9 +29,9 @@ function setup() {
       id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
       config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     }]),
-    setPreserveExistingBrandTerms: vi.fn().mockImplementation(async (_targetId, enabled) => ({
+    setWordPressTaxonomyPreservation: vi.fn().mockImplementation(async (_targetId, input) => ({
       id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
-      config: { preserveExistingBrandTerms: enabled }, enabled: false,
+      config: input, enabled: false,
       createdAt: "2026-01-01", updatedAt: "2026-01-01",
     })),
     getValue: vi.fn(),
@@ -57,13 +57,14 @@ function setup() {
 }
 
 describe("TargetDictionaryService", () => {
-  it("updates the explicit WordPress brand preservation setting", async () => {
+  it("updates the explicit WordPress taxonomy preservation settings", async () => {
     const { repository, service } = setup();
 
-    await expect(service.setPreserveExistingBrandTerms("10", true)).resolves.toMatchObject({
-      config: { preserveExistingBrandTerms: true },
+    const settings = { preserveExistingBrandTerms: true, preserveExistingTagTerms: true };
+    await expect(service.setWordPressTaxonomyPreservation("10", settings)).resolves.toMatchObject({
+      config: settings,
     });
-    expect(repository.setPreserveExistingBrandTerms).toHaveBeenCalledWith("10", true);
+    expect(repository.setWordPressTaxonomyPreservation).toHaveBeenCalledWith("10", settings);
   });
 
   it("loads every target dictionary page before replacing the local snapshot", async () => {

@@ -807,12 +807,12 @@ describe("HTTP server", () => {
     await server.close();
   });
 
-  it("updates the WordPress brand preservation setting with CSRF confirmation", async () => {
+  it("updates the WordPress taxonomy preservation settings with CSRF confirmation", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const targetDictionaries = {
-      setPreserveExistingBrandTerms: vi.fn().mockResolvedValue({
+      setWordPressTaxonomyPreservation: vi.fn().mockResolvedValue({
         id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
-        config: { preserveExistingBrandTerms: true }, enabled: false,
+        config: { preserveExistingBrandTerms: true, preserveExistingTagTerms: true }, enabled: false,
       }),
     } as unknown as TargetDictionaryService;
     const server = createHttpServer({ ...dependencies(database), targetDictionaries });
@@ -830,12 +830,15 @@ describe("HTTP server", () => {
       method: "PATCH",
       url: "/api/targets/10/wordpress-settings",
       headers,
-      payload: { preserveExistingBrandTerms: true },
+      payload: { preserveExistingBrandTerms: true, preserveExistingTagTerms: true },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ target: { config: { preserveExistingBrandTerms: true } } });
-    expect(targetDictionaries.setPreserveExistingBrandTerms).toHaveBeenCalledWith("10", true);
+    expect(response.json()).toMatchObject({ target: { config: { preserveExistingBrandTerms: true, preserveExistingTagTerms: true } } });
+    expect(targetDictionaries.setWordPressTaxonomyPreservation).toHaveBeenCalledWith("10", {
+      preserveExistingBrandTerms: true,
+      preserveExistingTagTerms: true,
+    });
     await server.close();
   });
 });

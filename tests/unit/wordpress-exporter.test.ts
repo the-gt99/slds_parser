@@ -274,6 +274,30 @@ describe("WordPressExporter", () => {
     });
   });
 
+  it("keeps existing WordPress tags and adds tags resolved by current rules", async () => {
+    const input: ExportContext = {
+      ...context({ preserveExistingTagTerms: true }),
+      existingExternalId: "321",
+      existingTargetSnapshot: {
+        product: {
+          taxonomies: {
+            product_tag: [{ term_id: 900, name: "Старая метка", slug: "old-tag" }],
+          },
+        },
+      },
+    };
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([
+      { resolutionKind: "mapping", resolutionId: "22", targetScope: "product.tag", externalValue: "901", externalLabel: "Новая метка", externalSlug: "new-tag" },
+    ]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).product_tag).toEqual({
+      mode: "replace",
+      term_ids: [900, 901],
+    });
+  });
+
   it("requires a target snapshot before preserving brands on an existing product", async () => {
     const input: ExportContext = {
       ...context({ preserveExistingBrandTerms: true }),

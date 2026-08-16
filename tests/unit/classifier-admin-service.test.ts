@@ -123,7 +123,7 @@ function exactMatchDependencies(enabled = false) {
       id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress",
       config: {}, enabled, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     }]),
-    setPreserveExistingBrandTerms: vi.fn(),
+    setWordPressTaxonomyPreservation: vi.fn(),
     getValue: vi.fn().mockResolvedValue({
       id: "88", targetId: "10", entityType: "brands", externalId: "4262", name: "Sporty & Rich",
       slug: "sporty-amp-rich", parentExternalId: null, taxonomy: "pa_brand", attributeCode: null,
@@ -368,7 +368,7 @@ describe("ClassifierAdminService", () => {
     providers.register(provider);
     const targets = {
       listTargets: vi.fn().mockResolvedValue([{ id: "2", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
-      setPreserveExistingBrandTerms: vi.fn(),
+      setWordPressTaxonomyPreservation: vi.fn(),
       getValue: vi.fn().mockResolvedValue({ id: "3", targetId: "2", entityType: "brands", externalId: "4", name: "Nike", slug: null, parentExternalId: null, taxonomy: "pa_brand", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: { rawMeta: { tag_id: 2968 } }, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
       listValuesByExternalIds: vi.fn().mockResolvedValue([{ id: "9", targetId: "2", entityType: "tags", externalId: "2968", name: "Nike", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }]), listValues: vi.fn(), replaceEntityValues: vi.fn(), upsertValue: vi.fn(),
       startTermCreation: vi.fn(), completeTermCreation: vi.fn(), failTermCreation: vi.fn(),
@@ -426,7 +426,7 @@ describe("ClassifierAdminService", () => {
     providers.register(provider);
     const targets: TargetDictionaryRepository = {
       listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
-      setPreserveExistingBrandTerms: vi.fn(),
+      setWordPressTaxonomyPreservation: vi.fn(),
       getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "product_categories", externalId: "74", name: "Кроссовки женские", slug: null, parentExternalId: null, taxonomy: "product_cat", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
       listValuesByExternalIds: vi.fn(), listValues: vi.fn(), replaceEntityValues: vi.fn(), upsertValue: vi.fn(),
       startTermCreation: vi.fn(), completeTermCreation: vi.fn(), failTermCreation: vi.fn(),
@@ -470,7 +470,7 @@ describe("ClassifierAdminService", () => {
     providers.register(provider);
     const targets: TargetDictionaryRepository = {
       listTargets: vi.fn().mockResolvedValue([{ id: "10", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", config: {}, enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" }]),
-      setPreserveExistingBrandTerms: vi.fn(),
+      setWordPressTaxonomyPreservation: vi.fn(),
       getValue: vi.fn().mockResolvedValue({ id: "88", targetId: "10", entityType: "tags", externalId: "777", name: "Кроссовки для бега", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" }),
       listValuesByExternalIds: vi.fn(),
       listValues: vi.fn(),
