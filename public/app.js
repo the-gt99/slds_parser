@@ -544,6 +544,7 @@ function snapshotTermNames(item, example) {
     category: "product_cat",
     merchandising_category: "product_tag",
     tag: "product_tag",
+    designer: "product_tag",
     color: "pa_tsvet",
     material: "pa_material",
     activity: "pa_vid",

@@ -225,6 +225,20 @@ describe("WordPressPreviewService", () => {
       expected: "<p>Сохранить</p>",
       actual: "<p>Сохранить</p>",
     }));
+    expect(result.comparison?.fields).toContainEqual(expect.objectContaining({
+      field: "sku",
+      managed: false,
+      changed: false,
+      expected: "SKU-2",
+      actual: "SKU-2",
+    }));
+    expect(result.comparison?.fields).toContainEqual(expect.objectContaining({
+      field: "slug",
+      managed: false,
+      changed: false,
+      expected: "test-shoe",
+      actual: "test-shoe",
+    }));
     expect(String(request.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
     expect(String(request.mock.calls[0]?.[0])).not.toContain("upsert-jobs");
   });

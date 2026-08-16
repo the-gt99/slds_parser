@@ -14,7 +14,7 @@ export class MemoryStore {
   readonly targetSnapshots = new Map<string, TargetProductSnapshotRecord>();
   readonly contentTemplates = new Map<string, TargetContentTemplateRecord>();
   readonly jobs = new Map<string, JobRecord>();
-  readonly classificationTypes = new Set(["brand", "category", "merchandising_category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "material", "season", "shoe_height", "activity"]);
+  readonly classificationTypes = new Set(["brand", "category", "merchandising_category", "gender", "condition", "box_condition", "size_system", "size", "color", "model", "product_family", "tag", "designer", "material", "season", "shoe_height", "activity"]);
   readonly classificationDecisions = new Map<string, Omit<ClassificationMappingMatchRecord, "candidateKey">>();
   readonly classificationRules: ClassificationRuleRecord[] = [];
   readonly classificationObservations = new Map<string, ProductClassificationObservationInput>();
@@ -36,7 +36,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
     classifications: {
       listReferenceTypes: async (typeCodes) => typeCodes.filter((typeCode) => store.classificationTypes.has(typeCode)).map((code) => ({
         code,
-        cardinality: ["category", "merchandising_category", "tag", "material", "activity"].includes(code) ? "multiple" as const : "single" as const,
+        cardinality: ["category", "merchandising_category", "tag", "designer", "material", "activity"].includes(code) ? "multiple" as const : "single" as const,
         allowedSubjectKinds: ["size", "condition", "box_condition"].includes(code) ? ["variant"] as const : ["product"] as const,
         metadata: {},
       })),

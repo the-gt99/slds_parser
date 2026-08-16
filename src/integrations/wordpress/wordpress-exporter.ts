@@ -801,7 +801,7 @@ async function buildWordPressPayload(
   const contentContext = wordpressContentContext(context.product, title, contentVariations, modelTagLink);
   const contentTemplates = context.contentTemplates ?? [];
   const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
-  const managedFields = ["title", "slug", "sku"];
+  const managedFields = ["title"];
   if (content.descriptionHtml !== undefined) managedFields.push("description");
   if (content.shortDescriptionHtml !== undefined) managedFields.push("short_description");
   managedFields.push("images", "taxonomies", "variations");
@@ -817,7 +817,6 @@ async function buildWordPressPayload(
     managed_fields: managedFields,
     product: {
       title,
-      slug: context.sourceProduct.slug ?? "",
       sku: context.product.sku,
       ...(content.descriptionHtml === undefined ? {} : { description_html: content.descriptionHtml }),
       ...(content.shortDescriptionHtml === undefined ? {} : { short_description_html: content.shortDescriptionHtml }),
@@ -931,7 +930,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.12.0";
+  readonly version = "1.13.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

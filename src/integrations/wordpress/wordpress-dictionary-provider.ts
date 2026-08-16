@@ -79,6 +79,7 @@ export class WordPressDictionaryProvider implements TargetDictionaryProvider {
     { typeCode: "category", entityType: "product_categories", targetScope: "product.category", cardinality: "multiple" },
     { typeCode: "merchandising_category", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
     { typeCode: "tag", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
+    { typeCode: "designer", entityType: "tags", targetScope: "product.tag", cardinality: "multiple" },
     { typeCode: "color", entityType: "colors", targetScope: "product.color", cardinality: "single" },
     { typeCode: "material", entityType: "materials", targetScope: "product.material", cardinality: "multiple" },
     { typeCode: "activity", entityType: "activities", targetScope: "product.activity", cardinality: "multiple" },

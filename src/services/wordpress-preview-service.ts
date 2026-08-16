@@ -226,6 +226,7 @@ const referenceLabels: Readonly<Record<string, string>> = {
   model: "Модель",
   category: "Категория",
   tag: "Метка",
+  designer: "Дизайнер",
   color: "Цвет",
   material: "Материал",
   activity: "Вид спорта",

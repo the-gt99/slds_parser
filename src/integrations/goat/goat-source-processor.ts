@@ -223,8 +223,8 @@ function parseVariants(product: JsonObject, offersPayload: JsonObject): {
 
 export class GoatSourceProcessor implements SourceProcessor {
   readonly sourceCode = "goat";
-  readonly version = "3.1.0";
-  readonly classificationVersion = "2.9.0";
+  readonly version = "3.2.0";
+  readonly classificationVersion = "3.0.0";
 
   async processExportRefresh(context: ProcessingContext) {
     const productPart = context.parts.find((part) => part.partKey === "product");
@@ -267,6 +267,7 @@ export class GoatSourceProcessor implements SourceProcessor {
     };
     const referenceCandidates: ReferenceCandidateDTO[] = [];
     appendCandidate(referenceCandidates, candidate("product:brand", "brand", "product.brand", brand, {}, productEvidence));
+    appendCandidate(referenceCandidates, candidate("product:designer", "designer", "product.designer", designer, {}, productEvidence));
     appendCandidate(referenceCandidates, candidate("product:model", "model", "product.model", modelSourceValue(title, color),
       facts({ brand, family }), productEvidence));
     appendCandidate(referenceCandidates, candidate("product:category", "category", "product.category", structuralCategory,

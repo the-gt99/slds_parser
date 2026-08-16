@@ -26,11 +26,11 @@ describe("GOAT sitemap", () => {
 });
 
 describe("GOAT adapter and processor", () => {
-  it("keeps the classification version stable across content-only DTO changes", () => {
+  it("declares independent DTO and classification versions", () => {
     const processor = new GoatSourceProcessor();
 
-    expect(processor.version).toBe("3.1.0");
-    expect(processor.classificationVersion).toBe("2.9.0");
+    expect(processor.version).toBe("3.2.0");
+    expect(processor.classificationVersion).toBe("3.0.0");
   });
 
   it("uses the card and offers URLs and returns every requested part", async () => {
@@ -169,6 +169,7 @@ describe("GOAT adapter and processor", () => {
       expect.objectContaining({ key: "product:model", typeCode: "model", sourceValue: "Test Shirt", context: { brand: "Example Brand", family: "Air Test" } }),
       expect.objectContaining({ key: "product:category", typeCode: "category", sourceValue: "tops", context: { route: "sneakers", productCategory: "apparel", productType: "tops", audience: "men", ageGroups: "adult" } }),
       expect.objectContaining({ key: "product:merchandising-category", typeCode: "merchandising_category", scope: "product.merchandising_category", sourceValue: "sneakers" }),
+      expect.objectContaining({ key: "product:designer", typeCode: "designer", scope: "product.designer", sourceValue: "Jane Designer" }),
       expect.objectContaining({ key: "product:tag:technology:0", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Foam" }),
       expect.objectContaining({ key: "product:tag:technology:1", typeCode: "tag", scope: "product.tag.technology", sourceValue: "Zoom Air" }),
       expect.objectContaining({ key: "product:activity:0", typeCode: "activity", scope: "product.activity", sourceValue: "Training" }),
