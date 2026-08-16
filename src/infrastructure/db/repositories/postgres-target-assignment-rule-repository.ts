@@ -62,7 +62,7 @@ async function withClient<Result>(pool: SqlPool, callback: (client: SqlClient) =
 const conditionGroupsSql = `COALESCE((
   SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
     'conditions', COALESCE((
-      SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+      SELECT JSONB_AGG(JSONB_STRIP_NULLS(JSONB_BUILD_OBJECT(
         'field', condition.field,
         'operator', condition.operator,
         'values', CASE WHEN condition.match_set_id IS NULL THEN COALESCE((
@@ -77,7 +77,7 @@ const conditionGroupsSql = `COALESCE((
         'matchSetId', match_set.id::TEXT,
         'matchSetCode', match_set.code,
         'matchSetName', match_set.name
-      ) ORDER BY condition.position)
+      )) ORDER BY condition.position)
       FROM target_assignment_rule_conditions condition
       LEFT JOIN target_assignment_match_sets match_set ON match_set.id = condition.match_set_id
       WHERE condition.group_id = condition_group.id
@@ -101,7 +101,7 @@ GROUP BY rule.id
 ORDER BY rule.group_code, rule.priority DESC, rule.id`;
 
 async function conditionValues(client: SqlClient, targetId: string, condition: TargetAssignmentConditionRecord): Promise<readonly string[]> {
-  if (condition.matchSetId === undefined) return uniqueValues(condition.values);
+  if (condition.matchSetId === undefined || condition.matchSetId === null) return uniqueValues(condition.values);
   const result = await client.query<DatabaseRow>(
     `SELECT value.value
      FROM target_assignment_match_sets match_set
