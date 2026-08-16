@@ -124,6 +124,21 @@ function conditionProductIdsSql(
   parameter: (value: unknown) => string,
 ): string {
   const parts = condition.field.split(".");
+  if (condition.operator === "absent") {
+    if (parts[0] !== "resolved" || parts.length !== 2) throw new Error(`Unsupported absent target assignment field: ${condition.field}`);
+    const typeCode = parameter(parts[1]);
+    return `SELECT internal.source_product_id
+      FROM internal_products internal
+      WHERE internal.status = 'classified'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM source_product_classification_links link
+          JOIN classification_candidates candidate ON candidate.id = link.candidate_id
+          JOIN reference_types type ON type.id = candidate.reference_type_id
+          WHERE link.source_product_id = internal.source_product_id
+            AND link.active = TRUE AND link.status = 'resolved' AND type.code = ${typeCode}
+        )`;
+  }
   const normalizedValues = values.map((value) => normalize(value));
   const expected = parameter(condition.operator === "contains_phrase"
     ? values.map((value) => `% ${normalizePhrase(value)} %`)

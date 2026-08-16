@@ -2634,6 +2634,7 @@ const targetConditionFields = [
   ["candidate.model.context.family", "Семейство модели источника"],
   ["resolved.brand", "Распознанный бренд"],
   ["resolved.model", "Распознанная модель"],
+  ["resolved.activity", "Распознанный вид спорта"],
   ["product.fact.designer", "Дизайнер источника"],
   ["product.metadata.source", "Источник товара"],
   ["product.attribute.gender", "Пол из DTO"],
@@ -2663,8 +2664,8 @@ async function loadTargetAssignmentRules() {
       title.textContent = rule.name;
       const details = document.createElement("span");
       const conditions = rule.conditionGroups.map((group) => group.conditions.map((item) => {
-        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит" : item.operator === "regex" ? "регэксп" : "=";
-        const values = item.matchSetName ? `список «${item.matchSetName}» (${item.values.length})` : item.values.slice(0, 3).join(", ") + (item.values.length > 3 ? `… (${item.values.length})` : "");
+        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит" : item.operator === "regex" ? "регэксп" : item.operator === "absent" ? "не задано" : "=";
+        const values = item.operator === "absent" ? "" : item.matchSetName ? `список «${item.matchSetName}» (${item.values.length})` : item.values.slice(0, 3).join(", ") + (item.values.length > 3 ? `… (${item.values.length})` : "");
         return `${item.field} ${operator} ${values}`;
       }).join(" ИЛИ ")).join(" · И · ");
       const actions = rule.actions.map((item) => `${item.mode === "replace" ? "заменить" : "добавить"} ${item.targetScope}: ${item.externalLabel}`).join(" · ");
@@ -2731,6 +2732,7 @@ function targetConditionRow(condition = { field: "candidate.category.sourceValue
     new Option("одно из", "one_of", false, condition.operator === "one_of"),
     new Option("содержит одну из фраз", "contains_phrase", false, condition.operator === "contains_phrase"),
     new Option("соответствует регэкспу", "regex", false, condition.operator === "regex"),
+    new Option("не задано", "absent", false, condition.operator === "absent"),
   );
   const valueSource = document.createElement("select");
   valueSource.className = "target-condition-source";
@@ -2744,12 +2746,15 @@ function targetConditionRow(condition = { field: "candidate.category.sourceValue
   matchSet.className = "target-condition-match-set";
   matchSet.append(new Option("Выберите список", ""), ...state.targetAssignmentMatchSets.map((item) => new Option(`${item.name} (${item.values.length})`, item.id, false, item.id === condition.matchSetId)));
   const updateSource = () => {
-    values.hidden = valueSource.value === "set";
-    matchSet.hidden = valueSource.value !== "set";
+    const absent = operator.value === "absent";
+    valueSource.hidden = absent;
+    values.hidden = absent || valueSource.value === "set";
+    matchSet.hidden = absent || valueSource.value !== "set";
     if (valueSource.value === "set" && operator.value === "equals") operator.value = "one_of";
     resetTargetRulePreview();
   };
   valueSource.addEventListener("change", updateSource);
+  operator.addEventListener("change", updateSource);
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "icon-button";
@@ -2872,10 +2877,10 @@ async function resolveTargetConditionValues(field, values) {
 async function targetRuleBody() {
   const conditionGroups = await Promise.all([...byId("target-rule-conditions").querySelectorAll(".target-condition-group")].map(async (group) => ({
     conditions: await Promise.all([...group.querySelectorAll(".condition-row")].map(async (row) => {
-      const useSet = row.querySelector(".target-condition-source").value === "set";
-        const operator = row.querySelector(".target-condition-operator").value;
+      const operator = row.querySelector(".target-condition-operator").value;
+      const useSet = operator !== "absent" && row.querySelector(".target-condition-source").value === "set";
         const rawValues = row.querySelector(".target-condition-values").value;
-        const values = useSet ? [] : (operator === "regex" ? [rawValues.trim()] : rawValues.split(/[\n,]+/u).map((item) => item.trim())).filter(Boolean);
+        const values = useSet || operator === "absent" ? [] : (operator === "regex" ? [rawValues.trim()] : rawValues.split(/[\n,]+/u).map((item) => item.trim())).filter(Boolean);
         const field = row.querySelector(".target-condition-field").value;
         return { field, operator, values: await resolveTargetConditionValues(field, values), ...(useSet ? { matchSetId: row.querySelector(".target-condition-match-set").value } : {}) };
     })),

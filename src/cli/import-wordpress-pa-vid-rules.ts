@@ -214,7 +214,10 @@ function draftFor(plan: PlannedSportRule, targetId: string, conditions: readonly
     groupCode: "legacy_pa_vid",
     priority: plan.priority,
     enabled: false,
-    conditionGroups: [{ conditions }],
+    conditionGroups: [
+      { conditions },
+      { conditions: [{ field: "resolved.activity", operator: "absent", values: [] }] },
+    ],
     actions: [{ targetScope: "product.activity", dictionaryValueId: plan.dictionaryValue.id, mode: "add" }],
   };
 }

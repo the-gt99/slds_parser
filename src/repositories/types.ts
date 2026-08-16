@@ -1230,7 +1230,7 @@ export interface TargetReferenceProjectionCommand {
   readonly reason?: string;
 }
 
-export type TargetAssignmentConditionOperator = "equals" | "one_of" | "contains_phrase" | "regex";
+export type TargetAssignmentConditionOperator = "equals" | "one_of" | "contains_phrase" | "regex" | "absent";
 
 export interface TargetAssignmentConditionRecord {
   readonly field: string;

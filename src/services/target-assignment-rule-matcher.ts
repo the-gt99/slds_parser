@@ -68,6 +68,12 @@ export function targetAssignmentFieldValues(product: UniversalProductDTO, field:
 }
 
 export function matchesTargetAssignmentCondition(product: UniversalProductDTO, condition: TargetAssignmentConditionRecord): boolean {
+  if (condition.operator === "absent") {
+    if (condition.values.length > 0 || condition.matchSetId !== undefined) {
+      throw new IntegrationContractError(`absent does not accept values for ${condition.field}`);
+    }
+    return targetAssignmentFieldValues(product, condition.field).length === 0;
+  }
   if (condition.values.length === 0 || condition.values.some((value) => value.trim() === "")) {
     throw new IntegrationContractError(`Target assignment condition ${condition.field} requires non-empty values`);
   }

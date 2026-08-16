@@ -658,11 +658,11 @@ function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleB
   const parseCondition = (item: unknown, path: string) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`${path} must be an object`);
     const condition = item as Record<string, unknown>;
-    if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase" && condition.operator !== "regex") throw new HttpInputError(`${path}.operator is invalid`);
+    if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase" && condition.operator !== "regex" && condition.operator !== "absent") throw new HttpInputError(`${path}.operator is invalid`);
     if (!Array.isArray(condition.values)) throw new HttpInputError(`${path}.values must be an array`);
     return {
       field: requiredString(condition.field, `${path}.field`),
-      operator: condition.operator as "equals" | "one_of" | "contains_phrase" | "regex",
+      operator: condition.operator as "equals" | "one_of" | "contains_phrase" | "regex" | "absent",
       values: condition.values.map((entry) => requiredString(entry, `${path}.values`)),
       ...(condition.matchSetId === undefined || condition.matchSetId === null || condition.matchSetId === ""
         ? {} : { matchSetId: entityId(condition.matchSetId, `${path}.matchSetId`) }),

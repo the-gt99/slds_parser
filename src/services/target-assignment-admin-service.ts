@@ -149,10 +149,12 @@ export class TargetAssignmentAdminService {
       if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:title|description)|product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
         throw new IntegrationContractError(`Unsupported target assignment field: ${condition.field}`);
       }
-      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase" && condition.operator !== "regex") {
+      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase" && condition.operator !== "regex" && condition.operator !== "absent") {
         throw new IntegrationContractError(`Unsupported condition operator: ${condition.operator}`);
       }
-      if (condition.matchSetId === undefined && (condition.values.length === 0 || condition.values.some((value) => value.trim() === ""))) throw new IntegrationContractError(`Condition ${condition.field} requires values or a match set`);
+      if (condition.operator === "absent" && (condition.values.length > 0 || condition.matchSetId !== undefined)) throw new IntegrationContractError(`absent does not accept values for ${condition.field}`);
+      if (condition.operator === "absent" && !condition.field.startsWith("resolved.")) throw new IntegrationContractError("absent currently supports resolved reference fields only");
+      if (condition.operator !== "absent" && condition.matchSetId === undefined && (condition.values.length === 0 || condition.values.some((value) => value.trim() === ""))) throw new IntegrationContractError(`Condition ${condition.field} requires values or a match set`);
       if (condition.matchSetId !== undefined && condition.values.length > 0) throw new IntegrationContractError(`Condition ${condition.field} cannot contain inline values and a match set together`);
       if (condition.matchSetId !== undefined && condition.operator === "equals") throw new IntegrationContractError(`equals cannot use a match set for ${condition.field}; use one_of`);
       if (condition.operator === "equals" && condition.matchSetId === undefined && condition.values.length !== 1) throw new IntegrationContractError(`equals requires one value for ${condition.field}`);

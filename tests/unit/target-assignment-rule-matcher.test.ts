@@ -124,6 +124,18 @@ describe("target assignment rules", () => {
     expect(() => resolveTargetAssignments(product, [invalid])).toThrow("nested unbounded quantifiers");
   });
 
+  it("matches absent resolved values only when classification has no such type", () => {
+    const absentActivity = rule("no-activity", 100, [
+      { field: "resolved.activity", operator: "absent", values: [] },
+    ], "25614");
+
+    expect(resolveTargetAssignments(product, [absentActivity])).toHaveLength(1);
+    expect(resolveTargetAssignments({
+      ...product,
+      classification: { ...product.classification, resolved: [{ ...product.classification.resolved[0]!, typeCode: "activity", referenceValueId: "122" }] },
+    }, [absentActivity])).toEqual([]);
+  });
+
   it("supports OR inside a group and AND between groups", () => {
     const conditions = [
       { field: "candidate.model.sourceValue", operator: "contains_phrase" as const, values: ["missing"] },

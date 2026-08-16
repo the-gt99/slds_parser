@@ -112,6 +112,20 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual([["% ugg tazz %", "% birkenstock tokio %"], "model"]);
   });
 
+  it("previews a missing resolved reference without match values", async () => {
+    const executor = new FakeExecutor([[{ product_count: 1, examples: [] }]]);
+    const repository = new PostgresTargetAssignmentRuleRepository(pool(executor));
+
+    await repository.preview({
+      targetId: "1", name: "Derived activity", groupCode: "activity", priority: 100,
+      conditionGroups: [{ conditions: [{ field: "resolved.activity", operator: "absent", values: [] }] }],
+      actions: [{ targetScope: "product.activity", dictionaryValueId: "10", mode: "add" }],
+    });
+
+    expect(executor.calls[0]?.text).toContain("NOT EXISTS");
+    expect(executor.calls[0]?.values).toEqual(["activity"]);
+  });
+
   it("pages the WordPress catalog through the compact read model and counts separately", async () => {
     const executor = new FakeExecutor([[], [{ total: "98632" }]]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
