@@ -255,7 +255,8 @@ API запускается отдельным процессом после `npm
 - `GET /api/targets` и `GET /api/targets/:targetId/dictionary` — targets и их локальные снимки справочников;
 - `POST /api/targets/:targetId/dictionary/sync` — обновить снимок через зарегистрированный target-адаптер;
 - `POST /api/targets/:targetId/dictionary/terms` — создать поддерживаемый target-термин и затем атомарно сохранить обе локальные связи.
-- `GET/POST /api/targets/:targetId/assignment-rules` и `POST .../preview` — просмотреть, проверить и сохранить условные назначения target после классификации.
+- `/api/targets/:targetId/assignment-rules` — просмотр, preview, создание, редактирование, включение и история условных назначений target после классификации. Условия хранятся нормализованно: альтернативы внутри блока соединяются через `ИЛИ`, блоки — через `И`.
+- `/api/targets/:targetId/assignment-match-sets` — переиспользуемые редактируемые наборы значений для больших списков моделей. Один набор может использоваться несколькими правилами; API отдельно показывает точные пересечения наборов.
 
 WordPress-адаптер включается только когда одновременно заданы `PARSER_WORDPRESS_BASE_URL` и `PARSER_WORDPRESS_AUTH_TOKEN`. Target выбирает его через `exporter_code = 'wordpress'` либо `config.dictionaryProviderCode = 'wordpress'`. В `target.config.dictionaryEntityMap` задаётся универсальное сопоставление типов классификатора с сущностями target, например `{"brand":"brands","model":"models","category":"product_categories","tag":"tags"}`. При необходимости `target.config.targetScopeMap` преобразует универсальные scope в scope конкретного target. Классификатор не содержит названий полей GOAT или WordPress.
 

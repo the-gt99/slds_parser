@@ -148,7 +148,7 @@ integration("classification observation normalization migration", () => {
     } satisfies SqlPool);
     const draft = {
       targetId: String(target.id), name: "Special sandals", groupCode: "sandal_leaf", priority: 300,
-      conditions: [{ field: "resolved.model", operator: "equals" as const, values: ["500"] }],
+      conditionGroups: [{ conditions: [{ field: "resolved.model", operator: "equals" as const, values: ["500"] }] }],
       actions: [{ targetScope: "product.category", dictionaryValueId: String(dictionary.id), mode: "replace" as const }],
     };
 

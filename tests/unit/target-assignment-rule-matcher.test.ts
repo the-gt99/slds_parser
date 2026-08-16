@@ -18,7 +18,7 @@ const product = {
 } satisfies UniversalProductDTO;
 
 function rule(id: string, priority: number, conditions: TargetAssignmentRuleRecord["conditions"], externalValue: string): TargetAssignmentRuleRecord {
-  return { id, targetId: "10", name: id, groupCode: "sandal_leaf", priority, conditions, actions: [{ targetScope: "product.category", dictionaryValueId: externalValue, externalValue, externalLabel: externalValue, mode: "replace" }], enabled: true, revision: "1", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
+  return { id, targetId: "10", name: id, groupCode: "sandal_leaf", priority, conditionGroups: conditions.map((condition) => ({ conditions: [condition] })), conditions, actions: [{ targetScope: "product.category", dictionaryValueId: externalValue, externalValue, externalLabel: externalValue, mode: "replace" }], enabled: true, revision: "1", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 }
 
 describe("target assignment rules", () => {
@@ -84,5 +84,16 @@ describe("target assignment rules", () => {
 
     expect(result).toEqual([{ ruleId: "designer", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
     expect(product.referenceCandidates.some((candidate) => candidate.sourceValue === "Wilson Smith")).toBe(false);
+  });
+
+  it("supports OR inside a group and AND between groups", () => {
+    const conditions = [
+      { field: "candidate.model.sourceValue", operator: "contains_phrase" as const, values: ["missing"] },
+      { field: "candidate.category.sourceValue", operator: "one_of" as const, values: ["sandals", "sandal"] },
+      { field: "candidate.category.context.audience", operator: "equals" as const, values: ["women"] },
+    ];
+    const item = { ...rule("or-groups", 100, conditions, "75"), conditionGroups: [{ conditions: conditions.slice(0, 2) }, { conditions: [conditions[2]!] }] };
+
+    expect(resolveTargetAssignments(product, [item])).toHaveLength(1);
   });
 });

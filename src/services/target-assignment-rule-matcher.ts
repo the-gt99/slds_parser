@@ -64,7 +64,8 @@ export function resolveTargetAssignments(
   product: UniversalProductDTO,
   rules: readonly TargetAssignmentRuleRecord[],
 ): readonly TargetAssignmentDTO[] {
-  const matching = rules.filter((rule) => rule.enabled && rule.conditions.every((condition) => matchesTargetAssignmentCondition(product, condition)));
+  const matching = rules.filter((rule) => rule.enabled && rule.conditionGroups.every((group) =>
+    group.conditions.some((condition) => matchesTargetAssignmentCondition(product, condition))));
   const groups = new Map<string, TargetAssignmentRuleRecord[]>();
   for (const rule of matching) groups.set(rule.groupCode, [...(groups.get(rule.groupCode) ?? []), rule]);
   const result: TargetAssignmentDTO[] = [];

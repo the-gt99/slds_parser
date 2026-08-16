@@ -125,6 +125,8 @@ interface RuleFieldsQuery { readonly sourceId?: string; readonly typeCode?: stri
 
 interface TargetParams { readonly targetId: string }
 interface TargetAssignmentRuleParams extends TargetParams { readonly ruleId: string; readonly action: string }
+interface TargetAssignmentRuleIdParams extends TargetParams { readonly ruleId: string }
+interface TargetAssignmentMatchSetParams extends TargetParams { readonly matchSetId: string }
 interface ProductParams { readonly productId: string }
 interface ProductListQuery { readonly search?: string; readonly source?: string; readonly stage?: string; readonly classification?: string; readonly targetStatus?: string; readonly limit?: string; readonly offset?: string }
 interface ProductBatchBody {
@@ -208,8 +210,18 @@ interface TargetAssignmentRuleBody {
   readonly name?: unknown;
   readonly groupCode?: unknown;
   readonly priority?: unknown;
+  readonly enabled?: unknown;
   readonly conditions?: unknown;
+  readonly conditionGroups?: unknown;
   readonly actions?: unknown;
+  readonly revision?: unknown;
+  readonly reason?: unknown;
+}
+interface TargetAssignmentMatchSetBody {
+  readonly code?: unknown;
+  readonly name?: unknown;
+  readonly values?: unknown;
+  readonly revision?: unknown;
   readonly reason?: unknown;
 }
 interface WordPressTargetSettingsBody { readonly preserveExistingBrandTerms?: unknown }
@@ -635,26 +647,38 @@ function targetTermBody(targetId: string, value: unknown): CreateTargetTermComma
 
 function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleBody | undefined): TargetAssignmentRuleDraft {
   if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
-  if (!Array.isArray(value.conditions) || !Array.isArray(value.actions)) throw new HttpInputError("conditions and actions must be arrays");
+  const rawGroups = Array.isArray(value.conditionGroups)
+    ? value.conditionGroups
+    : Array.isArray(value.conditions)
+      ? value.conditions.map((condition) => ({ conditions: [condition] }))
+      : null;
+  if (rawGroups === null || !Array.isArray(value.actions)) throw new HttpInputError("conditionGroups and actions must be arrays");
   const priority = Number(value.priority);
   if (!Number.isInteger(priority)) throw new HttpInputError("priority must be an integer");
+  const parseCondition = (item: unknown, path: string) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`${path} must be an object`);
+    const condition = item as Record<string, unknown>;
+    if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase") throw new HttpInputError(`${path}.operator is invalid`);
+    if (!Array.isArray(condition.values)) throw new HttpInputError(`${path}.values must be an array`);
+    return {
+      field: requiredString(condition.field, `${path}.field`),
+      operator: condition.operator as "equals" | "one_of" | "contains_phrase",
+      values: condition.values.map((entry) => requiredString(entry, `${path}.values`)),
+      ...(condition.matchSetId === undefined || condition.matchSetId === null || condition.matchSetId === ""
+        ? {} : { matchSetId: entityId(condition.matchSetId, `${path}.matchSetId`) }),
+    };
+  };
   return {
     targetId,
     name: requiredString(value.name, "name"),
     groupCode: requiredString(value.groupCode, "groupCode"),
     priority,
-    conditions: value.conditions.map((item, index) => {
-      if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`conditions[${index}] must be an object`);
-      const condition = item as Record<string, unknown>;
-      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase") {
-        throw new HttpInputError(`conditions[${index}].operator is invalid`);
-      }
-      if (!Array.isArray(condition.values)) throw new HttpInputError(`conditions[${index}].values must be an array`);
-      return {
-        field: requiredString(condition.field, `conditions[${index}].field`),
-        operator: condition.operator as "equals" | "one_of" | "contains_phrase",
-        values: condition.values.map((entry) => requiredString(entry, `conditions[${index}].values`)),
-      };
+    ...(typeof value.enabled === "boolean" ? { enabled: value.enabled } : {}),
+    conditionGroups: rawGroups.map((item, groupIndex) => {
+      if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`conditionGroups[${groupIndex}] must be an object`);
+      const group = item as Record<string, unknown>;
+      if (!Array.isArray(group.conditions)) throw new HttpInputError(`conditionGroups[${groupIndex}].conditions must be an array`);
+      return { conditions: group.conditions.map((condition, conditionIndex) => parseCondition(condition, `conditionGroups[${groupIndex}].conditions[${conditionIndex}]`)) };
     }),
     actions: value.actions.map((item, index) => {
       if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`actions[${index}] must be an object`);
@@ -662,6 +686,19 @@ function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleB
       if (action.mode !== "add" && action.mode !== "replace") throw new HttpInputError(`actions[${index}].mode is invalid`);
       return { targetScope: requiredString(action.targetScope, `actions[${index}].targetScope`), dictionaryValueId: entityId(action.dictionaryValueId, `actions[${index}].dictionaryValueId`), mode: action.mode as "add" | "replace" };
     }),
+  };
+}
+
+function targetAssignmentMatchSetBody(targetId: string, value: TargetAssignmentMatchSetBody | undefined) {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  if (!Array.isArray(value.values)) throw new HttpInputError("values must be an array");
+  return {
+    targetId,
+    code: requiredString(value.code, "code"),
+    name: requiredString(value.name, "name"),
+    values: value.values.map((entry) => requiredString(entry, "values")),
+    ...(optionalString(value.revision) === undefined ? {} : { revision: optionalString(value.revision)! }),
+    ...(optionalString(value.reason) === undefined ? {} : { reason: optionalString(value.reason)! }),
   };
 }
 
@@ -1728,12 +1765,79 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     },
   );
 
+  server.post<{ Params: TargetAssignmentRuleIdParams; Body: TargetAssignmentRuleBody }>(
+    "/api/targets/:targetId/assignment-rules/:ruleId/preview",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return { preview: await dependencies.targetAssignments.preview(
+        targetAssignmentRuleBody(entityId(request.params.targetId, "targetId"), request.body),
+        entityId(request.params.ruleId, "ruleId"),
+      ) };
+    },
+  );
+
   server.post<{ Params: TargetParams; Body: TargetAssignmentRuleBody }>(
     "/api/targets/:targetId/assignment-rules",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request, reply) => {
       if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
       return reply.code(201).send({ rule: await dependencies.targetAssignments.create(targetAssignmentRuleBody(entityId(request.params.targetId, "targetId"), request.body), actor(request)) });
+    },
+  );
+
+  server.put<{ Params: TargetAssignmentRuleIdParams; Body: TargetAssignmentRuleBody }>(
+    "/api/targets/:targetId/assignment-rules/:ruleId",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return { rule: await dependencies.targetAssignments.update(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.ruleId, "ruleId"),
+        targetAssignmentRuleBody(entityId(request.params.targetId, "targetId"), request.body),
+        requiredString(request.body?.revision, "revision"),
+        actor(request),
+        optionalString(request.body?.reason),
+      ) };
+    },
+  );
+
+  server.get<{ Params: TargetAssignmentRuleIdParams }>(
+    "/api/targets/:targetId/assignment-rules/:ruleId/history",
+    { preHandler: requireAdmin },
+    async (request) => ({ items: await dependencies.targetAssignments?.history(
+      entityId(request.params.targetId, "targetId"), entityId(request.params.ruleId, "ruleId"),
+    ) ?? [] }),
+  );
+
+  server.get<{ Params: TargetParams }>("/api/targets/:targetId/assignment-match-sets", { preHandler: requireAdmin }, async (request) => ({
+    items: await dependencies.targetAssignments?.listMatchSets(entityId(request.params.targetId, "targetId")) ?? [],
+    overlaps: await dependencies.targetAssignments?.listMatchSetOverlaps(entityId(request.params.targetId, "targetId")) ?? [],
+  }));
+
+  server.post<{ Params: TargetParams; Body: TargetAssignmentMatchSetBody }>(
+    "/api/targets/:targetId/assignment-match-sets",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request, reply) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return reply.code(201).send({ item: await dependencies.targetAssignments.createMatchSet(
+        targetAssignmentMatchSetBody(entityId(request.params.targetId, "targetId"), request.body), actor(request),
+      ) });
+    },
+  );
+
+  server.put<{ Params: TargetAssignmentMatchSetParams; Body: TargetAssignmentMatchSetBody }>(
+    "/api/targets/:targetId/assignment-match-sets/:matchSetId",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => {
+      if (dependencies.targetAssignments === undefined) throw new HttpInputError("Target assignment rules are not configured");
+      return { item: await dependencies.targetAssignments.updateMatchSet(
+        entityId(request.params.targetId, "targetId"),
+        entityId(request.params.matchSetId, "matchSetId"),
+        targetAssignmentMatchSetBody(entityId(request.params.targetId, "targetId"), request.body),
+        requiredString(request.body?.revision, "revision"),
+        actor(request),
+      ) };
     },
   );
 

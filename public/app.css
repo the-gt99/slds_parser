@@ -1006,6 +1006,25 @@ h3 { font-size: 17px; line-height: 1.3; }
 .wordpress-catalog-row:hover { background: var(--surface-soft); }
 .wordpress-catalog-row code { color: var(--muted); font-size: 12px; }
 .assignment-rules-section { margin-bottom: 18px; }
+.section-title-actions, .rule-row-actions { display: flex; align-items: center; gap: 8px; }
+.assignment-match-sets-panel { border-bottom: 1px solid var(--line); }
+.assignment-match-sets-panel > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; cursor: pointer; background: var(--surface-soft); }
+.match-set-list { display: grid; }
+.match-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 15px; border: 0; border-top: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.match-set-row:hover { background: var(--accent-soft); }
+.match-set-row > span:first-child { display: grid; gap: 3px; }
+.match-set-row small, .match-set-row > span:last-child { color: var(--muted); font-size: 12px; }
+.target-condition-group { display: grid; gap: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.target-condition-group + .target-condition-group::before { content: "И"; display: block; margin: -4px 0 0; color: var(--accent); font-size: 12px; font-weight: 800; text-align: center; }
+.target-condition-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.target-condition-group-heading > div { display: flex; gap: 6px; }
+.target-condition-group-rows { display: grid; gap: 7px; }
+.target-condition-group-rows .condition-row { grid-template-columns: minmax(170px, 1fr) minmax(120px, .7fr) minmax(115px, .55fr) minmax(180px, 1.4fr) auto; }
+.target-condition-match-set[hidden], .target-condition-values[hidden] { display: none; }
+.rule-preview.danger { margin: 0 15px 12px; border-color: #efbfc2; background: var(--danger-soft); color: var(--danger); }
+.history-list { display: grid; gap: 8px; max-height: 55vh; overflow: auto; }
+.history-row { display: grid; gap: 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px; }
+.history-row span { color: var(--muted); font-size: 12px; }
 .wordpress-safety-section { margin-bottom: 18px; }
 .wordpress-safety-setting { align-items: flex-start; }
 .wordpress-safety-setting span { display: grid; gap: 4px; }

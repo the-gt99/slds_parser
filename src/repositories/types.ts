@@ -1236,6 +1236,14 @@ export interface TargetAssignmentConditionRecord {
   readonly field: string;
   readonly operator: TargetAssignmentConditionOperator;
   readonly values: readonly string[];
+  readonly matchSetId?: EntityId;
+  readonly matchSetCode?: string;
+  readonly matchSetName?: string;
+}
+
+export interface TargetAssignmentConditionGroupRecord {
+  /** Conditions inside a group are alternatives (OR); groups are combined with AND. */
+  readonly conditions: readonly TargetAssignmentConditionRecord[];
 }
 
 export interface TargetAssignmentActionRecord {
@@ -1252,6 +1260,8 @@ export interface TargetAssignmentRuleRecord {
   readonly name: string;
   readonly groupCode: string;
   readonly priority: number;
+  readonly conditionGroups: readonly TargetAssignmentConditionGroupRecord[];
+  /** Flattened compatibility view. New code should use conditionGroups. */
   readonly conditions: readonly TargetAssignmentConditionRecord[];
   readonly actions: readonly TargetAssignmentActionRecord[];
   readonly enabled: boolean;
@@ -1265,12 +1275,51 @@ export interface TargetAssignmentRuleDraft {
   readonly name: string;
   readonly groupCode: string;
   readonly priority: number;
-  readonly conditions: readonly TargetAssignmentConditionRecord[];
+  readonly enabled?: boolean;
+  readonly conditionGroups: readonly TargetAssignmentConditionGroupRecord[];
   readonly actions: readonly {
     readonly targetScope: string;
     readonly dictionaryValueId: EntityId;
     readonly mode: "add" | "replace";
   }[];
+}
+
+export interface TargetAssignmentMatchSetRecord {
+  readonly id: EntityId;
+  readonly targetId: EntityId;
+  readonly code: string;
+  readonly name: string;
+  readonly values: readonly string[];
+  readonly revision: string;
+  readonly createdAt: Timestamp;
+  readonly updatedAt: Timestamp;
+}
+
+export interface TargetAssignmentMatchSetDraft {
+  readonly targetId: EntityId;
+  readonly code: string;
+  readonly name: string;
+  readonly values: readonly string[];
+  readonly revision?: string;
+  readonly reason?: string;
+}
+
+export interface TargetAssignmentMatchSetOverlap {
+  readonly leftSetId: EntityId;
+  readonly leftSetName: string;
+  readonly rightSetId: EntityId;
+  readonly rightSetName: string;
+  readonly values: readonly string[];
+}
+
+export interface TargetAssignmentHistoryRecord {
+  readonly id: EntityId;
+  readonly action: string;
+  readonly actor: string;
+  readonly reason: string | null;
+  readonly previousValue: unknown;
+  readonly newValue: unknown;
+  readonly createdAt: Timestamp;
 }
 
 export interface TargetAssignmentRulePreview {

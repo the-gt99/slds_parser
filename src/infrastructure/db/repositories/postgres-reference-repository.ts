@@ -119,6 +119,33 @@ export class PostgresReferenceRepository implements ReferenceRepository {
   async listTargetAssignmentRules(targetId: EntityId): Promise<readonly TargetAssignmentRuleRecord[]> {
     const result = await this.executor.query<DatabaseRow>(
       `SELECT rule.*,
+              COALESCE((
+                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                  'conditions', COALESCE((
+                    SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                      'field', condition.field,
+                      'operator', condition.operator,
+                      'values', CASE WHEN condition.match_set_id IS NULL THEN COALESCE((
+                        SELECT JSONB_AGG(inline_value.value ORDER BY inline_value.position)
+                        FROM target_assignment_rule_condition_values inline_value
+                        WHERE inline_value.condition_id = condition.id
+                      ), '[]'::JSONB) ELSE COALESCE((
+                        SELECT JSONB_AGG(set_value.value ORDER BY set_value.position)
+                        FROM target_assignment_match_set_values set_value
+                        WHERE set_value.match_set_id = condition.match_set_id
+                      ), '[]'::JSONB) END,
+                      'matchSetId', match_set.id::TEXT,
+                      'matchSetCode', match_set.code,
+                      'matchSetName', match_set.name
+                    ) ORDER BY condition.position)
+                    FROM target_assignment_rule_conditions condition
+                    LEFT JOIN target_assignment_match_sets match_set ON match_set.id = condition.match_set_id
+                    WHERE condition.group_id = condition_group.id
+                  ), '[]'::JSONB)
+                ) ORDER BY condition_group.position)
+                FROM target_assignment_rule_condition_groups condition_group
+                WHERE condition_group.rule_id = rule.id
+              ), '[]'::JSONB) AS condition_groups,
               COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT(
                 'targetScope', action.target_scope,
                 'dictionaryValueId', action.dictionary_value_id::TEXT,
@@ -135,18 +162,21 @@ export class PostgresReferenceRepository implements ReferenceRepository {
        ORDER BY rule.group_code, rule.priority DESC, rule.id`,
       [targetId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row) => {
+      const conditionGroups = row.condition_groups as TargetAssignmentRuleRecord["conditionGroups"];
+      return ({
       id: String(row.id),
       targetId: String(row.target_id),
       name: String(row.name),
       groupCode: String(row.group_code),
       priority: Number(row.priority),
-      conditions: row.conditions as TargetAssignmentRuleRecord["conditions"],
+      conditionGroups,
+      conditions: conditionGroups.flatMap((group) => group.conditions),
       actions: row.actions as TargetAssignmentRuleRecord["actions"],
       enabled: Boolean(row.enabled),
       revision: String(row.revision),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
-    }));
+    }); });
   }
 }

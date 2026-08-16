@@ -11,6 +11,7 @@ import { TargetAssignmentAdminService } from "../../src/services/index.js";
 
 const existingRule: TargetAssignmentRuleRecord = {
   id: "20", targetId: "10", name: "Женские сандалии", groupCode: "sandal_leaf", priority: 100,
+  conditionGroups: [{ conditions: [{ field: "candidate.category.context.audience", operator: "equals", values: ["women"] }] }],
   conditions: [{ field: "candidate.category.context.audience", operator: "equals", values: ["women"] }],
   actions: [{ targetScope: "product.category", dictionaryValueId: "30", externalValue: "75", externalLabel: "Женские сандалии", mode: "replace" }],
   enabled: true, revision: "1", createdAt: "2026-01-01", updatedAt: "2026-01-01",
@@ -23,7 +24,13 @@ function setup(rules: readonly TargetAssignmentRuleRecord[] = [existingRule]) {
       .mockResolvedValueOnce({ productCount: 12, examples: [] })
       .mockResolvedValueOnce({ productCount: 3, examples: [] }),
     create: vi.fn(),
+    update: vi.fn(),
     setEnabled: vi.fn(),
+    history: vi.fn(),
+    listMatchSets: vi.fn(),
+    createMatchSet: vi.fn(),
+    updateMatchSet: vi.fn(),
+    listMatchSetOverlaps: vi.fn(),
   } satisfies TargetAssignmentRuleRepository;
   const dictionaries = {
     listTargets: vi.fn().mockResolvedValue([{
@@ -44,7 +51,7 @@ function setup(rules: readonly TargetAssignmentRuleRecord[] = [existingRule]) {
 
 const draft = {
   targetId: "10", name: "Сандалии", groupCode: "sandal_leaf", priority: 100,
-  conditions: [{ field: "candidate.category.sourceValue", operator: "equals" as const, values: ["sandals"] }],
+  conditionGroups: [{ conditions: [{ field: "candidate.category.sourceValue", operator: "equals" as const, values: ["sandals"] }] }],
   actions: [{ targetScope: "product.category", dictionaryValueId: "30", mode: "replace" as const }],
 };
 
@@ -69,11 +76,11 @@ describe("TargetAssignmentAdminService", () => {
 
     await service.preview({
       ...draft,
-      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+      conditionGroups: [{ conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }] }],
     });
 
     expect(repository.preview).toHaveBeenCalledWith(expect.objectContaining({
-      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+      conditionGroups: [{ conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }] }],
     }));
   });
 });

@@ -86,13 +86,13 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     const result = await repository.preview({
       targetId: "1", name: "Designer", groupCode: "designer_tag", priority: 100,
-      conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }],
+      conditionGroups: [{ conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }] }],
       actions: [{ targetScope: "product.tag", dictionaryValueId: "10", mode: "add" }],
     });
 
     expect(result.productCount).toBe(1);
-    expect(executor.calls[0]?.text).toContain("COALESCE(internal.data#>>ARRAY");
-    expect(executor.calls[0]?.text).not.toContain("JSONB_ARRAY_ELEMENTS($1::JSONB)");
+    expect(executor.calls[0]?.text).toContain("internal.data#>>ARRAY");
+    expect(executor.calls[0]?.text).not.toContain("JSONB_ARRAY_ELEMENTS");
     expect(executor.calls[0]?.values).toEqual([["wilson smith"], "sourceFacts", "designer"]);
   });
 
@@ -102,11 +102,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     await repository.preview({
       targetId: "1", name: "Сабо", groupCode: "shoe_leaf_category", priority: 300,
-      conditions: [{ field: "candidate.model.sourceValue", operator: "contains_phrase", values: ["UGG Tazz", "Birkenstock Tokio"] }],
+      conditionGroups: [{ conditions: [{ field: "candidate.model.sourceValue", operator: "contains_phrase", values: ["UGG Tazz", "Birkenstock Tokio"] }] }],
       actions: [{ targetScope: "product.category", dictionaryValueId: "10", mode: "replace" }],
     });
 
-    expect(executor.calls[0]?.text).toContain("REGEXP_REPLACE");
+    expect(executor.calls[0]?.text).toContain("phrase_search_value");
     expect(executor.calls[0]?.text).toContain("LIKE ANY");
     expect(executor.calls[0]?.values).toEqual([["% ugg tazz %", "% birkenstock tokio %"], "model"]);
   });

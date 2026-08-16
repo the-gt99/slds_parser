@@ -66,6 +66,10 @@ const state = {
   wordpressValues: [],
   wordpressOffset: 0,
   targetAssignmentRules: [],
+  targetAssignmentMatchSets: [],
+  targetAssignmentOverlaps: [],
+  editingTargetRule: null,
+  editingTargetMatchSet: null,
   targetRuleTerm: null,
   targetRulePreview: null,
   landingLookupError: null,
@@ -2639,8 +2643,14 @@ async function loadTargetAssignmentRules() {
   const list = byId("assignment-rule-list");
   list.replaceChildren(loading("Загружаем правила назначений…"));
   try {
-    const response = await api(`/api/targets/${targetId}/assignment-rules`);
+    const [response, setsResponse] = await Promise.all([
+      api(`/api/targets/${targetId}/assignment-rules`),
+      api(`/api/targets/${targetId}/assignment-match-sets`),
+    ]);
     state.targetAssignmentRules = response.items ?? [];
+    state.targetAssignmentMatchSets = setsResponse.items ?? [];
+    state.targetAssignmentOverlaps = setsResponse.overlaps ?? [];
+    renderTargetMatchSets();
     list.replaceChildren();
     for (const rule of state.targetAssignmentRules) {
       const row = document.createElement("div");
@@ -2650,23 +2660,60 @@ async function loadTargetAssignmentRules() {
       const title = document.createElement("strong");
       title.textContent = rule.name;
       const details = document.createElement("span");
-      const conditions = rule.conditions.map((item) => {
-        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит фразу" : "=";
-        return `${item.field} ${operator} ${item.values.join(", ")}`;
-      }).join(" · ");
+      const conditions = rule.conditionGroups.map((group) => group.conditions.map((item) => {
+        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит" : "=";
+        const values = item.matchSetName ? `список «${item.matchSetName}» (${item.values.length})` : item.values.slice(0, 3).join(", ") + (item.values.length > 3 ? `… (${item.values.length})` : "");
+        return `${item.field} ${operator} ${values}`;
+      }).join(" ИЛИ ")).join(" · И · ");
       const actions = rule.actions.map((item) => `${item.mode === "replace" ? "заменить" : "добавить"} ${item.targetScope}: ${item.externalLabel}`).join(" · ");
-      details.textContent = `${rule.groupCode} · приоритет ${rule.priority} · ${conditions} → ${actions}`;
+      details.textContent = `${rule.groupCode} · приоритет ${rule.priority} · ревизия ${rule.revision} · ${conditions} → ${actions}`;
       main.append(title, details);
+      main.tabIndex = 0;
+      main.addEventListener("click", () => openTargetRuleDialog(rule));
+      const actionsBox = document.createElement("div");
+      actionsBox.className = "rule-row-actions";
+      const history = document.createElement("button");
+      history.type = "button";
+      history.className = "button quiet small-button";
+      history.textContent = "История";
+      history.addEventListener("click", () => openTargetRuleHistory(rule));
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = `config-pill ${rule.enabled ? "active" : "inactive"}`;
       toggle.textContent = rule.enabled ? "Активно" : "Отключено";
       toggle.addEventListener("click", () => toggleTargetAssignmentRule(rule));
-      row.append(main, toggle);
+      actionsBox.append(history, toggle);
+      row.append(main, actionsBox);
       list.append(row);
     }
     if (!state.targetAssignmentRules.length) list.append(emptyText("Условных назначений пока нет."));
   } catch (error) { list.replaceChildren(emptyText(error.message)); }
+}
+
+function renderTargetMatchSets() {
+  const list = byId("assignment-match-set-list");
+  const warning = byId("assignment-overlap-warning");
+  byId("assignment-match-set-count").textContent = `${state.targetAssignmentMatchSets.length} шт.`;
+  list.replaceChildren();
+  for (const item of state.targetAssignmentMatchSets) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "match-set-row";
+    const text = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const meta = document.createElement("small");
+    meta.textContent = `${item.code} · ${item.values.length} значений · ревизия ${item.revision}`;
+    text.append(name, meta);
+    const edit = document.createElement("span");
+    edit.textContent = "Редактировать";
+    row.append(text, edit);
+    row.addEventListener("click", () => openTargetMatchSetDialog(item));
+    list.append(row);
+  }
+  if (!state.targetAssignmentMatchSets.length) list.append(emptyText("Списков пока нет."));
+  warning.hidden = state.targetAssignmentOverlaps.length === 0;
+  warning.textContent = state.targetAssignmentOverlaps.length === 0 ? "" : `Пересечения списков: ${state.targetAssignmentOverlaps.map((item) => `${item.leftSetName} ↔ ${item.rightSetName}: ${item.values.length}`).join("; ")}. Такие значения требуют явного решения до активации конкурирующих правил.`;
 }
 
 function targetConditionRow(condition = { field: "candidate.category.sourceValue", operator: "equals", values: [] }) {
@@ -2682,40 +2729,85 @@ function targetConditionRow(condition = { field: "candidate.category.sourceValue
     new Option("одно из", "one_of", false, condition.operator === "one_of"),
     new Option("содержит одну из фраз", "contains_phrase", false, condition.operator === "contains_phrase"),
   );
+  const valueSource = document.createElement("select");
+  valueSource.className = "target-condition-source";
+  valueSource.append(new Option("Значения", "inline"), new Option("Готовый список", "set"));
+  valueSource.value = condition.matchSetId ? "set" : "inline";
   const values = document.createElement("input");
   values.className = "target-condition-values";
   values.placeholder = condition.field.startsWith("resolved.") ? "Названия или внутренние ID через запятую" : "Значения через запятую";
   values.value = condition.values.join(", ");
+  const matchSet = document.createElement("select");
+  matchSet.className = "target-condition-match-set";
+  matchSet.append(new Option("Выберите список", ""), ...state.targetAssignmentMatchSets.map((item) => new Option(`${item.name} (${item.values.length})`, item.id, false, item.id === condition.matchSetId)));
+  const updateSource = () => {
+    values.hidden = valueSource.value === "set";
+    matchSet.hidden = valueSource.value !== "set";
+    if (valueSource.value === "set" && operator.value === "equals") operator.value = "one_of";
+    resetTargetRulePreview();
+  };
+  valueSource.addEventListener("change", updateSource);
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "icon-button";
   remove.textContent = "×";
   remove.addEventListener("click", () => { row.remove(); resetTargetRulePreview(); });
-  for (const control of [field, operator, values]) control.addEventListener("input", resetTargetRulePreview);
+  for (const control of [field, operator, values, matchSet]) control.addEventListener("input", resetTargetRulePreview);
   field.addEventListener("change", () => { values.placeholder = field.value.startsWith("resolved.") ? "Названия или внутренние ID через запятую" : "Значения через запятую"; });
-  row.append(field, operator, values, remove);
+  row.append(field, operator, valueSource, values, matchSet, remove);
+  updateSource();
   return row;
 }
 
-function openTargetRuleDialog() {
+function targetConditionGroup(group = { conditions: [{ field: "candidate.category.sourceValue", operator: "equals", values: [] }] }) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "target-condition-group";
+  const heading = document.createElement("div");
+  heading.className = "target-condition-group-heading";
+  const label = document.createElement("strong");
+  label.textContent = "Хотя бы одно условие (ИЛИ)";
+  const controls = document.createElement("div");
+  const add = document.createElement("button");
+  add.type = "button"; add.className = "button quiet small-button"; add.textContent = "+ ИЛИ";
+  add.addEventListener("click", () => { rows.append(targetConditionRow()); resetTargetRulePreview(); });
+  const remove = document.createElement("button");
+  remove.type = "button"; remove.className = "icon-button"; remove.textContent = "×";
+  remove.addEventListener("click", () => { wrapper.remove(); resetTargetRulePreview(); });
+  controls.append(add, remove); heading.append(label, controls);
+  const rows = document.createElement("div");
+  rows.className = "target-condition-group-rows";
+  rows.append(...group.conditions.map((condition) => targetConditionRow(condition)));
+  wrapper.append(heading, rows);
+  return wrapper;
+}
+
+function openTargetRuleDialog(rule = null) {
+  state.editingTargetRule = rule;
   state.targetRuleTerm = null;
   state.targetRulePreview = null;
-  byId("target-rule-name").value = "";
-  byId("target-rule-group").value = "";
-  byId("target-rule-priority").value = "100";
+  byId("target-rule-dialog-title").textContent = rule ? "Редактирование назначения" : "Новое назначение";
+  byId("target-rule-name").value = rule?.name ?? "";
+  byId("target-rule-group").value = rule?.groupCode ?? "";
+  byId("target-rule-priority").value = String(rule?.priority ?? 100);
   const conditions = byId("target-rule-conditions");
-  conditions.replaceChildren(
-    targetConditionRow({ field: "resolved.category", operator: "equals", values: [] }),
-    targetConditionRow({ field: "candidate.category.context.audience", operator: "equals", values: [] }),
-  );
+  const groups = rule?.conditionGroups ?? [
+    { conditions: [{ field: "resolved.category", operator: "equals", values: [] }] },
+    { conditions: [{ field: "candidate.category.context.audience", operator: "equals", values: [] }] },
+  ];
+  conditions.replaceChildren(...groups.map((group) => targetConditionGroup(group)));
   const scope = byId("target-rule-scope");
   scope.replaceChildren(...capabilitiesByTargetScope().map((item) => new Option(`${targetScopeLabel(item.targetScope)} · ${item.targetScope}`, item.targetScope)));
-  scope.value = capabilitiesByTargetScope().find((item) => item.targetScope === "product.category")?.targetScope ?? scope.value;
-  byId("target-rule-mode").value = "replace";
-  byId("target-rule-search").value = "";
-  byId("target-rule-results").replaceChildren(emptyText("Введите название термина WordPress."));
+  const action = rule?.actions?.[0];
+  scope.value = action?.targetScope ?? capabilitiesByTargetScope().find((item) => item.targetScope === "product.category")?.targetScope ?? scope.value;
+  byId("target-rule-mode").value = action?.mode ?? "replace";
+  byId("target-rule-search").value = action?.externalLabel ?? "";
+  if (action) state.targetRuleTerm = { id: action.dictionaryValueId, name: action.externalLabel, externalId: action.externalValue };
+  byId("target-rule-results").replaceChildren(action ? emptyText(`Выбран термин: ${action.externalLabel} · term #${action.externalValue}`) : emptyText("Введите название термина WordPress."));
+  byId("target-rule-reason-field").hidden = !rule;
+  byId("target-rule-reason").value = "";
   clearError(byId("target-rule-error"));
   resetTargetRulePreview();
+  byId("preview-target-rule").disabled = !state.targetRuleTerm;
   byId("target-rule-dialog").showModal();
 }
 
@@ -2775,17 +2867,21 @@ async function resolveTargetConditionValues(field, values) {
 }
 
 async function targetRuleBody() {
-  const conditions = await Promise.all([...byId("target-rule-conditions").querySelectorAll(".condition-row")].map(async (row) => {
-    const values = row.querySelector(".target-condition-values").value.split(/[\n,]+/u).map((item) => item.trim()).filter(Boolean);
-    const field = row.querySelector(".target-condition-field").value;
-    return { field, operator: row.querySelector(".target-condition-operator").value, values: await resolveTargetConditionValues(field, values) };
-  }));
+  const conditionGroups = await Promise.all([...byId("target-rule-conditions").querySelectorAll(".target-condition-group")].map(async (group) => ({
+    conditions: await Promise.all([...group.querySelectorAll(".condition-row")].map(async (row) => {
+      const useSet = row.querySelector(".target-condition-source").value === "set";
+      const values = useSet ? [] : row.querySelector(".target-condition-values").value.split(/[\n,]+/u).map((item) => item.trim()).filter(Boolean);
+      const field = row.querySelector(".target-condition-field").value;
+      return { field, operator: row.querySelector(".target-condition-operator").value, values: await resolveTargetConditionValues(field, values), ...(useSet ? { matchSetId: row.querySelector(".target-condition-match-set").value } : {}) };
+    })),
+  })));
   return {
     name: byId("target-rule-name").value.trim(),
     groupCode: byId("target-rule-group").value.trim(),
     priority: Number(byId("target-rule-priority").value),
-    conditions,
+    conditionGroups,
     actions: [{ targetScope: byId("target-rule-scope").value, dictionaryValueId: state.targetRuleTerm.id, mode: byId("target-rule-mode").value }],
+    ...(state.editingTargetRule ? { revision: state.editingTargetRule.revision, reason: byId("target-rule-reason").value.trim() } : {}),
   };
 }
 
@@ -2794,7 +2890,8 @@ async function previewTargetRule() {
   clearError(byId("target-rule-error"));
   try {
     const targetId = byId("wordpress-target").value;
-    const response = await api(`/api/targets/${targetId}/assignment-rules/preview`, { method: "POST", body: await targetRuleBody() });
+    const endpoint = state.editingTargetRule ? `/api/targets/${targetId}/assignment-rules/${state.editingTargetRule.id}/preview` : `/api/targets/${targetId}/assignment-rules/preview`;
+    const response = await api(endpoint, { method: "POST", body: await targetRuleBody() });
     state.targetRulePreview = response.preview;
     const sample = response.preview.examples.map((item) => item.title || item.sku || `ID ${item.sourceProductId}`).slice(0, 3).join("; ");
     const conflicts = response.preview.conflicts ?? [];
@@ -2812,11 +2909,67 @@ async function saveTargetRule(event) {
   if (!state.targetRulePreview || !state.targetRuleTerm) return;
   try {
     const targetId = byId("wordpress-target").value;
-    await api(`/api/targets/${targetId}/assignment-rules`, { method: "POST", body: await targetRuleBody() });
+    const endpoint = state.editingTargetRule ? `/api/targets/${targetId}/assignment-rules/${state.editingTargetRule.id}` : `/api/targets/${targetId}/assignment-rules`;
+    await api(endpoint, { method: state.editingTargetRule ? "PUT" : "POST", body: await targetRuleBody() });
     byId("target-rule-dialog").close();
-    showToast("Правило назначения сохранено.");
+    showToast(state.editingTargetRule ? "Правило обновлено." : "Правило назначения сохранено.");
     await loadTargetAssignmentRules();
   } catch (error) { showError(byId("target-rule-error"), error.message); }
+}
+
+function openTargetMatchSetDialog(item = null) {
+  state.editingTargetMatchSet = item;
+  byId("target-match-set-dialog-title").textContent = item ? "Редактирование списка" : "Новый список";
+  byId("target-match-set-name").value = item?.name ?? "";
+  byId("target-match-set-code").value = item?.code ?? "";
+  byId("target-match-set-values").value = item?.values.join("\n") ?? "";
+  byId("target-match-set-reason-field").hidden = !item;
+  byId("target-match-set-reason").value = "";
+  clearError(byId("target-match-set-error"));
+  updateTargetMatchSetSummary();
+  byId("target-match-set-dialog").showModal();
+}
+
+function targetMatchSetValues() {
+  return byId("target-match-set-values").value.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean);
+}
+
+function updateTargetMatchSetSummary() {
+  const values = targetMatchSetValues();
+  const normalized = values.map((value) => value.normalize("NFKC").toLocaleLowerCase("en-US"));
+  byId("target-match-set-summary").textContent = `${values.length} значений${new Set(normalized).size === values.length ? "" : " · есть дубли"}`;
+}
+
+async function saveTargetMatchSet(event) {
+  event.preventDefault();
+  const targetId = byId("wordpress-target").value;
+  const body = {
+    name: byId("target-match-set-name").value.trim(), code: byId("target-match-set-code").value.trim(), values: targetMatchSetValues(),
+    ...(state.editingTargetMatchSet ? { revision: state.editingTargetMatchSet.revision, reason: byId("target-match-set-reason").value.trim() } : {}),
+  };
+  try {
+    const endpoint = state.editingTargetMatchSet ? `/api/targets/${targetId}/assignment-match-sets/${state.editingTargetMatchSet.id}` : `/api/targets/${targetId}/assignment-match-sets`;
+    await api(endpoint, { method: state.editingTargetMatchSet ? "PUT" : "POST", body });
+    byId("target-match-set-dialog").close();
+    showToast(state.editingTargetMatchSet ? "Список обновлён." : "Список создан.");
+    await loadTargetAssignmentRules();
+  } catch (error) { showError(byId("target-match-set-error"), error.message); }
+}
+
+async function openTargetRuleHistory(rule) {
+  const list = byId("target-rule-history-list");
+  list.replaceChildren(loading("Загружаем историю…"));
+  byId("target-rule-history-dialog").showModal();
+  try {
+    const response = await api(`/api/targets/${rule.targetId}/assignment-rules/${rule.id}/history`);
+    list.replaceChildren(...(response.items ?? []).map((item) => {
+      const row = document.createElement("div"); row.className = "history-row";
+      const title = document.createElement("strong"); title.textContent = `${item.action} · ${new Date(item.createdAt).toLocaleString("ru-RU")}`;
+      const meta = document.createElement("span"); meta.textContent = `${item.actor}${item.reason ? ` · ${item.reason}` : ""}`;
+      row.append(title, meta); return row;
+    }));
+    if (!list.childElementCount) list.append(emptyText("История пуста."));
+  } catch (error) { list.replaceChildren(emptyText(error.message)); }
 }
 
 async function toggleTargetAssignmentRule(rule) {
@@ -3111,8 +3264,9 @@ byId("wordpress-sync-button").addEventListener("click", async () => {
   await syncWordPress(byId("wordpress-sync-button"), target);
   await loadWordPressValues(true);
 });
-byId("new-assignment-rule").addEventListener("click", openTargetRuleDialog);
-byId("add-target-condition").addEventListener("click", () => { byId("target-rule-conditions").append(targetConditionRow()); resetTargetRulePreview(); });
+byId("new-assignment-rule").addEventListener("click", () => openTargetRuleDialog());
+byId("new-assignment-match-set").addEventListener("click", () => openTargetMatchSetDialog());
+byId("add-target-condition").addEventListener("click", () => { byId("target-rule-conditions").append(targetConditionGroup()); resetTargetRulePreview(); });
 byId("target-rule-scope").addEventListener("change", loadTargetRuleTerms);
 byId("target-rule-search").addEventListener("input", () => {
   clearTimeout(targetRuleSearchTimer);
@@ -3121,6 +3275,8 @@ byId("target-rule-search").addEventListener("input", () => {
 for (const id of ["target-rule-name", "target-rule-group", "target-rule-priority", "target-rule-mode"]) byId(id).addEventListener("input", resetTargetRulePreview);
 byId("preview-target-rule").addEventListener("click", previewTargetRule);
 byId("target-rule-form").addEventListener("submit", saveTargetRule);
+byId("target-match-set-form").addEventListener("submit", saveTargetMatchSet);
+byId("target-match-set-values").addEventListener("input", updateTargetMatchSetSummary);
 byId("assignment-scope").addEventListener("change", loadAssignmentTerms);
 byId("assignment-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);
@@ -3133,6 +3289,8 @@ closeDialog(".close-rule");
 closeDialog(".close-assignment");
 closeDialog(".close-review-products");
 closeDialog(".close-target-rule");
+closeDialog(".close-target-match-set");
+closeDialog(".close-target-rule-history");
 byId("rule-dialog").addEventListener("close", () => {
   state.ruleFieldsRequestId += 1;
   byId("rule-fields-loading").hidden = true;

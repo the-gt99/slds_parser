@@ -315,8 +315,13 @@
       <section class="section catalog-table-section assignment-rules-section">
         <div class="section-title mapping-title">
           <div><p class="eyebrow">Условная раскладка</p><h3>Правила назначений</h3><p class="muted">Правила исполняются после классификации; в каждой группе побеждает одно правило с наибольшим приоритетом.</p></div>
-          <button id="new-assignment-rule" class="button primary" type="button">+ Правило назначения</button>
+          <div class="section-title-actions"><button id="new-assignment-match-set" class="button secondary" type="button">+ Список значений</button><button id="new-assignment-rule" class="button primary" type="button">+ Правило назначения</button></div>
         </div>
+        <div id="assignment-overlap-warning" class="rule-preview danger" hidden></div>
+        <details class="assignment-match-sets-panel">
+          <summary><strong>Списки значений</strong><span id="assignment-match-set-count" class="muted"></span></summary>
+          <div id="assignment-match-set-list" class="match-set-list"></div>
+        </details>
         <div id="assignment-rule-list" class="rule-catalog-list"></div>
       </section>
       <div id="wordpress-filters" class="catalog-filters catalog-filters-wide">
@@ -462,14 +467,14 @@
 
   <dialog id="target-rule-dialog" class="dialog rule-dialog">
     <form id="target-rule-form" method="dialog">
-      <div class="dialog-header"><div><p class="eyebrow">WordPress</p><h2>Условное назначение</h2></div><button class="icon-button close-target-rule" type="button">×</button></div>
+      <div class="dialog-header"><div><p class="eyebrow">WordPress</p><h2 id="target-rule-dialog-title">Условное назначение</h2></div><button class="icon-button close-target-rule" type="button">×</button></div>
       <p class="dialog-intro">Используйте отдельную группу для взаимоисключающих результатов. Например, <code>sandal_leaf_category</code>. Сохранение меняет сборку WordPress payload, но само по себе не запускает массовый экспорт.</p>
       <div class="form-grid two-columns">
         <label class="field"><span>Название</span><input id="target-rule-name" required maxlength="200"></label>
         <label class="field"><span>Группа</span><input id="target-rule-group" required pattern="[a-z][a-z0-9_-]{0,63}" placeholder="sandal_leaf_category"></label>
         <label class="field"><span>Приоритет</span><input id="target-rule-priority" type="number" value="100" min="-10000" max="10000" required></label>
       </div>
-      <div class="conditions-heading-actions"><strong>Условия</strong><button id="add-target-condition" class="button quiet small-button" type="button">+ Условие</button></div>
+      <div class="conditions-heading-actions"><div><strong>Условия</strong><small class="muted">Внутри блока — ИЛИ, между блоками — И</small></div><button id="add-target-condition" class="button quiet small-button" type="button">+ Блок И</button></div>
       <div id="target-rule-conditions" class="conditions-list"></div>
       <div class="projection-controls">
         <label class="field"><span>Куда назначить</span><select id="target-rule-scope"></select></label>
@@ -477,10 +482,32 @@
         <label class="field"><span>Найти термин WordPress</span><input id="target-rule-search" type="search" placeholder="Название категории или метки"></label>
       </div>
       <div id="target-rule-results" class="mapping-results"></div>
+      <label id="target-rule-reason-field" class="field" hidden><span>Причина изменения</span><input id="target-rule-reason" maxlength="300" placeholder="Что изменили и зачем"></label>
       <div id="target-rule-preview" class="rule-preview" hidden></div>
       <p id="target-rule-error" class="form-error" hidden></p>
       <div class="dialog-actions split"><button class="button quiet close-target-rule" type="button">Отмена</button><div><button id="preview-target-rule" class="button secondary" type="button" disabled>Проверить</button><button id="save-target-rule" class="button primary" type="submit" disabled>Сохранить правило</button></div></div>
     </form>
+  </dialog>
+
+  <dialog id="target-match-set-dialog" class="dialog rule-dialog">
+    <form id="target-match-set-form" method="dialog">
+      <div class="dialog-header"><div><p class="eyebrow">Переиспользуемые условия</p><h2 id="target-match-set-dialog-title">Список значений</h2></div><button class="icon-button close-target-match-set" type="button">×</button></div>
+      <p class="dialog-intro">Список хранится один раз и может использоваться одновременно в мужских, женских и других правилах.</p>
+      <div class="form-grid two-columns">
+        <label class="field"><span>Название</span><input id="target-match-set-name" required maxlength="200"></label>
+        <label class="field"><span>Код</span><input id="target-match-set-code" required pattern="[a-z][a-z0-9_-]{0,63}"></label>
+      </div>
+      <label class="field"><span>Значения — по одному в строке</span><textarea id="target-match-set-values" rows="16" required></textarea><small id="target-match-set-summary">0 значений</small></label>
+      <label id="target-match-set-reason-field" class="field" hidden><span>Причина изменения</span><input id="target-match-set-reason" maxlength="300"></label>
+      <p id="target-match-set-error" class="form-error" hidden></p>
+      <div class="dialog-actions"><button class="button quiet close-target-match-set" type="button">Отмена</button><button class="button primary" type="submit">Сохранить список</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="target-rule-history-dialog" class="dialog rule-dialog">
+    <div class="dialog-header"><div><p class="eyebrow">Аудит</p><h2>История правила</h2></div><button class="icon-button close-target-rule-history" type="button">×</button></div>
+    <div id="target-rule-history-list" class="history-list"></div>
+    <div class="dialog-actions"><button class="button quiet close-target-rule-history" type="button">Закрыть</button></div>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
