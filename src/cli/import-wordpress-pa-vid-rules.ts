@@ -60,6 +60,8 @@ interface PlannedSportRule {
   readonly unmappedTagIds: readonly string[];
 }
 
+const SAFE_REFERENCE_TYPES = ["brand", "model", "tag"] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -159,8 +161,9 @@ async function referenceLinks(pool: SqlPool, targetId: string, externalIds: read
     )
     SELECT external_id, reference_value_id::TEXT, type_code
     FROM links
+    WHERE type_code = ANY($3::TEXT[])
     ORDER BY external_id, type_code, reference_value_id
-  `, [targetId, externalIds])).map((row) => ({
+  `, [targetId, externalIds, SAFE_REFERENCE_TYPES])).map((row) => ({
     externalId: row.external_id,
     referenceValueId: row.reference_value_id,
     typeCode: row.type_code,
@@ -267,9 +270,11 @@ async function main(): Promise<void> {
     }
 
     const appliedRules = [];
+    let removedUnusedMatchSets = 0;
     if (apply) {
       const existingSets = new Map((await admin.listMatchSets(target.id)).map((item) => [item.code, item]));
       const existingRules = await admin.list(target.id);
+      const retainedSetCodes = new Set<string>();
       for (const [index, plan] of plans.entries()) {
         const conditions: TargetAssignmentConditionRecord[] = plan.patterns.flatMap((pattern) => ([
           { field: "product.title", operator: "regex", values: [pattern] },
@@ -277,6 +282,7 @@ async function main(): Promise<void> {
         ]));
         for (const [typeCode, values] of plan.references) {
           const code = codePart(index, typeCode);
+          retainedSetCodes.add(code);
           const draft = { targetId: target.id, code, name: `${plan.name}: ${typeCode}`, values, reason: "Импорт старой логики pa_vid из WordPress" };
           const existing = existingSets.get(code);
           const saved = existing === undefined
@@ -293,6 +299,33 @@ async function main(): Promise<void> {
           : await admin.update(target.id, matches[0].id, draft, matches[0].revision, "legacy-pa-vid-import", "Повторный импорт старой логики pa_vid");
         appliedRules.push({ id: saved.id, name: saved.name, enabled: saved.enabled, revision: saved.revision });
       }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const obsolete = await client.query<{ id: string }>(`
+          SELECT match_set.id::TEXT
+          FROM target_assignment_match_sets match_set
+          WHERE match_set.target_id = $1
+            AND match_set.code LIKE 'legacy_vid_%'
+            AND NOT (match_set.code = ANY($2::TEXT[]))
+            AND NOT EXISTS (
+              SELECT 1 FROM target_assignment_rule_conditions condition
+              WHERE condition.match_set_id = match_set.id
+            )
+          FOR UPDATE
+        `, [target.id, [...retainedSetCodes]]);
+        const obsoleteIds = obsolete.rows.map((row) => row.id);
+        if (obsoleteIds.length > 0) {
+          await client.query("DELETE FROM target_assignment_match_set_history WHERE match_set_id = ANY($1::BIGINT[])", [obsoleteIds]);
+          removedUnusedMatchSets = (await client.query("DELETE FROM target_assignment_match_sets WHERE id = ANY($1::BIGINT[])", [obsoleteIds])).rowCount ?? 0;
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     const dictionaryTagIds = new Set((await dictionaries.listValues({ targetId: target.id, entityType: "tags", limit: 100_000, offset: 0 })).map((item) => item.externalId));
@@ -308,6 +341,7 @@ async function main(): Promise<void> {
       },
       rules: previews,
       appliedRules,
+      removedUnusedMatchSets,
     }, null, 2));
   } finally {
     await pool.end();

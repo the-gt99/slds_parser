@@ -37,6 +37,7 @@ async function main(): Promise<void> {
       .filter((rule) => rule.groupCode === "legacy_pa_vid")
       .map((rule) => ({ ...rule, enabled: true }));
     if (rules.length === 0) throw new IntegrationContractError("Imported pa_vid rules were not found");
+    const importedExternalIds = new Set(rules.flatMap((rule) => rule.actions.map((action) => action.externalValue)));
 
     const client = await pool.connect();
     let rows: readonly AuditRow[];
@@ -80,7 +81,8 @@ async function main(): Promise<void> {
       const predicted = sorted(resolveTargetAssignments(product, rules)
         .filter((assignment) => assignment.targetScope === "product.activity")
         .map((assignment) => assignment.externalValue));
-      const actual = sorted(row.actual_terms.flatMap((term) => term.term_id === undefined ? [] : [String(term.term_id)]));
+      const actual = sorted(row.actual_terms.flatMap((term) => term.term_id === undefined || !importedExternalIds.has(String(term.term_id))
+        ? [] : [String(term.term_id)]));
       if (predicted.length > 0) predictedCount++;
       if (actual.length > 0) actualCount++;
       if (sameTerms(predicted, actual)) exactCount++;
