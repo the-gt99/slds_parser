@@ -739,8 +739,9 @@ async function buildWordPressPayload(
     throw new IntegrationContractError("WordPress export requires at least one processed product image");
   }
   const outputVariants = context.liveVariants ?? context.product.variants;
-  if (outputVariants.length === 0) {
-    throw new IntegrationContractError("WordPress export requires product variants until the sold-out contract is configured");
+  const soldOut = outputVariants.length === 0;
+  if (soldOut && context.existingExternalId === undefined) {
+    throw new IntegrationContractError("WordPress cannot create a new product without source variants");
   }
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(sourceCode)) throw new IntegrationContractError(`Source code cannot be used in WordPress identity: ${context.source.code}`);
@@ -769,7 +770,7 @@ async function buildWordPressPayload(
     ignoreMissingSizeMappings,
   );
   const resolvedVariations = outputResolution.resolved;
-  if (resolvedVariations.length === 0) {
+  if (resolvedVariations.length === 0 && !soldOut) {
     throw new IntegrationContractError("WordPress export has no variants with mapped sizes");
   }
   const resolvedSourceKeys = new Set(resolvedVariations.map((variation) => String(variation.payload.source_variant_key)));
@@ -861,6 +862,7 @@ export interface WordPressVariationPatchDraft {
   readonly sourceTargetSizes: readonly string[];
   readonly knownTargetSizes: readonly string[];
   readonly ignored: readonly { readonly sourceVariantKey: string; readonly size: string; readonly reason: string }[];
+  readonly deactivateAll: boolean;
 }
 
 export async function previewWordPressVariationPatchItems(
@@ -870,7 +872,9 @@ export async function previewWordPressVariationPatchItems(
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress variation patch");
   const variants = context.liveVariants ?? context.product.variants;
-  if (variants.length === 0) throw new IntegrationContractError("WordPress variation patch has no source variants");
+  if (variants.length === 0) {
+    return { items: [], sourceTargetSizes: [], knownTargetSizes: [], ignored: [], deactivateAll: true };
+  }
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const mappings = sizeMappings(context.target.config);
@@ -915,6 +919,7 @@ export async function previewWordPressVariationPatchItems(
         };
       }),
     ],
+    deactivateAll: false,
   };
 }
 

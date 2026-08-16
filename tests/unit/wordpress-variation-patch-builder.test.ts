@@ -12,6 +12,7 @@ describe("matchExistingWordPressVariations", () => {
       sourceTargetSizes: ["pa_razmer:10", "pa_razmer:11"],
       knownTargetSizes: ["pa_razmer:10", "pa_razmer:11"],
       ignored: [],
+      deactivateAll: false,
     }, { product: { variations: [{ variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] }] } });
     expect(result.items).toEqual([expect.objectContaining({ variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 10 } })]);
     expect(result.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "b", reason: expect.stringContaining("не создаётся") })]);
@@ -23,6 +24,7 @@ describe("matchExistingWordPressVariations", () => {
       sourceTargetSizes: ["pa_razmer:10"],
       knownTargetSizes: ["pa_razmer:10"],
       ignored: [],
+      deactivateAll: false,
     }, { product: { variations: [
       { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
       { variation_id: 501, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
@@ -35,6 +37,7 @@ describe("matchExistingWordPressVariations", () => {
       sourceTargetSizes: ["pa_razmer:10"],
       knownTargetSizes: ["pa_razmer:10", "pa_razmer:11"],
       ignored: [],
+      deactivateAll: false,
     }, { product: { variations: [
       { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
       { variation_id: 501, attributes: [{ taxonomy: "pa_razmer", term_id: 11 }] },
@@ -53,6 +56,7 @@ describe("matchExistingWordPressVariations", () => {
       sourceTargetSizes: ["pa_razmer:10"],
       knownTargetSizes: ["pa_razmer:10"],
       ignored: [],
+      deactivateAll: false,
     }, { product: { variations: [
       { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
     ] } });
@@ -63,5 +67,24 @@ describe("matchExistingWordPressVariations", () => {
       inventory: { availability: "unavailable", quantity: 0 },
     }]);
     expect(result.items[0]).not.toHaveProperty("price");
+  });
+
+  it("marks every existing variation unavailable when the source has no offers", () => {
+    const result = matchExistingWordPressVariations({
+      items: [],
+      sourceTargetSizes: [],
+      knownTargetSizes: [],
+      ignored: [],
+      deactivateAll: true,
+    }, { product: { variations: [
+      { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
+      { variation_id: 501, attributes: [{ taxonomy: "pa_razmer", term_id: 11 }] },
+    ] } });
+
+    expect(result.items).toEqual([
+      { variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 10 }, inventory: { availability: "unavailable", quantity: 0 } },
+      { variation_id: 501, size: { taxonomy: "pa_razmer", term_id: 11 }, inventory: { availability: "unavailable", quantity: 0 } },
+    ]);
+    expect(result.ignored).toEqual([]);
   });
 });

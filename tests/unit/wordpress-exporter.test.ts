@@ -1024,7 +1024,7 @@ describe("WordPressExporter", () => {
     await expect(buildWordPressUpsertPayload(base)).rejects.toThrow("WordPress export has no variants with mapped sizes");
   });
 
-  it("blocks products without images or variants before any WordPress request", async () => {
+  it("blocks products without images and new products without variants before any WordPress request", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
     const base = context();
@@ -1032,8 +1032,26 @@ describe("WordPressExporter", () => {
     await expect(exporter.export({ ...base, product: { ...base.product, images: [] } }))
       .rejects.toThrow("WordPress export requires at least one processed product image");
     await expect(exporter.export({ ...base, product: { ...base.product, variants: [] } }))
-      .rejects.toThrow("WordPress export requires product variants until the sold-out contract is configured");
+      .rejects.toThrow("WordPress cannot create a new product without source variants");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses an empty active set to mark an existing product sold out", async () => {
+    const base = context();
+    const payload = await buildWordPressUpsertPayload({
+      ...base,
+      existingExternalId: "321",
+      liveVariants: [],
+    });
+
+    expect(payload.variations).toEqual({ mode: "replace_active_set", missing_policy: "out_of_stock", items: [] });
+  });
+
+  it("builds a sold-out variation patch without requiring size mappings", async () => {
+    const base = context({ sizeMappings: [] });
+    const draft = await previewWordPressVariationPatchItems({ ...base, existingExternalId: "321", liveVariants: [] });
+
+    expect(draft).toEqual({ items: [], sourceTargetSizes: [], knownTargetSizes: [], ignored: [], deactivateAll: true });
   });
 
   it("sends an explicit null price for an unavailable variation", async () => {

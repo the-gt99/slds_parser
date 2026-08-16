@@ -17,6 +17,31 @@ export function matchExistingWordPressVariations(
 ): { readonly items: readonly JsonObject[]; readonly ignored: readonly JsonObject[] } {
   const product = record(snapshot.product);
   const variations = Array.isArray(product.variations) ? product.variations.map(record) : [];
+  if (draft.deactivateAll) {
+    const items: JsonObject[] = [];
+    const ignored: JsonObject[] = [...draft.ignored];
+    for (const variation of variations) {
+      const variationId = positiveInteger(variation.variation_id);
+      const attributes = Array.isArray(variation.attributes)
+        ? variation.attributes.map(record).flatMap((attribute) => {
+          const taxonomy = String(attribute.taxonomy ?? "");
+          const termId = positiveInteger(attribute.term_id);
+          return /^pa_[a-z0-9_-]+$/u.test(taxonomy) && termId !== null ? [{ taxonomy, termId }] : [];
+        })
+        : [];
+      if (variationId === null || attributes.length !== 1) {
+        ignored.push({ variationId, reason: "Вариацию нельзя безопасно снять с продажи: не найден единственный атрибут размера" });
+        continue;
+      }
+      const size = attributes[0]!;
+      items.push({
+        variation_id: variationId,
+        size: { taxonomy: size.taxonomy, term_id: size.termId },
+        inventory: { availability: "unavailable", quantity: 0 },
+      });
+    }
+    return { items, ignored };
+  }
   const bySize = new Map<string, Record<string, unknown>[]>();
   for (const variation of variations) {
     const variationId = positiveInteger(variation.variation_id);
