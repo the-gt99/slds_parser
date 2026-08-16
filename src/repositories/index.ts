@@ -8,6 +8,7 @@ export type { ExportControlRepository } from "./export-control-repository.js";
 export type {
   WordPressCatalogMatchStatus,
   WordPressCatalogAuditFilter,
+  WordPressCatalogAuditSaveInput,
   WordPressCatalogOperationFilter,
   WordPressCatalogPageInput,
   WordPressCatalogRepository,

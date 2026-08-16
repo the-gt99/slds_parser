@@ -9,7 +9,7 @@ import {
   WordPressSizeConverter,
   type WordPressCatalogClient,
 } from "../integrations/wordpress/index.js";
-import type { JobRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, WordPressCatalogRepository, WordPressCatalogVariationCandidate } from "../repositories/index.js";
+import type { JobRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, WordPressCatalogAuditSaveInput, WordPressCatalogRepository, WordPressCatalogVariationCandidate } from "../repositories/index.js";
 import { buildWordPressCatalogAudit, type TargetReferenceMappingService } from "../services/index.js";
 import type { PollWordPressVariationPatchesPayload, PrepareWordPressVariationPatchesPayload, RefreshWordPressVariationPatchPayload } from "./job-payloads.js";
 import type { ExportSourceRefresher } from "./export-source-refresher.js";
@@ -114,6 +114,7 @@ export class WordPressVariationPatchRunner {
       projectionCache.set(key, resolution);
       return resolution;
     };
+    const auditResults: WordPressCatalogAuditSaveInput[] = [];
     for (const candidate of candidates) {
       const context = {
         source: candidate.source,
@@ -132,11 +133,11 @@ export class WordPressVariationPatchRunner {
       if (run.auditRequested && candidate.item.auditStatus === "pending") {
         try {
           const fullDraft = await this.exporter.previewPayload(context);
-          await this.repository.saveAudit({ itemId: candidate.item.id, status: "ready", result: buildWordPressCatalogAudit(fullDraft, candidate.item.payload) });
+          auditResults.push({ itemId: candidate.item.id, status: "ready", result: buildWordPressCatalogAudit(fullDraft, candidate.item.payload) });
         } catch (error) {
           const message = wordpressCatalogItemError(error);
           if (message === null) throw error;
-          await this.repository.saveAudit({ itemId: candidate.item.id, status: "blocked", error: message,
+          auditResults.push({ itemId: candidate.item.id, status: "blocked", error: message,
             result: { risk: "blocked", blockers: [{ code: "payload_contract", message }] } });
         }
       }
@@ -148,6 +149,7 @@ export class WordPressVariationPatchRunner {
         });
       }
     }
+    await this.repository.saveAudits(auditResults);
     return { status: "completed" };
   }
 

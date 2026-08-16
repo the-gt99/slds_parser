@@ -604,19 +604,37 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   }
 
   async saveAudit(input: Parameters<WordPressCatalogRepository["saveAudit"]>[0]): Promise<void> {
+    await this.saveAudits([input]);
+  }
+
+  async saveAudits(inputs: Parameters<WordPressCatalogRepository["saveAudits"]>[0]): Promise<void> {
+    if (inputs.length === 0) return;
     await queryPool(this.pool,
-      `WITH saved AS (
-         UPDATE wordpress_catalog_run_items
-         SET audit_status = $2, audit_result = $3::JSONB, audit_error = $4, updated_at = NOW()
-         WHERE id = $1
-         RETURNING id
+      `WITH input AS MATERIALIZED (
+         SELECT item_id, status, result, error
+         FROM JSONB_TO_RECORDSET($1::JSONB) AS value(
+           item_id BIGINT, status TEXT, result JSONB, error TEXT
+         )
+       ), saved AS (
+         UPDATE wordpress_catalog_run_items item
+         SET audit_status = input.status, audit_result = input.result,
+             audit_error = input.error, updated_at = NOW()
+         FROM input
+         WHERE item.id = input.item_id
+         RETURNING item.id, input.status, input.result
        )
        UPDATE wordpress_catalog_item_read_models model
-       SET audit_risk = CASE WHEN $2 = 'blocked' THEN 'blocked'
-                             WHEN $3::JSONB->>'risk' IN ('none', 'review', 'danger') THEN $3::JSONB->>'risk' END,
-           change_flags = wordpress_catalog_audit_change_flags($3::JSONB), updated_at = NOW()
+       SET audit_risk = CASE WHEN saved.status = 'blocked' THEN 'blocked'
+                             WHEN saved.result->>'risk' IN ('none', 'review', 'danger') THEN saved.result->>'risk' END,
+           change_flags = wordpress_catalog_audit_change_flags(saved.result), updated_at = NOW()
        FROM saved WHERE model.item_id = saved.id`,
-      [input.itemId, input.status, input.result === undefined ? null : JSON.stringify(input.result), input.error ?? null]);
+      [JSON.stringify(inputs.map((input) => ({
+        item_id: input.itemId,
+        status: input.status,
+        result: input.result ?? null,
+        error: input.error ?? null,
+      })))],
+    );
   }
 
   async enqueueVariationItems(runId: string, itemIds: readonly string[]): Promise<number> {

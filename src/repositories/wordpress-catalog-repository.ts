@@ -9,6 +9,13 @@ export type WordPressCatalogOperationFilter = "update" | "new" | "unmatched";
 export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
 export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "completed";
 
+export interface WordPressCatalogAuditSaveInput {
+  readonly itemId: EntityId;
+  readonly status: "ready" | "blocked" | "error" | "skipped";
+  readonly result?: JsonObject;
+  readonly error?: string;
+}
+
 export interface WordPressVariationAutoSyncState {
   readonly runId: EntityId;
   readonly window: number;
@@ -184,12 +191,8 @@ export interface WordPressCatalogRepository {
     readonly result: JsonObject;
     readonly error?: string;
   }): Promise<void>;
-  saveAudit(input: {
-    readonly itemId: EntityId;
-    readonly status: "ready" | "blocked" | "error" | "skipped";
-    readonly result?: JsonObject;
-    readonly error?: string;
-  }): Promise<void>;
+  saveAudit(input: WordPressCatalogAuditSaveInput): Promise<void>;
+  saveAudits(inputs: readonly WordPressCatalogAuditSaveInput[]): Promise<void>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
   enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
   getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null>;
