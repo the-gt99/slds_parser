@@ -110,4 +110,15 @@ describe("TargetReferenceMappingService", () => {
       },
     })]);
   });
+
+  it("loads assignment rules once for a reusable resolver", async () => {
+    const repository = createRepository();
+    const resolve = await new TargetReferenceMappingService(repository).createTargetAssignmentResolver("2");
+    const product = { referenceCandidates: [], references: [], unresolvedReferences: [], ignoredReferences: [] } as never;
+
+    await resolve(product);
+    await resolve(product);
+
+    expect(repository.listTargetAssignmentRules).toHaveBeenCalledOnce();
+  });
 });

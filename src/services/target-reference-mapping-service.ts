@@ -73,4 +73,9 @@ export class TargetReferenceMappingService {
   async resolveTargetAssignments(targetId: EntityId, product: UniversalProductDTO) {
     return resolveTargetAssignments(product, await this.references.listTargetAssignmentRules(targetId));
   }
+
+  async createTargetAssignmentResolver(targetId: EntityId) {
+    const rules = await this.references.listTargetAssignmentRules(targetId);
+    return async (product: UniversalProductDTO) => resolveTargetAssignments(product, rules);
+  }
 }

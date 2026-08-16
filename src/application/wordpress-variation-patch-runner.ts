@@ -1,5 +1,5 @@
 import type { WordPressTargetConfig } from "../config/index.js";
-import type { JsonObject, ProductVariantDTO } from "../contracts/index.js";
+import type { JsonObject, ProductVariantDTO, TargetProjectionResolutionInput, TargetReferenceResolutionInput } from "../contracts/index.js";
 import { IntegrationContractError, MappingMissingError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
@@ -93,6 +93,27 @@ export class WordPressVariationPatchRunner {
       categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
       preserveExistingStory: template.preserveExistingStory ?? false,
     }));
+    const referenceCache = new Map<string, Promise<string>>();
+    const projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
+    const resolveAssignments = candidates[0] === undefined
+      ? async () => []
+      : await this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
+    const resolveReference = (targetId: string, input: TargetReferenceResolutionInput) => {
+      const key = `${targetId}:${input.referenceId}:${input.targetScope}`;
+      const cached = referenceCache.get(key);
+      if (cached !== undefined) return cached;
+      const resolution = this.mappings.resolveTargetValue(targetId, input.referenceId, input.targetScope);
+      referenceCache.set(key, resolution);
+      return resolution;
+    };
+    const resolveProjections = (targetId: string, inputs: readonly TargetProjectionResolutionInput[]) => {
+      const key = `${targetId}:${JSON.stringify(inputs)}`;
+      const cached = projectionCache.get(key);
+      if (cached !== undefined) return cached;
+      const resolution = this.mappings.resolveTargetProjections(targetId, inputs);
+      projectionCache.set(key, resolution);
+      return resolution;
+    };
     for (const candidate of candidates) {
       const context = {
         source: candidate.source,
@@ -102,9 +123,9 @@ export class WordPressVariationPatchRunner {
         existingExternalId: candidate.item.wordpressProductId,
         existingTargetSnapshot: candidate.item.payload,
         references: {
-          resolveReference: (input) => this.mappings.resolveTargetValue(candidate.target.id, input.referenceId, input.targetScope),
-          resolveProjections: (inputs) => this.mappings.resolveTargetProjections(candidate.target.id, inputs),
-          resolveAssignments: (product) => this.mappings.resolveTargetAssignments(candidate.target.id, product),
+          resolveReference: (input) => resolveReference(candidate.target.id, input),
+          resolveProjections: (inputs) => resolveProjections(candidate.target.id, inputs),
+          resolveAssignments,
         },
         contentTemplates: templates,
       } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
