@@ -210,6 +210,7 @@ async function main(): Promise<void> {
   const path = process.env.LEGACY_PA_VID_RULES_PATH?.trim();
   if (!path) throw new IntegrationContractError("LEGACY_PA_VID_RULES_PATH is required");
   const apply = process.env.LEGACY_PA_VID_APPLY?.toLowerCase() === "true" || process.env.LEGACY_PA_VID_APPLY === "1";
+  const previewRules = process.env.LEGACY_PA_VID_PREVIEW !== "0" && process.env.LEGACY_PA_VID_PREVIEW?.toLowerCase() !== "false";
   const config = parseLegacyPaVidConfig(JSON.parse(await readFile(path, "utf8")));
   if (config.slug !== "vid" || config.apply_mode !== "append") {
     throw new IntegrationContractError("Only the legacy vid/append configuration can be imported");
@@ -251,7 +252,7 @@ async function main(): Promise<void> {
     for (const plan of plans) {
       const conditions = inlineConditions(plan);
       if (conditions.length === 0) throw new IntegrationContractError(`Legacy activity has no usable conditions: ${plan.name}`);
-      const preview = await admin.preview(draftFor(plan, target.id, conditions));
+      const preview = previewRules ? await admin.preview(draftFor(plan, target.id, conditions)) : null;
       previews.push({
         name: plan.name,
         priority: plan.priority,
@@ -260,8 +261,8 @@ async function main(): Promise<void> {
         mappedTagIds: plan.tagIds.length - plan.unmappedTagIds.length,
         unmappedTagIds: plan.unmappedTagIds.length,
         references: Object.fromEntries([...plan.references].map(([typeCode, values]) => [typeCode, values.length])),
-        productCount: preview.productCount,
-        examples: preview.examples,
+        productCount: preview?.productCount ?? null,
+        examples: preview?.examples ?? [],
       });
     }
 
@@ -297,6 +298,7 @@ async function main(): Promise<void> {
     const dictionaryTagIds = new Set((await dictionaries.listValues({ targetId: target.id, entityType: "tags", limit: 100_000, offset: 0 })).map((item) => item.externalId));
     console.log(JSON.stringify({
       mode: apply ? "apply" : "preview",
+      rulePreviewExecuted: previewRules,
       target: { id: target.id, code: target.code, enabled: target.enabled },
       source: { values: config.values.length, tagReferences: allTagIds.length },
       coverage: {
