@@ -161,6 +161,20 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["1", "247"]);
   });
 
+  it("resets and queues only blocked WordPress catalog audits", async () => {
+    const executor = new FakeExecutor([[{ queued_item_count: 31_201, queued_job_count: 63 }]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.retryBlockedAudits("4")).resolves.toEqual({ queuedItemCount: 31_201, queuedJobCount: 63 });
+
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.text).toContain("item.audit_status = 'blocked'");
+    expect(executor.calls[0]?.text).toContain("SET audit_status = 'pending'");
+    expect(executor.calls[0]?.text).toContain("'prepare_wordpress_variation_patches'");
+    expect(executor.calls[0]?.text).toContain("'wordpress-audit-retry:'");
+    expect(executor.calls[0]?.values).toEqual(["4"]);
+  });
+
   it("keeps source product id typed as bigint while building preflight search text", async () => {
     const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
     const repository = new PostgresExportControlRepository(pool(executor));

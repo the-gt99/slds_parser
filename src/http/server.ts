@@ -1379,6 +1379,14 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     ) }),
   );
 
+  server.post<{ Params: WordPressCatalogRunParams }>(
+    "/api/wordpress-catalog/runs/:runId/audit-retry-blocked",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().retryBlockedAudits(
+      entityId(request.params.runId, "runId"),
+    ) }),
+  );
+
   server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogCanaryBody }>(
     "/api/wordpress-catalog/runs/:runId/variation-canary",
     { preHandler: [requireAdmin, requireMutationAccess] },

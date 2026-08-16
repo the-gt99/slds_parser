@@ -66,3 +66,27 @@ describe("WordPressCatalogService variation auto-sync", () => {
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
   });
 });
+
+describe("WordPressCatalogService blocked audit retry", () => {
+  it("queues blocked items from a completed audited catalog", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run()),
+      retryBlockedAudits: vi.fn().mockResolvedValue({ queuedItemCount: 2_000, queuedJobCount: 4 }),
+    } as unknown as WordPressCatalogRepository;
+    const service = new WordPressCatalogService(repository, {} as SourceRepository, {} as TargetRepository);
+
+    await expect(service.retryBlockedAudits("1")).resolves.toEqual({ queuedItemCount: 2_000, queuedJobCount: 4 });
+    expect(repository.retryBlockedAudits).toHaveBeenCalledWith("1");
+  });
+
+  it("rejects retry before the catalog snapshot is complete", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run({ catalogComplete: false })),
+      retryBlockedAudits: vi.fn(),
+    } as unknown as WordPressCatalogRepository;
+    const service = new WordPressCatalogService(repository, {} as SourceRepository, {} as TargetRepository);
+
+    await expect(service.retryBlockedAudits("1")).rejects.toThrow("Повторный аудит доступен только для завершённого снимка");
+    expect(repository.retryBlockedAudits).not.toHaveBeenCalled();
+  });
+});
