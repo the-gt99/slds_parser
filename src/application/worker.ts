@@ -233,7 +233,8 @@ export class Worker {
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),
         this.runLane(controller.signal, wordpressCatalogJobTypes, `${this.options.workerId}:wordpress-catalog`),
-        this.runLane(controller.signal, wordpressVariationJobTypes, `${this.options.workerId}:wordpress-variations`),
+        ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
+          this.runLane(controller.signal, wordpressVariationJobTypes, `${this.options.workerId}:wordpress-audit-${index + 1}`)),
         this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:wordpress-variation-poll`),
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:wordpress-variation-refresh-${index + 1}`)),

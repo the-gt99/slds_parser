@@ -195,6 +195,52 @@ describe("Worker", () => {
     ]);
   });
 
+  it("runs the configured number of local WordPress audit lanes", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 3; index++) {
+      await jobs.enqueue({
+        jobType: "prepare_wordpress_variation_patches",
+        payload: { runId: "1", afterCursor: String(index - 1), throughCursor: String(index) },
+        uniqueKey: `wordpress-audit-${index}`,
+      });
+    }
+    const controller = new AbortController();
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const workerIds: string[] = [];
+    const handler: JobHandler = {
+      dispatch: vi.fn(async (job) => {
+        workerIds.push(job.lockedBy ?? "");
+        if (workerIds.length === 3) {
+          release();
+          controller.abort();
+        }
+        await barrier;
+        return { status: "completed" as const };
+      }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, options, sleep, Date.now, console.error, undefined, async () => ({
+      collectionConcurrency: 1,
+      processConcurrency: 1,
+      preflightConcurrency: 3,
+      classificationApplyConcurrency: 1,
+    }));
+
+    await worker.run(controller.signal);
+
+    expect(workerIds.sort()).toEqual([
+      "worker:wordpress-audit-1",
+      "worker:wordpress-audit-2",
+      "worker:wordpress-audit-3",
+    ]);
+  });
+
   it("runs the configured number of WordPress classification apply lanes", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
