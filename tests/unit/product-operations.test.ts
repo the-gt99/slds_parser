@@ -43,6 +43,10 @@ describe("product operations", () => {
         { url: "https://image.example/placeholders/product_templates/missing.png", position: 7, alt: "Missing", attributes: {} },
       ],
       variants: [{ sourceVariantKey: " key ", sku: " SKU-S ", size: { sourceValue: " 103 ", displayValue: " S " }, price: { amount: " 123.45 ", currency: " usd " }, inventory: { availability: "available" }, attributes: { shoeCondition: " new_no_defects " } }],
+      referenceCandidates: [
+        ...validProduct().referenceCandidates,
+        { key: "product:designer", typeCode: "designer", scope: "product.designer", subjectKind: "product", sourceValue: " #REF! ", context: {}, evidence: {} },
+      ],
     });
 
     const result = await new NormalizeProductOperation().execute(input, context);
@@ -50,6 +54,7 @@ describe("product operations", () => {
     expect(result).toMatchObject({ title: "Product", description: "", sku: "SKU", attributes: { brand: "Example Brand", model: "", untouched: "  keep  " } });
     expect(result.images).toEqual([{ url: "https://image.example/main.png", sourceUrl: "https://image.example/main.png", position: 0, alt: "Product", attributes: {} }]);
     expect(result.variants[0]).toMatchObject({ sourceVariantKey: "key", sku: "SKU-S", size: { sourceValue: "103", displayValue: "S" }, price: { amount: "123.45", currency: "USD" }, attributes: { shoeCondition: "new_no_defects" } });
+    expect(result.referenceCandidates.some((candidate) => candidate.key === "product:designer")).toBe(false);
     expect(input.title).toBe("  Product  ");
   });
 

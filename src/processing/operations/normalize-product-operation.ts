@@ -141,7 +141,7 @@ function normalizeCandidate(candidate: ReferenceCandidateDTO): ReferenceCandidat
 export class NormalizeProductOperation implements ProductOperation {
   readonly code = "normalize-product";
   readonly name = "Нормализация товара";
-  readonly version = "2.1.0";
+  readonly version = "2.2.0";
 
   async execute(
     product: UniversalProductDTO,
@@ -154,7 +154,9 @@ export class NormalizeProductOperation implements ProductOperation {
       sku: cleanSourceText(product.sku),
       images: normalizeImages(product.images, context),
       variants: product.variants.map(normalizeVariant),
-      referenceCandidates: product.referenceCandidates.map(normalizeCandidate),
+      referenceCandidates: product.referenceCandidates
+        .map(normalizeCandidate)
+        .filter((candidate) => candidate.sourceValue !== ""),
       ...(product.sourceFacts === undefined ? {} : { sourceFacts: cleanTextFields(product.sourceFacts, Object.keys(product.sourceFacts)) }),
       attributes: cleanTextFields(product.attributes, PRODUCT_ATTRIBUTE_TEXT_FIELDS),
       metadata: cleanTextFields(product.metadata, METADATA_TEXT_FIELDS),
