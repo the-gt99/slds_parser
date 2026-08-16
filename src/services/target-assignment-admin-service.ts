@@ -11,6 +11,32 @@ function stringMap(value: unknown): Readonly<Record<string, string>> {
   return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => typeof entry === "string" && entry.trim() ? [[key, entry.trim()]] : []));
 }
 
+function normalized(value: string): string {
+  return value.trim().normalize("NFKC").toLocaleLowerCase("en-US");
+}
+
+function phrase(value: string): string {
+  return ` ${normalized(value).replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\b(?:wmns|womens|mens)\b/gu, " ").replace(/\s+/gu, " ").trim()} `;
+}
+
+function conditionsCanOverlap(left: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number], right: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number]): boolean {
+  if (left.field !== right.field || left.values.length === 0 || right.values.length === 0) return true;
+  if (left.operator === "contains_phrase" || right.operator === "contains_phrase") {
+    return left.values.some((leftValue) => right.values.some((rightValue) => {
+      const leftPhrase = phrase(leftValue); const rightPhrase = phrase(rightValue);
+      if (left.operator === "contains_phrase" && right.operator === "contains_phrase") return leftPhrase.includes(rightPhrase) || rightPhrase.includes(leftPhrase);
+      return left.operator === "contains_phrase" ? rightPhrase.includes(leftPhrase) : leftPhrase.includes(rightPhrase);
+    }));
+  }
+  const rightValues = new Set(right.values.map(normalized));
+  return left.values.some((value) => rightValues.has(normalized(value)));
+}
+
+function rulesStaticallyDisjoint(left: TargetAssignmentRuleDraft, right: TargetAssignmentRuleDraft): boolean {
+  return left.conditionGroups.some((leftGroup) => right.conditionGroups.some((rightGroup) =>
+    leftGroup.conditions.every((leftCondition) => rightGroup.conditions.every((rightCondition) => !conditionsCanOverlap(leftCondition, rightCondition)))));
+}
+
 export class TargetAssignmentAdminService {
   constructor(
     private readonly repository: TargetAssignmentRuleRepository,
@@ -86,9 +112,18 @@ export class TargetAssignmentAdminService {
   private async previewValidated(draft: TargetAssignmentRuleDraft, excludeRuleId?: string) {
     const preview = await this.repository.preview(draft);
     const existing = await this.repository.list(draft.targetId);
+    const matchSets = new Map((await this.repository.listMatchSets(draft.targetId)).map((item) => [item.id, item.values]));
+    const populatedDraft = {
+      ...draft,
+      conditionGroups: draft.conditionGroups.map((group) => ({ conditions: group.conditions.map((condition) => ({
+        ...condition,
+        values: condition.matchSetId === undefined ? condition.values : matchSets.get(condition.matchSetId) ?? condition.values,
+      })) })),
+    };
     const competing = existing.filter((rule) => rule.id !== excludeRuleId && rule.enabled && rule.groupCode === draft.groupCode && rule.priority === draft.priority);
     const conflicts = [];
     for (const rule of competing) {
+      if (rulesStaticallyDisjoint(populatedDraft, rule)) continue;
       const overlap = await this.repository.preview({ ...draft, conditionGroups: [...draft.conditionGroups, ...rule.conditionGroups] });
       if (overlap.productCount > 0) conflicts.push({ ruleId: rule.id, ruleName: rule.name, productCount: overlap.productCount });
     }

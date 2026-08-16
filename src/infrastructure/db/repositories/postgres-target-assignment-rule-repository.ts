@@ -138,6 +138,18 @@ function conditionProductIdsSql(
   }
   if (parts[0] === "candidate" && parts.length >= 3) {
     const typeCode = parameter(parts[1]);
+    if (parts.length === 3 && parts[2] === "sourceValue" && condition.operator === "contains_phrase") {
+      return `SELECT DISTINCT link.source_product_id
+        FROM UNNEST(${expected}::TEXT[]) phrase(pattern)
+        CROSS JOIN LATERAL (
+          SELECT candidate.id
+          FROM classification_candidates candidate
+          JOIN reference_types type ON type.id = candidate.reference_type_id
+          WHERE type.code = ${typeCode} AND candidate.phrase_search_value LIKE phrase.pattern
+          OFFSET 0
+        ) candidate
+        JOIN source_product_classification_links link ON link.candidate_id = candidate.id AND link.active = TRUE`;
+    }
     const joins = parts[2] === "evidence"
       ? "JOIN source_product_classification_evidence evidence_row ON evidence_row.id = link.evidence_id"
       : "";

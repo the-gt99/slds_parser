@@ -107,7 +107,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     });
 
     expect(executor.calls[0]?.text).toContain("phrase_search_value");
-    expect(executor.calls[0]?.text).toContain("LIKE ANY");
+    expect(executor.calls[0]?.text).toContain("UNNEST");
+    expect(executor.calls[0]?.text).toContain("CROSS JOIN LATERAL");
     expect(executor.calls[0]?.values).toEqual([["% ugg tazz %", "% birkenstock tokio %"], "model"]);
   });
 

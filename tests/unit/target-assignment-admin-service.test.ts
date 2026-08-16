@@ -27,7 +27,7 @@ function setup(rules: readonly TargetAssignmentRuleRecord[] = [existingRule]) {
     update: vi.fn(),
     setEnabled: vi.fn(),
     history: vi.fn(),
-    listMatchSets: vi.fn(),
+    listMatchSets: vi.fn().mockResolvedValue([]),
     createMatchSet: vi.fn(),
     updateMatchSet: vi.fn(),
     listMatchSetOverlaps: vi.fn(),
@@ -82,5 +82,18 @@ describe("TargetAssignmentAdminService", () => {
     expect(repository.preview).toHaveBeenCalledWith(expect.objectContaining({
       conditionGroups: [{ conditions: [{ field: "product.fact.designer", operator: "equals", values: ["Wilson Smith"] }] }],
     }));
+  });
+
+  it("does not query product overlap for statically disjoint audiences", async () => {
+    const { repository, service } = setup();
+    repository.preview.mockReset().mockResolvedValue({ productCount: 12, examples: [] });
+
+    const preview = await service.preview({
+      ...draft,
+      conditionGroups: [{ conditions: [{ field: "candidate.category.context.audience", operator: "equals", values: ["men"] }] }],
+    });
+
+    expect(preview.conflicts).toEqual([]);
+    expect(repository.preview).toHaveBeenCalledTimes(1);
   });
 });
