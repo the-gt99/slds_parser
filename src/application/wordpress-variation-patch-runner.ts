@@ -61,6 +61,11 @@ export function wordpressCatalogItemError(error: unknown): string | null {
 export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
+  private readonly referenceCachesByRun = new Map<string, Map<string, Promise<string>>>();
+  private readonly assignmentResolversByRun = new Map<
+    string,
+    Promise<Awaited<ReturnType<TargetReferenceMappingService["createTargetAssignmentResolver"]>>>
+  >();
 
   constructor(
     private readonly repository: WordPressCatalogRepository,
@@ -93,11 +98,20 @@ export class WordPressVariationPatchRunner {
       categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
       preserveExistingStory: template.preserveExistingStory ?? false,
     }));
-    const referenceCache = new Map<string, Promise<string>>();
+    let referenceCache = this.referenceCachesByRun.get(payload.runId);
+    if (referenceCache === undefined) {
+      referenceCache = new Map<string, Promise<string>>();
+      this.referenceCachesByRun.set(payload.runId, referenceCache);
+    }
     const projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
-    const resolveAssignments = candidates[0] === undefined
+    let assignmentResolver = this.assignmentResolversByRun.get(payload.runId);
+    if (assignmentResolver === undefined && candidates[0] !== undefined) {
+      assignmentResolver = this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
+      this.assignmentResolversByRun.set(payload.runId, assignmentResolver);
+    }
+    const resolveAssignments = assignmentResolver === undefined
       ? async () => []
-      : await this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
+      : await assignmentResolver;
     const resolveReference = (targetId: string, input: TargetReferenceResolutionInput) => {
       const key = `${targetId}:${input.referenceId}:${input.targetScope}`;
       const cached = referenceCache.get(key);
