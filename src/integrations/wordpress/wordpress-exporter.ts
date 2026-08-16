@@ -359,6 +359,23 @@ function configuredConversionCategoryIds(config: JsonObject): readonly number[] 
   return Object.keys(titlePolicy).filter((value) => /^\d+$/u.test(value)).map(Number);
 }
 
+function sizeConversionCategoryAliases(config: JsonObject): ReadonlyMap<number, number> {
+  const rawAliases = config.sizeConversionCategoryAliasByTermId;
+  if (rawAliases === undefined) return new Map();
+  if (rawAliases === null || typeof rawAliases !== "object" || Array.isArray(rawAliases)) {
+    throw new IntegrationContractError("target.config.sizeConversionCategoryAliasByTermId must be an object");
+  }
+  return new Map(Object.entries(rawAliases).map(([sourceTermId, conversionTermId]) => {
+    if (!/^[1-9]\d*$/u.test(sourceTermId)) {
+      throw new IntegrationContractError(`target.config.sizeConversionCategoryAliasByTermId.${sourceTermId} is invalid`);
+    }
+    return [
+      Number(sourceTermId),
+      positiveInteger(conversionTermId, `target.config.sizeConversionCategoryAliasByTermId.${sourceTermId}`),
+    ] as const;
+  }));
+}
+
 function sizeConversionIdentity(
   taxonomies: JsonObject,
   config: JsonObject,
@@ -369,7 +386,12 @@ function sizeConversionIdentity(
   }
   const productCategoryIds = taxonomyTermIds(taxonomies, "product_cat");
   const configured = new Set(configuredConversionCategoryIds(config));
-  const candidates = configured.size === 0 ? productCategoryIds : productCategoryIds.filter((termId) => configured.has(termId));
+  const aliases = sizeConversionCategoryAliases(config);
+  const candidates = productCategoryIds.flatMap((termId) => {
+    const alias = aliases.get(termId);
+    if (alias !== undefined) return [alias];
+    return configured.size === 0 || configured.has(termId) ? [termId] : [];
+  });
   if (candidates.length !== 1) {
     throw new IntegrationContractError("WordPress size conversion requires exactly one configured product_cat term");
   }

@@ -431,6 +431,37 @@ describe("WordPressExporter", () => {
     expect(input.product.variants[0]!.size).toEqual({ sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" });
   });
 
+  it("uses an explicit size-table category alias without changing the assigned product category", async () => {
+    const base = context({
+      sizeConversionCategoryAliasByTermId: { "25922": 75 },
+      sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }],
+    });
+    const input: ExportContext = {
+      ...base,
+      product: {
+        ...base.product,
+        variants: base.product.variants.map((variant) => ({
+          ...variant,
+          size: { sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" },
+        })),
+      },
+    };
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
+      { ruleId: "501", groupCode: "shoe_leaf_category", targetScope: "product.category", externalValue: "25922", mode: "replace" },
+    ]);
+    const converter: WordPressSizeConverterLike = {
+      supports: vi.fn(() => true),
+      convert: vi.fn(async ({ size }) => ({ ...size, sourceValue: "8", displayValue: "8", system: "us-numeric" })),
+    };
+
+    const payload = await buildWordPressUpsertPayload(input, converter);
+
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 75, size: input.product.variants[0]!.size });
+    expect((payload.product as JsonObject).taxonomies).toMatchObject({
+      product_cat: { mode: "replace", term_ids: [25922] },
+    });
+  });
+
   it("applies an explicit target title prefix for the resolved product category", async () => {
     const input = context({ titlePrefixByCategoryTermId: { "41": "Кроссовки" } });
 
