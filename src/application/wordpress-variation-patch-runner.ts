@@ -62,6 +62,10 @@ export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
   private readonly referenceCachesByRun = new Map<string, Map<string, Promise<string>>>();
+  private readonly projectionCachesByRun = new Map<
+    string,
+    Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>
+  >();
   private readonly assignmentResolversByRun = new Map<
     string,
     Promise<Awaited<ReturnType<TargetReferenceMappingService["createTargetAssignmentResolver"]>>>
@@ -103,7 +107,11 @@ export class WordPressVariationPatchRunner {
       referenceCache = new Map<string, Promise<string>>();
       this.referenceCachesByRun.set(payload.runId, referenceCache);
     }
-    const projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
+    let projectionCache = this.projectionCachesByRun.get(payload.runId);
+    if (projectionCache === undefined) {
+      projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
+      this.projectionCachesByRun.set(payload.runId, projectionCache);
+    }
     let assignmentResolver = this.assignmentResolversByRun.get(payload.runId);
     if (assignmentResolver === undefined && candidates[0] !== undefined) {
       assignmentResolver = this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
@@ -121,12 +129,15 @@ export class WordPressVariationPatchRunner {
       return resolution;
     };
     const resolveProjections = (targetId: string, inputs: readonly TargetProjectionResolutionInput[]) => {
-      const key = `${targetId}:${JSON.stringify(inputs)}`;
-      const cached = projectionCache.get(key);
-      if (cached !== undefined) return cached;
-      const resolution = this.mappings.resolveTargetProjections(targetId, inputs);
-      projectionCache.set(key, resolution);
-      return resolution;
+      const resolutions = inputs.map((input) => {
+        const key = `${targetId}:${input.resolutionKind}:${input.resolutionId}:${input.referenceId}`;
+        const cached = projectionCache.get(key);
+        if (cached !== undefined) return cached;
+        const resolution = this.mappings.resolveTargetProjections(targetId, [input]);
+        projectionCache.set(key, resolution);
+        return resolution;
+      });
+      return Promise.all(resolutions).then((items) => items.flat());
     };
     const auditResults: WordPressCatalogAuditSaveInput[] = [];
     for (const candidate of candidates) {
