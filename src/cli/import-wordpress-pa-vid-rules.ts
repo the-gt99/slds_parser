@@ -128,10 +128,20 @@ async function queryRows<Row extends Record<string, unknown>>(pool: SqlPool, sql
 async function referenceLinks(pool: SqlPool, targetId: string, externalIds: readonly string[]): Promise<readonly InternalReferenceLink[]> {
   if (externalIds.length === 0) return [];
   return (await queryRows<{ external_id: string; reference_value_id: string; type_code: string }>(pool, `
-    WITH wanted AS (
+    WITH wanted_tags AS (
       SELECT id, external_id
       FROM target_dictionary_values
       WHERE target_id = $1 AND entity_type = 'tags' AND active = TRUE AND external_id = ANY($2::TEXT[])
+    ), wanted AS (
+      SELECT id, external_id FROM wanted_tags
+      UNION
+      SELECT related.id, tag.external_id
+      FROM wanted_tags tag
+      JOIN target_dictionary_values related
+        ON related.target_id = $1
+       AND related.active = TRUE
+       AND related.entity_type IN ('brands', 'models')
+       AND related.metadata#>>'{rawMeta,tag_id}' = tag.external_id
     ), links AS (
       SELECT wanted.external_id, mapping.reference_value_id, type.code AS type_code
       FROM wanted
@@ -146,14 +156,14 @@ async function referenceLinks(pool: SqlPool, targetId: string, externalIds: read
       JOIN reference_types type ON type.id = value.type_id
       UNION
       SELECT wanted.external_id, mapping.reference_value_id, type.code
-      FROM wanted
+      FROM wanted_tags wanted
       JOIN target_classification_projections projection ON projection.dictionary_value_id = wanted.id AND projection.active = TRUE
       JOIN source_reference_mappings mapping ON mapping.id = projection.mapping_id AND mapping.status = 'confirmed'
       JOIN reference_values value ON value.id = mapping.reference_value_id AND value.enabled = TRUE
       JOIN reference_types type ON type.id = value.type_id
       UNION
       SELECT wanted.external_id, rule.reference_value_id, type.code
-      FROM wanted
+      FROM wanted_tags wanted
       JOIN target_classification_projections projection ON projection.dictionary_value_id = wanted.id AND projection.active = TRUE
       JOIN source_reference_rules rule ON rule.id = projection.rule_id AND rule.enabled = TRUE
       JOIN reference_values value ON value.id = rule.reference_value_id AND value.enabled = TRUE

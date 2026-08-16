@@ -17,6 +17,11 @@ interface AuditRow {
   readonly actual_terms: readonly { readonly term_id?: string | number; readonly name?: string }[];
 }
 
+interface ProjectionRow {
+  readonly key: string;
+  readonly external_value: string;
+}
+
 function sorted(values: readonly string[]): readonly string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right, "en"));
 }
@@ -41,7 +46,24 @@ async function main(): Promise<void> {
 
     const client = await pool.connect();
     let rows: readonly AuditRow[];
+    let projectionRows: readonly ProjectionRow[];
     try {
+      projectionRows = (await client.query<ProjectionRow>(`
+        SELECT 'reference:' || mapping.reference_value_id::TEXT AS key, mapping.external_value
+        FROM target_value_mappings mapping
+        WHERE mapping.target_id = $1 AND mapping.target_scope = 'product.activity' AND mapping.active = TRUE
+        UNION
+        SELECT 'reference:' || projection.reference_value_id::TEXT, dictionary.external_id
+        FROM target_reference_projections projection
+        JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id AND dictionary.active = TRUE
+        WHERE projection.target_id = $1 AND projection.target_scope = 'product.activity' AND projection.active = TRUE
+        UNION
+        SELECT CASE WHEN projection.mapping_id IS NOT NULL THEN 'mapping:' || projection.mapping_id::TEXT ELSE 'rule:' || projection.rule_id::TEXT END,
+               dictionary.external_id
+        FROM target_classification_projections projection
+        JOIN target_dictionary_values dictionary ON dictionary.id = projection.dictionary_value_id AND dictionary.active = TRUE
+        WHERE projection.target_id = $1 AND projection.target_scope = 'product.activity' AND projection.active = TRUE
+      `, [target.id])).rows;
       rows = (await client.query<AuditRow>(`
         SELECT internal.source_product_id::TEXT,
                COALESCE(internal.data->>'title', '') AS title,
@@ -61,6 +83,9 @@ async function main(): Promise<void> {
       client.release();
     }
 
+    const projections = new Map<string, string[]>();
+    for (const row of projectionRows) projections.set(row.key, [...(projections.get(row.key) ?? []), row.external_value]);
+
     let predictedCount = 0;
     let actualCount = 0;
     let exactCount = 0;
@@ -78,9 +103,14 @@ async function main(): Promise<void> {
         attributes: {},
         metadata: {},
       } as unknown as UniversalProductDTO;
-      const predicted = sorted(resolveTargetAssignments(product, rules)
+      const classified = (row.resolved as readonly { readonly referenceValueId: string; readonly resolutionKind: string; readonly resolutionId: string }[])
+        .flatMap((resolution) => [
+          ...(projections.get(`reference:${resolution.referenceValueId}`) ?? []),
+          ...(projections.get(`${resolution.resolutionKind}:${resolution.resolutionId}`) ?? []),
+        ]);
+      const predicted = sorted([...classified, ...resolveTargetAssignments(product, rules)
         .filter((assignment) => assignment.targetScope === "product.activity")
-        .map((assignment) => assignment.externalValue));
+        .map((assignment) => assignment.externalValue)]);
       const actual = sorted(row.actual_terms.flatMap((term) => term.term_id === undefined || !importedExternalIds.has(String(term.term_id))
         ? [] : [String(term.term_id)]));
       if (predicted.length > 0) predictedCount++;
