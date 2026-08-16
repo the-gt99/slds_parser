@@ -87,7 +87,7 @@ export class ExportRunner {
         product: internal.data,
         ...(liveVariants === null ? {} : { liveVariants }),
         references: {
-          resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
+          resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
           resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
         },

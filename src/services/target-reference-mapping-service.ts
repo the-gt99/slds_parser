@@ -31,6 +31,20 @@ export class TargetReferenceMappingService {
     return mapping.externalValue;
   }
 
+  async resolveTargetMapping(
+    targetId: EntityId,
+    referenceValueId: EntityId,
+    targetScope: string,
+  ) {
+    const mapping = await this.references.resolveTargetValue(targetId, referenceValueId, targetScope);
+    if (mapping === null) {
+      throw new MappingMissingError(
+        `target=${targetId}, referenceValue=${referenceValueId}, scope=${targetScope}`,
+      );
+    }
+    return { externalValue: mapping.externalValue, externalLabel: mapping.externalLabel };
+  }
+
   async resolveTargetProjections(
     targetId: EntityId,
     resolutions: readonly TargetProjectionResolutionInput[],

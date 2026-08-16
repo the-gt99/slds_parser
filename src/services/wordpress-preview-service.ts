@@ -433,7 +433,7 @@ export class WordPressPreviewService {
     const context = {
       source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
       references: {
-        resolveReference: (input) => this.mappings.resolveTargetValue(target.id, input.referenceId, input.targetScope),
+        resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
         resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
       },

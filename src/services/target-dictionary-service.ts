@@ -96,6 +96,7 @@ export class TargetDictionaryService {
   async setWordPressTaxonomyPreservation(targetId: EntityId, input: {
     readonly preserveExistingBrandTerms: boolean;
     readonly preserveExistingTagTerms: boolean;
+    readonly preferSpecificExistingModelTerms: boolean;
   }) {
     const target = (await this.repository.listTargets()).find((item) => item.id === targetId);
     if (target === undefined) throw new EntityNotFoundError("Target", targetId);

@@ -60,7 +60,11 @@ function context(config: JsonObject = {}): ExportContext {
     },
     product,
     references: {
-      resolveReference: vi.fn(async ({ referenceType }) => referenceType === "brand" ? "31" : "41"),
+      resolveReference: vi.fn(async ({ referenceType }) => referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Nike" }
+        : referenceType === "model"
+          ? { externalValue: "51", externalLabel: "Nike Test" }
+          : { externalValue: "41", externalLabel: "Кроссовки" }),
       resolveProjections: vi.fn().mockResolvedValue([]),
       resolveAssignments: vi.fn().mockResolvedValue([]),
     },
@@ -201,7 +205,7 @@ describe("WordPressExporter", () => {
   it("applies the winning target assignment after direct category mappings", async () => {
     const input = context();
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
-      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", mode: "replace" },
+      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", externalLabel: "Сабо", mode: "replace" },
     ]);
 
     const payload = await buildWordPressUpsertPayload(input);
@@ -214,8 +218,8 @@ describe("WordPressExporter", () => {
   it("applies replacements before additions regardless of assignment order", async () => {
     const input = context();
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
-      { ruleId: "301", groupCode: "seasonal_category", targetScope: "product.category", externalValue: "901", mode: "add" },
-      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", mode: "replace" },
+      { ruleId: "301", groupCode: "seasonal_category", targetScope: "product.category", externalValue: "901", externalLabel: "Сезонная", mode: "add" },
+      { ruleId: "300", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", externalLabel: "Сабо", mode: "replace" },
     ]);
 
     const payload = await buildWordPressUpsertPayload(input);
@@ -242,13 +246,13 @@ describe("WordPressExporter", () => {
       },
     };
     vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => {
-      if (referenceType === "brand") return "31";
-      if (referenceType === "model") return "51";
-      return "41";
+      if (referenceType === "brand") return { externalValue: "31", externalLabel: "adidas" };
+      if (referenceType === "model") return { externalValue: "51", externalLabel: "adidas Samba" };
+      return { externalValue: "41", externalLabel: "Кроссовки" };
     });
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
-      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", mode: "add" },
-      { ruleId: "402", groupCode: "additional_model_8th_street", targetScope: "product.model", externalValue: "52", mode: "add" },
+      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", externalLabel: "Clarks", mode: "add" },
+      { ruleId: "402", groupCode: "additional_model_8th_street", targetScope: "product.model", externalValue: "52", externalLabel: "adidas 8th Street Samba", mode: "add" },
     ]);
 
     const payload = await buildWordPressUpsertPayload(input);
@@ -305,6 +309,150 @@ describe("WordPressExporter", () => {
     expect(((payload.product as JsonObject).taxonomies as JsonObject).product_tag).toEqual({
       mode: "replace",
       term_ids: [900, 901],
+    });
+  });
+
+  it("keeps Air Jordan 1 Retro High instead of replacing it with the broader Air Jordan 1", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 14777, name: "Air Jordan 1 Retro High", slug: "air-jordan-1-retro-high" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "Wmns Air Jordan 1 Retro High OG 'First in Flight'", context: { brand: "Air Jordan", family: "Air Jordan 1" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "35", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "14787", externalLabel: "Air Jordan 1" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Air Jordan" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [14777],
+    });
+  });
+
+  it("recognizes Nike SB Dunk High when the source and target words use a different order", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 14746, name: "Nike SB Dunk High", slug: "nike-sb-dunk-high" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "Nike Dunk High Pro SB 'Mineral Slate'", context: { brand: "Nike", family: "Dunk SB" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "1415", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "16136", externalLabel: "Nike Dunk SB" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Nike" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+    vi.mocked(input.references.resolveProjections).mockResolvedValue([{
+      resolutionKind: "rule", resolutionId: "1415", targetScope: "product.model",
+      externalValue: "16096", externalLabel: "Nike Dunk", externalSlug: "nike-dunk",
+    }]);
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([{
+      ruleId: "500", groupCode: "collaboration_model", targetScope: "product.model",
+      externalValue: "19999", externalLabel: "Concepts Collaboration", mode: "add",
+    }]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [14746, 19999],
+    });
+  });
+
+  it("does not refine a model selected by an explicit replace assignment", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 14777, name: "Air Jordan 1 Retro High", slug: "air-jordan-1-retro-high" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "Wmns Air Jordan 1 Retro High OG 'First in Flight'", context: { brand: "Air Jordan", family: "Air Jordan 1" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "35", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "14787", externalLabel: "Air Jordan 1" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Air Jordan" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+    vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([{
+      ruleId: "501", groupCode: "exact_model", targetScope: "product.model",
+      externalValue: "18888", externalLabel: "Air Jordan 1 High OG", mode: "replace",
+    }]);
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [18888],
+    });
+  });
+
+  it("keeps a newly calculated model when it is more specific than the existing model", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 15500, name: "Asics GEL-Kayano", slug: "asics-gel-kayano" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "ASICS Gel Kayano 14 'White Midnight'", context: { brand: "ASICS", family: "Gel Kayano 14" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "100", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "17400", externalLabel: "Asics Gel Kayano 14" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "ASICS" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [17400],
     });
   });
 
@@ -425,7 +573,7 @@ describe("WordPressExporter", () => {
       },
     };
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
-      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", mode: "add" },
+      { ruleId: "401", groupCode: "additional_brand_clarks", targetScope: "product.brand", externalValue: "32", externalLabel: "Clarks", mode: "add" },
     ]);
     const converter: WordPressSizeConverterLike = {
       supports: vi.fn(() => true),
@@ -485,7 +633,7 @@ describe("WordPressExporter", () => {
       },
     };
     vi.mocked(input.references.resolveAssignments).mockResolvedValueOnce([
-      { ruleId: "501", groupCode: "shoe_leaf_category", targetScope: "product.category", externalValue: "25922", mode: "replace" },
+      { ruleId: "501", groupCode: "shoe_leaf_category", targetScope: "product.category", externalValue: "25922", externalLabel: "Сабо", mode: "replace" },
     ]);
     const converter: WordPressSizeConverterLike = {
       supports: vi.fn(() => true),

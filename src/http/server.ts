@@ -227,6 +227,7 @@ interface TargetAssignmentMatchSetBody {
 interface WordPressTargetSettingsBody {
   readonly preserveExistingBrandTerms?: unknown;
   readonly preserveExistingTagTerms?: unknown;
+  readonly preferSpecificExistingModelTerms?: unknown;
 }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
@@ -1215,6 +1216,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         {
           preserveExistingBrandTerms: optionalBoolean(request.body?.preserveExistingBrandTerms, "preserveExistingBrandTerms"),
           preserveExistingTagTerms: optionalBoolean(request.body?.preserveExistingTagTerms, "preserveExistingTagTerms"),
+          preferSpecificExistingModelTerms: optionalBoolean(request.body?.preferSpecificExistingModelTerms, "preferSpecificExistingModelTerms"),
         },
       ),
     }),

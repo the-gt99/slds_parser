@@ -61,7 +61,10 @@ export function wordpressCatalogItemError(error: unknown): string | null {
 export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
-  private readonly referenceCachesByRun = new Map<string, Map<string, Promise<string>>>();
+  private readonly referenceCachesByRun = new Map<
+    string,
+    Map<string, ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>
+  >();
   private readonly projectionCachesByRun = new Map<
     string,
     Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>
@@ -104,7 +107,7 @@ export class WordPressVariationPatchRunner {
     }));
     let referenceCache = this.referenceCachesByRun.get(payload.runId);
     if (referenceCache === undefined) {
-      referenceCache = new Map<string, Promise<string>>();
+      referenceCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>();
       this.referenceCachesByRun.set(payload.runId, referenceCache);
     }
     let projectionCache = this.projectionCachesByRun.get(payload.runId);
@@ -124,7 +127,7 @@ export class WordPressVariationPatchRunner {
       const key = `${targetId}:${input.referenceId}:${input.targetScope}`;
       const cached = referenceCache.get(key);
       if (cached !== undefined) return cached;
-      const resolution = this.mappings.resolveTargetValue(targetId, input.referenceId, input.targetScope);
+      const resolution = this.mappings.resolveTargetMapping(targetId, input.referenceId, input.targetScope);
       referenceCache.set(key, resolution);
       return resolution;
     };
@@ -241,7 +244,7 @@ export class WordPressVariationPatchRunner {
       existingExternalId: candidate.item.wordpressProductId,
       existingTargetSnapshot: candidate.item.payload,
       references: {
-        resolveReference: (input) => this.mappings.resolveTargetValue(candidate.target.id, input.referenceId, input.targetScope),
+        resolveReference: (input) => this.mappings.resolveTargetMapping(candidate.target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(candidate.target.id, inputs),
         resolveAssignments: (product) => this.mappings.resolveTargetAssignments(candidate.target.id, product),
       },

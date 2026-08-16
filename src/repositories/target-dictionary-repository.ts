@@ -12,6 +12,7 @@ export interface TargetDictionaryRepository {
   setWordPressTaxonomyPreservation(targetId: EntityId, input: {
     readonly preserveExistingBrandTerms: boolean;
     readonly preserveExistingTagTerms: boolean;
+    readonly preferSpecificExistingModelTerms: boolean;
   }): Promise<TargetRecord>;
   getValue(targetId: EntityId, valueId: EntityId): Promise<TargetDictionaryValueRecord | null>;
   listValuesByExternalIds(targetId: EntityId, externalIds: readonly string[]): Promise<readonly TargetDictionaryValueRecord[]>;

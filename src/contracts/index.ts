@@ -41,6 +41,7 @@ export type {
   TargetDTO,
   TargetContentTemplateDTO,
   TargetReferenceResolutionInput,
+  TargetReferenceResolutionDTO,
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,
   TargetAssignmentDTO,

@@ -68,18 +68,21 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
   async setWordPressTaxonomyPreservation(targetId: string, input: {
     readonly preserveExistingBrandTerms: boolean;
     readonly preserveExistingTagTerms: boolean;
+    readonly preferSpecificExistingModelTerms: boolean;
   }): Promise<TargetRecord> {
     return withClient(this.pool, async (client) => {
       const result = await client.query<DatabaseRow>(
         `UPDATE targets
          SET config = config || JSONB_BUILD_OBJECT(
                'preserveExistingBrandTerms', $2::BOOLEAN,
-               'preserveExistingTagTerms', $3::BOOLEAN
+               'preserveExistingTagTerms', $3::BOOLEAN,
+               'preferSpecificExistingModelTerms', $4::BOOLEAN
              ),
              updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [targetId, input.preserveExistingBrandTerms, input.preserveExistingTagTerms],
+        [targetId, input.preserveExistingBrandTerms, input.preserveExistingTagTerms,
+          input.preferSpecificExistingModelTerms],
       );
       return mapTarget(requireRow(result.rows, "target", targetId));
     });

@@ -123,6 +123,7 @@ export function resolveTargetAssignments(
         groupCode,
         targetScope: action.targetScope,
         externalValue: action.externalValue,
+        externalLabel: action.externalLabel,
         mode: action.mode,
       });
     }

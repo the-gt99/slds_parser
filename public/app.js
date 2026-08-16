@@ -2543,10 +2543,13 @@ function renderWordPressSafetySettings() {
   const target = state.targets.find((item) => item.id === byId("wordpress-target")?.value) ?? activeTarget();
   const brandCheckbox = byId("preserve-existing-brand-terms");
   const tagCheckbox = byId("preserve-existing-tag-terms");
+  const modelCheckbox = byId("prefer-specific-existing-model-terms");
   brandCheckbox.checked = target?.config?.preserveExistingBrandTerms === true;
   tagCheckbox.checked = target?.config?.preserveExistingTagTerms === true;
+  modelCheckbox.checked = target?.config?.preferSpecificExistingModelTerms === true;
   brandCheckbox.disabled = !target;
   tagCheckbox.disabled = !target;
+  modelCheckbox.disabled = !target;
   clearError(byId("wordpress-safety-error"));
 }
 
@@ -2554,9 +2557,11 @@ async function saveWordPressSafetySettings() {
   const targetId = byId("wordpress-target").value;
   const brandCheckbox = byId("preserve-existing-brand-terms");
   const tagCheckbox = byId("preserve-existing-tag-terms");
+  const modelCheckbox = byId("prefer-specific-existing-model-terms");
   if (!targetId) return;
   brandCheckbox.disabled = true;
   tagCheckbox.disabled = true;
+  modelCheckbox.disabled = true;
   clearError(byId("wordpress-safety-error"));
   try {
     const response = await api(`/api/targets/${targetId}/wordpress-settings`, {
@@ -2564,17 +2569,19 @@ async function saveWordPressSafetySettings() {
       body: {
         preserveExistingBrandTerms: brandCheckbox.checked,
         preserveExistingTagTerms: tagCheckbox.checked,
+        preferSpecificExistingModelTerms: modelCheckbox.checked,
       },
     });
     const index = state.targets.findIndex((item) => item.id === targetId);
     if (index >= 0) state.targets[index] = { ...state.targets[index], ...response.target };
-    showToast("Настройки сохранения таксономий обновлены.");
+    showToast("Настройки WordPress обновлены.");
   } catch (error) {
     renderWordPressSafetySettings();
     showError(byId("wordpress-safety-error"), error.message);
   } finally {
     brandCheckbox.disabled = false;
     tagCheckbox.disabled = false;
+    modelCheckbox.disabled = false;
   }
 }
 
@@ -3274,6 +3281,7 @@ byId("new-rule-button").addEventListener("click", async () => {
 byId("wordpress-target").addEventListener("change", () => { populateWordPressEntities(); renderWordPressSafetySettings(); void Promise.all([loadWordPressValues(true), loadTargetAssignmentRules()]); });
 byId("preserve-existing-brand-terms").addEventListener("change", saveWordPressSafetySettings);
 byId("preserve-existing-tag-terms").addEventListener("change", saveWordPressSafetySettings);
+byId("prefer-specific-existing-model-terms").addEventListener("change", saveWordPressSafetySettings);
 byId("wordpress-entity").addEventListener("change", () => loadWordPressValues(true));
 byId("wordpress-search").addEventListener("input", () => {
   clearTimeout(catalogSearchTimer);

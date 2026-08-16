@@ -60,7 +60,11 @@ describe("TargetDictionaryService", () => {
   it("updates the explicit WordPress taxonomy preservation settings", async () => {
     const { repository, service } = setup();
 
-    const settings = { preserveExistingBrandTerms: true, preserveExistingTagTerms: true };
+    const settings = {
+      preserveExistingBrandTerms: true,
+      preserveExistingTagTerms: true,
+      preferSpecificExistingModelTerms: true,
+    };
     await expect(service.setWordPressTaxonomyPreservation("10", settings)).resolves.toMatchObject({
       config: settings,
     });

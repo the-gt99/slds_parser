@@ -567,6 +567,45 @@ function preservedTaxonomies(config: JsonObject): readonly string[] {
   });
 }
 
+function preferSpecificExistingModelTerms(config: JsonObject): boolean {
+  const value = config.preferSpecificExistingModelTerms;
+  if (value === undefined || value === false) return false;
+  if (value !== true) {
+    throw new IntegrationContractError("target.config.preferSpecificExistingModelTerms must be a boolean");
+  }
+  return true;
+}
+
+function requiresCurrentTaxonomySnapshot(config: JsonObject): boolean {
+  return preservedTaxonomies(config).length > 0 || preferSpecificExistingModelTerms(config);
+}
+
+interface WordPressTaxonomyTerm {
+  readonly termId: number;
+  readonly name: string;
+}
+
+function snapshotTaxonomyTerms(snapshot: JsonObject, taxonomy: string): readonly WordPressTaxonomyTerm[] {
+  const product = record(snapshot.product, "WordPress target snapshot product");
+  const taxonomies = record(product.taxonomies, "WordPress target snapshot product.taxonomies");
+  const terms = taxonomies[taxonomy];
+  if (terms === undefined) return [];
+  if (!Array.isArray(terms)) {
+    throw new IntegrationContractError(`WordPress target snapshot taxonomy ${taxonomy} must be a list`);
+  }
+  return terms.map((term, index) => {
+    const item = record(term, `WordPress target snapshot taxonomy ${taxonomy}[${index}]`);
+    const name = text(item.name).trim();
+    if (name === "") {
+      throw new IntegrationContractError(`WordPress target snapshot taxonomy ${taxonomy}[${index}].name is required`);
+    }
+    return {
+      termId: positiveInteger(item.term_id, `WordPress target snapshot taxonomy ${taxonomy}[${index}].term_id`),
+      name,
+    };
+  });
+}
+
 function snapshotTaxonomyTermIds(snapshot: JsonObject, taxonomy: string): readonly number[] {
   const product = record(snapshot.product, "WordPress target snapshot product");
   const taxonomies = record(product.taxonomies, "WordPress target snapshot product.taxonomies");
@@ -579,6 +618,68 @@ function snapshotTaxonomyTermIds(snapshot: JsonObject, taxonomy: string): readon
     record(term, `WordPress target snapshot taxonomy ${taxonomy}[${index}]`).term_id,
     `WordPress target snapshot taxonomy ${taxonomy}[${index}].term_id`,
   )))];
+}
+
+const MODEL_IGNORED_TOKENS = new Set(["wmns", "womens", "mens"]);
+
+function modelTokens(value: string): ReadonlySet<string> {
+  return new Set(value.normalize("NFKC").toLocaleLowerCase("en-US").match(/[\p{L}\p{N}]+/gu)
+    ?.filter((token) => !MODEL_IGNORED_TOKENS.has(token)) ?? []);
+}
+
+function isStrictTokenSubset(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size < right.size && [...left].every((token) => right.has(token));
+}
+
+function preferSpecificExistingModels(
+  context: ExportContext,
+  taxonomies: JsonObject,
+  computedModelLabels: ReadonlyMap<number, string>,
+  assignedModelTermIds: ReadonlySet<number>,
+  modelWasReplacedByAssignment: boolean,
+): JsonObject {
+  if (!preferSpecificExistingModelTerms(context.target.config) || modelWasReplacedByAssignment) return taxonomies;
+  if (context.existingTargetSnapshot === undefined) {
+    if (context.existingExternalId === undefined) return taxonomies;
+    throw new IntegrationContractError("WordPress target snapshot is required to refine existing model terms");
+  }
+  const sourceModels = context.product.referenceCandidates
+    .filter((candidate) => candidate.subjectKind === "product" && candidate.typeCode === "model")
+    .map((candidate) => modelTokens(candidate.sourceValue));
+  if (sourceModels.length === 0) return taxonomies;
+
+  const existing = snapshotTaxonomyTerms(context.existingTargetSnapshot, "pa_model");
+  const matchedExisting = existing.filter((term) => {
+    const tokens = modelTokens(term.name);
+    return tokens.size >= 2 && sourceModels.some((source) => [...tokens].every((token) => source.has(token)));
+  });
+  if (matchedExisting.length === 0) return taxonomies;
+
+  const currentIds = taxonomyTermIds(taxonomies, "pa_model");
+  const current = currentIds.map((termId) => {
+    const name = computedModelLabels.get(termId) ?? existing.find((term) => term.termId === termId)?.name;
+    if (name === undefined) {
+      throw new IntegrationContractError(`WordPress model label is missing for term ${termId}`);
+    }
+    return { termId, name, current: true };
+  });
+  const combined = [
+    ...current,
+    ...matchedExisting.filter((term) => !currentIds.includes(term.termId)).map((term) => ({ ...term, current: false })),
+  ].map((term) => ({ ...term, tokens: modelTokens(term.name) }))
+    .filter((term) => sourceModels.some((source) => [...term.tokens].every((token) => source.has(token))));
+  const withoutEquivalentLegacyTerms = combined.filter((term) => term.current || !combined.some((other) =>
+    other.current && other.tokens.size === term.tokens.size && [...term.tokens].every((token) => other.tokens.has(token))));
+  const selected = withoutEquivalentLegacyTerms.filter((term) => !withoutEquivalentLegacyTerms.some((other) =>
+    isStrictTokenSubset(term.tokens, other.tokens)));
+  if (selected.length === 0) return taxonomies;
+  return {
+    ...taxonomies,
+    pa_model: {
+      mode: "replace",
+      term_ids: [...new Set([...selected.map((term) => term.termId), ...assignedModelTermIds])],
+    },
+  };
 }
 
 function mergePreservedTaxonomyTerms(context: ExportContext, taxonomies: JsonObject): JsonObject {
@@ -607,6 +708,9 @@ async function taxonomyPayload(
   readonly missingRequired: readonly ReferenceType[];
   readonly taxonomyOrigins: readonly WordPressTaxonomyOrigin[];
   readonly modelTagLink: { readonly name: string; readonly url: string } | null;
+  readonly modelTermLabels: ReadonlyMap<number, string>;
+  readonly assignedModelTermIds: ReadonlySet<number>;
+  readonly modelWasReplacedByAssignment: boolean;
   readonly primaryBrandTermId: number | null;
 }> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
@@ -620,17 +724,19 @@ async function taxonomyPayload(
   }
   const presentTypes = new Set<ReferenceType>();
   const termsByType = new Map<ReferenceType, Set<number>>();
+  const modelTermLabels = new Map<number, string>();
   for (const reference of context.product.classification.resolved) {
     if (!(reference.typeCode in REFERENCE_TARGETS)) continue;
     if (reference.subjectKind !== "product") throw new IntegrationContractError(`WordPress does not support variant reference ${reference.candidateKey}`);
     const type = reference.typeCode as ReferenceType;
     const target = REFERENCE_TARGETS[type];
-    const externalId = await context.references.resolveReference({
+    const mapping = await context.references.resolveReference({
       referenceId: reference.referenceValueId,
       referenceType: type,
       targetScope: mappedTargetScope(context.target.config, target.scope),
     });
-    const termId = positiveInteger(externalId, `WordPress mapping ${type}/${reference.referenceValueId}`);
+    const termId = positiveInteger(mapping.externalValue, `WordPress mapping ${type}/${reference.referenceValueId}`);
+    if (type === "model") modelTermLabels.set(termId, mapping.externalLabel);
     const values = grouped.get(target.taxonomy) ?? new Set<number>();
     values.add(termId);
     grouped.set(target.taxonomy, values);
@@ -651,6 +757,7 @@ async function taxonomyPayload(
     const target = targetForScope(context.target.config, projection.targetScope);
     if (target === null) throw new IntegrationContractError(`WordPress projection has an unsupported target scope: ${projection.targetScope}`);
     const termId = positiveInteger(projection.externalValue, `WordPress projection ${projection.resolutionKind}/${projection.resolutionId}`);
+    if (target.taxonomy === "pa_model") modelTermLabels.set(termId, projection.externalLabel);
     const values = grouped.get(target.taxonomy) ?? new Set<number>();
     values.add(termId);
     grouped.set(target.taxonomy, values);
@@ -679,6 +786,7 @@ async function taxonomyPayload(
   }
   const assignments = await context.references.resolveAssignments(context.product);
   const replacementGroups = new Map<string, string>();
+  const assignedModelTermIds = new Set<number>();
   const preparedAssignments: { readonly assignment: (typeof assignments)[number]; readonly taxonomy: string; readonly termId: number }[] = [];
   for (const assignment of assignments) {
     const target = targetForScope(context.target.config, assignment.targetScope);
@@ -687,6 +795,10 @@ async function taxonomyPayload(
       .filter((type) => mappedTargetScope(context.target.config, REFERENCE_TARGETS[type].scope) === assignment.targetScope);
     if (assignmentTypes.length === 1) presentTypes.add(assignmentTypes[0]!);
     const termId = positiveInteger(assignment.externalValue, `WordPress assignment rule ${assignment.ruleId}`);
+    if (target.taxonomy === "pa_model") {
+      modelTermLabels.set(termId, assignment.externalLabel);
+      assignedModelTermIds.add(termId);
+    }
     preparedAssignments.push({ assignment, taxonomy: target.taxonomy, termId });
     if (assignment.mode === "replace") {
       const previousGroup = replacementGroups.get(target.taxonomy);
@@ -724,6 +836,9 @@ async function taxonomyPayload(
     missingRequired: missing,
     taxonomyOrigins,
     modelTagLink: [...modelTagLinks.values()][0] ?? null,
+    modelTermLabels,
+    assignedModelTermIds,
+    modelWasReplacedByAssignment: replacementGroups.has("pa_model"),
     primaryBrandTermId: primaryBrandTerms.size === 1 ? [...primaryBrandTerms][0]! : null,
   };
 }
@@ -750,8 +865,25 @@ async function buildWordPressPayload(
   const mappings = sizeMappings(context.target.config);
   const ignoreMissingSizeMappings = ignoreUnmappedSizeVariants(context.target.config);
   const taxonomyResult = await taxonomyPayload(context, required, allowMissingRequired);
-  const { missingRequired, taxonomyOrigins, modelTagLink, primaryBrandTermId } = taxonomyResult;
-  const taxonomies = mergePreservedTaxonomyTerms(context, taxonomyResult.taxonomies);
+  const {
+    missingRequired,
+    taxonomyOrigins,
+    modelTagLink,
+    modelTermLabels,
+    assignedModelTermIds,
+    modelWasReplacedByAssignment,
+    primaryBrandTermId,
+  } = taxonomyResult;
+  const taxonomies = mergePreservedTaxonomyTerms(
+    context,
+    preferSpecificExistingModels(
+      context,
+      taxonomyResult.taxonomies,
+      modelTermLabels,
+      assignedModelTermIds,
+      modelWasReplacedByAssignment,
+    ),
+  );
   const variantsForConversion = context.liveVariants === undefined
     ? context.product.variants
     : [...context.product.variants, ...context.liveVariants];
@@ -945,7 +1077,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.15.0";
+  readonly version = "1.16.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -957,7 +1089,7 @@ export class WordPressExporter {
   }
 
   async previewPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
-    const effectiveContext = preservedTaxonomies(context.target.config).length > 0
+    const effectiveContext = requiresCurrentTaxonomySnapshot(context.target.config)
       && context.existingTargetSnapshot === undefined
       && context.existingExternalId !== undefined
       ? await this.withCurrentTaxonomySnapshot(context)
@@ -1025,7 +1157,7 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    const effectiveContext = preservedTaxonomies(context.target.config).length > 0
+    const effectiveContext = requiresCurrentTaxonomySnapshot(context.target.config)
       ? await this.withCurrentTaxonomySnapshot(context)
       : context;
     const payload = await this.buildPayload(effectiveContext);
@@ -1088,6 +1220,7 @@ export class WordPressExporter {
           ...context.target.config,
           preserveExistingBrandTerms: false,
           preserveExistingTagTerms: false,
+          preferSpecificExistingModelTerms: false,
         },
       },
     };

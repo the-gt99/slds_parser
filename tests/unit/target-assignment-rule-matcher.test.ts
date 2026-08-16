@@ -34,7 +34,7 @@ describe("target assignment rules", () => {
       ], "900"),
     ]);
 
-    expect(result).toEqual([{ ruleId: "special", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", mode: "replace" }]);
+    expect(result).toEqual([{ ruleId: "special", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "900", externalLabel: "900", mode: "replace" }]);
   });
 
   it("rejects equally prioritized matches in one exclusive group", () => {
@@ -53,7 +53,7 @@ describe("target assignment rules", () => {
       { field: "candidate.model.context.brand", operator: "equals", values: ["adidas"] },
     ], "715")]);
 
-    expect(result).toEqual([{ ruleId: "collaboration", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
+    expect(result).toEqual([{ ruleId: "collaboration", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", externalLabel: "715", mode: "replace" }]);
   });
 
   it("matches a model phrase inside a title without matching a longer model word", () => {
@@ -94,7 +94,7 @@ describe("target assignment rules", () => {
       { field: "product.fact.designer", operator: "equals", values: ["wilson smith"] },
     ], "715")]);
 
-    expect(result).toEqual([{ ruleId: "designer", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
+    expect(result).toEqual([{ ruleId: "designer", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", externalLabel: "715", mode: "replace" }]);
     expect(product.referenceCandidates.some((candidate) => candidate.sourceValue === "Wilson Smith")).toBe(false);
   });
 

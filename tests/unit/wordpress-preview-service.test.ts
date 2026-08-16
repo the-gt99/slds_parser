@@ -131,6 +131,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   const mappings = {
     getTargetMappingRevision: vi.fn().mockResolvedValue("7"),
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
+    resolveTargetMapping: vi.fn().mockResolvedValue({ externalValue: "31", externalLabel: "Nike" }),
     resolveTargetProjections: vi.fn().mockResolvedValue(options.landingProjection ? [{
       resolutionKind: "reference", resolutionId: "11", targetScope: "product.tag", externalValue: "2968",
       externalLabel: "Onitsuka Tiger", externalSlug: "onitsuka-tiger",
