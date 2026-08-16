@@ -46,13 +46,19 @@ function matchedProductsQuery(conditions: TargetAssignmentRuleDraft["conditions"
   };
   const clauses = conditions.map((condition) => {
     const parts = condition.field.split(".");
-    const values = parameter(condition.values.map((value) => value.trim().toLocaleLowerCase("en-US")));
+    const normalizedValues = condition.values.map((value) => value.trim().toLocaleLowerCase("en-US"));
+    const values = parameter(condition.operator === "contains_phrase"
+      ? normalizedValues.map((value) => `% ${value.replace(/[^\p{L}\p{N}]+/gu, " ").trim()} %`)
+      : normalizedValues);
+    const comparison = (valuePath: string): string => condition.operator === "contains_phrase"
+      ? `(' ' || BTRIM(REGEXP_REPLACE(LOWER(COALESCE(${valuePath}, '')), '[^[:alnum:]]+', ' ', 'g')) || ' ') LIKE ANY(${values}::TEXT[])`
+      : `LOWER(COALESCE(${valuePath}, '')) = ANY(${values}::TEXT[])`;
     if (parts[0] === "resolved" && parts.length === 2) {
       const typeCode = parameter(parts[1]);
       return `EXISTS (
         SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data#>'{classification,resolved}', '[]'::JSONB)) resolved
         WHERE resolved->>'typeCode' = ${typeCode}
-          AND LOWER(COALESCE(resolved->>'referenceValueId', '')) = ANY(${values}::TEXT[])
+          AND ${comparison("resolved->>'referenceValueId'")}
       )`;
     }
     if (parts[0] === "candidate" && parts.length >= 3) {
@@ -66,12 +72,12 @@ function matchedProductsQuery(conditions: TargetAssignmentRuleDraft["conditions"
       return `EXISTS (
         SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
         WHERE candidate->>'typeCode' = ${typeCode}
-          AND LOWER(COALESCE(${valuePath}, '')) = ANY(${values}::TEXT[])
+          AND ${comparison(valuePath)}
       )`;
     }
     if (parts[0] === "product" && parts.length === 3 && ["attribute", "metadata", "fact"].includes(parts[1]!)) {
       const section = parts[1] === "attribute" ? "attributes" : parts[1] === "metadata" ? "metadata" : "sourceFacts";
-      return `LOWER(COALESCE(internal.data#>>ARRAY[${parameter(section)}::TEXT, ${parameter(parts[2])}::TEXT], '')) = ANY(${values}::TEXT[])`;
+      return comparison(`internal.data#>>ARRAY[${parameter(section)}::TEXT, ${parameter(parts[2])}::TEXT]`);
     }
     throw new Error(`Unsupported target assignment field: ${condition.field}`);
   });

@@ -80,7 +80,9 @@ export class TargetAssignmentAdminService {
       if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
         throw new IntegrationContractError(`Unsupported target assignment field: ${condition.field}`);
       }
-      if (condition.operator !== "equals" && condition.operator !== "one_of") throw new IntegrationContractError(`Unsupported condition operator: ${condition.operator}`);
+      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase") {
+        throw new IntegrationContractError(`Unsupported condition operator: ${condition.operator}`);
+      }
       if (condition.values.length === 0 || condition.values.some((value) => value.trim() === "")) throw new IntegrationContractError(`Condition ${condition.field} requires values`);
       if (condition.operator === "equals" && condition.values.length !== 1) throw new IntegrationContractError(`equals requires one value for ${condition.field}`);
     }

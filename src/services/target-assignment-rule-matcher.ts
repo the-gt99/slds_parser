@@ -6,6 +6,10 @@ function normalize(value: string): string {
   return value.trim().normalize("NFKC").toLocaleLowerCase("en-US");
 }
 
+function normalizePhrase(value: string): string {
+  return normalize(value).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 function scalar(value: unknown): string[] {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [String(value)] : [];
 }
@@ -46,6 +50,13 @@ export function matchesTargetAssignmentCondition(product: UniversalProductDTO, c
     return actual.has(expected[0]!);
   }
   if (condition.operator === "one_of") return expected.some((value) => actual.has(value));
+  if (condition.operator === "contains_phrase") {
+    const phrases = condition.values.map(normalizePhrase);
+    return targetAssignmentFieldValues(product, condition.field).some((value) => {
+      const actualPhrase = ` ${normalizePhrase(value)} `;
+      return phrases.some((phrase) => actualPhrase.includes(` ${phrase} `));
+    });
+  }
   throw new IntegrationContractError(`Unsupported target assignment operator: ${String(condition.operator)}`);
 }
 

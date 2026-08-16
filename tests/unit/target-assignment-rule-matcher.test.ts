@@ -56,6 +56,27 @@ describe("target assignment rules", () => {
     expect(result).toEqual([{ ruleId: "collaboration", groupCode: "sandal_leaf", targetScope: "product.category", externalValue: "715", mode: "replace" }]);
   });
 
+  it("matches a model phrase inside a title without matching a longer model word", () => {
+    const tazzProduct: UniversalProductDTO = {
+      ...product,
+      referenceCandidates: product.referenceCandidates.map((candidate) => candidate.typeCode === "model"
+        ? { ...candidate, sourceValue: "Palace x UGG Tazz 'Chestnut'" }
+        : candidate),
+    };
+    const tazzetteProduct: UniversalProductDTO = {
+      ...tazzProduct,
+      referenceCandidates: tazzProduct.referenceCandidates.map((candidate) => candidate.typeCode === "model"
+        ? { ...candidate, sourceValue: "UGG Tazzette 'Black'" }
+        : candidate),
+    };
+    const phraseRule = rule("sabo", 100, [
+      { field: "candidate.model.sourceValue", operator: "contains_phrase", values: ["UGG Tazz", "Birkenstock Tokio"] },
+    ], "25922");
+
+    expect(resolveTargetAssignments(tazzProduct, [phraseRule])).toHaveLength(1);
+    expect(resolveTargetAssignments(tazzetteProduct, [phraseRule])).toEqual([]);
+  });
+
   it("uses a source fact without creating a classifier candidate", () => {
     const result = resolveTargetAssignments(product, [rule("designer", 100, [
       { field: "product.fact.designer", operator: "equals", values: ["wilson smith"] },

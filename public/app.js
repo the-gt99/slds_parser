@@ -2650,7 +2650,10 @@ async function loadTargetAssignmentRules() {
       const title = document.createElement("strong");
       title.textContent = rule.name;
       const details = document.createElement("span");
-      const conditions = rule.conditions.map((item) => `${item.field} ${item.operator === "one_of" ? "∈" : "="} ${item.values.join(", ")}`).join(" · ");
+      const conditions = rule.conditions.map((item) => {
+        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит фразу" : "=";
+        return `${item.field} ${operator} ${item.values.join(", ")}`;
+      }).join(" · ");
       const actions = rule.actions.map((item) => `${item.mode === "replace" ? "заменить" : "добавить"} ${item.targetScope}: ${item.externalLabel}`).join(" · ");
       details.textContent = `${rule.groupCode} · приоритет ${rule.priority} · ${conditions} → ${actions}`;
       main.append(title, details);
@@ -2674,7 +2677,11 @@ function targetConditionRow(condition = { field: "candidate.category.sourceValue
   for (const [value, label] of targetConditionFields) field.append(new Option(label, value, false, value === condition.field));
   const operator = document.createElement("select");
   operator.className = "target-condition-operator";
-  operator.append(new Option("равно", "equals", false, condition.operator === "equals"), new Option("одно из", "one_of", false, condition.operator === "one_of"));
+  operator.append(
+    new Option("равно", "equals", false, condition.operator === "equals"),
+    new Option("одно из", "one_of", false, condition.operator === "one_of"),
+    new Option("содержит одну из фраз", "contains_phrase", false, condition.operator === "contains_phrase"),
+  );
   const values = document.createElement("input");
   values.className = "target-condition-values";
   values.placeholder = condition.field.startsWith("resolved.") ? "Названия или внутренние ID через запятую" : "Значения через запятую";

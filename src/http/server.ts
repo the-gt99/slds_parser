@@ -646,9 +646,15 @@ function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleB
     conditions: value.conditions.map((item, index) => {
       if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`conditions[${index}] must be an object`);
       const condition = item as Record<string, unknown>;
-      if (condition.operator !== "equals" && condition.operator !== "one_of") throw new HttpInputError(`conditions[${index}].operator is invalid`);
+      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase") {
+        throw new HttpInputError(`conditions[${index}].operator is invalid`);
+      }
       if (!Array.isArray(condition.values)) throw new HttpInputError(`conditions[${index}].values must be an array`);
-      return { field: requiredString(condition.field, `conditions[${index}].field`), operator: condition.operator as "equals" | "one_of", values: condition.values.map((entry) => requiredString(entry, `conditions[${index}].values`)) };
+      return {
+        field: requiredString(condition.field, `conditions[${index}].field`),
+        operator: condition.operator as "equals" | "one_of" | "contains_phrase",
+        values: condition.values.map((entry) => requiredString(entry, `conditions[${index}].values`)),
+      };
     }),
     actions: value.actions.map((item, index) => {
       if (item === null || typeof item !== "object" || Array.isArray(item)) throw new HttpInputError(`actions[${index}] must be an object`);
