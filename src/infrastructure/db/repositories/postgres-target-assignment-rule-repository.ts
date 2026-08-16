@@ -22,7 +22,8 @@ function normalize(value: string): string {
 }
 
 function normalizePhrase(value: string): string {
-  return normalize(value).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return normalize(value).replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\b(?:wmns|womens|mens)\b/gu, " ").replace(/\s+/gu, " ").trim();
 }
 
 function uniqueValues(values: readonly string[]): readonly string[] {

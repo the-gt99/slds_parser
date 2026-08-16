@@ -77,6 +77,18 @@ describe("target assignment rules", () => {
     expect(resolveTargetAssignments(tazzetteProduct, [phraseRule])).toEqual([]);
   });
 
+  it("ignores source audience markers in model phrases", () => {
+    const wmnsProduct: UniversalProductDTO = {
+      ...product,
+      referenceCandidates: product.referenceCandidates.map((candidate) => candidate.typeCode === "model"
+        ? { ...candidate, sourceValue: "UGG Wmns Goldenstar Clog 'Chestnut'" }
+        : candidate),
+    };
+    expect(resolveTargetAssignments(wmnsProduct, [rule("sabo", 100, [
+      { field: "candidate.model.sourceValue", operator: "contains_phrase", values: ["UGG Goldenstar Clog"] },
+    ], "25923")])).toHaveLength(1);
+  });
+
   it("uses a source fact without creating a classifier candidate", () => {
     const result = resolveTargetAssignments(product, [rule("designer", 100, [
       { field: "product.fact.designer", operator: "equals", values: ["wilson smith"] },
