@@ -82,6 +82,15 @@ export class WordPressCatalogService {
     return this.repository.retryBlockedAudits(runId);
   }
 
+  async rebuildAudits(runId: string, changeFlag?: string) {
+    const run = await this.getRun(runId);
+    if (!run.catalogComplete || !run.auditRequested) {
+      throw new IntegrationContractError("Пересчёт аудита доступен только для завершённого снимка с включённым аудитом");
+    }
+    const normalizedFlag = changeFlag?.trim();
+    return this.repository.rebuildAudits(runId, normalizedFlag === "" ? undefined : normalizedFlag);
+  }
+
   async enqueueVariationCanary(runId: string, itemId: string) {
     await this.getRun(runId);
     const queuedCount = await this.repository.enqueueVariationItems(runId, [itemId]);

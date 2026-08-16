@@ -229,6 +229,7 @@ interface WordPressTargetSettingsBody {
   readonly preserveExistingTagTerms?: unknown;
   readonly preferSpecificExistingModelTerms?: unknown;
 }
+interface WordPressCatalogAuditRebuildBody { readonly changeFlag?: unknown }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
@@ -1386,6 +1387,15 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => ({ result: await wordpressCatalogService().retryBlockedAudits(
       entityId(request.params.runId, "runId"),
+    ) }),
+  );
+
+  server.post<{ Params: WordPressCatalogRunParams; Body: WordPressCatalogAuditRebuildBody }>(
+    "/api/wordpress-catalog/runs/:runId/audit-rebuild",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request) => ({ result: await wordpressCatalogService().rebuildAudits(
+      entityId(request.params.runId, "runId"),
+      optionalString(request.body?.changeFlag),
     ) }),
   );
 

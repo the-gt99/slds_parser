@@ -691,6 +691,61 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
     };
   }
 
+  async rebuildAudits(runId: string, changeFlag?: string): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `WITH selected AS MATERIALIZED (
+         SELECT item.id, item.wordpress_product_id,
+                ((ROW_NUMBER() OVER (ORDER BY item.wordpress_product_id) - 1) / 500)::INTEGER AS batch_number
+         FROM wordpress_catalog_run_items item
+         JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
+         WHERE item.run_id = $1
+           AND item.match_status = 'matched'
+           AND item.internal_product_id IS NOT NULL
+           AND ($2::TEXT IS NULL OR $2::TEXT = ANY(model.change_flags))
+       ), updated AS (
+         UPDATE wordpress_catalog_run_items item
+         SET audit_status = 'pending', audit_result = NULL, audit_error = NULL, updated_at = NOW()
+         FROM selected
+         WHERE item.id = selected.id
+         RETURNING item.id
+       ), reset_models AS (
+         UPDATE wordpress_catalog_item_read_models model
+         SET audit_risk = NULL, change_flags = '{}'::TEXT[], updated_at = NOW()
+         FROM updated
+         WHERE model.item_id = updated.id
+         RETURNING model.item_id
+       ), ranges AS (
+         SELECT selected.batch_number,
+                (MIN(selected.wordpress_product_id) - 1)::TEXT AS after_cursor,
+                MAX(selected.wordpress_product_id)::TEXT AS through_cursor
+         FROM selected
+         JOIN updated ON updated.id = selected.id
+         GROUP BY selected.batch_number
+       ), queued AS (
+         INSERT INTO jobs (job_type, payload, status, unique_key)
+         SELECT 'prepare_wordpress_variation_patches',
+                JSONB_BUILD_OBJECT(
+                  'runId', $1::TEXT,
+                  'afterCursor', ranges.after_cursor,
+                  'throughCursor', ranges.through_cursor
+                ),
+                'pending',
+                'wordpress-audit-rebuild:' || $1::TEXT || ':' || COALESCE($2::TEXT, 'all') || ':' || ranges.batch_number::TEXT
+         FROM ranges
+         ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry')
+         DO NOTHING
+         RETURNING id
+       )
+       SELECT (SELECT COUNT(*) FROM updated)::INTEGER AS queued_item_count,
+              (SELECT COUNT(*) FROM queued)::INTEGER AS queued_job_count`,
+      [runId, changeFlag ?? null],
+    );
+    return {
+      queuedItemCount: Number(result.rows[0]?.queued_item_count ?? 0),
+      queuedJobCount: Number(result.rows[0]?.queued_job_count ?? 0),
+    };
+  }
+
   async enqueueVariationItems(runId: string, itemIds: readonly string[]): Promise<number> {
     if (itemIds.length === 0) return 0;
     return transaction(this.pool, async (client) => {

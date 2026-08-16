@@ -90,3 +90,30 @@ describe("WordPressCatalogService blocked audit retry", () => {
     expect(repository.retryBlockedAudits).not.toHaveBeenCalled();
   });
 });
+
+describe("WordPressCatalogService audit rebuild", () => {
+  it("queues only audits matching the requested saved change flag", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run()),
+      rebuildAudits: vi.fn().mockResolvedValue({ queuedItemCount: 3_780, queuedJobCount: 8 }),
+    } as unknown as WordPressCatalogRepository;
+    const service = new WordPressCatalogService(repository, {} as SourceRepository, {} as TargetRepository);
+
+    await expect(service.rebuildAudits("4", " taxonomy_removed:pa_model ")).resolves.toEqual({
+      queuedItemCount: 3_780,
+      queuedJobCount: 8,
+    });
+    expect(repository.rebuildAudits).toHaveBeenCalledWith("4", "taxonomy_removed:pa_model");
+  });
+
+  it("rejects rebuild before the catalog snapshot is complete", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue(run({ catalogComplete: false })),
+      rebuildAudits: vi.fn(),
+    } as unknown as WordPressCatalogRepository;
+    const service = new WordPressCatalogService(repository, {} as SourceRepository, {} as TargetRepository);
+
+    await expect(service.rebuildAudits("4")).rejects.toThrow("Пересчёт аудита доступен только для завершённого снимка");
+    expect(repository.rebuildAudits).not.toHaveBeenCalled();
+  });
+});

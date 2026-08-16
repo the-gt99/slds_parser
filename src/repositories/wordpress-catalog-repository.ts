@@ -194,6 +194,7 @@ export interface WordPressCatalogRepository {
   saveAudit(input: WordPressCatalogAuditSaveInput): Promise<void>;
   saveAudits(inputs: readonly WordPressCatalogAuditSaveInput[]): Promise<void>;
   retryBlockedAudits(runId: EntityId): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
+  rebuildAudits(runId: EntityId, changeFlag?: string): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
   enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
   getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null>;
