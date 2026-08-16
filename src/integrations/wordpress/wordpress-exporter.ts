@@ -206,26 +206,6 @@ function maximumVariantPriceRatio(config: JsonObject): bigint | null {
   return BigInt(Number(value));
 }
 
-function assertSafeVariantPriceSpread(variants: readonly ProductVariantDTO[], ratio: bigint | null): void {
-  if (ratio === null) return;
-  const prices = variants
-    .filter((variant) => variant.inventory.availability === "available" && variant.price !== null)
-    .map((variant) => {
-      if (variant.price!.currency.toUpperCase() !== "USD") {
-        throw new IntegrationContractError(`WordPress pricing supports USD only: ${variant.price!.currency}`);
-      }
-      return { variant, minor: BigInt(moneyToMinorUnits(variant.price!.amount)) };
-    });
-  if (prices.length < 2) return;
-  const minimum = prices.reduce((value, item) => item.minor < value ? item.minor : value, prices[0]!.minor);
-  const outliers = prices.filter((item) => item.minor > minimum * ratio);
-  if (outliers.length === 0) return;
-  const examples = outliers.slice(0, 5).map(({ variant }) => `${variant.size.displayValue}: $${variant.price!.amount}`).join(", ");
-  throw new IntegrationContractError(
-    `WordPress export blocked by variant price spread x${ratio}: minimum $${prices.find((item) => item.minor === minimum)!.variant.price!.amount}; ${examples}`,
-  );
-}
-
 function unsafeVariantPriceKeys(variants: readonly ProductVariantDTO[], ratio: bigint | null): ReadonlySet<string> {
   if (ratio === null) return new Set();
   const prices = variants
@@ -239,6 +219,18 @@ function unsafeVariantPriceKeys(variants: readonly ProductVariantDTO[], ratio: b
   if (prices.length < 2) return new Set();
   const minimum = prices.reduce((value, item) => item.minor < value ? item.minor : value, prices[0]!.minor);
   return new Set(prices.filter((item) => item.minor > minimum * ratio).map((item) => item.key));
+}
+
+function unavailablePriceOutlier(payload: JsonObject): JsonObject {
+  return {
+    ...payload,
+    price: null,
+    inventory: { availability: "unavailable", quantity: 0 },
+  };
+}
+
+function priceOutlierReason(ratio: bigint | null): string {
+  return `Цена выше безопасного порога x${ratio?.toString() ?? "—"}; вариация будет переведена в статус «нет в наличии», а аномальная цена не будет отправлена`;
 }
 
 function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
@@ -781,11 +773,14 @@ async function buildWordPressPayload(
     throw new IntegrationContractError("WordPress export has no variants with mapped sizes");
   }
   const resolvedSourceKeys = new Set(resolvedVariations.map((variation) => String(variation.payload.source_variant_key)));
-  assertSafeVariantPriceSpread(
+  const priceRatio = maximumVariantPriceRatio(context.target.config);
+  const unsafePriceKeys = unsafeVariantPriceKeys(
     outputVariants.filter((variant) => resolvedSourceKeys.has(variant.sourceVariantKey)),
-    maximumVariantPriceRatio(context.target.config),
+    priceRatio,
   );
-  const variations = resolvedVariations.map((variation) => variation.payload);
+  const variations = resolvedVariations.map((variation) => unsafePriceKeys.has(String(variation.payload.source_variant_key))
+    ? unavailablePriceOutlier(variation.payload)
+    : variation.payload);
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -839,7 +834,13 @@ async function buildWordPressPayload(
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
     ignoredSizeVariants: [...new Map(
-      [...outputResolution.ignored, ...contentResolution.ignored]
+      [
+        ...outputResolution.ignored,
+        ...contentResolution.ignored,
+        ...outputVariants
+          .filter((variant) => unsafePriceKeys.has(variant.sourceVariantKey))
+          .map((variant) => ignoredSizeVariant(variant, priceOutlierReason(priceRatio))),
+      ]
         .map((variant) => [variant.sourceVariantKey, variant]),
     ).values()],
     contentContext,
@@ -883,9 +884,12 @@ export async function previewWordPressVariationPatchItems(
     ? sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId)
     : undefined;
   const resolution = await resolveVariationSet(variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
-  const unsafeKeys = unsafeVariantPriceKeys(variants, maximumVariantPriceRatio(context.target.config));
-  const safe = resolution.resolved.filter((item) => !unsafeKeys.has(String(item.payload.source_variant_key)));
-  const targetSizes = safe.map((item) => {
+  const priceRatio = maximumVariantPriceRatio(context.target.config);
+  const unsafeKeys = unsafeVariantPriceKeys(variants, priceRatio);
+  const items = resolution.resolved.map((item) => unsafeKeys.has(String(item.payload.source_variant_key))
+    ? { ...item, payload: unavailablePriceOutlier(item.payload) }
+    : item);
+  const targetSizes = items.map((item) => {
     const size = item.payload.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
   });
@@ -894,7 +898,7 @@ export async function previewWordPressVariationPatchItems(
   }
   const variantByKey = new Map(variants.map((variant) => [variant.sourceVariantKey, variant]));
   return {
-    items: safe.map((item) => item.payload),
+    items: items.map((item) => item.payload),
     sourceTargetSizes: [...new Set(resolution.resolved.map((item) => {
       const size = item.payload.size as JsonObject;
       return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -907,7 +911,7 @@ export async function previewWordPressVariationPatchItems(
         return {
           sourceVariantKey: key,
           size: variant.size.displayValue,
-          reason: `Цена выше безопасного порога x${maximumVariantPriceRatio(context.target.config)?.toString() ?? "—"}; вариация сохранена без изменений`,
+          reason: priceOutlierReason(priceRatio),
         };
       }),
     ],
@@ -936,7 +940,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.14.0";
+  readonly version = "1.15.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

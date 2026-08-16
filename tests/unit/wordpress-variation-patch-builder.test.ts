@@ -41,4 +41,27 @@ describe("matchExistingWordPressVariations", () => {
     ] } });
     expect(result.items).toContainEqual({ variation_id: 501, size: { taxonomy: "pa_razmer", term_id: 11 }, inventory: { availability: "unavailable", quantity: 0 } });
   });
+
+  it("preserves the existing price when an unsafe source price is suppressed", () => {
+    const result = matchExistingWordPressVariations({
+      items: [{
+        source_variant_key: "outlier",
+        size: { taxonomy: "pa_razmer", term_id: 10 },
+        price: null,
+        inventory: { availability: "unavailable", quantity: 0 },
+      }],
+      sourceTargetSizes: ["pa_razmer:10"],
+      knownTargetSizes: ["pa_razmer:10"],
+      ignored: [],
+    }, { product: { variations: [
+      { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] },
+    ] } });
+
+    expect(result.items).toEqual([{
+      variation_id: 500,
+      size: { taxonomy: "pa_razmer", term_id: 10 },
+      inventory: { availability: "unavailable", quantity: 0 },
+    }]);
+    expect(result.items[0]).not.toHaveProperty("price");
+  });
 });

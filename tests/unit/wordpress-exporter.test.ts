@@ -68,7 +68,7 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
-  it("blocks the whole product when an available variant exceeds the configured x5 price spread", async () => {
+  it("marks only the x5 price outlier unavailable in a full product payload", async () => {
     const base = context({
       maxVariantPriceRatio: 5,
       sizeMappings: [
@@ -93,12 +93,17 @@ describe("WordPressExporter", () => {
       },
     };
 
-    await expect(buildWordPressUpsertPayload(input)).rejects.toThrow(
-      "WordPress export blocked by variant price spread x5: minimum $123.45; 8: $700.00",
-    );
+    const payload = await buildWordPressUpsertPayload(input);
+    const variations = (payload.variations as JsonObject).items as readonly JsonObject[];
+    expect(variations).toHaveLength(2);
+    expect(variations[1]).toMatchObject({
+      source_variant_key: "offer-8",
+      price: null,
+      inventory: { availability: "unavailable", quantity: 0 },
+    });
   });
 
-  it("skips only the x5 price outlier in a variation-only patch", async () => {
+  it("marks the x5 price outlier unavailable in a variation-only patch", async () => {
     const base = context({
       maxVariantPriceRatio: 5,
       sizeMappings: [
@@ -116,8 +121,13 @@ describe("WordPressExporter", () => {
       ],
     };
     const draft = await previewWordPressVariationPatchItems(input);
-    expect(draft.items).toHaveLength(1);
+    expect(draft.items).toHaveLength(2);
     expect(draft.items[0]?.source_variant_key).toBe("offer-7");
+    expect(draft.items[1]).toMatchObject({
+      source_variant_key: "offer-8",
+      price: null,
+      inventory: { availability: "unavailable", quantity: 0 },
+    });
     expect(draft.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "offer-8", reason: expect.stringContaining("x5") })]);
   });
 
