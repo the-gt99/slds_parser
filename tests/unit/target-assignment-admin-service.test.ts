@@ -96,4 +96,20 @@ describe("TargetAssignmentAdminService", () => {
     expect(preview.conflicts).toEqual([]);
     expect(repository.preview).toHaveBeenCalledTimes(1);
   });
+
+  it("does not assume that different phrase conditions cannot coexist in one title", async () => {
+    const phraseRule = {
+      ...existingRule,
+      conditionGroups: [{ conditions: [{ field: "candidate.model.sourceValue", operator: "contains_phrase" as const, values: ["canvas"] }] }],
+      conditions: [{ field: "candidate.model.sourceValue", operator: "contains_phrase" as const, values: ["canvas"] }],
+    };
+    const { repository, service } = setup([phraseRule]);
+
+    await service.preview({
+      ...draft,
+      conditionGroups: [{ conditions: [{ field: "candidate.model.sourceValue", operator: "contains_phrase", values: ["boot"] }] }],
+    });
+
+    expect(repository.preview).toHaveBeenCalledTimes(2);
+  });
 });

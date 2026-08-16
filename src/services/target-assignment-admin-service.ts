@@ -21,6 +21,7 @@ function phrase(value: string): string {
 
 function conditionsCanOverlap(left: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number], right: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number]): boolean {
   if (left.field !== right.field || left.values.length === 0 || right.values.length === 0) return true;
+  if (left.operator === "contains_phrase" && right.operator === "contains_phrase") return true;
   if (left.operator === "contains_phrase" || right.operator === "contains_phrase") {
     return left.values.some((leftValue) => right.values.some((rightValue) => {
       const leftPhrase = phrase(leftValue); const rightPhrase = phrase(rightValue);
