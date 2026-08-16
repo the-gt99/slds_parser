@@ -1,6 +1,6 @@
 import type { WordPressTargetConfig } from "../config/index.js";
 import type { JsonObject, ProductVariantDTO } from "../contracts/index.js";
-import { IntegrationContractError } from "../core/errors/index.js";
+import { IntegrationContractError, MappingMissingError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
   matchExistingWordPressVariations,
@@ -50,6 +50,12 @@ export function wordpressVariationJobOutcome(status: string): "completed" | "fai
   if (status === "done") return "completed";
   if (status === "error") return "failed";
   return "pending";
+}
+
+export function wordpressCatalogItemError(error: unknown): string | null {
+  return error instanceof IntegrationContractError || error instanceof MappingMissingError
+    ? error.message
+    : null;
 }
 
 export class WordPressVariationPatchRunner {
@@ -107,9 +113,10 @@ export class WordPressVariationPatchRunner {
           const fullDraft = await this.exporter.previewPayload(context);
           await this.repository.saveAudit({ itemId: candidate.item.id, status: "ready", result: buildWordPressCatalogAudit(fullDraft, candidate.item.payload) });
         } catch (error) {
-          if (!(error instanceof IntegrationContractError)) throw error;
-          await this.repository.saveAudit({ itemId: candidate.item.id, status: "blocked", error: error.message,
-            result: { risk: "blocked", blockers: [{ code: "payload_contract", message: error.message }] } });
+          const message = wordpressCatalogItemError(error);
+          if (message === null) throw error;
+          await this.repository.saveAudit({ itemId: candidate.item.id, status: "blocked", error: message,
+            result: { risk: "blocked", blockers: [{ code: "payload_contract", message }] } });
         }
       }
       if (run.variationSyncRequested) {
@@ -169,8 +176,9 @@ export class WordPressVariationPatchRunner {
       await this.enqueuePoll(payload.runId, [wordpressJobId], 0);
       return { status: "completed" };
     } catch (error) {
-      if (!(error instanceof IntegrationContractError)) throw error;
-      await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: [], error: error.message });
+      const message = wordpressCatalogItemError(error);
+      if (message === null) throw error;
+      await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: [], error: message });
       return { status: "completed" };
     }
   }

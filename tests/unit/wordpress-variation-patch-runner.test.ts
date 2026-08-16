@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IntegrationContractError } from "../../src/core/errors/index.js";
-import { buildWordPressVariationPatchIdentity, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { IntegrationContractError, MappingMissingError } from "../../src/core/errors/index.js";
+import { buildWordPressVariationPatchIdentity, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("buildWordPressVariationPatchIdentity", () => {
   it("adds an exact SKU only for an explicit legacy SKU match", () => {
@@ -45,5 +45,13 @@ describe("wordpressVariationJobOutcome", () => {
     expect(wordpressVariationJobOutcome("done")).toBe("completed");
     expect(wordpressVariationJobOutcome("error")).toBe("failed");
     expect(wordpressVariationJobOutcome("running")).toBe("pending");
+  });
+});
+
+describe("wordpressCatalogItemError", () => {
+  it("keeps contract and mapping failures on one catalog item", () => {
+    expect(wordpressCatalogItemError(new IntegrationContractError("invalid payload"))).toBe("invalid payload");
+    expect(wordpressCatalogItemError(new MappingMissingError("target=1"))).toBe("Mapping is missing: target=1");
+    expect(wordpressCatalogItemError(new Error("database unavailable"))).toBeNull();
   });
 });
