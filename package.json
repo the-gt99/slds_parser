@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "classifier:exact-matches": "node --env-file-if-exists=.env --import tsx src/cli/classifier-exact-matches.ts",
     "classifier:legacy-import": "node --env-file-if-exists=.env --import tsx src/cli/legacy-classification-import.ts",
+    "classifier:import-pa-vid": "node --env-file-if-exists=.env --import tsx src/cli/import-wordpress-pa-vid-rules.ts",
     "classifier:enqueue-stale": "node --env-file-if-exists=.env --import tsx src/cli/enqueue-stale-processing.ts",
     "classifier:rebuild-review": "node --env-file-if-exists=.env --import tsx src/cli/rebuild-classification-review.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",

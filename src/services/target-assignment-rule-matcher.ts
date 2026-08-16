@@ -15,8 +15,35 @@ function scalar(value: unknown): string[] {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [String(value)] : [];
 }
 
+const assignmentRegexCache = new Map<string, RegExp>();
+
+export function compileTargetAssignmentRegex(pattern: string): RegExp {
+  const cached = assignmentRegexCache.get(pattern);
+  if (cached !== undefined) return cached;
+  if (pattern.length > 256) {
+    throw new IntegrationContractError("Target assignment regex must contain no more than 256 characters");
+  }
+  if (/\\[1-9]/u.test(pattern) || pattern.includes("(?")) {
+    throw new IntegrationContractError("Target assignment regex cannot contain backreferences or lookaround groups");
+  }
+  if (/\([^)]*[+*][^)]*\)[+*{]/u.test(pattern)) {
+    throw new IntegrationContractError("Target assignment regex cannot contain nested unbounded quantifiers");
+  }
+  try {
+    const compiled = new RegExp(pattern, "iu");
+    assignmentRegexCache.set(pattern, compiled);
+    return compiled;
+  } catch (error) {
+    throw new IntegrationContractError(
+      `Invalid target assignment regex: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export function targetAssignmentFieldValues(product: UniversalProductDTO, field: string): readonly string[] {
   const parts = field.split(".");
+  if (field === "product.title") return [product.title];
+  if (field === "product.description") return [product.description];
   if (parts[0] === "resolved" && parts.length === 2) {
     return product.classification?.resolved.filter((item) => item.typeCode === parts[1]).map((item) => item.referenceValueId) ?? [];
   }
@@ -57,6 +84,10 @@ export function matchesTargetAssignmentCondition(product: UniversalProductDTO, c
       const actualPhrase = ` ${normalizePhrase(value)} `;
       return phrases.some((phrase) => actualPhrase.includes(` ${phrase} `));
     });
+  }
+  if (condition.operator === "regex") {
+    const patterns = condition.values.map(compileTargetAssignmentRegex);
+    return targetAssignmentFieldValues(product, condition.field).some((value) => patterns.some((pattern) => pattern.test(value)));
   }
   throw new IntegrationContractError(`Unsupported target assignment operator: ${String(condition.operator)}`);
 }

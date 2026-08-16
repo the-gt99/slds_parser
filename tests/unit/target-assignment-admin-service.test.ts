@@ -84,6 +84,22 @@ describe("TargetAssignmentAdminService", () => {
     }));
   });
 
+  it("accepts safe title regex and rejects unsafe patterns", async () => {
+    const { repository, service } = setup([]);
+    const regexDraft = {
+      ...draft,
+      conditionGroups: [{ conditions: [{ field: "product.title", operator: "regex" as const, values: ["\\b(running|jogging)\\b"] }] }],
+    };
+
+    await service.preview(regexDraft);
+    expect(repository.preview).toHaveBeenCalledWith(regexDraft);
+
+    await expect(service.preview({
+      ...regexDraft,
+      conditionGroups: [{ conditions: [{ field: "product.description", operator: "regex", values: ["(running+)+$"] }] }],
+    })).rejects.toThrow("nested unbounded quantifiers");
+  });
+
   it("does not query product overlap for statically disjoint audiences", async () => {
     const { repository, service } = setup();
     repository.preview.mockReset().mockResolvedValue({ productCount: 12, examples: [] });

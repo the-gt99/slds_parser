@@ -98,6 +98,32 @@ describe("target assignment rules", () => {
     expect(product.referenceCandidates.some((candidate) => candidate.sourceValue === "Wilson Smith")).toBe(false);
   });
 
+  it("matches a safe regular expression against the product title or description", () => {
+    const runningProduct: UniversalProductDTO = {
+      ...product,
+      title: "Nike ZoomX Running Shoe",
+      description: "Подходит для марафона",
+    };
+    const textRule = {
+      ...rule("running", 100, [], "25614"),
+      conditionGroups: [{ conditions: [
+        { field: "product.title", operator: "regex" as const, values: ["\\b(running|jogging)\\b"] },
+        { field: "product.description", operator: "regex" as const, values: ["\\bмарафон\\w*\\b"] },
+      ] }],
+    };
+
+    expect(resolveTargetAssignments(runningProduct, [textRule])).toHaveLength(1);
+    expect(resolveTargetAssignments({ ...runningProduct, title: "Nike Lifestyle", description: "" }, [textRule])).toEqual([]);
+  });
+
+  it("rejects unsafe or invalid assignment regular expressions", () => {
+    const invalid = rule("invalid", 100, [
+      { field: "product.title", operator: "regex", values: ["(running+)+$"] },
+    ], "25614");
+
+    expect(() => resolveTargetAssignments(product, [invalid])).toThrow("nested unbounded quantifiers");
+  });
+
   it("supports OR inside a group and AND between groups", () => {
     const conditions = [
       { field: "candidate.model.sourceValue", operator: "contains_phrase" as const, values: ["missing"] },

@@ -2620,6 +2620,8 @@ function renderWordPressValues(hasMore) {
 }
 
 const targetConditionFields = [
+  ["product.title", "Название товара"],
+  ["product.description", "Описание товара"],
   ["resolved.category", "Распознанная категория"],
   ["resolved.merchandising_category", "Распознанная маркетинговая категория"],
   ["candidate.category.sourceValue", "Структурная категория источника"],
@@ -2661,7 +2663,7 @@ async function loadTargetAssignmentRules() {
       title.textContent = rule.name;
       const details = document.createElement("span");
       const conditions = rule.conditionGroups.map((group) => group.conditions.map((item) => {
-        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит" : "=";
+        const operator = item.operator === "one_of" ? "∈" : item.operator === "contains_phrase" ? "содержит" : item.operator === "regex" ? "регэксп" : "=";
         const values = item.matchSetName ? `список «${item.matchSetName}» (${item.values.length})` : item.values.slice(0, 3).join(", ") + (item.values.length > 3 ? `… (${item.values.length})` : "");
         return `${item.field} ${operator} ${values}`;
       }).join(" ИЛИ ")).join(" · И · ");
@@ -2728,6 +2730,7 @@ function targetConditionRow(condition = { field: "candidate.category.sourceValue
     new Option("равно", "equals", false, condition.operator === "equals"),
     new Option("одно из", "one_of", false, condition.operator === "one_of"),
     new Option("содержит одну из фраз", "contains_phrase", false, condition.operator === "contains_phrase"),
+    new Option("соответствует регэкспу", "regex", false, condition.operator === "regex"),
   );
   const valueSource = document.createElement("select");
   valueSource.className = "target-condition-source";
@@ -2870,9 +2873,11 @@ async function targetRuleBody() {
   const conditionGroups = await Promise.all([...byId("target-rule-conditions").querySelectorAll(".target-condition-group")].map(async (group) => ({
     conditions: await Promise.all([...group.querySelectorAll(".condition-row")].map(async (row) => {
       const useSet = row.querySelector(".target-condition-source").value === "set";
-      const values = useSet ? [] : row.querySelector(".target-condition-values").value.split(/[\n,]+/u).map((item) => item.trim()).filter(Boolean);
-      const field = row.querySelector(".target-condition-field").value;
-      return { field, operator: row.querySelector(".target-condition-operator").value, values: await resolveTargetConditionValues(field, values), ...(useSet ? { matchSetId: row.querySelector(".target-condition-match-set").value } : {}) };
+        const operator = row.querySelector(".target-condition-operator").value;
+        const rawValues = row.querySelector(".target-condition-values").value;
+        const values = useSet ? [] : (operator === "regex" ? [rawValues.trim()] : rawValues.split(/[\n,]+/u).map((item) => item.trim())).filter(Boolean);
+        const field = row.querySelector(".target-condition-field").value;
+        return { field, operator, values: await resolveTargetConditionValues(field, values), ...(useSet ? { matchSetId: row.querySelector(".target-condition-match-set").value } : {}) };
     })),
   })));
   return {

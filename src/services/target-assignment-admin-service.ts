@@ -5,6 +5,7 @@ import type {
   TargetAssignmentRuleRepository,
   TargetDictionaryRepository,
 } from "../repositories/index.js";
+import { compileTargetAssignmentRegex } from "./target-assignment-rule-matcher.js";
 
 function stringMap(value: unknown): Readonly<Record<string, string>> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -21,6 +22,7 @@ function phrase(value: string): string {
 
 function conditionsCanOverlap(left: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number], right: TargetAssignmentRuleDraft["conditionGroups"][number]["conditions"][number]): boolean {
   if (left.field !== right.field || left.values.length === 0 || right.values.length === 0) return true;
+  if (left.operator === "regex" || right.operator === "regex") return true;
   if (left.operator === "contains_phrase" && right.operator === "contains_phrase") return true;
   if (left.operator === "contains_phrase" || right.operator === "contains_phrase") {
     return left.values.some((leftValue) => right.values.some((rightValue) => {
@@ -140,16 +142,19 @@ export class TargetAssignmentAdminService {
       throw new IntegrationContractError("At least one non-empty target assignment condition group is required");
     }
     for (const condition of draft.conditionGroups.flatMap((group) => group.conditions)) {
-      if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
+      if (!/^(?:resolved\.[a-z][a-z0-9_]*|product\.(?:title|description)|product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*|candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*))$/u.test(condition.field)) {
         throw new IntegrationContractError(`Unsupported target assignment field: ${condition.field}`);
       }
-      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase") {
+      if (condition.operator !== "equals" && condition.operator !== "one_of" && condition.operator !== "contains_phrase" && condition.operator !== "regex") {
         throw new IntegrationContractError(`Unsupported condition operator: ${condition.operator}`);
       }
       if (condition.matchSetId === undefined && (condition.values.length === 0 || condition.values.some((value) => value.trim() === ""))) throw new IntegrationContractError(`Condition ${condition.field} requires values or a match set`);
       if (condition.matchSetId !== undefined && condition.values.length > 0) throw new IntegrationContractError(`Condition ${condition.field} cannot contain inline values and a match set together`);
       if (condition.matchSetId !== undefined && condition.operator === "equals") throw new IntegrationContractError(`equals cannot use a match set for ${condition.field}; use one_of`);
       if (condition.operator === "equals" && condition.matchSetId === undefined && condition.values.length !== 1) throw new IntegrationContractError(`equals requires one value for ${condition.field}`);
+      if (condition.operator === "regex") {
+        for (const pattern of condition.values) compileTargetAssignmentRegex(pattern);
+      }
     }
     if (draft.actions.length === 0) throw new IntegrationContractError("At least one target assignment action is required");
     const target = (await this.dictionaries.listTargets()).find((item) => item.id === draft.targetId);

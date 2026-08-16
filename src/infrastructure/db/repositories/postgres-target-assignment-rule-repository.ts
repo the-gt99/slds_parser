@@ -26,6 +26,10 @@ function normalizePhrase(value: string): string {
     .replace(/\b(?:wmns|womens|mens)\b/gu, " ").replace(/\s+/gu, " ").trim();
 }
 
+function postgresRegex(value: string): string {
+  return value.replaceAll("\\b", "\\y");
+}
+
 function uniqueValues(values: readonly string[]): readonly string[] {
   const seen = new Set<string>();
   return values.flatMap((value) => {
@@ -123,10 +127,14 @@ function conditionProductIdsSql(
   const normalizedValues = values.map((value) => normalize(value));
   const expected = parameter(condition.operator === "contains_phrase"
     ? values.map((value) => `% ${normalizePhrase(value)} %`)
-    : normalizedValues);
+    : condition.operator === "regex"
+      ? values.map(postgresRegex)
+      : normalizedValues);
   const comparison = (valuePath: string, phrasePath?: string): string => condition.operator === "contains_phrase"
     ? `${phrasePath ?? `(' ' || BTRIM(REGEXP_REPLACE(LOWER(COALESCE(${valuePath}, '')), '[^[:alnum:]]+', ' ', 'g')) || ' ')`} LIKE ANY(${expected}::TEXT[])`
-    : `LOWER(COALESCE(${valuePath}, '')) = ANY(${expected}::TEXT[])`;
+    : condition.operator === "regex"
+      ? `EXISTS (SELECT 1 FROM UNNEST(${expected}::TEXT[]) regex(pattern) WHERE COALESCE(${valuePath}, '') ~* regex.pattern)`
+      : `LOWER(COALESCE(${valuePath}, '')) = ANY(${expected}::TEXT[])`;
   if (parts[0] === "resolved" && parts.length === 2) {
     const typeCode = parameter(parts[1]);
     return `SELECT DISTINCT link.source_product_id
@@ -174,6 +182,11 @@ function conditionProductIdsSql(
     return `SELECT internal.source_product_id FROM internal_products internal
       WHERE internal.status = 'classified'
         AND ${comparison(`internal.data#>>ARRAY[${parameter(section)}::TEXT, ${parameter(parts[2])}::TEXT]`)}`;
+  }
+  if (parts[0] === "product" && parts.length === 2 && ["title", "description"].includes(parts[1]!)) {
+    return `SELECT internal.source_product_id FROM internal_products internal
+      WHERE internal.status = 'classified'
+        AND ${comparison(`internal.data->>${parameter(parts[1])}`)}`;
   }
   throw new Error(`Unsupported target assignment field: ${condition.field}`);
 }
