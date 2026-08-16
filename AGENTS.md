@@ -901,6 +901,14 @@ Parser commits `6a63f7b`, `591204f`, `0ad61f0` и `cd37c83` расширили �
 
 При production-smoke исправлена ошибка SQL preview: отсутствующий source fact из-за `NULL` ошибочно пропускал отрицательное условие и мог считать подходящим почти весь каталог. Условия теперь компилируются в прямые SQL-предикаты с пустым значением для отсутствующего факта; регрессионный тест закрепляет выбор одного товара. На сервере прошли typecheck, `432` теста, build и проверка миграций. Browser smoke подтвердил сохранённый preflight, обе вкладки diff, старую и будущую фотографии и отсутствие console errors. Target `slamdunk=false`, активных export jobs `0`; worker не перезапускался, price-only run `1` сохранил `running`, окно `5000`, `28 960` completed, `7 363` skipped и `0` failed.
 
+## Защита точных моделей при обновлении 17 августа 2026
+
+Причина массового понижения точности `pa_model` подтверждена на production: импортированные model rules обычно используют только `context.brand + context.family`. Полный source-кандидат содержит `Retro High`, `SB High`, `Low`, `Mid` и другие уточнения, но такие правила их не учитывают. Поэтому, например, `Wmns Air Jordan 1 Retro High OG 'First in Flight'` разрешался правилом семейства в `Air Jordan 1`, а `Nike Dunk High Pro SB 'Mineral Slate'` — в `Nike Dunk SB` плюс projection `Nike Dunk`, хотя WordPress уже содержал точные `Air Jordan 1 Retro High` и `Nike SB Dunk High`.
+
+Parser commit `0adeb88` добавил опцию target `preferSpecificExistingModelTerms` и exporter `1.16.0`. При обновлении существующего товара exporter сверяет токены сохранённых WordPress-моделей с полным source-кандидатом, объединяет их с рассчитанными терминами и оставляет максимальные по включению наборы токенов. Существующая модель участвует только если минимум два её токена подтверждаются source; поэтому режим не сохраняет произвольные старые значения. Корректное уточнение в новую сторону, например `Asics GEL-Kayano -> Asics Gel Kayano 14`, не блокируется. Несравнимые подтверждённые ветви коллаборации остаются вместе. Явный assignment `replace` имеет приоритет над механизмом, а `add` сохраняется в результате.
+
+На сохранённом catalog run `4` было `3 567` ready-аудитов со снятием `pa_model`; read-only расчёт нового правила изменил результат у `1 817` из них. Это оценка влияния, а не выполненный WordPress write. После deploy настройка включена для target `slamdunk` при сохранении `preserveExistingBrandTerms=true` и `preserveExistingTagTerms=true`; сам target остался `enabled=false`. Реальные read-only preflight на `sourceProductId=218722` и `63596` вернули соответственно только `Air Jordan 1 Retro High` term `14777` и `Nike SB Dunk High` term `14746`, без model diff. Full read-only catalog run `5` запущен для пересчёта всего каталога; variation sync выключен, export jobs не создавались.
+
 ## Правила дальнейшей разработки
 
 - Не заявлять, что блок готов, если отсутствует реальный адаптер/exporter или сквозной тест.
