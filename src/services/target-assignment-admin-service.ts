@@ -74,8 +74,12 @@ export class TargetAssignmentAdminService {
 
   async update(targetId: string, ruleId: string, draft: TargetAssignmentRuleDraft, expectedRevision: string, actor = this.defaultActor, reason?: string) {
     await this.validate(draft);
-    const preview = await this.previewValidated(draft, ruleId);
-    if ((preview.conflicts?.length ?? 0) > 0) throw new IntegrationContractError("Rule conflicts with another enabled rule in the same group and priority");
+    const existing = (await this.repository.list(targetId)).find((item) => item.id === ruleId);
+    if (existing === undefined) throw new EntityNotFoundError("Target assignment rule", ruleId);
+    if (existing.enabled) {
+      const preview = await this.previewValidated(draft, ruleId);
+      if ((preview.conflicts?.length ?? 0) > 0) throw new IntegrationContractError("Rule conflicts with another enabled rule in the same group and priority");
+    }
     return this.repository.update(targetId, ruleId, draft, expectedRevision, actor, reason);
   }
 

@@ -128,4 +128,14 @@ describe("TargetAssignmentAdminService", () => {
 
     expect(repository.preview).toHaveBeenCalledTimes(2);
   });
+
+  it("updates a disabled rule without scanning product conflicts", async () => {
+    const disabled = { ...existingRule, enabled: false };
+    const { repository, service } = setup([disabled]);
+
+    await service.update("10", disabled.id, { ...draft, enabled: false }, disabled.revision);
+
+    expect(repository.preview).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledOnce();
+  });
 });
