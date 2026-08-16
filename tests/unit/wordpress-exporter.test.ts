@@ -345,6 +345,72 @@ describe("WordPressExporter", () => {
     });
   });
 
+  it("treats WordPress Retro and GOAT Hi naming as the same high-top model", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 14777, name: "Air Jordan 1 Retro High", slug: "air-jordan-1-retro-high" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "Air Jordan 1 Hi OG 'Chicago'", context: { brand: "Air Jordan", family: "Air Jordan 1" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "35", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "14787", externalLabel: "Air Jordan 1" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Air Jordan" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [14777],
+    });
+  });
+
+  it("does not keep a legacy Retro High term when the source has no high-top evidence", async () => {
+    const base = context({ preferSpecificExistingModelTerms: true });
+    const input: ExportContext = {
+      ...base,
+      existingExternalId: "321",
+      existingTargetSnapshot: { product: { taxonomies: {
+        pa_model: [{ term_id: 14777, name: "Air Jordan 1 Retro High", slug: "air-jordan-1-retro-high" }],
+      } } },
+      product: {
+        ...base.product,
+        referenceCandidates: [{
+          key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
+          sourceValue: "Air Jordan 1 Anodized 'Silver'", context: { brand: "Air Jordan", family: "Air Jordan 1" }, evidence: {},
+        }],
+        classification: { ...base.product.classification!, resolved: [
+          ...base.product.classification!.resolved,
+          { candidateKey: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product", referenceValueId: "13", resolutionKind: "rule", resolutionId: "35", resolutionRevision: "1" },
+        ] },
+      },
+    };
+    vi.mocked(input.references.resolveReference).mockImplementation(async ({ referenceType }) => referenceType === "model"
+      ? { externalValue: "14787", externalLabel: "Air Jordan 1" }
+      : referenceType === "brand"
+        ? { externalValue: "31", externalLabel: "Air Jordan" }
+        : { externalValue: "41", externalLabel: "Кроссовки" });
+
+    const payload = await buildWordPressUpsertPayload(input);
+
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).pa_model).toEqual({
+      mode: "replace", term_ids: [14787],
+    });
+  });
+
   it("recognizes Nike SB Dunk High when the source and target words use a different order", async () => {
     const base = context({ preferSpecificExistingModelTerms: true });
     const input: ExportContext = {

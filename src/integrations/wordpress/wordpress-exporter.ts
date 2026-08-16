@@ -620,11 +620,13 @@ function snapshotTaxonomyTermIds(snapshot: JsonObject, taxonomy: string): readon
   )))];
 }
 
-const MODEL_IGNORED_TOKENS = new Set(["wmns", "womens", "mens"]);
+const MODEL_IGNORED_TOKENS = new Set(["wmns", "womens", "mens", "retro"]);
+const MODEL_TOKEN_ALIASES = new Map([["hi", "high"]]);
 
 function modelTokens(value: string): ReadonlySet<string> {
   return new Set(value.normalize("NFKC").toLocaleLowerCase("en-US").match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => !MODEL_IGNORED_TOKENS.has(token)) ?? []);
+    ?.filter((token) => !MODEL_IGNORED_TOKENS.has(token))
+    .map((token) => MODEL_TOKEN_ALIASES.get(token) ?? token) ?? []);
 }
 
 function isStrictTokenSubset(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
