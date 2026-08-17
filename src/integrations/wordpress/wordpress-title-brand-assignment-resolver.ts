@@ -21,8 +21,9 @@ function textMap(value: unknown): Readonly<Record<string, string>> {
 }
 
 function normalizedTokens(value: string): readonly string[] {
-  return value.trim().normalize("NFKC").toLocaleLowerCase("en-US")
-    .replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/u).filter(Boolean);
+  const normalized = value.trim().normalize("NFKC").toLocaleLowerCase("en-US")
+    .replace(/[‐‑‒–—―]/gu, "-").replace(/[’‘]/gu, "'");
+  return normalized.match(/[\p{L}\p{N}]+(?:[.&'-][\p{L}\p{N}]+)*|&/gu) ?? [];
 }
 
 function relatedTagExternalId(metadata: JsonObject): string | null {
@@ -43,58 +44,15 @@ function containsAt(tokens: readonly string[], phrase: readonly string[], offset
   return phrase.every((token, index) => tokens[offset + index] === token);
 }
 
-function withoutAudiencePrefix(tokens: readonly string[]): readonly string[] {
-  const ignored = new Set(["wmns", "womens", "women", "mens", "men"]);
-  let offset = 0;
-  while (offset < tokens.length && ignored.has(tokens[offset]!)) offset += 1;
-  if (offset > 0 && tokens[offset] === "s") offset += 1;
-  return tokens.slice(offset);
-}
-
-function equalTokens(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && containsAt(left, right, 0);
-}
-
-function withoutPrimaryBrand(
-  segment: readonly string[],
-  primaryBrand: readonly string[],
-): readonly (readonly string[])[] {
-  if (primaryBrand.length === 0 || primaryBrand.length >= segment.length) return [segment];
-  const variants: (readonly string[])[] = [segment];
-  if (containsAt(segment, primaryBrand, 0)) variants.push(segment.slice(primaryBrand.length));
-  const suffixOffset = segment.length - primaryBrand.length;
-  if (containsAt(segment, primaryBrand, suffixOffset)) variants.push(segment.slice(0, suffixOffset));
-  return variants;
-}
-
-function collaboratingBrandSegments(
+function brandMentionOffsets(
   titleTokens: readonly string[],
   brandTokens: readonly string[],
-  primaryBrandTokens: readonly string[],
 ): readonly number[] {
-  if (brandTokens.length === 0 || !titleTokens.includes("x")) return [];
-  const segments: string[][] = [[]];
-  for (const token of titleTokens) {
-    if (token === "x") segments.push([]);
-    else segments.at(-1)!.push(token);
+  const offsets: number[] = [];
+  for (let offset = 0; offset <= titleTokens.length - brandTokens.length; offset += 1) {
+    if (containsAt(titleTokens, brandTokens, offset)) offsets.push(offset);
   }
-  return segments.flatMap((rawSegment, index) => {
-    const segment = withoutAudiencePrefix(rawSegment);
-    if (segment.length === 0) return [];
-    if (index === segments.length - 1) {
-      return brandTokens.length <= segment.length && containsAt(segment, brandTokens, 0) ? [index] : [];
-    }
-    return withoutPrimaryBrand(segment, primaryBrandTokens).some((variant) => equalTokens(variant, brandTokens))
-      ? [index] : [];
-  });
-}
-
-function primaryBrandTokens(product: UniversalProductDTO): readonly string[] {
-  const brand = product.attributes.brand;
-  if (typeof brand === "string" || typeof brand === "number") {
-    return normalizedTokens(String(brand));
-  }
-  return [];
+  return offsets;
 }
 
 function assignmentsForTitle(
@@ -105,16 +63,17 @@ function assignmentsForTitle(
 ): readonly TargetAssignmentDTO[] {
   if (!product.classification?.resolved.some((reference) => reference.typeCode === "brand")) return [];
   const titleTokens = normalizedTokens(product.title);
-  const primaryTokens = primaryBrandTokens(product);
-  const matches = brands.flatMap((brand) => collaboratingBrandSegments(titleTokens, brand.tokens, primaryTokens)
-    .map((segment) => ({ brand, segment })));
-  const longestBySegment = new Map<number, number>();
+  const matches = brands.flatMap((brand) => brandMentionOffsets(titleTokens, brand.tokens)
+    .map((offset) => ({ brand, offset, end: offset + brand.tokens.length })));
+  matches.sort((left, right) => right.brand.tokens.length - left.brand.tokens.length
+    || right.brand.name.length - left.brand.name.length || left.offset - right.offset);
+  const selected: typeof matches = [];
   for (const match of matches) {
-    longestBySegment.set(match.segment, Math.max(longestBySegment.get(match.segment) ?? 0, match.brand.tokens.length));
+    if (selected.some((existing) => match.offset < existing.end && existing.offset < match.end)) continue;
+    selected.push(match);
   }
-  const matchedBrands = [...new Map(matches
-    .filter((match) => match.brand.tokens.length === longestBySegment.get(match.segment))
-    .map((match) => [match.brand.dictionaryValueId, match.brand])).values()];
+  const matchedBrands = [...new Map(selected.map((match) =>
+    [match.brand.dictionaryValueId, match.brand])).values()];
   const assignments: TargetAssignmentDTO[] = [];
   for (const brand of matchedBrands) {
     const groupCode = `title_brand_${brand.dictionaryValueId}`;

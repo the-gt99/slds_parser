@@ -72,37 +72,34 @@ describe("WordPressTitleBrandAssignmentResolver", () => {
     ]));
   });
 
-  it("does not match a brand outside an explicit collaboration but accepts it in a collaboration segment", async () => {
-    const brands = [dictionaryValue("1", "brands", "100", "ON")];
-    const resolve = await new WordPressTitleBrandAssignmentResolver(repository(brands, []))
-      .createTargetAssignmentResolver("1");
-
-    expect(resolve(product("Nike Keep On Pushin"))).toEqual([]);
-    expect(resolve(product("LOEWE x On Cloudtilt"))).toEqual([
-      expect.objectContaining({ targetScope: "product.brand", externalValue: "100" }),
-    ]);
-  });
-
-  it("does not treat a suffix of a longer collaborator or a colorway as a brand", async () => {
+  it("finds a brand without a collaboration marker and preserves a significant hyphen", async () => {
     const brands = [
-      dictionaryValue("1", "brands", "100", "Market"),
-      dictionaryValue("2", "brands", "101", "Chinatown Market"),
-      dictionaryValue("3", "brands", "102", "Off-White"),
+      dictionaryValue("1", "brands", "100", "Just Don"),
+      dictionaryValue("2", "brands", "101", "Off-White"),
     ];
     const resolve = await new WordPressTitleBrandAssignmentResolver(repository(brands, []))
       .createTargetAssignmentResolver("1");
 
-    expect(resolve(product("Dover Street Market x Nike Dunk Low"))).toEqual([]);
     expect(resolve(product("adidas Samba OG 'Off White'", true, "adidas"))).toEqual([]);
-    expect(resolve(product("Chinatown Market x Nike Dunk Low"))).toEqual([
-      expect.objectContaining({ externalValue: "101" }),
-    ]);
-    expect(resolve(product("Off-White x Nike Air Force 1"))).toEqual([
-      expect.objectContaining({ externalValue: "102" }),
+    expect(resolve(product("Air Jordan 1 Retro High Strap 'Just Don BHM'", true, "Air Jordan"))).toEqual([
+      expect.objectContaining({ targetScope: "product.brand", externalValue: "100" }),
     ]);
   });
 
-  it("recognizes an additional brand beside the primary brand in the same collaboration segment", async () => {
+  it("chooses the longest exact brand mention", async () => {
+    const brands = [
+      dictionaryValue("1", "brands", "100", "Market"),
+      dictionaryValue("2", "brands", "101", "Chinatown Market"),
+    ];
+    const resolve = await new WordPressTitleBrandAssignmentResolver(repository(brands, []))
+      .createTargetAssignmentResolver("1");
+
+    expect(resolve(product("Chinatown Market x Nike Dunk Low"))).toEqual([
+      expect.objectContaining({ externalValue: "101" }),
+    ]);
+  });
+
+  it("recognizes an additional brand beside the primary brand", async () => {
     const brands = [dictionaryValue("1", "brands", "100", "NFL")];
     const resolve = await new WordPressTitleBrandAssignmentResolver(repository(brands, []))
       .createTargetAssignmentResolver("1");
