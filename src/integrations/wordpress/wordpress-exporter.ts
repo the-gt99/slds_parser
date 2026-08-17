@@ -1079,7 +1079,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.16.0";
+  readonly version = "1.17.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(

@@ -5,7 +5,7 @@ import { createPostgresPool, createPostgresRepositories, PostgresClassificationA
 import { LocalImageStore } from "./infrastructure/media/index.js";
 import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 
@@ -73,7 +73,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const exporters = new TargetExporterRegistry();
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool);
   const classifier = new ProductClassifier(repositories.classifications);
-  const targetMappings = new TargetReferenceMappingService(repositories.references);
+  const targetDictionary = new PostgresTargetDictionaryRepository(pool);
+  const targetMappings = new TargetReferenceMappingService(
+    repositories.references,
+    new WordPressTitleBrandAssignmentResolver(targetDictionary),
+  );
   const exportControl = new PostgresExportControlRepository(pool);
   const exportCampaigns = new ExportControlService(exportControl, repositories.jobs);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
@@ -102,7 +106,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
       repositories,
       exporters,
       targetMappings,
-      new PostgresTargetDictionaryRepository(pool),
+      targetDictionary,
       new WordPressProductSnapshotReader(wordpress),
       exportControl,
     ));

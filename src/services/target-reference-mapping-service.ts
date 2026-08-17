@@ -1,5 +1,6 @@
 import type {
   EntityId,
+  TargetAssignmentDTO,
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,
   UniversalProductDTO,
@@ -8,8 +9,32 @@ import { MappingMissingError } from "../core/errors/index.js";
 import type { ReferenceRepository } from "../repositories/index.js";
 import { resolveTargetAssignments } from "./target-assignment-rule-matcher.js";
 
+export interface SupplementalTargetAssignmentResolver {
+  createTargetAssignmentResolver(targetId: EntityId): Promise<(
+    product: UniversalProductDTO,
+  ) => readonly TargetAssignmentDTO[] | Promise<readonly TargetAssignmentDTO[]>>;
+}
+
+function mergeAssignments(
+  primary: readonly TargetAssignmentDTO[],
+  supplemental: readonly TargetAssignmentDTO[],
+): readonly TargetAssignmentDTO[] {
+  return [...new Map([...primary, ...supplemental].map((assignment) => [
+    `${assignment.targetScope}\u0000${assignment.externalValue}\u0000${assignment.mode}`,
+    assignment,
+  ])).values()];
+}
+
 export class TargetReferenceMappingService {
-  constructor(private readonly references: ReferenceRepository) {}
+  private readonly assignmentResolvers = new Map<EntityId, {
+    readonly revision: string;
+    readonly resolve: (product: UniversalProductDTO) => Promise<readonly TargetAssignmentDTO[]>;
+  }>();
+
+  constructor(
+    private readonly references: ReferenceRepository,
+    private readonly supplementalAssignments?: SupplementalTargetAssignmentResolver,
+  ) {}
 
   async resolveTargetValue(
     targetId: EntityId,
@@ -85,11 +110,24 @@ export class TargetReferenceMappingService {
   }
 
   async resolveTargetAssignments(targetId: EntityId, product: UniversalProductDTO) {
-    return resolveTargetAssignments(product, await this.references.listTargetAssignmentRules(targetId));
+    const revision = await this.references.getTargetMappingRevision(targetId);
+    let cached = this.assignmentResolvers.get(targetId);
+    if (cached === undefined || cached.revision !== revision) {
+      const resolve = await this.createTargetAssignmentResolver(targetId);
+      cached = { revision, resolve };
+      this.assignmentResolvers.set(targetId, { revision, resolve });
+    }
+    return cached.resolve(product);
   }
 
   async createTargetAssignmentResolver(targetId: EntityId) {
-    const rules = await this.references.listTargetAssignmentRules(targetId);
-    return async (product: UniversalProductDTO) => resolveTargetAssignments(product, rules);
+    const [rules, supplemental] = await Promise.all([
+      this.references.listTargetAssignmentRules(targetId),
+      this.supplementalAssignments?.createTargetAssignmentResolver(targetId),
+    ]);
+    return async (product: UniversalProductDTO) => mergeAssignments(
+      resolveTargetAssignments(product, rules),
+      await (supplemental?.(product) ?? []),
+    );
   }
 }

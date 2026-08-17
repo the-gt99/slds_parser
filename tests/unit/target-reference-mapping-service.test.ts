@@ -121,4 +121,17 @@ describe("TargetReferenceMappingService", () => {
 
     expect(repository.listTargetAssignmentRules).toHaveBeenCalledOnce();
   });
+
+  it("reuses prepared assignments until the target revision changes", async () => {
+    const repository = createRepository();
+    const service = new TargetReferenceMappingService(repository);
+    const product = { referenceCandidates: [], references: [], unresolvedReferences: [], ignoredReferences: [] } as never;
+
+    await service.resolveTargetAssignments("2", product);
+    await service.resolveTargetAssignments("2", product);
+    vi.mocked(repository.getTargetMappingRevision).mockResolvedValue("revision-2");
+    await service.resolveTargetAssignments("2", product);
+
+    expect(repository.listTargetAssignmentRules).toHaveBeenCalledTimes(2);
+  });
 });

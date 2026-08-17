@@ -19,7 +19,7 @@ import {
   PostgresUnitOfWork,
   PostgresWordPressCatalogRepository,
 } from "../infrastructure/db/index.js";
-import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader } from "../integrations/index.js";
+import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
@@ -98,7 +98,10 @@ async function main(): Promise<void> {
       repositories.jobs,
       new ProductClassifier(repositories.classifications),
     );
-    const targetMappings = new TargetReferenceMappingService(repositories.references);
+    const targetMappings = new TargetReferenceMappingService(
+      repositories.references,
+      new WordPressTitleBrandAssignmentResolver(targetDictionaryRepository),
+    );
     const exportControlRepository = new PostgresExportControlRepository(pool);
     const wordpressPreview = wordpress === null
       ? undefined
