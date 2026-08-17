@@ -16,6 +16,7 @@ export interface WorkerOptions {
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
   readonly processConcurrency?: number;
+  readonly translationConcurrency?: number;
   readonly collectionConcurrency?: number;
   readonly preflightConcurrency?: number;
   readonly classificationApplyConcurrency?: number;
@@ -230,7 +231,7 @@ export class Worker {
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
           this.runProcessingLane(controller.signal, `${this.options.workerId}:process-${index + 1}`)),
-        ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
+        ...Array.from({ length: this.options.translationConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, retranslationJobTypes, `${this.options.workerId}:translation-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),

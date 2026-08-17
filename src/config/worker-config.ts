@@ -5,6 +5,7 @@ export interface WorkerEnvironment {
   readonly WORKER_POLL_INTERVAL_MS?: string;
   readonly WORKER_LOCK_TIMEOUT_MS?: string;
   readonly WORKER_PROCESS_CONCURRENCY?: string;
+  readonly WORKER_TRANSLATION_CONCURRENCY?: string;
   readonly WORKER_COLLECTION_CONCURRENCY?: string;
   readonly WORKER_PREFLIGHT_CONCURRENCY?: string;
   readonly WORKER_CLASSIFICATION_APPLY_CONCURRENCY?: string;
@@ -64,6 +65,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     pollIntervalMs: positiveInteger(environment, "WORKER_POLL_INTERVAL_MS"),
     lockTimeoutMs: positiveInteger(environment, "WORKER_LOCK_TIMEOUT_MS"),
     processConcurrency: processConcurrency(environment.WORKER_PROCESS_CONCURRENCY),
+    translationConcurrency: processConcurrency(environment.WORKER_TRANSLATION_CONCURRENCY),
     collectionConcurrency: collectionConcurrency(environment.WORKER_COLLECTION_CONCURRENCY),
     preflightConcurrency: preflightConcurrency(environment.WORKER_PREFLIGHT_CONCURRENCY),
     classificationApplyConcurrency: classificationApplyConcurrency(environment.WORKER_CLASSIFICATION_APPLY_CONCURRENCY),

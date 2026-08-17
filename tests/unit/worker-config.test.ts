@@ -24,6 +24,11 @@ describe("worker config", () => {
     );
   });
 
+  it("configures translation concurrency separately from processing", () => {
+    expect(loadWorkerConfig(environment).translationConcurrency).toBe(1);
+    expect(loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "10", WORKER_TRANSLATION_CONCURRENCY: "3" }).translationConcurrency).toBe(3);
+  });
+
   it("accepts a separately bounded collection concurrency", () => {
     expect(loadWorkerConfig({ ...environment, WORKER_COLLECTION_CONCURRENCY: "4" }).collectionConcurrency).toBe(4);
     expect(() => loadWorkerConfig({ ...environment, WORKER_COLLECTION_CONCURRENCY: "17" })).toThrow(
