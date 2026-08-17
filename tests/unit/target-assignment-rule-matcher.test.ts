@@ -8,7 +8,7 @@ const product = {
   sourceProductId: "1", title: "Sandal model", description: "", sku: "SKU", images: [], variants: [], attributes: { gender: "women" }, metadata: {},
   sourceFacts: { designer: "Wilson Smith" },
   referenceCandidates: [
-    { key: "category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "sandals", context: { audience: "women" }, evidence: {} },
+    { key: "category", typeCode: "category", scope: "product.category", subjectKind: "product", sourceValue: "sandals", context: { audience: "women", productCategory: "shoes" }, evidence: {} },
     { key: "marketing", typeCode: "merchandising_category", scope: "product.merchandising_category", subjectKind: "product", sourceValue: "Sandal", context: {}, evidence: {} },
     { key: "model", typeCode: "model", scope: "product.model", subjectKind: "product", sourceValue: "Ronnie Fieg x Clarks x adidas 8th Street Samba", context: { brand: "adidas", family: "Samba" }, evidence: {} },
   ],
@@ -145,5 +145,22 @@ describe("target assignment rules", () => {
     const item = { ...rule("or-groups", 100, conditions, "75"), conditionGroups: [{ conditions: conditions.slice(0, 2) }, { conditions: [conditions[2]!] }] };
 
     expect(resolveTargetAssignments(product, [item])).toHaveLength(1);
+  });
+
+  it("does not treat a sneaker model named Slide as slippers", () => {
+    const slipperRule = {
+      ...rule("slippers", 230, [], "25865"),
+      conditionGroups: [
+        { conditions: [{ field: "candidate.category.context.productCategory", operator: "equals" as const, values: ["shoes"] }] },
+        { conditions: [
+          { field: "product.title", operator: "contains_phrase" as const, values: ["slipper", "slippers", "mule", "mules"] },
+          { field: "product.title", operator: "regex" as const, values: ["\\bslides?\\b(\\s+sandal\\b|\\s*'|$)"] },
+        ] },
+      ],
+    };
+
+    expect(resolveTargetAssignments({ ...product, title: "Golden Goose Wmns Slide Sneaker 'White'" }, [slipperRule])).toEqual([]);
+    expect(resolveTargetAssignments({ ...product, title: "UGG Wmns Pumped Slide 'Chestnut'" }, [slipperRule])).toHaveLength(1);
+    expect(resolveTargetAssignments({ ...product, title: "Balenciaga Slide Sandal 'Navy'" }, [slipperRule])).toHaveLength(1);
   });
 });

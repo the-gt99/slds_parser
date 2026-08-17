@@ -2645,6 +2645,7 @@ const targetConditionFields = [
   ["candidate.merchandising_category.sourceValue", "Маркетинговая категория источника"],
   ["candidate.category.context.audience", "Аудитория / пол"],
   ["candidate.category.context.productType", "Тип товара источника"],
+  ["candidate.category.context.productCategory", "Категория товара источника"],
   ["candidate.brand.sourceValue", "Бренд источника"],
   ["candidate.model.sourceValue", "Модель источника"],
   ["candidate.model.context.brand", "Бренд в контексте модели"],
