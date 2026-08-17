@@ -56,6 +56,7 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
   denim: "Деним",
   flyknit: "Флайкнит",
   primeknit: "Праймкнит",
+  foamposite: "Foamposite",
   "gore-tex": "Гор-Текс",
   "patent leather": "Лакированная кожа",
   "core black": "Черный",
@@ -197,6 +198,7 @@ export class TranslateContentOperation implements ProductOperation {
     const result = translated.trim();
     if (result === "") throw new IntegrationContractError(`Translation returned an empty ${field}`);
     if (field === "details") return result;
+    if (field === "upperMaterial" && ATTRIBUTE_TRANSLATIONS[dictionaryKey(source)] === result) return result;
     if (containsLatin(source) && !containsCyrillic(source) && suspiciousTranslation(source, result)) {
       throw new IntegrationContractError(`Translation verification failed for ${field}`);
     }

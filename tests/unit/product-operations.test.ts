@@ -88,10 +88,13 @@ describe("product operations", () => {
       .resolves.toMatchObject({ translatedContent: { upperMaterial: "Эн-Дьюр" } });
     await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "Under Armour", story: "Source story", color: "blue", details: "Leather", upperMaterial: "IntelliKnit" } })))
       .resolves.toMatchObject({ translatedContent: { upperMaterial: "ИнтеллиКнит" } });
+    await expect(new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(product({ description: "Description", attributes: { brand: "Nike", story: "Source story", color: "blue", details: "Leather", upperMaterial: "Foamposite" } })))
+      .resolves.toMatchObject({ translatedContent: { upperMaterial: "Foamposite" } });
     expect(translate).not.toHaveBeenCalledWith("Flymesh", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("Flyweave", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("NDure", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("IntelliKnit", "en", "ru");
+    expect(translate).not.toHaveBeenCalledWith("Foamposite", "en", "ru");
   });
 
   it("uses the sneaker glossary for common material and colorway mistakes", async () => {
