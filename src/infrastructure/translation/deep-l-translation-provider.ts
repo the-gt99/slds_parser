@@ -3,6 +3,7 @@ import type { TextTranslationProvider } from "../../processing/index.js";
 
 export interface DeepLTranslationProviderOptions {
   readonly apiKey: string;
+  readonly apiUrl?: string;
   readonly timeoutMs: number;
   readonly attempts: number;
   readonly retryDelayMs: number;
@@ -65,7 +66,7 @@ export class DeepLTranslationProvider implements TextTranslationProvider {
   async translateOnce(text: string, sourceLocale: string, targetLocale: string): Promise<string> {
     let response: Response;
     try {
-      response = await this.request("https://api.deepl.com/v2/translate", {
+      response = await this.request(this.options.apiUrl ?? "https://api.deepl.com/v2/translate", {
         method: "POST",
         headers: {
           Authorization: `DeepL-Auth-Key ${this.options.apiKey}`,

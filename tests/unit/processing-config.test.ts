@@ -47,6 +47,7 @@ describe("processing config", () => {
     }).translation).toEqual({
       provider: "deepl",
       apiKey: "secret",
+      apiUrl: "https://api.deepl.com/v2/translate",
       sourceLocale: "en",
       targetLocale: "ru",
       timeoutMs: 8_000,
@@ -56,6 +57,12 @@ describe("processing config", () => {
     expect(() => loadProcessingConfig({
       PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
       PARSER_TRANSLATION_PROVIDER: "deepl",
+    })).toThrow(PermanentError);
+    expect(() => loadProcessingConfig({
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      PARSER_TRANSLATION_PROVIDER: "deepl",
+      PARSER_DEEPL_API_KEY: "secret",
+      PARSER_DEEPL_API_URL: "http://api.deepl.com/v2/translate",
     })).toThrow(PermanentError);
     expect(() => loadProcessingConfig({
       PARSER_PUBLIC_BASE_URL: "https://parser.example/images",

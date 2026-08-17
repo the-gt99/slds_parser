@@ -7,6 +7,7 @@ export interface ProcessingEnvironment {
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
   readonly PARSER_TRANSLATION_PROVIDER?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
+  readonly PARSER_DEEPL_API_URL?: string;
   readonly PARSER_TRANSLATION_SOURCE?: string;
   readonly PARSER_TRANSLATION_TARGET?: string;
   readonly PARSER_TRANSLATION_TIMEOUT_MS?: string;
@@ -36,6 +37,20 @@ function translationProvider(value: string | undefined): "google" | "deepl" {
   const result = value?.trim().toLowerCase() || "google";
   if (result !== "google" && result !== "deepl") {
     throw new PermanentError("PARSER_TRANSLATION_PROVIDER must be google or deepl", { code: "INVALID_PROCESSING_CONFIG" });
+  }
+  return result;
+}
+
+function httpsUrl(value: string | undefined, fallback: string, name: string): string {
+  const result = value?.trim() || fallback;
+  let parsed: URL;
+  try {
+    parsed = new URL(result);
+  } catch (cause) {
+    throw new PermanentError(`${name} is invalid`, { code: "INVALID_PROCESSING_CONFIG", cause });
+  }
+  if (parsed.protocol !== "https:") {
+    throw new PermanentError(`${name} must use HTTPS`, { code: "INVALID_PROCESSING_CONFIG" });
   }
   return result;
 }
@@ -86,7 +101,12 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       operationConcurrency: 2,
     },
     translation: selectedTranslationProvider === "deepl"
-      ? { ...translationOptions, provider: "deepl" as const, apiKey: translationApiKey }
+      ? {
+          ...translationOptions,
+          provider: "deepl" as const,
+          apiKey: translationApiKey,
+          apiUrl: httpsUrl(environment.PARSER_DEEPL_API_URL, "https://api.deepl.com/v2/translate", "PARSER_DEEPL_API_URL"),
+        }
       : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {
       apiUrl: shoeHeightApiUrl,

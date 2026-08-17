@@ -54,6 +54,17 @@ describe("DeepL translation provider", () => {
     expect(String(init.body)).not.toContain("secret");
   });
 
+  it("uses an explicitly configured HTTPS proxy endpoint", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      translations: [{ text: "Привет" }],
+    }), { status: 200 }));
+    const provider = new DeepLTranslationProvider({ ...options, apiUrl: "https://proxy.example/deepl" }, request);
+
+    await provider.translate("Hello", "en", "ru");
+
+    expect(request.mock.calls[0]?.[0]).toBe("https://proxy.example/deepl");
+  });
+
   it("retries transient DeepL failures", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce(new Response("", { status: 429 }))
