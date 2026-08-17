@@ -935,6 +935,7 @@ export interface ExportControlBatchItemRecord {
 }
 
 export type ExportCampaignStatus = "running" | "paused" | "completed";
+export type ExportCampaignMode = "safe" | "full_existing";
 
 export interface ExportCampaignRecord {
   readonly id: EntityId;
@@ -942,6 +943,8 @@ export interface ExportCampaignRecord {
   readonly status: ExportCampaignStatus;
   readonly actor: string;
   readonly reason: string | null;
+  readonly mode: ExportCampaignMode;
+  readonly catalogRunId: EntityId | null;
   readonly preflightWindow: number;
   readonly maxExports: number | null;
   readonly itemCount: number;

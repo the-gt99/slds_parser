@@ -4,6 +4,7 @@ import type {
   CachedExportControlPreflight,
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
+  ExportCampaignMode,
   ExportCampaignItemRecord,
   ExportCampaignRecord,
   ExportControlExportCandidate,
@@ -49,6 +50,8 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
     status: text(row, "status") as ExportCampaignRecord["status"],
     actor: text(row, "actor"),
     reason: nullableText(row, "reason"),
+    mode: text(row, "mode") as ExportCampaignMode,
+    catalogRunId: nullableText(row, "catalog_run_id"),
     preflightWindow: Number(row.preflight_window),
     maxExports: row.max_exports === null || row.max_exports === undefined ? null : Number(row.max_exports),
     itemCount: Number(row.item_count ?? 0),
@@ -558,12 +561,25 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     if (input.sourceProductIds !== undefined) where.push(`review.source_product_id = ANY(${add(input.sourceProductIds)}::BIGINT[])`);
     if (input.excludeNoChanges === true) where.push("NOT review.change_flags @> ARRAY['no_changes']::TEXT[]");
     if (input.campaignId !== undefined) {
+      const campaignId = add(input.campaignId);
       where.push(`NOT EXISTS (
         SELECT 1
         FROM target_export_batch_items previous_item
         JOIN target_export_batches previous_batch ON previous_batch.id = previous_item.batch_id
-        WHERE previous_batch.campaign_id = ${add(input.campaignId)}::BIGINT
+        WHERE previous_batch.campaign_id = ${campaignId}::BIGINT
           AND previous_item.internal_product_id = review.internal_product_id
+      )`);
+      where.push(`EXISTS (
+        SELECT 1
+        FROM target_export_campaigns campaign
+        WHERE campaign.id = ${campaignId}::BIGINT
+          AND (campaign.catalog_run_id IS NULL OR EXISTS (
+            SELECT 1
+            FROM wordpress_catalog_run_items catalog_item
+            WHERE catalog_item.run_id = campaign.catalog_run_id
+              AND catalog_item.internal_product_id = review.internal_product_id
+              AND catalog_item.match_status = 'matched'
+          ))
       )`);
     }
     where.push(...filterSql(input.filter ?? {}, add, { includeStatus: false }));
@@ -763,22 +779,39 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     readonly targetId: EntityId;
     readonly actor: string;
     readonly reason?: string;
+    readonly mode: ExportCampaignMode;
+    readonly catalogRunId?: EntityId;
     readonly preflightWindow: number;
     readonly maxExports?: number;
   }): Promise<ExportCampaignRecord> {
     try {
       const result = await queryPool<DatabaseRow>(this.pool,
         `WITH inserted AS (
-           INSERT INTO target_export_campaigns (target_id, actor, reason, preflight_window, max_exports)
-           VALUES ($1, $2, $3, $4, $5)
+           INSERT INTO target_export_campaigns (
+             target_id, actor, reason, mode, catalog_run_id, preflight_window, max_exports
+           )
+           SELECT $1, $2, $3, $4, $5, $6, $7
+           WHERE $5::BIGINT IS NULL OR EXISTS (
+             SELECT 1
+             FROM wordpress_catalog_runs catalog_run
+             WHERE catalog_run.id = $5::BIGINT
+               AND catalog_run.target_id = $1
+               AND catalog_run.status = 'completed'
+               AND catalog_run.catalog_complete = TRUE
+           )
            RETURNING *
          )
          ${campaignProgressSql.replace("FROM target_export_campaigns campaign", "FROM inserted campaign")}
          GROUP BY campaign.id, campaign.target_id, campaign.status, campaign.actor, campaign.reason,
+                  campaign.mode, campaign.catalog_run_id,
                   campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
                   campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at`,
-        [input.targetId, input.actor, input.reason ?? null, input.preflightWindow, input.maxExports ?? null],
+        [input.targetId, input.actor, input.reason ?? null, input.mode, input.catalogRunId ?? null,
+          input.preflightWindow, input.maxExports ?? null],
       );
+      if (result.rows[0] === undefined) {
+        throw new IntegrationContractError("Для полной выгрузки нужен завершённый полный снимок каталога WordPress");
+      }
       return mapCampaign(result.rows[0]!);
     } catch (error) {
       if (error !== null && typeof error === "object" && "code" in error && error.code === "23505") {
@@ -901,7 +934,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
   }): Promise<readonly ExportControlPreflightCandidate[]> {
     return transaction(this.pool, async (client) => {
       const campaign = await client.query<DatabaseRow>(
-        `SELECT id, target_id, scan_before_internal_product_id, scan_complete
+        `SELECT id, target_id, catalog_run_id, scan_before_internal_product_id, scan_complete
          FROM target_export_campaigns
          WHERE id = $1 AND status = 'running'
          FOR UPDATE`,
@@ -932,6 +965,13 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            WHERE internal.status = 'classified'
              AND internal.data->'classification'->>'status' = 'complete'
              AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
+             AND ($4::BIGINT IS NULL OR EXISTS (
+               SELECT 1
+               FROM wordpress_catalog_run_items catalog_item
+               WHERE catalog_item.run_id = $4::BIGINT
+                 AND catalog_item.internal_product_id = internal.id
+                 AND catalog_item.match_status = 'matched'
+             ))
              AND (review.id IS NULL OR review.status IN ('stale', 'error')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)
@@ -978,7 +1018,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
-        [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit],
+        [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit,
+          nullableText(state, "catalog_run_id")],
       );
       const last = result.rows.at(-1);
       await client.query(

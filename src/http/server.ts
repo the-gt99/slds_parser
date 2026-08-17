@@ -168,6 +168,8 @@ interface ExportControlBody {
   readonly limit?: unknown;
   readonly filter?: unknown;
   readonly reason?: unknown;
+  readonly campaignMode?: unknown;
+  readonly catalogRunId?: unknown;
   readonly preflightWindow?: unknown;
   readonly maxExports?: unknown;
 }
@@ -1516,12 +1518,21 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       );
       const maxExports = request.body?.maxExports === undefined || request.body.maxExports === ""
         ? undefined
-        : positiveInteger(String(request.body.maxExports), 0, 200_000);
+        : positiveInteger(String(request.body.maxExports), 0, 500_000);
       if (preflightWindow === 0) throw new HttpInputError("preflightWindow must be positive");
       if (maxExports === 0) throw new HttpInputError("maxExports must be positive");
+      const campaignMode = optionalString(request.body?.campaignMode) ?? "safe";
+      if (campaignMode !== "safe" && campaignMode !== "full_existing") {
+        throw new HttpInputError("campaignMode is invalid");
+      }
+      const catalogRunId = request.body?.catalogRunId === undefined || request.body.catalogRunId === ""
+        ? undefined
+        : entityId(request.body.catalogRunId, "catalogRunId");
       const reason = optionalString(request.body?.reason);
       return { campaign: await exportControlService().startCampaign({
         targetId: entityId(request.body?.targetId, "targetId"),
+        mode: campaignMode,
+        ...(catalogRunId === undefined ? {} : { catalogRunId }),
         preflightWindow,
         ...(maxExports === undefined ? {} : { maxExports }),
         ...(reason === undefined ? {} : { reason }),

@@ -3,6 +3,7 @@ import type {
   ExportControlBatchItemRecord,
   ExportControlBatchRecord,
   ExportCampaignItemRecord,
+  ExportCampaignMode,
   ExportCampaignRecord,
   CachedExportControlPreflight,
   ExportControlExportCandidate,
@@ -53,6 +54,8 @@ export interface ExportControlRepository {
     readonly targetId: EntityId;
     readonly actor: string;
     readonly reason?: string;
+    readonly mode: ExportCampaignMode;
+    readonly catalogRunId?: EntityId;
     readonly preflightWindow: number;
     readonly maxExports?: number;
   }): Promise<ExportCampaignRecord>;

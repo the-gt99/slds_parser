@@ -478,7 +478,7 @@ async function loadCampaigns() {
       wrapper.append(
         element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`),
         element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`),
-        element("span", "", `проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · работа ${campaign.runningCount}`),
+        element("span", "", `${campaign.mode === "full_existing" ? `полный режим · снимок #${campaign.catalogRunId}` : "безопасный режим"} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · работа ${campaign.runningCount}`),
         element("span", "", `выгружено ${campaign.completedCount} · ошибки ${campaign.failedCount}${campaign.maxExports ? ` · лимит ${campaign.maxExports}` : ""}`),
       );
       if (campaign.lastError) wrapper.append(element("span", "form-error", campaign.lastError));
@@ -516,18 +516,30 @@ async function loadCampaigns() {
 async function startCampaign() {
   const rawLimit = byId("campaign-limit").value.trim();
   const maxExports = rawLimit ? Number(rawLimit) : undefined;
+  const campaignMode = byId("campaign-mode").value;
+  const rawCatalogRunId = byId("campaign-catalog-run").value.trim();
+  const catalogRunId = rawCatalogRunId ? Number(rawCatalogRunId) : undefined;
+  if (campaignMode === "full_existing" && catalogRunId === undefined) {
+    showMessage("Для полного режима укажите ID завершённого снимка WordPress.", "error");
+    return;
+  }
+  const label = campaignMode === "full_existing"
+    ? `полную выгрузку существующих товаров снимка #${catalogRunId}`
+    : "безопасную выгрузку";
   const message = maxExports
-    ? `Запустить безопасную выгрузку максимум ${maxExports} товаров?`
-    : "Запустить безопасную выгрузку без общего лимита? Остановить её можно в любой момент.";
+    ? `Запустить ${label}, максимум ${maxExports} товаров?`
+    : `Запустить ${label} без общего лимита? Остановить её можно в любой момент.`;
   if (!window.confirm(message)) return;
   try {
     const result = await api("/api/export-control/campaigns", { method: "POST", body: {
       targetId: state.targetId,
+      campaignMode,
+      ...(catalogRunId === undefined ? {} : { catalogRunId }),
       preflightWindow: Number(byId("campaign-window").value),
       ...(maxExports === undefined ? {} : { maxExports }),
       ...(byId("campaign-reason").value.trim() ? { reason: byId("campaign-reason").value.trim() } : {}),
     } });
-    showMessage(`Безопасная выгрузка #${result.campaign.id} запущена.`, "success");
+    showMessage(`Выгрузка #${result.campaign.id} запущена.`, "success");
     await loadCampaigns();
   } catch (error) { showMessage(error.message, "error"); }
 }

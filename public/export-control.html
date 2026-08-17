@@ -39,10 +39,12 @@
     </section>
 
     <section class="section export-batches-section">
-      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Безопасная массовая выгрузка</h2><p class="muted">Проверяет товары окном, записывает строго по одному и только обновления с риском «без опасных изменений». При первой ошибке автоматически останавливается.</p></div></div>
+      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Управляемая массовая выгрузка</h2><p class="muted">Проверяет товары окном, записывает строго по одному и при первой ошибке автоматически останавливается. Полный режим ограничивается сопоставленными товарами выбранного снимка WordPress и никогда не создаёт новые.</p></div></div>
       <div class="runtime-actions">
+        <label class="field compact-field"><span>Режим</span><select id="campaign-mode"><option value="safe">Только без риска</option><option value="full_existing">Все готовые обновления</option></select></label>
+        <label class="field compact-field"><span>ID снимка WordPress</span><input id="campaign-catalog-run" type="number" min="1" placeholder="для полного режима"></label>
         <label class="field compact-field"><span>Окно preflight</span><select id="campaign-window"><option>25</option><option>50</option><option selected>100</option></select></label>
-        <label class="field compact-field"><span>Лимит товаров</span><input id="campaign-limit" type="number" min="1" max="200000" placeholder="без лимита"></label>
+        <label class="field compact-field"><span>Лимит товаров</span><input id="campaign-limit" type="number" min="1" max="500000" placeholder="без лимита"></label>
         <label class="field"><span>Комментарий</span><input id="campaign-reason" maxlength="300" placeholder="Безопасная массовая выгрузка"></label>
         <button id="start-campaign" class="button primary" type="button">Запустить</button>
       </div>

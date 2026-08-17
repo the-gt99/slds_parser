@@ -1,10 +1,10 @@
 import type { EntityId, JsonObject } from "../contracts/index.js";
 import { IntegrationContractError } from "../core/errors/index.js";
-import type { ExportControlFilter, ExportControlListQuery, ExportControlRepository, JobRepository } from "../repositories/index.js";
+import type { ExportCampaignMode, ExportControlFilter, ExportControlListQuery, ExportControlRepository, JobRepository } from "../repositories/index.js";
 
 const maximumPreflightBatch = 100;
 const maximumExportBatch = 5_000;
-const maximumCampaignExports = 200_000;
+const maximumCampaignExports = 500_000;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
@@ -143,10 +143,13 @@ export class ExportControlService {
 
   async startCampaign(input: {
     readonly targetId: EntityId;
+    readonly mode?: ExportCampaignMode;
+    readonly catalogRunId?: EntityId;
     readonly preflightWindow?: number;
     readonly maxExports?: number;
     readonly reason?: string;
   }, actor: string) {
+    const mode = input.mode ?? "safe";
     const preflightWindow = input.preflightWindow ?? 100;
     if (!Number.isInteger(preflightWindow) || preflightWindow < 1 || preflightWindow > maximumPreflightBatch) {
       throw new IntegrationContractError(`Окно preflight должно быть от 1 до ${maximumPreflightBatch}`);
@@ -155,9 +158,14 @@ export class ExportControlService {
       && (!Number.isInteger(input.maxExports) || input.maxExports < 1 || input.maxExports > maximumCampaignExports)) {
       throw new IntegrationContractError(`Лимит выгрузки должен быть от 1 до ${maximumCampaignExports}`);
     }
+    if (mode === "full_existing" && input.catalogRunId === undefined) {
+      throw new IntegrationContractError("Для полной выгрузки нужно выбрать снимок каталога WordPress");
+    }
     return this.repository.createCampaign({
       targetId: input.targetId,
       actor,
+      mode,
+      ...(input.catalogRunId === undefined ? {} : { catalogRunId: input.catalogRunId }),
       preflightWindow,
       ...(input.maxExports === undefined ? {} : { maxExports: input.maxExports }),
       ...(input.reason === undefined ? {} : { reason: input.reason }),
@@ -192,21 +200,26 @@ export class ExportControlService {
 
     let queuedExport = false;
     if (exportActive === 0 && !limitReached) {
+      const exportFilter = {
+        status: "ready",
+        operation: "update",
+        ...(campaign.mode === "safe" ? { riskLevel: "none" } : {}),
+      } satisfies ExportControlFilter;
       const candidates = await this.repository.listExportCandidates({
         targetId: campaign.targetId,
-        filter: { status: "ready", operation: "update", riskLevel: "none" },
+        filter: exportFilter,
         limit: 1,
         campaignId: campaign.id,
         excludeNoChanges: true,
       });
       const candidate = candidates[0];
       if (candidate !== undefined) {
-        if (candidate.willCreate || candidate.riskLevel !== "none") {
+        if (candidate.willCreate || (campaign.mode === "safe" && candidate.riskLevel !== "none")) {
           throw new IntegrationContractError("Кампания получила товар вне безопасного фильтра");
         }
         await this.repository.createBatch({
           targetId: campaign.targetId,
-          filter: { status: "ready", operation: "update", riskLevel: "none" },
+          filter: exportFilter,
           actor: campaign.actor,
           reason: campaign.reason ?? `Безопасная выгрузка #${campaign.id}`,
           candidates: [candidate],
@@ -248,9 +261,14 @@ export class ExportControlService {
       const refreshedActive = await this.repository.countActivePreflights(campaign.targetId);
       if (refreshedActive === 0) {
         const refreshedCampaign = await this.repository.getRunningCampaign();
+        const remainingFilter = {
+          status: "ready",
+          operation: "update",
+          ...(campaign.mode === "safe" ? { riskLevel: "none" } : {}),
+        } satisfies ExportControlFilter;
         const remaining = await this.repository.listExportCandidates({
           targetId: campaign.targetId,
-          filter: { status: "ready", operation: "update", riskLevel: "none" },
+          filter: remainingFilter,
           limit: 1,
           campaignId: campaign.id,
           excludeNoChanges: true,

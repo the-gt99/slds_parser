@@ -25,6 +25,15 @@ function setup() {
       items: [{ id: "61", sourceProductId: "21", internalProductId: "31" }],
       jobIds: ["71"],
     }),
+    createCampaign: vi.fn().mockImplementation(async (input) => ({
+      id: "81", targetId: input.targetId, status: "running", actor: input.actor,
+      reason: input.reason ?? null, mode: input.mode, catalogRunId: input.catalogRunId ?? null,
+      preflightWindow: input.preflightWindow, maxExports: input.maxExports ?? null,
+      itemCount: 0, pendingCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
+      acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
+      scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
+      updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
+    })),
     getRunningCampaign: vi.fn().mockResolvedValue(null),
     countActivePreflights: vi.fn().mockResolvedValue(0),
     prepareCampaignPreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]),
@@ -83,6 +92,7 @@ describe("ExportControlService", () => {
     vi.mocked(repository.listExportCandidates).mockResolvedValue([{ ...candidate, riskLevel: "none" }]);
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "81", targetId: "10", status: "running", actor: "admin", reason: "mass",
+      mode: "safe", catalogRunId: null,
       preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, runningCount: 0,
       completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5,
       scanBeforeInternalProductId: null, scanComplete: false,
@@ -110,5 +120,47 @@ describe("ExportControlService", () => {
       payload: { sourceProductId: "21", targetId: "10", refreshWordPress: true },
       uniqueKey: "target-product:10:21:preflight",
     }]);
+  });
+
+  it("streams reviewed and dangerous updates only inside a selected WordPress catalog", async () => {
+    const { repository, service } = setup();
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "82", targetId: "10", status: "running", actor: "admin", reason: "full",
+      mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
+      itemCount: 0, pendingCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
+      acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
+      scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
+      updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
+    });
+    vi.mocked(repository.countActivePreflights).mockResolvedValue(0);
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).toHaveBeenCalledWith({
+      targetId: "10",
+      filter: { status: "ready", operation: "update" },
+      limit: 1,
+      campaignId: "82",
+      excludeNoChanges: true,
+    });
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({
+      campaignId: "82",
+      candidates: [candidate],
+    }));
+  });
+
+  it("requires a completed WordPress catalog scope for full existing campaigns", async () => {
+    const { repository, service } = setup();
+
+    await expect(service.startCampaign({ targetId: "10", mode: "full_existing" }, "admin"))
+      .rejects.toThrow("снимок каталога WordPress");
+    await service.startCampaign({
+      targetId: "10", mode: "full_existing", catalogRunId: "4", maxExports: 250_000,
+    }, "admin");
+
+    expect(repository.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10", actor: "admin", mode: "full_existing", catalogRunId: "4",
+      maxExports: 250_000,
+    }));
   });
 });
