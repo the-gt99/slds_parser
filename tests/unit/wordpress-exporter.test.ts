@@ -163,7 +163,7 @@ describe("WordPressExporter", () => {
     expect(targetProduct).not.toHaveProperty("short_description_html");
     expect(item).toMatchObject({ variation_key: "goat:100|offer-7", sku: "ROOT-SKU-7", size: { taxonomy: "pa_razmer", term_id: 107 }, price: { source_currency: "USD", source_minor_amount: "12345" }, inventory: { availability: "available" } });
     expect((item.inventory as JsonObject).quantity).toBeUndefined();
-    expect(String(payload.idempotency_key)).toMatch(/^product-upsert:[a-f0-9]{64}$/u);
+    expect(String(payload.idempotency_key)).toMatch(/^product-upsert:v2:[a-f0-9]{64}$/u);
     expect(String(payload.payload_hash)).toMatch(/^[a-f0-9]{64}$/u);
   });
 

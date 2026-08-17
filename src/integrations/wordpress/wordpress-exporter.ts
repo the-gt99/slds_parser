@@ -963,7 +963,7 @@ async function buildWordPressPayload(
     variations: { mode: "replace_active_set", missing_policy: "out_of_stock", items: variations },
     ...(content.descriptionStoryPolicy === undefined ? {} : { content_policy: { description_story: content.descriptionStoryPolicy } }),
   };
-  const idempotencyKey = `product-upsert:${hashStableJson(base)}`;
+  const idempotencyKey = `product-upsert:v2:${hashStableJson(base)}`;
   const payload = { ...base, idempotency_key: idempotencyKey } satisfies JsonObject;
   return {
     payload: { ...payload, payload_hash: hashStableJson(payload) },
@@ -1079,7 +1079,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.17.0";
+  readonly version = "1.18.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
