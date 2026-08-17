@@ -21,4 +21,15 @@ export class PostgresInternalProductRepository implements InternalProductReposit
     const result = await this.executor.query<DatabaseRow>(`INSERT INTO internal_products (source_product_id, data, input_hash, content_hash, processor_version, status, processed_at, last_error) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8) ON CONFLICT (source_product_id) DO UPDATE SET data = EXCLUDED.data, input_hash = EXCLUDED.input_hash, content_hash = EXCLUDED.content_hash, processor_version = EXCLUDED.processor_version, status = EXCLUDED.status, processed_at = EXCLUDED.processed_at, last_error = EXCLUDED.last_error, updated_at = NOW() RETURNING *`, [input.sourceProductId, input.data, input.inputHash, input.contentHash, input.processorVersion, input.status, input.processedAt ?? null, input.lastError ?? null]);
     return mapInternalProduct(requireRow(result.rows, "internal product", input.sourceProductId));
   }
+
+  async updateDataIfContentHash(input: { readonly id: EntityId; readonly expectedContentHash: string; readonly data: InternalProductRecord["data"]; readonly contentHash: string }): Promise<InternalProductRecord | null> {
+    const result = await this.executor.query<DatabaseRow>(
+      `UPDATE internal_products
+       SET data = $3::jsonb, content_hash = $4, last_error = NULL, updated_at = NOW()
+       WHERE id = $1 AND content_hash = $2
+       RETURNING *`,
+      [input.id, input.expectedContentHash, input.data, input.contentHash],
+    );
+    return result.rows[0] ? mapInternalProduct(result.rows[0]) : null;
+  }
 }

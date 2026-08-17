@@ -1,9 +1,9 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore } from "./infrastructure/media/index.js";
-import { LegacyGoogleTranslationProvider } from "./infrastructure/translation/index.js";
+import { CachedTranslationProvider, DeepLTranslationProvider, LegacyGoogleTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
@@ -20,10 +20,15 @@ function proxyPoolEnabled(environment: GoatProxyPoolEnvironment): boolean {
   return environment.GOAT_PROXY_POOL_ENABLED === "1" || environment.GOAT_PROXY_POOL_ENABLED?.toLowerCase() === "true";
 }
 
-export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool): void {
+export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
   const processing = loadProcessingConfig(environment);
   const imageStore = new LocalImageStore(processing.image);
-  const translationProvider = new LegacyGoogleTranslationProvider(processing.translation);
+  const configuredTranslationProvider = processing.translation.provider === "deepl"
+    ? new DeepLTranslationProvider(processing.translation)
+    : new LegacyGoogleTranslationProvider(processing.translation);
+  const translationProvider = translationCache === undefined
+    ? configuredTranslationProvider
+    : new CachedTranslationProvider(configuredTranslationProvider, translationCache);
   registry.register(new NormalizeProductOperation());
   registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
   registry.register(new DownloadImagesOperation(
@@ -52,10 +57,10 @@ export function registerPipelineComponents(registries: {
   readonly processors: SourceProcessorRegistry;
   readonly operations: ProductOperationRegistry;
   readonly exporters: TargetExporterRegistry;
-}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool): void {
+}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
   registries.adapters.register(GoatSourceAdapter.create(environment, proxyPool));
   registerSourceProcessors(registries.processors);
-  registerProductOperations(registries.operations, environment, proxyPool);
+  registerProductOperations(registries.operations, environment, proxyPool, translationCache);
   const wordpress = loadWordPressTargetConfig(environment);
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }
@@ -71,7 +76,8 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const processors = new SourceProcessorRegistry();
   const operations = new ProductOperationRegistry();
   const exporters = new TargetExporterRegistry();
-  registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool);
+  const translationCache = new PostgresTranslationCacheRepository(pool);
+  registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache);
   const classifier = new ProductClassifier(repositories.classifications);
   const targetDictionary = new PostgresTargetDictionaryRepository(pool);
   const targetMappings = new TargetReferenceMappingService(
@@ -86,6 +92,9 @@ export function createApplication(environment: ApplicationEnvironment = process.
     new PostgresProductOperationHistoryRepository(pool),
   );
   const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
+  const translationOperation = operations.list().find((operation): operation is TranslateContentOperation => operation instanceof TranslateContentOperation);
+  if (translationOperation === undefined) throw new Error("Translate content operation is not registered");
+  const retranslationRunner = new RetranslationRunner(repositories, translationOperation);
   const sourceRefresher = new ExportSourceRefresher(repositories.sourceProducts, unitOfWork, adapters, processors);
   let refreshSourceBeforeExport = true;
   const exportRunner = new ExportRunner(repositories, exporters, targetMappings, sourceRefresher, () => refreshSourceBeforeExport);
@@ -131,7 +140,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         );
       })();
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
-    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync, wordpressVariationPatches);
+    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync, wordpressVariationPatches, retranslationRunner);
   const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,
@@ -169,6 +178,6 @@ export function createApplication(environment: ApplicationEnvironment = process.
     exportCampaigns,
     wordpress === null ? undefined : wordpressCatalogService,
   );
-  return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner,
+  return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner, retranslationRunner,
     sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, dispatcher, worker, close: () => pool.end() };
 }

@@ -66,7 +66,7 @@ describe("product operations", () => {
     const result = await new TranslateContentOperation(provider, { sourceLocale: "en", targetLocale: "ru" }).execute(input);
 
     expect(result.description).toBe("Description");
-    expect(result.translatedContent).toEqual({ sourceLocale: "en", targetLocale: "ru", description: "Описание", story: "История", color: "Синий/ Белый", details: "Кожа", upperMaterial: "Сетка" });
+    expect(result.translatedContent).toEqual({ providerCode: "fake", providerVersion: "1", sourceLocale: "en", targetLocale: "ru", description: "Описание", story: "История", color: "Синий/ Белый", details: "Кожа", upperMaterial: "Сетка" });
     expect(translate).not.toHaveBeenCalledWith("blue", "en", "ru");
     expect(translate).not.toHaveBeenCalledWith("white", "en", "ru");
   });

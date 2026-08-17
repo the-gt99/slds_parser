@@ -23,6 +23,10 @@ export interface ReclassifyProductPayload {
   readonly sourceProductId: string;
 }
 
+export interface RetranslateProductPayload {
+  readonly sourceProductId: string;
+}
+
 export interface ExportProductPayload {
   readonly internalProductId: string;
   readonly targetId: string;
@@ -120,6 +124,13 @@ export function parseReclassifyProductPayload(value: JsonValue): ReclassifyProdu
     return { sourceProductId: value.sourceProductId };
   }
   throw new InvalidJobPayloadError("reclassify_product");
+}
+
+export function parseRetranslateProductPayload(value: JsonValue): RetranslateProductPayload {
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)) {
+    return { sourceProductId: value.sourceProductId };
+  }
+  throw new InvalidJobPayloadError("retranslate_product");
 }
 
 export function parseExportProductPayload(value: JsonValue): ExportProductPayload {

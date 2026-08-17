@@ -144,6 +144,23 @@ export class TranslateContentOperation implements ProductOperation {
     };
   }
 
+  translationIdentity(): { readonly providerCode: string; readonly providerVersion: string; readonly sourceLocale: string; readonly targetLocale: string } {
+    return {
+      providerCode: this.provider.code,
+      providerVersion: this.provider.version,
+      sourceLocale: this.options.sourceLocale,
+      targetLocale: this.options.targetLocale,
+    };
+  }
+
+  isCurrent(product: UniversalProductDTO): boolean {
+    const translated = product.translatedContent;
+    return translated?.providerCode === this.provider.code
+      && translated.providerVersion === this.provider.version
+      && translated.sourceLocale === this.options.sourceLocale
+      && translated.targetLocale === this.options.targetLocale;
+  }
+
   async execute(product: UniversalProductDTO): Promise<UniversalProductDTO> {
     const description = product.description;
     const story = attribute(product, "story");
@@ -159,6 +176,8 @@ export class TranslateContentOperation implements ProductOperation {
     return {
       ...product,
       translatedContent: {
+        providerCode: this.provider.code,
+        providerVersion: this.provider.version,
         sourceLocale: this.options.sourceLocale,
         targetLocale: this.options.targetLocale,
         description: translatedDescription,

@@ -203,6 +203,7 @@ export class Worker {
   async run(signal: AbortSignal): Promise<void> {
     const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
+    const retranslationJobTypes = ["retranslate_product"] satisfies readonly JobType[];
     const exportJobTypes = ["export_product"] satisfies readonly JobType[];
     const preflightJobTypes = ["preflight_product"] satisfies readonly JobType[];
     const classificationSyncJobTypes = ["sync_target_classifications"] satisfies readonly JobType[];
@@ -229,6 +230,8 @@ export class Worker {
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
           this.runProcessingLane(controller.signal, `${this.options.workerId}:process-${index + 1}`)),
+        ...Array.from({ length: configuredConcurrency.processConcurrency }, (_, index) =>
+          this.runLane(controller.signal, retranslationJobTypes, `${this.options.workerId}:translation-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, preflightJobTypes, `${this.options.workerId}:preflight-${index + 1}`)),
         this.runLane(controller.signal, classificationSyncJobTypes, `${this.options.workerId}:classification-sync`),

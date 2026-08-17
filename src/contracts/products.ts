@@ -154,6 +154,8 @@ export interface ProductImageDTO {
 }
 
 export interface ProductTranslatedContentDTO {
+  readonly providerCode?: string;
+  readonly providerVersion?: string;
   readonly sourceLocale: string;
   readonly targetLocale: string;
   readonly description: string;

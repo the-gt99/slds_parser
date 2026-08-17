@@ -57,6 +57,21 @@ describe("component registries", () => {
     expect(fast.listForSource("goat").map((item) => item.configurationFingerprint ?? null))
       .toEqual(slow.listForSource("goat").map((item) => item.configurationFingerprint ?? null));
   });
+  it("invalidates translated output when the selected provider changes", () => {
+    const google = new ProductOperationRegistry();
+    const deepl = new ProductOperationRegistry();
+    registerProductOperations(google, { PARSER_PUBLIC_BASE_URL: "https://parser.example/images" });
+    registerProductOperations(deepl, {
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      PARSER_TRANSLATION_PROVIDER: "deepl",
+      PARSER_DEEPL_API_KEY: "secret",
+    });
+
+    const googleTranslation = google.listForSource("goat").find((item) => item.code === "translate-content");
+    const deepLTranslation = deepl.listForSource("goat").find((item) => item.code === "translate-content");
+    expect(googleTranslation?.configurationFingerprint).toMatchObject({ provider: "legacy-google-translate" });
+    expect(deepLTranslation?.configurationFingerprint).toMatchObject({ provider: "deepl" });
+  });
   it("registers the WordPress exporter only with complete connection settings", () => { const adapters = new SourceAdapterRegistry(); const processors = new SourceProcessorRegistry(); const operations = new ProductOperationRegistry(); const exporters = new TargetExporterRegistry(); registerPipelineComponents({ adapters, processors, operations, exporters }, { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_WORDPRESS_BASE_URL: "https://shop.example", PARSER_WORDPRESS_AUTH_TOKEN: "token" }); expect(exporters.get("wordpress").targetCode).toBe("wordpress"); });
   it("registers and returns implementations by their own code", () => {
     const adapterRegistry = new SourceAdapterRegistry();

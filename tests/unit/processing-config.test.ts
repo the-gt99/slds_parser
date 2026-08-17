@@ -7,7 +7,7 @@ describe("processing config", () => {
   it("uses the confirmed legacy processing defaults", () => {
     expect(loadProcessingConfig({ PARSER_PUBLIC_BASE_URL: "https://parser.example/images" })).toEqual({
       image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2 },
-      translation: { sourceLocale: "en", targetLocale: "ru", timeoutMs: 8_000, attempts: 2, retryDelayMs: 400 },
+      translation: { provider: "google", sourceLocale: "en", targetLocale: "ru", timeoutMs: 8_000, attempts: 2, retryDelayMs: 400 },
       shoeHeight: null,
     });
   });
@@ -36,6 +36,30 @@ describe("processing config", () => {
     expect(() => loadProcessingConfig({
       PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
       SHOE_HEIGHT_API_URL: "file:///classifier",
+    })).toThrow(PermanentError);
+  });
+
+  it("selects DeepL only with an explicit API key", () => {
+    expect(loadProcessingConfig({
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      PARSER_TRANSLATION_PROVIDER: "deepl",
+      PARSER_DEEPL_API_KEY: "secret",
+    }).translation).toEqual({
+      provider: "deepl",
+      apiKey: "secret",
+      sourceLocale: "en",
+      targetLocale: "ru",
+      timeoutMs: 8_000,
+      attempts: 2,
+      retryDelayMs: 400,
+    });
+    expect(() => loadProcessingConfig({
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      PARSER_TRANSLATION_PROVIDER: "deepl",
+    })).toThrow(PermanentError);
+    expect(() => loadProcessingConfig({
+      PARSER_PUBLIC_BASE_URL: "https://parser.example/images",
+      PARSER_TRANSLATION_PROVIDER: "unknown",
     })).toThrow(PermanentError);
   });
 

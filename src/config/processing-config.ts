@@ -5,6 +5,8 @@ export interface ProcessingEnvironment {
   readonly PARSER_PUBLIC_BASE_URL?: string;
   readonly PARSER_PUBLIC_PATH_PREFIX?: string;
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
+  readonly PARSER_TRANSLATION_PROVIDER?: string;
+  readonly PARSER_DEEPL_API_KEY?: string;
   readonly PARSER_TRANSLATION_SOURCE?: string;
   readonly PARSER_TRANSLATION_TARGET?: string;
   readonly PARSER_TRANSLATION_TIMEOUT_MS?: string;
@@ -27,6 +29,14 @@ function integer(value: string | undefined, fallback: number, name: string, mini
 function locale(value: string | undefined, fallback: string, name: string): string {
   const result = value?.trim() || fallback;
   if (!/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/u.test(result)) throw new PermanentError(`${name} is invalid`, { code: "INVALID_PROCESSING_CONFIG" });
+  return result;
+}
+
+function translationProvider(value: string | undefined): "google" | "deepl" {
+  const result = value?.trim().toLowerCase() || "google";
+  if (result !== "google" && result !== "deepl") {
+    throw new PermanentError("PARSER_TRANSLATION_PROVIDER must be google or deepl", { code: "INVALID_PROCESSING_CONFIG" });
+  }
   return result;
 }
 
@@ -54,6 +64,18 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       throw new PermanentError("SHOE_HEIGHT_API_URL must use HTTP or HTTPS", { code: "INVALID_PROCESSING_CONFIG" });
     }
   }
+  const selectedTranslationProvider = translationProvider(environment.PARSER_TRANSLATION_PROVIDER);
+  const translationApiKey = environment.PARSER_DEEPL_API_KEY?.trim() ?? "";
+  if (selectedTranslationProvider === "deepl" && translationApiKey === "") {
+    throw new PermanentError("PARSER_DEEPL_API_KEY is required for the DeepL translation provider", { code: "INVALID_PROCESSING_CONFIG" });
+  }
+  const translationOptions = {
+    sourceLocale: locale(environment.PARSER_TRANSLATION_SOURCE, "en", "PARSER_TRANSLATION_SOURCE"),
+    targetLocale: locale(environment.PARSER_TRANSLATION_TARGET, "ru", "PARSER_TRANSLATION_TARGET"),
+    timeoutMs: integer(environment.PARSER_TRANSLATION_TIMEOUT_MS, 8_000, "PARSER_TRANSLATION_TIMEOUT_MS", 1),
+    attempts: integer(environment.PARSER_TRANSLATION_ATTEMPTS, 2, "PARSER_TRANSLATION_ATTEMPTS", 1),
+    retryDelayMs: integer(environment.PARSER_TRANSLATION_RETRY_DELAY_MS, 400, "PARSER_TRANSLATION_RETRY_DELAY_MS", 0),
+  } as const;
   return {
     image: {
       baseDirectory: environment.PARSER_IMAGE_BASE_DIR?.trim() || "runtime/images",
@@ -63,13 +85,9 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       transportConcurrency: integer(environment.GOAT_IMAGE_DOWNLOAD_CONCURRENCY, 8, "GOAT_IMAGE_DOWNLOAD_CONCURRENCY", 1),
       operationConcurrency: 2,
     },
-    translation: {
-      sourceLocale: locale(environment.PARSER_TRANSLATION_SOURCE, "en", "PARSER_TRANSLATION_SOURCE"),
-      targetLocale: locale(environment.PARSER_TRANSLATION_TARGET, "ru", "PARSER_TRANSLATION_TARGET"),
-      timeoutMs: integer(environment.PARSER_TRANSLATION_TIMEOUT_MS, 8_000, "PARSER_TRANSLATION_TIMEOUT_MS", 1),
-      attempts: integer(environment.PARSER_TRANSLATION_ATTEMPTS, 2, "PARSER_TRANSLATION_ATTEMPTS", 1),
-      retryDelayMs: integer(environment.PARSER_TRANSLATION_RETRY_DELAY_MS, 400, "PARSER_TRANSLATION_RETRY_DELAY_MS", 0),
-    },
+    translation: selectedTranslationProvider === "deepl"
+      ? { ...translationOptions, provider: "deepl" as const, apiKey: translationApiKey }
+      : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {
       apiUrl: shoeHeightApiUrl,
       timeoutMs: integer(environment.SHOE_HEIGHT_API_TIMEOUT_MS, 20_000, "SHOE_HEIGHT_API_TIMEOUT_MS", 1),

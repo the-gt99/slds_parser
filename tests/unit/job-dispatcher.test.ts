@@ -40,6 +40,16 @@ describe("JobDispatcher", () => {
       error: "lookup failed",
     });
   });
+  it("routes translation-only jobs", async () => {
+    const repositories = createMemoryRepositories(new MemoryStore());
+    const retranslations = { retranslateProduct: vi.fn().mockResolvedValue({ status: "completed" }) };
+    const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns,
+      undefined, undefined, undefined, undefined, undefined, undefined, retranslations as never);
+
+    await dispatcher.dispatch(job("retranslate_product", { sourceProductId: "42" }));
+
+    expect(retranslations.retranslateProduct).toHaveBeenCalledWith({ sourceProductId: "42" });
+  });
   it("routes queued WordPress classification suggestions and releases terminal failures", async () => {
     const repositories = createMemoryRepositories(new MemoryStore());
     const classificationApply = {

@@ -100,6 +100,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
       getById: async (id) => store.internals.get(id) ?? null,
       findBySourceProductId: async (id) => [...store.internals.values()].find((item) => item.sourceProductId === id) ?? null,
       upsert: async (input: UpsertInternalProductInput) => { const old = [...store.internals.values()].find((item) => item.sourceProductId === input.sourceProductId); const record: InternalProductRecord = { id: old?.id ?? store.id(), ...input, processedAt: input.processedAt ?? null, lastError: input.lastError ?? null, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }; store.internals.set(record.id, record); return record; },
+      updateDataIfContentHash: async (input) => { const old = store.internals.get(input.id); if (old === undefined || old.contentHash !== input.expectedContentHash) return null; const record: InternalProductRecord = { ...old, data: input.data, contentHash: input.contentHash, lastError: null, updatedAt: timestamp }; store.internals.set(record.id, record); return record; },
     },
     references: {
       resolveTargetValue: async (_targetId: string, _referenceValueId: string, _scope: string): Promise<TargetValueMappingRecord | null> => null,

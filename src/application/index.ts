@@ -4,6 +4,7 @@ export * from "./export-source-refresher.js";
 export * from "./job-dispatcher.js";
 export * from "./job-payloads.js";
 export * from "./processing-runner.js";
+export * from "./retranslation-runner.js";
 export * from "./preflight-runner.js";
 export * from "./target-classification-sync-runner.js";
 export * from "./target-classification-apply-runner.js";

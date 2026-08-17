@@ -2,9 +2,10 @@ import { InvalidJobPayloadError } from "../core/errors/index.js";
 import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
-import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRefreshWordPressVariationPatchPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
+import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshWordPressVariationPatchPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
 import type { PreflightRunner } from "./preflight-runner.js";
 import type { ProcessingRunner } from "./processing-runner.js";
+import type { RetranslationRunner } from "./retranslation-runner.js";
 import type { TargetClassificationSyncRunner } from "./target-classification-sync-runner.js";
 import type { TargetClassificationApplyRunner } from "./target-classification-apply-runner.js";
 import type { RunnerResult } from "./runner-result.js";
@@ -24,7 +25,8 @@ export class JobDispatcher implements JobHandler {
     private readonly classificationSync?: TargetClassificationSyncRunner,
     private readonly classificationApply?: TargetClassificationApplyRunner,
     private readonly wordpressCatalogSync?: WordPressCatalogSyncRunner,
-    private readonly wordpressVariationPatches?: WordPressVariationPatchRunner) {}
+    private readonly wordpressVariationPatches?: WordPressVariationPatchRunner,
+    private readonly retranslations?: RetranslationRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
@@ -32,6 +34,10 @@ export class JobDispatcher implements JobHandler {
       case "collect_product": return await this.collection.collectProduct(parseCollectProductPayload(job.payload));
       case "process_product": return await this.processing.processProduct(parseProcessProductPayload(job.payload));
       case "reclassify_product": return await this.processing.reclassifyProduct(parseReclassifyProductPayload(job.payload));
+      case "retranslate_product": {
+        if (this.retranslations === undefined) throw new InvalidJobPayloadError("retranslate_product is not configured");
+        return await this.retranslations.retranslateProduct(parseRetranslateProductPayload(job.payload));
+      }
       case "sync_target_classifications": {
         if (this.classificationSync === undefined) throw new InvalidJobPayloadError("sync_target_classifications is not configured");
         return await this.classificationSync.sync(parseSyncTargetClassificationsPayload(job.payload));
