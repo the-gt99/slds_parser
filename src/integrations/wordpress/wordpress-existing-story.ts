@@ -35,5 +35,5 @@ export function extractExistingWordPressStory(descriptionHtml: string): string {
   if (storyNodes.some((node) => !isText(node) && !isTag(node, "p"))) {
     throw new IntegrationContractError("Existing story contains an unsupported top-level element");
   }
-  return sanitizeWordPressContentHtml(storyNodes.map((node) => DomUtils.getOuterHTML(node)).join(""));
+  return sanitizeWordPressContentHtml(storyNodes.map((node) => DomUtils.getOuterHTML(node)).join("")).trim();
 }

@@ -108,6 +108,9 @@ describe("WordPress content templates", () => {
     expect(extractExistingWordPressStory(
       "<h2>Старый заголовок</h2><p>Первый абзац.</p><p>Второй.</p><ul><li>Артикул: SKU</li></ul>",
     )).toBe("<p>Первый абзац.</p><p>Второй.</p>");
+    expect(extractExistingWordPressStory(
+      "<h2>Старый заголовок</h2>\n\r\nИстория с внешними переносами.\r\n\n<ul><li>Артикул: SKU</li></ul>",
+    )).toBe("История с внешними переносами.");
   });
 
   it("rejects an unknown WordPress description structure", () => {
