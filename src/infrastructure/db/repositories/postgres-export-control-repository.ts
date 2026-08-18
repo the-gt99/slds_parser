@@ -95,6 +95,11 @@ const effectiveStatusSql = `CASE
   ELSE review.status
 END`;
 
+function exportEligibleInternalSql(alias: string): string {
+  return `${alias}.status IN ('classified', 'classification_pending')
+    AND ${alias}.data->'classification'->>'status' IN ('complete', 'partial')`;
+}
+
 function filterSql(
   filter: ExportControlFilter,
   add: (value: unknown) => string,
@@ -253,9 +258,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     const summaryResult = await queryPool<DatabaseRow>(this.pool,
       `WITH eligible AS MATERIALIZED (
          SELECT id, content_hash
-         FROM internal_products
-         WHERE status = 'classified'
-           AND data->'classification'->>'status' = 'complete'
+         FROM internal_products internal
+         WHERE ${exportEligibleInternalSql("internal")}
        ), states AS MATERIALIZED (
          SELECT eligible.id AS internal_product_id,
                 review.id AS review_id,
@@ -345,8 +349,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            JOIN target_export_revisions revision ON revision.target_id = $1
            LEFT JOIN target_product_preflight_reviews review
              ON review.target_id = $1 AND review.internal_product_id = internal.id
-           WHERE internal.status = 'classified'
-             AND internal.data->'classification'->>'status' = 'complete'
+           WHERE ${exportEligibleInternalSql("internal")}
              AND ($2::BIGINT[] IS NULL OR internal.source_product_id = ANY($2::BIGINT[]))
              AND NOT EXISTS (
                SELECT 1 FROM jobs job
@@ -594,8 +597,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        JOIN internal_products internal
          ON internal.id = review.internal_product_id
         AND internal.content_hash = review.internal_content_hash
-        AND internal.status = 'classified'
-        AND internal.data->'classification'->>'status' = 'complete'
+        AND ${exportEligibleInternalSql("internal")}
        WHERE ${where.join(" AND ")}
        ORDER BY review.checked_at DESC, review.id DESC
        LIMIT ${limit}`,
@@ -962,8 +964,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            JOIN target_export_revisions revision ON revision.target_id = $1
            LEFT JOIN target_product_preflight_reviews review
              ON review.target_id = $1 AND review.internal_product_id = internal.id
-           WHERE internal.status = 'classified'
-             AND internal.data->'classification'->>'status' = 'complete'
+           WHERE ${exportEligibleInternalSql("internal")}
              AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
              AND ($4::BIGINT IS NULL OR EXISTS (
                SELECT 1

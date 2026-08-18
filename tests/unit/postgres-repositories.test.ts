@@ -261,7 +261,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
       blockedCount: 46, staleCount: 198, errorCount: 0,
     });
     expect(executor.calls[1]?.values).toEqual(["10"]);
-    expect(executor.calls[1]?.text).toContain("data->'classification'->>'status' = 'complete'");
+    expect(executor.calls[1]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
+    expect(executor.calls[1]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
   });
 
   it("selects only existing stale reviews for automatic preflight maintenance", async () => {
@@ -291,6 +292,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     await new PostgresExportControlRepository(pool(candidateExecutor)).listExportCandidates({ targetId: "10", limit: 50 });
     expect(candidateExecutor.calls[0]?.text).not.toContain("source_refreshed_at");
     expect(candidateExecutor.calls[0]?.text).not.toContain("make_interval");
+    expect(candidateExecutor.calls[0]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
+    expect(candidateExecutor.calls[0]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
   });
 
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
