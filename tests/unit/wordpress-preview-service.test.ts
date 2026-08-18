@@ -273,7 +273,7 @@ describe("WordPressPreviewService", () => {
   });
 
   it("blocks the full WordPress payload when the current translation is missing", async () => {
-    const { service, request } = setup(321, "source_identity", { requireTranslation: true });
+    const { service, request, snapshotReader } = setup(321, "source_identity", { requireTranslation: true, remoteSnapshot: true });
 
     await expect(service.preview("2", "10")).resolves.toMatchObject({
       readiness: {
@@ -288,6 +288,7 @@ describe("WordPressPreviewService", () => {
       payload: null,
     });
     expect(request).not.toHaveBeenCalled();
+    expect(snapshotReader?.read).not.toHaveBeenCalled();
   });
 
   it("marks where an automatically added landing tag came from", async () => {

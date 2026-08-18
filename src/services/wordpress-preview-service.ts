@@ -5,6 +5,7 @@ import { hashStableJson } from "../core/utils/index.js";
 import { perceptualHashDistance } from "../processing/media/index.js";
 import {
   applyWordPressTitlePolicy,
+  assertWordPressRequiredTranslation,
   renderWordPressContentFields,
   type WordPressProductSnapshotReader,
   WordPressExporter,
@@ -343,30 +344,6 @@ export class WordPressPreviewService {
       ...templateOverrides,
     ];
     let snapshot = await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
-    let lookupFound: boolean | null = null;
-    let lookupMatchedBy: string | null = null;
-    if (refreshWordPress && this.snapshotReader !== undefined && sourceProduct.externalId !== null) {
-      const [remote] = await this.snapshotReader.read(source.code, [sourceProduct.externalId]);
-      if (remote === undefined) throw new IntegrationContractError("WordPress snapshot lookup did not return the requested product");
-      lookupFound = remote.found;
-      if (remote.found) {
-        if (remote.externalId === undefined || remote.matchedBy === undefined || remote.snapshot === undefined) {
-          throw new IntegrationContractError("WordPress snapshot lookup returned an incomplete matched product");
-        }
-        lookupMatchedBy = remote.matchedBy;
-        snapshot = await this.repositories.targets.saveProductSnapshot({
-          targetId: target.id,
-          sourceProductId: sourceProduct.id,
-          externalId: remote.externalId,
-          sourceExternalId: sourceProduct.externalId,
-          payload: remote.snapshot,
-          contentHash: hashStableJson(remote.snapshot),
-          fetchedAt: new Date().toISOString(),
-        });
-      } else {
-        snapshot = null;
-      }
-    }
     let current = record(snapshot?.payload.product);
     const targetSummary = { id: target.id, code: target.code, name: target.name, enabled: target.enabled };
     let currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
@@ -375,8 +352,8 @@ export class WordPressPreviewService {
       return {
         target: targetSummary,
         externalId: snapshot?.externalId ?? null,
-        willCreate: lookupFound === false || snapshot === null,
-        matchedBy: lookupMatchedBy ?? (snapshot === null ? null : "saved_snapshot"),
+        willCreate: snapshot === null,
+        matchedBy: snapshot === null ? null : "saved_snapshot",
         readiness: {
           ready: false,
           phase: "processing",
@@ -396,7 +373,7 @@ export class WordPressPreviewService {
     if (!refreshWordPress && cachedPreflight === null) {
       throw new IntegrationContractError("Сохранённый preflight WordPress недоступен; требуется явное обновление с WordPress");
     }
-    let wordpressCheckedAt = refreshWordPress ? new Date().toISOString() : cachedPreflight?.wordpressCheckedAt ?? null;
+    let wordpressCheckedAt = refreshWordPress ? null : cachedPreflight?.wordpressCheckedAt ?? null;
     let wordpressStateHash = refreshWordPress ? null : cachedPreflight?.wordpressStateHash ?? null;
     const { _previousStatus: _ignoredPreviousStatus, ...cachedPreflightData } = cachedPreflight?.preflightCache ?? {};
     let preflightCache: JsonObject = refreshWordPress ? {} : cachedPreflightData;
@@ -418,6 +395,54 @@ export class WordPressPreviewService {
       }
       return enriched;
     };
+    try {
+      assertWordPressRequiredTranslation(internal.data, target.config);
+    } catch (error) {
+      if (!(error instanceof WordPressTranslationRequiredError)) throw error;
+      return finish({
+        target: targetSummary,
+        externalId: snapshot?.externalId ?? targetProduct?.externalId ?? null,
+        willCreate: snapshot === null && targetProduct === null,
+        matchedBy: snapshot === null ? null : "saved_snapshot",
+        readiness: {
+          ready: false,
+          phase: "translation",
+          blockers: [{ code: "translation_required", message: error.message }],
+        },
+        current: currentSummary,
+        proposed: null,
+        comparison: null,
+        payload: null,
+        diff: null,
+      });
+    }
+    let lookupFound: boolean | null = null;
+    let lookupMatchedBy: string | null = null;
+    if (refreshWordPress && this.snapshotReader !== undefined && sourceProduct.externalId !== null) {
+      const [remote] = await this.snapshotReader.read(source.code, [sourceProduct.externalId]);
+      if (remote === undefined) throw new IntegrationContractError("WordPress snapshot lookup did not return the requested product");
+      wordpressCheckedAt = new Date().toISOString();
+      lookupFound = remote.found;
+      if (remote.found) {
+        if (remote.externalId === undefined || remote.matchedBy === undefined || remote.snapshot === undefined) {
+          throw new IntegrationContractError("WordPress snapshot lookup returned an incomplete matched product");
+        }
+        lookupMatchedBy = remote.matchedBy;
+        snapshot = await this.repositories.targets.saveProductSnapshot({
+          targetId: target.id,
+          sourceProductId: sourceProduct.id,
+          externalId: remote.externalId,
+          sourceExternalId: sourceProduct.externalId,
+          payload: remote.snapshot,
+          contentHash: hashStableJson(remote.snapshot),
+          fetchedAt: wordpressCheckedAt,
+        });
+      } else {
+        snapshot = null;
+      }
+      current = record(snapshot?.payload.product);
+      currentSummary = { externalId: snapshot?.externalId ?? null, snapshotFetchedAt: snapshot?.fetchedAt ?? null, product: current };
+    }
     const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
     const sourceProductDto: SourceProductDTO = {
       id: sourceProduct.id, sourceId: sourceProduct.sourceId, sourceKey: sourceProduct.sourceKey,

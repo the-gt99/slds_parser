@@ -1,6 +1,7 @@
 export { WordPressDictionaryProvider } from "./wordpress-dictionary-provider.js";
 export { WordPressTitleBrandAssignmentResolver } from "./wordpress-title-brand-assignment-resolver.js";
 export {
+  assertWordPressRequiredTranslation,
   buildWordPressUpsertPayload,
   applyWordPressTitlePolicy,
   renderWordPressContentFields,

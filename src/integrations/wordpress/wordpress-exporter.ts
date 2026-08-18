@@ -213,7 +213,7 @@ function requiredTranslation(config: JsonObject): WordPressRequiredTranslation |
   return result;
 }
 
-function assertRequiredTranslation(product: UniversalProductDTO, config: JsonObject): void {
+export function assertWordPressRequiredTranslation(product: UniversalProductDTO, config: JsonObject): void {
   const required = requiredTranslation(config);
   if (required === null) return;
   const actual = product.translatedContent;
@@ -900,7 +900,7 @@ async function buildWordPressPayload(
   allowMissingRequired: boolean,
   converter?: WordPressSizeConverterLike,
 ): Promise<WordPressUpsertPayloadPreview> {
-  assertRequiredTranslation(context.product, context.target.config);
+  assertWordPressRequiredTranslation(context.product, context.target.config);
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress export");
   if (context.product.images.length === 0) {
