@@ -418,6 +418,25 @@ describe("WordPressPreviewService", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it("uses the WordPress ID discovered by a fresh legacy snapshot in the same preflight payload", async () => {
+    const { service, request } = setup(321, "legacy_goat_id", {
+      savedSnapshotMissing: true,
+      remoteSnapshot: true,
+    });
+
+    await expect(service.preview("2", "10", [], { saveExportControl: true })).resolves.toMatchObject({
+      externalId: "321",
+      willCreate: false,
+      matchedBy: "legacy_goat_id",
+      readiness: { ready: true },
+    });
+
+    const requestBody = JSON.parse(String((request.mock.calls[0]?.[1] as RequestInit).body)) as {
+      payload: { identity: { target_id: number } };
+    };
+    expect(requestBody.payload.identity.target_id).toBe(321);
+  });
+
   it("shows the saved WordPress product before processing without attempting a preflight", async () => {
     const { service, request } = setup(321, "source_identity", { internalMissing: true });
 

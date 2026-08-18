@@ -451,6 +451,7 @@ export class WordPressPreviewService {
       ...(sourceProduct.url === null ? {} : { url: sourceProduct.url }), metadata: sourceProduct.discoveryMetadata,
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
+    const existingExternalId = targetProduct?.externalId ?? snapshot?.externalId;
     const context = {
       source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
       references: {
@@ -459,7 +460,7 @@ export class WordPressPreviewService {
         resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
       },
       contentTemplates,
-      ...(targetProduct?.externalId === null || targetProduct?.externalId === undefined ? {} : { existingExternalId: targetProduct.externalId }),
+      ...(existingExternalId === null || existingExternalId === undefined ? {} : { existingExternalId }),
       ...(snapshot === null ? {} : { existingTargetSnapshot: snapshot.payload }),
     } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
     let draft;
