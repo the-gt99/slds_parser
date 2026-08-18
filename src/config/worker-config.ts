@@ -12,11 +12,22 @@ export interface WorkerEnvironment {
   readonly MAX_JOB_ATTEMPTS?: string;
   readonly JOB_RETRY_BASE_MS?: string;
   readonly JOB_RETRY_MAX_MS?: string;
+  readonly WORDPRESS_MAX_JOB_ATTEMPTS?: string;
+  readonly WORDPRESS_RETRY_BASE_MS?: string;
+  readonly WORDPRESS_RETRY_MAX_MS?: string;
 }
 
 function positiveInteger(environment: WorkerEnvironment, key: keyof WorkerEnvironment): number {
   const raw = environment[key];
   const value = raw === undefined ? Number.NaN : Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${key} must be a positive integer`);
+  return value;
+}
+
+function positiveIntegerWithDefault(environment: WorkerEnvironment, key: keyof WorkerEnvironment, fallback: number): number {
+  const raw = environment[key];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${key} must be a positive integer`);
   return value;
 }
@@ -72,7 +83,13 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),
     retryBaseMs: positiveInteger(environment, "JOB_RETRY_BASE_MS"),
     retryMaxMs: positiveInteger(environment, "JOB_RETRY_MAX_MS"),
+    wordpressMaxJobAttempts: positiveIntegerWithDefault(environment, "WORDPRESS_MAX_JOB_ATTEMPTS", 12),
+    wordpressRetryBaseMs: positiveIntegerWithDefault(environment, "WORDPRESS_RETRY_BASE_MS", 300_000),
+    wordpressRetryMaxMs: positiveIntegerWithDefault(environment, "WORDPRESS_RETRY_MAX_MS", 3_600_000),
   };
   if (options.retryBaseMs > options.retryMaxMs) throw new Error("JOB_RETRY_BASE_MS must not exceed JOB_RETRY_MAX_MS");
+  if (options.wordpressRetryBaseMs > options.wordpressRetryMaxMs) {
+    throw new Error("WORDPRESS_RETRY_BASE_MS must not exceed WORDPRESS_RETRY_MAX_MS");
+  }
   return options;
 }

@@ -29,7 +29,7 @@ function setup() {
       id: "81", targetId: input.targetId, status: "running", actor: input.actor,
       reason: input.reason ?? null, mode: input.mode, catalogRunId: input.catalogRunId ?? null,
       preflightWindow: input.preflightWindow, maxExports: input.maxExports ?? null,
-      itemCount: 0, pendingCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
+      itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
       acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
       scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
       updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
@@ -93,7 +93,7 @@ describe("ExportControlService", () => {
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "81", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "safe", catalogRunId: null,
-      preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, runningCount: 0,
+      preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, retryCount: 0, runningCount: 0,
       completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5,
       scanBeforeInternalProductId: null, scanComplete: false,
       lastError: null, createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z",
@@ -127,7 +127,7 @@ describe("ExportControlService", () => {
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "82", targetId: "10", status: "running", actor: "admin", reason: "full",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
-      itemCount: 0, pendingCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
+      itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
       acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
       scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
       updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
@@ -162,5 +162,62 @@ describe("ExportControlService", () => {
       targetId: "10", actor: "admin", mode: "full_existing", catalogRunId: "4",
       maxExports: 250_000,
     }));
+  });
+
+  it("continues with the next product after a terminal product failure", async () => {
+    const { repository, service } = setup();
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "83", targetId: "10", status: "running", actor: "admin", reason: "mass",
+      mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
+      itemCount: 4, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 3,
+      failedCount: 1, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
+      createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.setCampaignStatus).not.toHaveBeenCalledWith(expect.objectContaining({ status: "paused" }));
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({
+      campaignId: "83",
+      candidates: [candidate],
+    }));
+  });
+
+  it("does not let a delayed WordPress retry block the next product", async () => {
+    const { repository, service } = setup();
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "84", targetId: "10", status: "running", actor: "admin", reason: "mass",
+      mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
+      itemCount: 4, pendingCount: 0, retryCount: 1, runningCount: 0, completedCount: 3,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
+      createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({ campaignId: "84" }));
+  });
+
+  it("waits for delayed retries before completing a campaign", async () => {
+    const { repository, service } = setup();
+    const campaign = {
+      id: "85", targetId: "10", status: "running" as const, actor: "admin", reason: "mass",
+      mode: "full_existing" as const, catalogRunId: "4", preflightWindow: 25, maxExports: 4,
+      itemCount: 4, pendingCount: 0, retryCount: 1, runningCount: 0, completedCount: 3,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
+      createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    };
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue(campaign);
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([]);
+
+    await service.tickCampaign();
+
+    expect(repository.setCampaignStatus).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
   });
 });

@@ -948,6 +948,7 @@ export interface ExportCampaignRecord {
   readonly maxExports: number | null;
   readonly itemCount: number;
   readonly pendingCount: number;
+  readonly retryCount: number;
   readonly runningCount: number;
   readonly completedCount: number;
   readonly failedCount: number;

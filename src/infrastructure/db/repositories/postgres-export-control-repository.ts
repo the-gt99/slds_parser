@@ -56,6 +56,7 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
     maxExports: row.max_exports === null || row.max_exports === undefined ? null : Number(row.max_exports),
     itemCount: Number(row.item_count ?? 0),
     pendingCount: Number(row.pending_count ?? 0),
+    retryCount: Number(row.retry_count ?? 0),
     runningCount: Number(row.running_count ?? 0),
     completedCount: Number(row.completed_count ?? 0),
     failedCount: Number(row.failed_count ?? 0),
@@ -74,7 +75,8 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
 const campaignProgressSql = `
   SELECT campaign.*,
          COUNT(item.id)::INT AS item_count,
-         COUNT(item.id) FILTER (WHERE job.status IN ('pending', 'retry'))::INT AS pending_count,
+         COUNT(item.id) FILTER (WHERE job.status = 'pending')::INT AS pending_count,
+         COUNT(item.id) FILTER (WHERE job.status = 'retry')::INT AS retry_count,
          COUNT(item.id) FILTER (WHERE job.status = 'running')::INT AS running_count,
          COUNT(item.id) FILTER (WHERE job.status = 'completed')::INT AS completed_count,
          COUNT(item.id) FILTER (WHERE job.status = 'failed')::INT AS failed_count,

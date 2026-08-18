@@ -16,6 +16,19 @@ describe("worker config", () => {
     expect(loadWorkerConfig(environment).processConcurrency).toBe(1);
   });
 
+  it("uses a long bounded retry policy for WordPress campaign requests", () => {
+    expect(loadWorkerConfig(environment)).toMatchObject({
+      wordpressMaxJobAttempts: 12,
+      wordpressRetryBaseMs: 300_000,
+      wordpressRetryMaxMs: 3_600_000,
+    });
+    expect(() => loadWorkerConfig({
+      ...environment,
+      WORDPRESS_RETRY_BASE_MS: "60000",
+      WORDPRESS_RETRY_MAX_MS: "1000",
+    })).toThrow("WORDPRESS_RETRY_BASE_MS must not exceed WORDPRESS_RETRY_MAX_MS");
+  });
+
   it("accepts a bounded processing concurrency", () => {
     expect(loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "3" }).processConcurrency).toBe(3);
     expect(loadWorkerConfig({ ...environment, WORKER_PROCESS_CONCURRENCY: "15" }).processConcurrency).toBe(15);

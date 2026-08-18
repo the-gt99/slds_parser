@@ -15,6 +15,9 @@ export interface WorkerOptions {
   readonly maxJobAttempts: number;
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
+  readonly wordpressMaxJobAttempts?: number;
+  readonly wordpressRetryBaseMs?: number;
+  readonly wordpressRetryMaxMs?: number;
   readonly processConcurrency?: number;
   readonly translationConcurrency?: number;
   readonly collectionConcurrency?: number;
@@ -50,7 +53,17 @@ export function abortableSleep(milliseconds: number, signal: AbortSignal): Promi
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause;
+  if (!(cause instanceof Error)) return error.message;
+  const code = "code" in cause && typeof cause.code === "string" ? cause.code : cause.name;
+  return `${error.message} [${code}: ${cause.message}]`;
+}
+
+function usesWordPressRetryPolicy(job: JobRecord, error: unknown): boolean {
+  return error instanceof RetryableError
+    && error.code.startsWith("WORDPRESS_")
+    && (job.jobType === "preflight_product" || job.jobType === "export_product");
 }
 
 export class Worker {
@@ -130,13 +143,23 @@ export class Worker {
   }
 
   private async handleClaimedFailure(job: JobRecord, error: unknown): Promise<void> {
-    if (error instanceof RetryableError && job.attempts < this.options.maxJobAttempts) {
-      const delay = Math.min(this.options.retryMaxMs, this.options.retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
+    const wordpressPolicy = usesWordPressRetryPolicy(job, error);
+    const maxAttempts = wordpressPolicy
+      ? (this.options.wordpressMaxJobAttempts ?? this.options.maxJobAttempts)
+      : this.options.maxJobAttempts;
+    const retryBaseMs = wordpressPolicy
+      ? (this.options.wordpressRetryBaseMs ?? this.options.retryBaseMs)
+      : this.options.retryBaseMs;
+    const retryMaxMs = wordpressPolicy
+      ? (this.options.wordpressRetryMaxMs ?? this.options.retryMaxMs)
+      : this.options.retryMaxMs;
+    if (error instanceof RetryableError && job.attempts < maxAttempts) {
+      const delay = Math.min(retryMaxMs, retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
       await this.jobs.retry(job.id, { error: errorText(error), availableAt: new Date(this.currentTime() + delay).toISOString() });
       return;
     }
     await this.jobs.fail(job.id, errorText(error));
-    if (error instanceof PermanentError || !(error instanceof RetryableError) || job.attempts >= this.options.maxJobAttempts) {
+    if (error instanceof PermanentError || !(error instanceof RetryableError) || job.attempts >= maxAttempts) {
       try {
         await this.dispatcher.handleTerminalFailure(job, error);
       } catch (cleanupError) {

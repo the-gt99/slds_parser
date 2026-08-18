@@ -478,7 +478,7 @@ async function loadCampaigns() {
       wrapper.append(
         element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`),
         element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`),
-        element("span", "", `${campaign.mode === "full_existing" ? `полный режим · снимок #${campaign.catalogRunId}` : "безопасный режим"} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · работа ${campaign.runningCount}`),
+        element("span", "", `${campaign.mode === "full_existing" ? `полный режим · снимок #${campaign.catalogRunId}` : "безопасный режим"} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · отложено ${campaign.retryCount} · работа ${campaign.runningCount}`),
         element("span", "", `выгружено ${campaign.completedCount} · ошибки ${campaign.failedCount}${campaign.maxExports ? ` · лимит ${campaign.maxExports}` : ""}`),
       );
       if (campaign.lastError) wrapper.append(element("span", "form-error", campaign.lastError));

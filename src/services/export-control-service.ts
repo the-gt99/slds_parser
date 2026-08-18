@@ -183,17 +183,10 @@ export class ExportControlService {
   async tickCampaign(): Promise<boolean> {
     const campaign = await this.repository.getRunningCampaign();
     if (campaign === null) return false;
-    if (campaign.failedCount > campaign.acknowledgedFailedCount) {
-      await this.repository.setCampaignStatus({
-        campaignId: campaign.id,
-        status: "paused",
-        error: "Выгрузка остановлена после ошибки товара. Проверьте журнал и возобновите вручную.",
-      });
-      return true;
-    }
     const exportActive = campaign.pendingCount + campaign.runningCount;
+    const exportOutstanding = exportActive + campaign.retryCount;
     const limitReached = campaign.maxExports !== null && campaign.itemCount >= campaign.maxExports;
-    if (limitReached && exportActive === 0) {
+    if (limitReached && exportOutstanding === 0) {
       await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
       return true;
     }
@@ -273,7 +266,10 @@ export class ExportControlService {
           campaignId: campaign.id,
           excludeNoChanges: true,
         });
-        if (remaining.length === 0 && refreshedCampaign?.id === campaign.id && refreshedCampaign.scanComplete) {
+        if (remaining.length === 0
+          && refreshedCampaign?.id === campaign.id
+          && refreshedCampaign.scanComplete
+          && refreshedCampaign.pendingCount + refreshedCampaign.runningCount + refreshedCampaign.retryCount === 0) {
           await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
         }
       }

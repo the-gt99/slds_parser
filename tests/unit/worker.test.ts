@@ -13,8 +13,48 @@ async function setup(error?: unknown, attempts = 0) {
 describe("Worker", () => {
   it("completes a successful job", async () => { const value = await setup(); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("completed"); });
   it("retries only RetryableError with exponential capped backoff", async () => { const value = await setup(new RetryableError("later", { code: "LATER" }), 2); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" }); const retry = await setup(new RetryableError("later", { code: "LATER" }), 1); await retry.worker.processNext(); expect(retry.store.jobs.get(retry.job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:00:02.000Z" }); });
+  it("uses the long retry policy for WordPress campaign jobs", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    const job = await jobs.enqueue({
+      jobType: "export_product",
+      payload: { internalProductId: "1", targetId: "2", force: false },
+      uniqueKey: "wordpress-export",
+    });
+    const handler: JobHandler = {
+      dispatch: vi.fn().mockRejectedValue(new RetryableError("WordPress unavailable", { code: "WORDPRESS_EXPORT_REQUEST_FAILED" })),
+      handleTerminalFailure: vi.fn(),
+    };
+    const worker = new Worker(jobs, handler, {
+      ...options,
+      wordpressMaxJobAttempts: 12,
+      wordpressRetryBaseMs: 300_000,
+      wordpressRetryMaxMs: 3_600_000,
+    }, async () => {}, () => Date.parse("2026-01-01T00:00:00.000Z"));
+
+    await worker.processNext();
+
+    expect(store.jobs.get(job.id)).toMatchObject({
+      status: "retry",
+      availableAt: "2026-01-01T00:05:00.000Z",
+    });
+    expect(handler.handleTerminalFailure).not.toHaveBeenCalled();
+  });
   it.each([new PermanentError("bad", { code: "BAD" }), new Error("bug")])("fails terminal error %#", async (error) => { const value = await setup(error); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("failed"); expect(value.handler.handleTerminalFailure).toHaveBeenCalledOnce(); });
   it("logs terminal cleanup failure while preserving the failed outcome", async () => { const failure = new PermanentError("business failed", { code: "BAD" }); const value = await setup(failure); value.handler.handleTerminalFailure = vi.fn().mockRejectedValue(new Error("cleanup failed")); const log = vi.fn(); const worker = new Worker(value.jobs, value.handler, options, async () => {}, Date.now, log); await worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed", lastError: "business failed" }); expect(log).toHaveBeenCalledWith(expect.stringContaining("cleanup failed")); expect(value.handler.dispatch).toHaveBeenCalledOnce(); });
+  it("persists the low-level transport cause without losing the public error", async () => {
+    const cause = Object.assign(new Error("socket closed"), { code: "ECONNRESET" });
+    const value = await setup(new RetryableError("WordPress export request failed", {
+      code: "WORDPRESS_EXPORT_REQUEST_FAILED",
+      cause,
+    }), 2);
+
+    await value.worker.processNext();
+
+    expect(value.store.jobs.get(value.job.id)?.lastError).toBe(
+      "WordPress export request failed [ECONNRESET: socket closed]",
+    );
+  });
   it("stops all lanes through AbortSignal", async () => { const value = await setup(); value.store.jobs.clear(); const controller = new AbortController(); const sleep = vi.fn(async (_ms: number, signal: AbortSignal) => { controller.abort(); expect(signal.aborted).toBe(true); }); const worker = new Worker(value.jobs, value.handler, options, sleep); await worker.run(controller.signal); expect(sleep).toHaveBeenCalledOnce(); });
   it("claims only the job types assigned to a lane", async () => {
     const value = await setup();
