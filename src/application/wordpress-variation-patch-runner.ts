@@ -103,7 +103,6 @@ export class WordPressVariationPatchRunner {
       id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
       profileKey: template.profileKey, profileName: template.profileName, managementMode: template.managementMode,
       categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
-      preserveExistingStory: template.preserveExistingStory ?? false,
     }));
     let referenceCache = this.referenceCachesByRun.get(payload.runId);
     if (referenceCache === undefined) {

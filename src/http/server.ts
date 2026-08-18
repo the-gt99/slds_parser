@@ -256,7 +256,6 @@ interface ContentTemplateBody {
   readonly managementMode?: unknown;
   readonly categoryTermIds?: unknown;
   readonly requiredContextPaths?: unknown;
-  readonly preserveExistingStory?: unknown;
 }
 
 class HttpInputError extends Error {}
@@ -1249,7 +1248,6 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
         categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
         requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
-        preserveExistingStory: optionalBoolean(request.body?.preserveExistingStory, "preserveExistingStory"),
       }),
     }),
   );
@@ -1268,7 +1266,6 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         managementMode: contentTemplateMode(request.body?.managementMode ?? "manage"),
         categoryTermIds: contentTemplateCategoryIds(request.body?.categoryTermIds ?? []),
         requiredContextPaths: contentTemplateRequiredPaths(request.body?.requiredContextPaths ?? []),
-        preserveExistingStory: optionalBoolean(request.body?.preserveExistingStory, "preserveExistingStory"),
       }, actor(request)),
     }),
   );

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { JsonObject } from "../../src/contracts/index.js";
 import { TargetExporterRegistry } from "../../src/core/registry/index.js";
 import { WordPressExporter } from "../../src/integrations/index.js";
 import { WordPressPreviewService } from "../../src/services/index.js";
 
-function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean; readonly preserveExistingBrands?: boolean; readonly unmappedSizeVariant?: boolean } = {}) {
+function setup(targetId: number, matchedBy: string, options: { readonly missingCategory?: boolean; readonly internalMissing?: boolean; readonly remoteSnapshot?: boolean; readonly remoteSnapshotMissing?: boolean; readonly savedSnapshotMissing?: boolean; readonly preflightSnapshot?: boolean; readonly matchingPerceptualImages?: boolean; readonly mismatchedStoredOrigin?: boolean; readonly landingProjection?: boolean; readonly existingSizeVariation?: boolean; readonly preserveExistingBrands?: boolean; readonly unmappedSizeVariant?: boolean; readonly requireTranslation?: boolean } = {}) {
   const product = {
     sourceProductId: "2",
     title: "Test shoe",
@@ -65,6 +66,9 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
           ...(options.unmappedSizeVariant ? { ignoreUnmappedSizeVariants: true } : {}),
           ...(options.preserveExistingBrands ? { preserveExistingBrandTerms: true } : {}),
           ...(options.missingCategory ? { titlePrefixByCategoryTermId: { "75": "Кроссовки" } } : {}),
+          ...(options.requireTranslation ? { requiredTranslation: {
+            providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru",
+          } } : {}),
         },
       }),
       findTargetProduct: vi.fn().mockResolvedValue(targetId === 0 || options.savedSnapshotMissing ? null : { externalId: String(targetId) }),
@@ -107,7 +111,9 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     },
   };
   const request = vi.fn(async (_url, init) => {
-    const body = JSON.parse(String(init?.body)) as { payload: { payload_hash: string } };
+    const body = JSON.parse(String(init?.body)) as { payload: { payload_hash: string; product: JsonObject; content_policy?: JsonObject } };
+    const currentDescription = options.preflightSnapshot ? "<p>Legacy SKU</p>" : "<p>Старое описание</p>";
+    const fallbackSource = String(((body.payload.content_policy?.description as JsonObject | undefined)?.fallback_source) ?? "empty");
     return new Response(JSON.stringify({
       ok: true,
       target_id: targetId,
@@ -115,6 +121,10 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       matched_by: matchedBy,
       payload_hash: body.payload.payload_hash,
       variation_plan: [],
+      resolved_content: {
+        description_html: targetId > 0 ? currentDescription : String(body.payload.product.description_html ?? ""),
+        description_source: targetId > 0 ? "wordpress_existing" : fallbackSource,
+      },
       ...(options.preflightSnapshot ? { snapshot: { product: {
         title: "Legacy SKU title", slug: "legacy-sku-title", sku: "SKU-2",
         description_html: "<p>Legacy SKU</p>", short_description_html: "<p>Сохранить</p>",
@@ -260,6 +270,24 @@ describe("WordPressPreviewService", () => {
     expect(result.comparison?.variations).toMatchObject({
       ignored: [expect.objectContaining({ sourceValue: "12.5" })],
     });
+  });
+
+  it("blocks the full WordPress payload when the current translation is missing", async () => {
+    const { service, request } = setup(321, "source_identity", { requireTranslation: true });
+
+    await expect(service.preview("2", "10")).resolves.toMatchObject({
+      readiness: {
+        ready: false,
+        phase: "translation",
+        blockers: [{
+          code: "translation_required",
+          message: "Для выгрузки WordPress требуется актуальный перевод deepl 1.0.0 en→ru",
+        }],
+      },
+      proposed: null,
+      payload: null,
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("marks where an automatically added landing tag came from", async () => {

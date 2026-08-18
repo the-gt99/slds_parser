@@ -7,6 +7,7 @@ export {
   previewWordPressUpsertPayload,
   previewWordPressVariationPatchItems,
   WordPressExporter,
+  WordPressTranslationRequiredError,
   WORDPRESS_PRODUCT_UPSERT_CONTRACT,
   type WordPressUpsertPayloadPreview,
   type WordPressUpsertPreflightResult,
@@ -32,8 +33,6 @@ export {
 export { matchExistingWordPressVariations } from "./wordpress-variation-patch-builder.js";
 export {
   contentTemplateCatalog,
-  contentTemplateContextWithExistingStoryPlaceholder,
-  WORDPRESS_EXISTING_STORY_MARKER,
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
   EXAMPLE_WORDPRESS_SHORT_DESCRIPTION_TEMPLATE,
   renderWordPressContentTemplate,
@@ -46,4 +45,3 @@ export {
   type WordPressContentTemplateField,
   type WordPressContentTemplateSelection,
 } from "./wordpress-content-template.js";
-export { extractExistingWordPressStory } from "./wordpress-existing-story.js";

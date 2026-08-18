@@ -136,7 +136,7 @@ export function createMemoryRepositories(store: MemoryStore): TransactionReposit
         const revision = Math.max(0, ...[...store.contentTemplates.values()]
           .filter((item) => item.targetId === input.targetId && item.field === input.field)
           .map((item) => item.revision)) + 1;
-        const record: TargetContentTemplateRecord = { id: store.id(), ...input, preserveExistingStory: input.preserveExistingStory ?? false, status: "draft", revision, createdAt: timestamp, activatedAt: null };
+        const record: TargetContentTemplateRecord = { id: store.id(), ...input, status: "draft", revision, createdAt: timestamp, activatedAt: null };
         store.contentTemplates.set(record.id, record);
         return record;
       },

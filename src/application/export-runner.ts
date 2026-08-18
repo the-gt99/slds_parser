@@ -74,7 +74,6 @@ export class ExportRunner {
           managementMode: template.managementMode,
           categoryTermIds: template.categoryTermIds,
           requiredContextPaths: template.requiredContextPaths,
-          preserveExistingStory: template.preserveExistingStory ?? false,
         })),
       });
       if (!payload.force && payload.approval === undefined && existing?.lastExportFingerprint === fingerprint) {
@@ -101,7 +100,6 @@ export class ExportRunner {
           managementMode: template.managementMode,
           categoryTermIds: template.categoryTermIds,
           requiredContextPaths: template.requiredContextPaths,
-          preserveExistingStory: template.preserveExistingStory ?? false,
         })),
         ...(payload.approval === undefined ? {} : { approval: {
           payloadHash: payload.approval.payloadHash,

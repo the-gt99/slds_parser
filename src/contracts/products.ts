@@ -32,7 +32,6 @@ export interface TargetContentTemplateDTO {
   readonly managementMode: "manage" | "preserve";
   readonly categoryTermIds: readonly number[];
   readonly requiredContextPaths: readonly string[];
-  readonly preserveExistingStory?: boolean;
 }
 
 export interface DiscoveredSourceProduct {

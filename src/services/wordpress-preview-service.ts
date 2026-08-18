@@ -5,11 +5,10 @@ import { hashStableJson } from "../core/utils/index.js";
 import { perceptualHashDistance } from "../processing/media/index.js";
 import {
   applyWordPressTitlePolicy,
-  extractExistingWordPressStory,
   renderWordPressContentFields,
   type WordPressProductSnapshotReader,
   WordPressExporter,
-  WORDPRESS_EXISTING_STORY_MARKER,
+  WordPressTranslationRequiredError,
   type WordPressUpsertPreflightResult,
 } from "../integrations/index.js";
 import type {
@@ -112,26 +111,24 @@ export interface PreviewTerm {
   }[];
 }
 
-function storyReplacement(renderedWithMarker: string, resolved: string): string | null {
-  const markerIndex = renderedWithMarker.indexOf(WORDPRESS_EXISTING_STORY_MARKER);
-  if (markerIndex < 0) return null;
-  const prefix = renderedWithMarker.slice(0, markerIndex);
-  const suffix = renderedWithMarker.slice(markerIndex + WORDPRESS_EXISTING_STORY_MARKER.length);
-  if (!resolved.startsWith(prefix) || !resolved.endsWith(suffix)) return null;
-  return resolved.slice(prefix.length, resolved.length - suffix.length);
-}
-
-function resolveCachedStory(payload: JsonObject, current: Record<string, unknown>, cached: CachedExportControlPreflight): string | undefined {
-  const policy = record(record(payload.content_policy).description_story);
-  if (policy.mode !== "preserve_existing") return undefined;
-  const cachedStory = cached.preflightCache.existingStoryHtml;
-  const story = typeof cachedStory === "string"
-    ? cachedStory
-    : extractExistingWordPressStory(String(current.description_html ?? ""));
-  if (policy.required === true && story.trim() === "") {
-    throw new IntegrationContractError("Neither GOAT nor the existing WordPress product contains a story");
+function resolveCachedDescription(payload: JsonObject, current: Record<string, unknown>): {
+  readonly html: string;
+  readonly source: "wordpress_existing" | "source_story" | "source_description" | "empty";
+} | undefined {
+  const policy = record(record(payload.content_policy).description);
+  if (policy.mode !== "prefer_existing") return undefined;
+  const existing = String(current.description_html ?? "");
+  const fallback = String(record(payload.product).description_html ?? "");
+  const fallbackSource = policy.fallback_source;
+  if (fallbackSource !== "source_story" && fallbackSource !== "source_description" && fallbackSource !== "empty") {
+    throw new IntegrationContractError("WordPress description fallback source is invalid");
   }
-  return story;
+  const html = existing.trim() === "" ? fallback : existing;
+  const source = existing.trim() === "" ? fallbackSource : "wordpress_existing";
+  if (policy.required === true && source === "empty") {
+    throw new IntegrationContractError("Neither the source nor the existing WordPress product contains a description");
+  }
+  return { html, source };
 }
 
 function snapshotTermMap(value: unknown): Map<string, PreviewTerm> {
@@ -342,7 +339,6 @@ export class WordPressPreviewService {
         id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
         profileKey: template.profileKey, profileName: template.profileName, managementMode: template.managementMode,
         categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
-        preserveExistingStory: template.preserveExistingStory ?? false,
       })),
       ...templateOverrides,
     ];
@@ -446,6 +442,7 @@ export class WordPressPreviewService {
       draft = await exporter.previewPayload(context);
     } catch (error) {
       if (!(error instanceof IntegrationContractError)) throw error;
+      const translationRequired = error instanceof WordPressTranslationRequiredError;
       return finish({
         target: targetSummary,
         externalId: snapshot?.externalId ?? targetProduct?.externalId ?? null,
@@ -453,8 +450,8 @@ export class WordPressPreviewService {
         matchedBy: lookupMatchedBy ?? (snapshot === null ? null : "saved_snapshot"),
         readiness: {
           ready: false,
-          phase: "payload",
-          blockers: [{ code: "payload_contract", message: error.message }],
+          phase: translationRequired ? "translation" : "payload",
+          blockers: [{ code: translationRequired ? "translation_required" : "payload_contract", message: error.message }],
         },
         current: currentSummary,
         proposed: null,
@@ -479,16 +476,16 @@ export class WordPressPreviewService {
             ? cachedPreflight.preflightCache.variationPlan.map((item) => record(item) as JsonObject)
             : [];
           preserveCachedVariationSummary = !Array.isArray(cachedPreflight.preflightCache.variationPlan);
-          const existingStoryHtml = resolveCachedStory(payload, current, cachedPreflight);
+          const resolvedDescription = resolveCachedDescription(payload, current);
           preflight = {
             externalId: cachedPreflight.externalId,
             willCreate: cachedPreflight.willCreate,
             matchedBy: cachedPreflight.matchedBy,
             payloadHash: String(payload.payload_hash ?? ""),
             variationPlan: cachedPlan,
-            ...(existingStoryHtml === undefined ? {} : {
-              resolvedDescriptionHtml: String(product.description_html ?? "").replace(WORDPRESS_EXISTING_STORY_MARKER, existingStoryHtml),
-              resolvedStorySource: existingStoryHtml.trim() === "" ? "empty" : "wordpress_existing",
+            ...(resolvedDescription === undefined ? {} : {
+              resolvedDescriptionHtml: resolvedDescription.html,
+              resolvedDescriptionSource: resolvedDescription.source,
             }),
           };
         } else {
@@ -517,12 +514,8 @@ export class WordPressPreviewService {
       wordpressStateHash = hashStableJson({ externalId: preflight.externalId, snapshot: stateSnapshot });
       if (refreshWordPress) {
         wordpressCheckedAt = new Date().toISOString();
-        const existingStoryHtml = preflight.resolvedDescriptionHtml === undefined
-          ? null
-          : storyReplacement(String(product.description_html ?? ""), preflight.resolvedDescriptionHtml);
         preflightCache = {
           variationPlan: preflight.variationPlan,
-          ...(existingStoryHtml === null ? {} : { existingStoryHtml }),
         };
       }
     }
@@ -583,14 +576,9 @@ export class WordPressPreviewService {
     };
     const effectiveCategoryTermIds = payloadTaxonomies(effectiveTaxonomies).product_cat ?? [];
     const effectiveContent = renderWordPressContentFields(effectiveContentContext, contentTemplates, effectiveCategoryTermIds);
-    const resolvedStoryHtml = preflight?.resolvedDescriptionHtml === undefined
-      ? null
-      : storyReplacement(String(product.description_html ?? ""), preflight.resolvedDescriptionHtml);
     const effectiveDescriptionHtml = effectiveContent.descriptionHtml === undefined
       ? undefined
-      : resolvedStoryHtml === null
-        ? preflight?.resolvedDescriptionHtml ?? effectiveContent.descriptionHtml
-        : effectiveContent.descriptionHtml.replace(WORDPRESS_EXISTING_STORY_MARKER, resolvedStoryHtml);
+      : preflight?.resolvedDescriptionHtml ?? effectiveContent.descriptionHtml;
     const effectiveProduct: Record<string, unknown> = {
       ...product,
       title: effectiveTitle,

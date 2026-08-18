@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { JsonObject } from "../../src/contracts/index.js";
 import {
-  contentTemplateContextWithExistingStoryPlaceholder,
-  extractExistingWordPressStory,
   renderWordPressContentTemplate,
   selectWordPressContentTemplate,
   validateWordPressContentTemplate,
@@ -79,43 +77,22 @@ describe("WordPress content templates", () => {
     expect(selected).toMatchObject({ managed: true, profileKey: "sneakers", reason: "matched" });
   });
 
-  it("preserves the field when a required source value is absent", () => {
+  it("keeps the description managed because WordPress may satisfy a missing source value", () => {
     const missingStory = { ...context, content: { ...(context.content as JsonObject), story: "" } };
     const selected = selectWordPressContentTemplate("description", [
       profile({ requiredContextPaths: ["content.story"] }),
     ], missingStory, [75]);
 
-    expect(selected).toMatchObject({ managed: false, reason: "requirements_missing", missingContextPaths: ["content.story"] });
+    expect(selected).toMatchObject({ managed: true, reason: "matched", missingContextPaths: [] });
   });
 
-  it("keeps a managed description when an existing WordPress story may satisfy the requirement", () => {
+  it("keeps a managed description when an existing WordPress description may satisfy the requirement", () => {
     const missingStory = { ...context, content: { ...(context.content as JsonObject), story: "" } };
     const selected = selectWordPressContentTemplate("description", [
-      profile({ requiredContextPaths: ["content.story"], preserveExistingStory: true }),
+      profile({ requiredContextPaths: ["content.story"] }),
     ], missingStory, [75]);
 
-    expect(selected).toMatchObject({ managed: true, preserveExistingStory: true, requireStoryAfterFallback: true });
-    expect(renderWordPressContentTemplate(
-      "<h2>Товар</h2>{% if content.story %}{{ content.story | paragraphs }}{% endif %}<ul><li>Артикул: SKU</li></ul>",
-      contentTemplateContextWithExistingStoryPlaceholder(missingStory),
-    )).toContain("slds-existing-story-placeholder");
-  });
-
-  it("extracts only the story from legacy WordPress descriptions", () => {
-    expect(extractExistingWordPressStory(
-      '<h2>Старый заголовок</h2>История без p.<ul><li>Цвет: Чёрный</li><li>Артикул: SKU</li></ul><a href="/tag/">Ссылка</a>',
-    )).toBe("История без p.");
-    expect(extractExistingWordPressStory(
-      "<h2>Старый заголовок</h2><p>Первый абзац.</p><p>Второй.</p><ul><li>Артикул: SKU</li></ul>",
-    )).toBe("<p>Первый абзац.</p><p>Второй.</p>");
-    expect(extractExistingWordPressStory(
-      "<h2>Старый заголовок</h2>\n\r\nИстория с внешними переносами.\r\n\n<ul><li>Артикул: SKU</li></ul>",
-    )).toBe("История с внешними переносами.");
-  });
-
-  it("rejects an unknown WordPress description structure", () => {
-    expect(() => extractExistingWordPressStory("<p>Нет границ старого шаблона</p>"))
-      .toThrow("expected heading");
+    expect(selected).toMatchObject({ managed: true, requireDescriptionAfterFallback: true });
   });
 
   it("rejects overlapping category profiles", () => {

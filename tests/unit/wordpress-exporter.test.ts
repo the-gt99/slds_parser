@@ -40,7 +40,7 @@ const product: UniversalProductDTO = {
     ignored: [],
     unresolved: [],
   },
-  translatedContent: { sourceLocale: "en", targetLocale: "ru", description: "Описание", story: "История", color: "Черный", details: "Black", upperMaterial: "Кожа" },
+  translatedContent: { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru", description: "Описание", story: "История", color: "Черный", details: "Black", upperMaterial: "Кожа" },
   attributes: { color: "Black", details: "Black/White", upperMaterial: "Leather", midsole: "Air", categoryRaw: "sneakers", releaseDate: "2026-01-02T23:59:59.999Z" },
   metadata: {},
 };
@@ -72,6 +72,18 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("requires the configured current translation before building a full payload", async () => {
+    const requiredTranslation = { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" };
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation }))).resolves.toBeDefined();
+
+    const base = context({ requiredTranslation });
+    const { translatedContent: _translatedContent, ...untranslatedProduct } = base.product;
+    await expect(buildWordPressUpsertPayload({
+      ...base,
+      product: untranslatedProduct,
+    })).rejects.toThrow("Для выгрузки WordPress требуется актуальный перевод deepl 1.0.0 en→ru");
+  });
+
   it("marks only the x5 price outlier unavailable in a full product payload", async () => {
     const base = context({
       maxVariantPriceRatio: 5,
@@ -155,6 +167,7 @@ describe("WordPressExporter", () => {
     expect(targetProduct.description_html).toContain("<li>Технология: Air</li>");
     expect(targetProduct.description_html).toContain("<li>Категория: sneakers</li>");
     expect(targetProduct.description_html).toContain("<li>Дата релиза: 02 января 2026г.</li>");
+    expect(payload.content_policy).toEqual({ description: { mode: "prefer_existing", required: false, fallback_source: "source_story" } });
     expect(payload.managed_fields).not.toContain("sku");
     expect(payload.managed_fields).not.toContain("slug");
     expect(targetProduct.sku).toBe("ROOT-SKU");
@@ -184,7 +197,7 @@ describe("WordPressExporter", () => {
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 107 });
   });
 
-  it("delegates an empty GOAT story to the existing WordPress description", async () => {
+  it("gives an existing WordPress description priority over the source fallback", async () => {
     const base = context();
     const input: ExportContext = {
       ...base,
@@ -193,13 +206,13 @@ describe("WordPressExporter", () => {
         id: "300", field: "description", revision: 1,
         templateSource: "<h2>{{ product.effective_title }}</h2>{% if content.story %}{{ content.story | paragraphs }}{% endif %}<ul><li>Артикул: {{ product.sku }}</li></ul>",
         profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [],
-        requiredContextPaths: ["content.story"], preserveExistingStory: true,
+        requiredContextPaths: ["content.story"],
       }],
     };
 
     const payload = await buildWordPressUpsertPayload(input);
-    expect((payload.product as JsonObject).description_html).toContain("slds-existing-story-placeholder");
-    expect(payload.content_policy).toEqual({ description_story: { mode: "preserve_existing", required: true } });
+    expect((payload.product as JsonObject).description_html).toContain("Описание");
+    expect(payload.content_policy).toEqual({ description: { mode: "prefer_existing", required: true, fallback_source: "source_description" } });
   });
 
   it("applies the winning target assignment after direct category mappings", async () => {
@@ -541,6 +554,7 @@ describe("WordPressExporter", () => {
         matched_by: "target_id",
         payload_hash: body.payload.payload_hash,
         variation_plan: [],
+        resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
         snapshot: {
           product: {
             taxonomies: {
@@ -582,6 +596,7 @@ describe("WordPressExporter", () => {
           matched_by: "source_identity",
           payload_hash: body.payload.payload_hash,
           variation_plan: [],
+          resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
           snapshot: {
             product: {
               taxonomies: {
@@ -761,7 +776,7 @@ describe("WordPressExporter", () => {
     expect(payload.managed_fields).toContain("short_description");
   });
 
-  it("preserves an existing description when the profile requires a missing story", async () => {
+  it("uses the translated source description when the source story is missing", async () => {
     const base = context({ titlePrefixByCategoryTermId: { "41": "Кроссовки" } });
     const input: ExportContext = {
       ...base,
@@ -775,8 +790,8 @@ describe("WordPressExporter", () => {
     const payload = await buildWordPressUpsertPayload(input);
     const targetProduct = payload.product as JsonObject;
 
-    expect(payload.managed_fields).not.toContain("description");
-    expect(targetProduct).not.toHaveProperty("description_html");
+    expect(payload.managed_fields).toContain("description");
+    expect(targetProduct.description_html).toBe("<p>Описание</p>");
   });
 
   it("preserves the description outside configured profile categories", async () => {
@@ -999,6 +1014,7 @@ describe("WordPressExporter", () => {
         matched_by: "source_identity",
         payload_hash: livePayloadHash,
         variation_plan: [],
+        resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         ok: true,
@@ -1058,6 +1074,7 @@ describe("WordPressExporter", () => {
       matched_by: "source_identity",
       payload_hash: payload.payload_hash,
       variation_plan: [],
+      resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
     const input: ExportContext = {
@@ -1082,6 +1099,7 @@ describe("WordPressExporter", () => {
       payload_hash: payload.payload_hash,
       variation_plan: [],
       snapshot: currentSnapshot,
+      resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
 
@@ -1118,6 +1136,7 @@ describe("WordPressExporter", () => {
         manage_stock: false,
         stock_quantity: null,
       }],
+      resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
 
@@ -1136,12 +1155,14 @@ describe("WordPressExporter", () => {
         manage_stock: false,
         stock_quantity: null,
       }],
+      resolvedDescriptionHtml: "<p>Существующее описание</p>",
+      resolvedDescriptionSource: "wordpress_existing",
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-lookup");
   });
 
-  it("reads the description resolved by WordPress preflight", async () => {
+  it("reads the preferred description resolved by WordPress preflight", async () => {
     const base = context();
     const input: ExportContext = {
       ...base,
@@ -1150,19 +1171,19 @@ describe("WordPressExporter", () => {
         id: "301", field: "description", revision: 1,
         templateSource: "<h2>{{ product.effective_title }}</h2>{{ content.story | paragraphs }}<ul><li>Артикул: {{ product.sku }}</li></ul>",
         profileKey: "default", profileName: "Основной профиль", managementMode: "manage", categoryTermIds: [],
-        requiredContextPaths: [], preserveExistingStory: true,
+        requiredContextPaths: [],
       }],
     };
     const payload = await buildWordPressUpsertPayload(input);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       ok: true, target_id: 321, matched_by: "source_identity", payload_hash: payload.payload_hash, variation_plan: [],
-      resolved_content: { description_html: "<h2>Новое</h2><p>Старая история</p><ul><li>Артикул: ROOT-SKU</li></ul>", story_source: "wordpress_existing" },
+      resolved_content: { description_html: "<p>Существующее описание</p>", description_source: "wordpress_existing" },
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
 
     await expect(exporter.preflightPayload(payload)).resolves.toMatchObject({
-      resolvedDescriptionHtml: "<h2>Новое</h2><p>Старая история</p><ul><li>Артикул: ROOT-SKU</li></ul>",
-      resolvedStorySource: "wordpress_existing",
+      resolvedDescriptionHtml: "<p>Существующее описание</p>",
+      resolvedDescriptionSource: "wordpress_existing",
     });
   });
 
@@ -1176,6 +1197,7 @@ describe("WordPressExporter", () => {
       matched_by: "created",
       payload_hash: payload.payload_hash,
       variation_plan: [],
+      resolved_content: { description_html: String((payload.product as JsonObject).description_html ?? ""), description_source: "source_story" },
     }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
 
@@ -1185,6 +1207,8 @@ describe("WordPressExporter", () => {
       matchedBy: "created",
       payloadHash: payload.payload_hash,
       variationPlan: [],
+      resolvedDescriptionHtml: String((payload.product as JsonObject).description_html ?? ""),
+      resolvedDescriptionSource: "source_story",
     });
   });
 

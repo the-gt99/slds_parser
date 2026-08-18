@@ -16,7 +16,7 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 - отдельный Fastify API с классификатором и защищённой карточкой товара;
 - история выполнения каждой операции обработки товара.
 - read-only наблюдаемость: реестр товаров и операций, снимки WordPress, сохранённые стадии processing attempts и WordPress preflight без создания export job;
-- WordPress exporter с source-neutral identity, строгим `product-upsert.v1`, target readiness и ожиданием результата внешнего job.
+- WordPress exporter с source-neutral identity, строгим `product-upsert.v2`, target readiness и ожиданием результата внешнего job.
 
 ## Конвейер
 
@@ -61,7 +61,7 @@ GOAT discovery читает `https://www.goat.com/sitemap`, отбирает т�
 
 После процессора применяются операции обработки. Нормализация очищает только известные поля DTO и старые spreadsheet-маркеры ошибок, удаляет дубли URL и GOAT-заглушки изображений. Исходный текст сохраняется, перевод записывается отдельно в `translatedContent`. Изображения скачиваются через GOAT-транспорт, проверяются декодированием, сохраняются локально, конвертируются в WebP с качеством 85 и получают публичные URL. Частичная потеря изображений допустима. Товар только с GOAT-заглушкой сохраняется как внутренний DTO с `images: []`, а товар без offers — с `variants: []`; данные и цены не выдумываются. Финальная универсальная проверка требует название, SKU и исходный бренд. WordPress exporter запрещает запись без реального изображения. Пустой список вариантов для существующего товара означает sold-out и снимает с продажи все его вариации; новый товар без вариантов не создаётся.
 
-Операция формирования HTML-описания намеренно отсутствует: WordPress exporter собирает безопасный HTML после классификации из переведённого текста и универсальных свойств товара.
+Операция формирования HTML-описания намеренно отсутствует: WordPress exporter собирает безопасный HTML после классификации из переведённого текста и универсальных свойств товара. Для управляемого длинного описания существующее непустое значение WordPress всегда сохраняется целиком; только для пустого поля exporter строит новое описание из переведённой `story`, а при её отсутствии — из переведённого `description` источника.
 
 Транспорт требует curl-impersonate и не подменяет его системным curl. На Linux укажите путь к `curl_chrome116`. На Windows можно указать исполняемый файл или `.ps1` wrapper, который запускает curl-impersonate. Старый `.cmd` поддерживается через соседний `goat-curl.ps1`, чтобы URL с несколькими query-параметрами не разбирался командной оболочкой. Пример настройки:
 
@@ -88,11 +88,15 @@ GOAT_IMAGE_DOWNLOAD_CONCURRENCY=8
 PARSER_IMAGE_BASE_DIR=/srv/slds-parser/state/images
 PARSER_PUBLIC_BASE_URL=https://static.example.com
 PARSER_PUBLIC_PATH_PREFIX=products
+PARSER_TRANSLATION_PROVIDER=google
+PARSER_DEEPL_API_KEY=
 PARSER_TRANSLATION_SOURCE=en
 PARSER_TRANSLATION_TARGET=ru
 PARSER_TRANSLATION_TIMEOUT_MS=8000
 PARSER_TRANSLATION_ATTEMPTS=2
 PARSER_TRANSLATION_RETRY_DELAY_MS=400
+RETRANSLATION_APPLY=false
+RETRANSLATION_LIMIT=500000
 SHOE_HEIGHT_API_URL=
 SHOE_HEIGHT_API_TIMEOUT_MS=20000
 SHOE_HEIGHT_API_ATTEMPTS=2
@@ -122,7 +126,9 @@ CLI создаёт или обновляет source `goat`, записывает
 
 Вкладка «Точные совпадения» в `/classifier` показывает unresolved-значения, чьё нормализованное имя полностью совпадает с актуальным термином target. К применению допускается только единственный термин без конфликта уже существующих решений; дубликаты target и конфликты вынесены в отдельные списки. Категории исключены из-за иерархии. Массовая запись доступна только при выключенном target, идёт пакетами по 50 через штатный сервис решений с аудитом и точечной постановкой переобработки. `npm run classifier:exact-matches` использует тот же серверный путь для диагностики и управляемого запуска через `CLASSIFIER_EXACT_MATCH_APPLY=true`.
 
-`PARSER_IMAGE_BASE_DIR` должен быть доступен HTTP-серверу по адресу, образованному из `PARSER_PUBLIC_BASE_URL`, `PARSER_PUBLIC_PATH_PREFIX` и относительного пути файла. Без реального публичного URL worker не запускается: выдуманный адрес сделал бы сохранённые ссылки нерабочими. Переводчик перенесён из старого проекта через отдельный provider и использует его неофициальный Google Translate endpoint; поэтому его можно заменить, не меняя операцию и DTO. При заданном `SHOE_HEIGHT_API_URL` первая скачанная фотография обуви отправляется отдельному классификатору высоты, а результат `low`/`mid`/`high` добавляется в обычную очередь классификации как `shoe_height`; одежда этой операцией не обрабатывается.
+`PARSER_IMAGE_BASE_DIR` должен быть доступен HTTP-серверу по адресу, образованному из `PARSER_PUBLIC_BASE_URL`, `PARSER_PUBLIC_PATH_PREFIX` и относительного пути файла. Без реального публичного URL worker не запускается: выдуманный адрес сделал бы сохранённые ссылки нерабочими. `PARSER_TRANSLATION_PROVIDER` явно выбирает `google` либо `deepl`; Google остаётся значением по умолчанию. Для DeepL обязателен `PARSER_DEEPL_API_KEY`. Автоматического fallback между переводчиками нет, а смена provider инвалидирует сохранённый результат операции через её configuration fingerprint. При заданном `SHOE_HEIGHT_API_URL` первая скачанная фотография обуви отправляется отдельному классификатору высоты, а результат `low`/`mid`/`high` добавляется в обычную очередь классификации как `shoe_height`; одежда этой операцией не обрабатывается.
+
+Успешные ответы переводчика сохраняются в `translation_cache` по provider, его версии, языкам и SHA-256 исходного текста. `npm run translation:enqueue` без `RETRANSLATION_APPLY=true` только показывает число товаров и верхнюю оценку повторяющихся/уникальных символов. Apply создаёт отдельные `retranslate_product`: они меняют только `translatedContent` сохранённого DTO, не запускают SourceProcessor, GOAT, изображения, visual shoe-height, классификацию или export. Worker обрабатывает их независимыми translation lanes; повторная job с уже актуальным provider завершается как `skipped`.
 
 WordPress importer скачивает готовые WebP по публичным URL, поэтому `publish-images` и `PARSER_PUBLIC_BASE_URL` остаются частью текущего рабочего контракта.
 
@@ -260,11 +266,17 @@ API запускается отдельным процессом после `npm
 
 WordPress-адаптер включается только когда одновременно заданы `PARSER_WORDPRESS_BASE_URL` и `PARSER_WORDPRESS_AUTH_TOKEN`. Target выбирает его через `exporter_code = 'wordpress'` либо `config.dictionaryProviderCode = 'wordpress'`. В `target.config.dictionaryEntityMap` задаётся универсальное сопоставление типов классификатора с сущностями target, например `{"brand":"brands","model":"models","category":"product_categories","tag":"tags"}`. При необходимости `target.config.targetScopeMap` преобразует универсальные scope в scope конкретного target. Классификатор не содержит названий полей GOAT или WordPress.
 
-Для экспорта target обязан явно задать `config.requiredReferenceTypes` и `config.sizeMappings`. Первый список определяет обязательные универсальные типы именно для этого target. Второй хранит подтверждённые соответствия размеров; наиболее точная строка может учитывать `sourceValue`, `displayValue`, `system` и `audience`, а также содержит `taxonomy` и числовой `termId`:
+Для экспорта target обязан явно задать `config.requiredReferenceTypes` и `config.sizeMappings`. Первый список определяет обязательные универсальные типы именно для этого target. Второй хранит подтверждённые соответствия размеров; наиболее точная строка может учитывать `sourceValue`, `displayValue`, `system` и `audience`, а также содержит `taxonomy` и числовой `termId`. Опциональный `requiredTranslation` запрещает даже preflight полного payload, если у товара нет результата ровно от указанной версии переводчика и языковой пары:
 
 ```json
 {
   "requiredReferenceTypes": ["brand", "model", "category"],
+  "requiredTranslation": {
+    "providerCode": "deepl",
+    "providerVersion": "1.0.0",
+    "sourceLocale": "en",
+    "targetLocale": "ru"
+  },
   "sizeMappings": [
     {"sourceValue": "7", "system": "us-numeric", "audience": "men", "taxonomy": "pa_razmer", "termId": 183},
     {"sourceValue": "103", "displayValue": "S", "system": "standard-clothing", "audience": "unisex", "taxonomy": "pa_razmer", "termId": 1234}
@@ -272,7 +284,7 @@ WordPress-адаптер включается только когда однов
 }
 ```
 
-Числа в примере являются форматом, а не готовой production-настройкой. Term ID необходимо брать из актуального target-справочника. Отсутствующее или неоднозначное соответствие останавливает export до HTTP-запроса. Exporter заменяет только те taxonomy-типы, которые реально присутствуют среди кандидатов товара; отсутствующий source-тип не очищает ручные значения WordPress. `pa_brand` и `pa_model` допускают несколько подтверждённых терминов, добавленных projections или target assignment rules. При нескольких брендах конвертация размера использует единственный основной бренд, разрешённый из source-кандидата, а не дополнительные target-назначения. GOAT availability передаётся без `quantity`, если источник не сообщил точный остаток. Недоступный вариант без цены передаёт явный `price=null` и очищает прежнюю стоимость; доступный вариант без цены не экспортируется. Если свежий запрос GOAT не вернул ни одного offer, существующий WordPress-товар получает пустой активный снимок: все его вариации становятся `outofstock`, но не удаляются. Создание нового товара без вариантов остаётся запрещённым.
+Числа в примере являются форматом, а не готовой production-настройкой. Term ID необходимо брать из актуального target-справочника. Отсутствующее или неоднозначное соответствие, как и отсутствие обязательного актуального перевода, останавливает export до HTTP-запроса. Exporter заменяет только те taxonomy-типы, которые реально присутствуют среди кандидатов товара; отсутствующий source-тип не очищает ручные значения WordPress. `pa_brand` и `pa_model` допускают несколько подтверждённых терминов, добавленных projections или target assignment rules. При нескольких брендах конвертация размера использует единственный основной бренд, разрешённый из source-кандидата, а не дополнительные target-назначения. GOAT availability передаётся без `quantity`, если источник не сообщил точный остаток. Недоступный вариант без цены передаёт явный `price=null` и очищает прежнюю стоимость; доступный вариант без цены не экспортируется. Если свежий запрос GOAT не вернул ни одного offer, существующий WordPress-товар получает пустой активный снимок: все его вариации становятся `outofstock`, но не удаляются. Создание нового товара без вариантов остаётся запрещённым.
 
 Опция `target.config.preferSpecificExistingModelTerms` защищает обновление от понижения точности `pa_model`. Exporter использует сохранённые модели существующего WordPress-товара только как подтверждённые варианты, сверяет их токены с полным source-кандидатом модели и оставляет максимальные по включению наборы токенов среди существующих и заново рассчитанных терминов. Поэтому `Air Jordan 1 Retro High` не заменяется на общий `Air Jordan 1`, а корректное уточнение `Asics GEL-Kayano` до `Asics Gel Kayano 14` сохраняется. Термины из разных ветвей коллаборации не склеиваются. Для нового товара без WordPress snapshot этот режим ничего не выдумывает.
 

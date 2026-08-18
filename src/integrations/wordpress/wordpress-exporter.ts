@@ -14,16 +14,13 @@ import { hashStableJson } from "../../core/utils/index.js";
 import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 import {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
-  WORDPRESS_EXISTING_STORY_MARKER,
-  contentTemplateContextValuePresent,
-  contentTemplateContextWithExistingStoryPlaceholder,
   renderWordPressContentTemplate,
   selectWordPressContentTemplate,
   type WordPressContentTemplateDefinition,
   type WordPressContentTemplateSelection,
 } from "./wordpress-content-template.js";
 
-const CONTRACT_VERSION = "slds.wordpress.product-upsert.v1";
+const CONTRACT_VERSION = "slds.wordpress.product-upsert.v2";
 
 const REFERENCE_TARGETS = {
   brand: { scope: "product.brand", taxonomy: "pa_brand", cardinality: "multiple" },
@@ -38,6 +35,19 @@ const REFERENCE_TARGETS = {
 } as const;
 
 type ReferenceType = keyof typeof REFERENCE_TARGETS;
+
+interface WordPressRequiredTranslation {
+  readonly providerCode: string;
+  readonly providerVersion: string;
+  readonly sourceLocale: string;
+  readonly targetLocale: string;
+}
+
+export class WordPressTranslationRequiredError extends IntegrationContractError {
+  constructor(readonly requirement: WordPressRequiredTranslation) {
+    super(`Для выгрузки WordPress требуется актуальный перевод ${requirement.providerCode} ${requirement.providerVersion} ${requirement.sourceLocale}→${requirement.targetLocale}`);
+  }
+}
 
 interface SizeMapping {
   readonly sourceValue: string;
@@ -79,7 +89,7 @@ export interface WordPressUpsertPreflightResult {
   readonly variationPlan: readonly JsonObject[];
   readonly snapshot?: JsonObject;
   readonly resolvedDescriptionHtml?: string;
-  readonly resolvedStorySource?: "wordpress_existing" | "empty";
+  readonly resolvedDescriptionSource?: "wordpress_existing" | "source_story" | "source_description" | "empty";
 }
 
 export interface WordPressUpsertPayloadPreview {
@@ -186,6 +196,33 @@ function resolveSize(size: ProductSizeDTO, mappings: readonly SizeMapping[]): Si
   if (mapping !== null) return mapping;
   const key = [size.system ?? "", size.audience ?? "", size.sourceValue, size.displayValue].join("/");
   throw new IntegrationContractError(`WordPress size mapping is missing: ${key}`);
+}
+
+function requiredTranslation(config: JsonObject): WordPressRequiredTranslation | null {
+  if (config.requiredTranslation === undefined) return null;
+  const value = record(config.requiredTranslation, "target.config.requiredTranslation");
+  const result = {
+    providerCode: text(value.providerCode),
+    providerVersion: text(value.providerVersion),
+    sourceLocale: text(value.sourceLocale),
+    targetLocale: text(value.targetLocale),
+  };
+  if (Object.values(result).some((item) => item === "")) {
+    throw new IntegrationContractError("target.config.requiredTranslation fields must be non-empty strings");
+  }
+  return result;
+}
+
+function assertRequiredTranslation(product: UniversalProductDTO, config: JsonObject): void {
+  const required = requiredTranslation(config);
+  if (required === null) return;
+  const actual = product.translatedContent;
+  if (actual?.providerCode !== required.providerCode
+    || actual.providerVersion !== required.providerVersion
+    || actual.sourceLocale !== required.sourceLocale
+    || actual.targetLocale !== required.targetLocale) {
+    throw new WordPressTranslationRequiredError(required);
+  }
 }
 
 function ignoreUnmappedSizeVariants(config: JsonObject): boolean {
@@ -485,14 +522,19 @@ function wordpressContentContext(
   modelTagLink: { readonly name: string; readonly url: string } | null,
 ): JsonObject {
   const translated = product.translatedContent;
+  const translatedStory = translated?.story?.trim() ?? "";
+  const translatedDescription = (translated?.description || product.description).trim();
+  const sourceDescription = translatedStory || translatedDescription;
+  const sourceDescriptionKind = translatedStory !== "" ? "source_story" : translatedDescription !== "" ? "source_description" : "empty";
   const allSizes = variations.map((variation) => variation.size.displayValue || variation.size.sourceValue);
   const availableSizes = variations.filter((variation) => variation.availability === "available")
     .map((variation) => variation.size.displayValue || variation.size.sourceValue);
   return {
     product: { effective_title: effectiveTitle, source_title: product.title, sku: product.sku },
     content: {
-      story: translated?.story || "",
-      description: translated?.description || product.description,
+      story: sourceDescription,
+      description: translatedDescription,
+      description_source: sourceDescriptionKind,
       color: translated?.color || text(product.attributes.color),
       details: translated?.details || text(product.attributes.details),
       upper_material: translated?.upperMaterial || text(product.attributes.upperMaterial),
@@ -532,24 +574,32 @@ export function renderWordPressContentFields(
 ): {
   readonly descriptionHtml?: string;
   readonly shortDescriptionHtml?: string;
-  readonly descriptionStoryPolicy?: { readonly mode: "preserve_existing"; readonly required: boolean };
+  readonly descriptionPolicy?: {
+    readonly mode: "prefer_existing";
+    readonly required: boolean;
+    readonly fallback_source: "source_story" | "source_description" | "empty";
+  };
   readonly selections: Readonly<Record<WordPressContentTemplateDefinition["field"], WordPressContentTemplateSelection>>;
 } {
   const description = selectWordPressContentTemplate("description", templates, context, productCategoryTermIds);
   const shortDescription = selectWordPressContentTemplate("short_description", templates, context, productCategoryTermIds);
-  const preserveExistingStory = description.managed && description.preserveExistingStory === true
-    && !contentTemplateContextValuePresent(context, "content.story");
-  const descriptionContext = preserveExistingStory ? contentTemplateContextWithExistingStoryPlaceholder(context) : context;
   const descriptionHtml = description.managed
-    ? renderWordPressContentTemplate(description.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, descriptionContext)
+    ? renderWordPressContentTemplate(description.templateSource ?? DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE, context)
     : undefined;
-  if (preserveExistingStory && (descriptionHtml?.split(WORDPRESS_EXISTING_STORY_MARKER).length ?? 0) !== 2) {
-    throw new IntegrationContractError("Description template must render the WordPress story placeholder exactly once");
+  const content = context.content as JsonObject | undefined;
+  const fallbackSource = content?.description_source;
+  if (fallbackSource !== "source_story" && fallbackSource !== "source_description" && fallbackSource !== "empty") {
+    throw new IntegrationContractError("Content template context has an invalid description source");
   }
+  const preferExistingDescription = description.managed;
   return {
     ...(descriptionHtml === undefined ? {} : { descriptionHtml }),
     ...(shortDescription.managed ? { shortDescriptionHtml: renderWordPressContentTemplate(shortDescription.templateSource!, context) } : {}),
-    ...(preserveExistingStory ? { descriptionStoryPolicy: { mode: "preserve_existing" as const, required: description.requireStoryAfterFallback === true } } : {}),
+    ...(preferExistingDescription ? { descriptionPolicy: {
+      mode: "prefer_existing" as const,
+      required: description.requireDescriptionAfterFallback === true,
+      fallback_source: fallbackSource,
+    } } : {}),
     selections: { description, short_description: shortDescription },
   };
 }
@@ -850,6 +900,7 @@ async function buildWordPressPayload(
   allowMissingRequired: boolean,
   converter?: WordPressSizeConverterLike,
 ): Promise<WordPressUpsertPayloadPreview> {
+  assertRequiredTranslation(context.product, context.target.config);
   const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
   if (sourceExternalId === "") throw new IntegrationContractError("Source product externalId is required for WordPress export");
   if (context.product.images.length === 0) {
@@ -961,7 +1012,7 @@ async function buildWordPressPayload(
       taxonomies,
     },
     variations: { mode: "replace_active_set", missing_policy: "out_of_stock", items: variations },
-    ...(content.descriptionStoryPolicy === undefined ? {} : { content_policy: { description_story: content.descriptionStoryPolicy } }),
+    ...(content.descriptionPolicy === undefined ? {} : { content_policy: { description: content.descriptionPolicy } }),
   };
   const idempotencyKey = `product-upsert:v2:${hashStableJson(base)}`;
   const payload = { ...base, idempotency_key: idempotencyKey } satisfies JsonObject;
@@ -1079,7 +1130,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.18.0";
+  readonly version = "1.19.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -1132,19 +1183,20 @@ export class WordPressExporter {
       throw new IntegrationContractError("WordPress legacy SKU preflight snapshot is required");
     }
     const contentPolicy = payload.content_policy === undefined ? null : record(payload.content_policy, "WordPress content_policy");
-    const expectsStoryResolution = contentPolicy !== null && contentPolicy.description_story !== undefined;
+    const expectsDescriptionResolution = contentPolicy !== null && contentPolicy.description !== undefined;
     let resolvedDescriptionHtml: string | undefined;
-    let resolvedStorySource: "wordpress_existing" | "empty" | undefined;
-    if (expectsStoryResolution) {
+    let resolvedDescriptionSource: "wordpress_existing" | "source_story" | "source_description" | "empty" | undefined;
+    if (expectsDescriptionResolution) {
       const resolved = record(response.resolved_content, "WordPress preflight resolved_content");
       if (typeof resolved.description_html !== "string") {
         throw new IntegrationContractError("WordPress preflight resolved_content.description_html must be a string");
       }
-      if (resolved.story_source !== "wordpress_existing" && resolved.story_source !== "empty") {
-        throw new IntegrationContractError("WordPress preflight resolved_content.story_source is invalid");
+      if (resolved.description_source !== "wordpress_existing" && resolved.description_source !== "source_story"
+        && resolved.description_source !== "source_description" && resolved.description_source !== "empty") {
+        throw new IntegrationContractError("WordPress preflight resolved_content.description_source is invalid");
       }
       resolvedDescriptionHtml = resolved.description_html;
-      resolvedStorySource = resolved.story_source;
+      resolvedDescriptionSource = resolved.description_source;
     }
     return {
       externalId,
@@ -1154,7 +1206,7 @@ export class WordPressExporter {
       variationPlan,
       ...(snapshot === undefined ? {} : { snapshot }),
       ...(resolvedDescriptionHtml === undefined ? {} : { resolvedDescriptionHtml }),
-      ...(resolvedStorySource === undefined ? {} : { resolvedStorySource }),
+      ...(resolvedDescriptionSource === undefined ? {} : { resolvedDescriptionSource }),
     };
   }
 
