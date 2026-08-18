@@ -296,6 +296,47 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateExecutor.calls[0]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
   });
 
+  it("groups every campaign cursor field when returning a newly inserted campaign", async () => {
+    const executor = new FakeExecutor([[{
+      id: "81",
+      target_id: "10",
+      status: "running",
+      actor: "admin",
+      reason: null,
+      mode: "full_existing",
+      catalog_run_id: "4",
+      preflight_window: 25,
+      max_exports: 177_505,
+      acknowledged_failed_count: 0,
+      scan_before_internal_product_id: null,
+      scan_complete: false,
+      last_error: null,
+      created_at: "2026-08-18T14:00:00.000Z",
+      updated_at: "2026-08-18T14:00:00.000Z",
+      paused_at: null,
+      completed_at: null,
+      item_count: 0,
+      pending_count: 0,
+      running_count: 0,
+      completed_count: 0,
+      failed_count: 0,
+      active_preflight_count: 0,
+    }]]);
+
+    const campaign = await new PostgresExportControlRepository(pool(executor)).createCampaign({
+      targetId: "10",
+      actor: "admin",
+      mode: "full_existing",
+      catalogRunId: "4",
+      preflightWindow: 25,
+      maxExports: 177_505,
+    });
+
+    expect(campaign.scanBeforeInternalProductId).toBeNull();
+    expect(campaign.scanComplete).toBe(false);
+    expect(executor.calls[0]?.text).toContain("campaign.scan_before_internal_product_id, campaign.scan_complete");
+  });
+
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
     const executor = new FakeExecutor([
       [],

@@ -807,7 +807,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          GROUP BY campaign.id, campaign.target_id, campaign.status, campaign.actor, campaign.reason,
                   campaign.mode, campaign.catalog_run_id,
                   campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
-                  campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at`,
+                  campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at,
+                  campaign.scan_before_internal_product_id, campaign.scan_complete`,
         [input.targetId, input.actor, input.reason ?? null, input.mode, input.catalogRunId ?? null,
           input.preflightWindow, input.maxExports ?? null],
       );
