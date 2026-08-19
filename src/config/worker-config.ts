@@ -9,6 +9,7 @@ export interface WorkerEnvironment {
   readonly WORKER_COLLECTION_CONCURRENCY?: string;
   readonly WORKER_PREFLIGHT_CONCURRENCY?: string;
   readonly WORKER_CLASSIFICATION_APPLY_CONCURRENCY?: string;
+  readonly WORKER_EXPORT_CONCURRENCY?: string;
   readonly MAX_JOB_ATTEMPTS?: string;
   readonly JOB_RETRY_BASE_MS?: string;
   readonly JOB_RETRY_MAX_MS?: string;
@@ -68,6 +69,15 @@ function classificationApplyConcurrency(value: string | undefined): number {
   return parsed;
 }
 
+function exportConcurrency(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 1;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 4) {
+    throw new Error("WORKER_EXPORT_CONCURRENCY must be an integer from 1 to 4");
+  }
+  return parsed;
+}
+
 export function loadWorkerConfig(environment: WorkerEnvironment = process.env): WorkerOptions {
   const workerId = environment.WORKER_ID?.trim();
   if (!workerId) throw new Error("WORKER_ID is required");
@@ -80,6 +90,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     collectionConcurrency: collectionConcurrency(environment.WORKER_COLLECTION_CONCURRENCY),
     preflightConcurrency: preflightConcurrency(environment.WORKER_PREFLIGHT_CONCURRENCY),
     classificationApplyConcurrency: classificationApplyConcurrency(environment.WORKER_CLASSIFICATION_APPLY_CONCURRENCY),
+    exportConcurrency: exportConcurrency(environment.WORKER_EXPORT_CONCURRENCY),
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),
     retryBaseMs: positiveInteger(environment, "JOB_RETRY_BASE_MS"),
     retryMaxMs: positiveInteger(environment, "JOB_RETRY_MAX_MS"),

@@ -22,7 +22,15 @@ function filterJson(filter: ExportControlFilter | undefined, sourceProductIds: r
 }
 
 export class ExportControlService {
-  constructor(private readonly repository: ExportControlRepository, private readonly jobs: JobRepository) {}
+  constructor(
+    private readonly repository: ExportControlRepository,
+    private readonly jobs: JobRepository,
+    private readonly campaignExportConcurrency = 1,
+  ) {
+    if (!Number.isInteger(campaignExportConcurrency) || campaignExportConcurrency < 1 || campaignExportConcurrency > 4) {
+      throw new IntegrationContractError("Параллельность export-кампании должна быть от 1 до 4");
+    }
+  }
 
   list(query: ExportControlListQuery) {
     return this.repository.list(query);
@@ -192,7 +200,9 @@ export class ExportControlService {
     }
 
     let queuedExport = false;
-    if (exportActive === 0 && !limitReached) {
+    const remainingLimit = campaign.maxExports === null ? this.campaignExportConcurrency : campaign.maxExports - campaign.itemCount;
+    const availableExportSlots = Math.max(0, Math.min(this.campaignExportConcurrency - exportActive, remainingLimit));
+    if (availableExportSlots > 0 && !limitReached) {
       const exportFilter = {
         status: "ready",
         operation: "update",
@@ -201,21 +211,22 @@ export class ExportControlService {
       const candidates = await this.repository.listExportCandidates({
         targetId: campaign.targetId,
         filter: exportFilter,
-        limit: 1,
+        limit: availableExportSlots,
         campaignId: campaign.id,
         excludeNoChanges: true,
       });
-      const candidate = candidates[0];
-      if (candidate !== undefined) {
-        if (candidate.willCreate || (campaign.mode === "safe" && candidate.riskLevel !== "none")) {
-          throw new IntegrationContractError("Кампания получила товар вне безопасного фильтра");
+      if (candidates.length > 0) {
+        for (const candidate of candidates) {
+          if (candidate.willCreate || (campaign.mode === "safe" && candidate.riskLevel !== "none")) {
+            throw new IntegrationContractError("Кампания получила товар вне безопасного фильтра");
+          }
         }
         await this.repository.createBatch({
           targetId: campaign.targetId,
           filter: exportFilter,
           actor: campaign.actor,
           reason: campaign.reason ?? `Безопасная выгрузка #${campaign.id}`,
-          candidates: [candidate],
+          candidates,
           campaignId: campaign.id,
         });
         queuedExport = true;

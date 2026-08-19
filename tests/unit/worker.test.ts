@@ -328,6 +328,43 @@ describe("Worker", () => {
     ]);
   });
 
+  it("runs the configured number of export lanes", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    for (let index = 1; index <= 2; index++) {
+      await jobs.enqueue({
+        jobType: "export_product",
+        payload: { sourceProductId: String(index), targetId: "1" },
+        uniqueKey: `export-${index}`,
+      });
+    }
+    const controller = new AbortController();
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const workerIds: string[] = [];
+    const handler: JobHandler = {
+      dispatch: vi.fn(async (job) => {
+        workerIds.push(job.lockedBy ?? "");
+        if (workerIds.length === 2) {
+          release();
+          controller.abort();
+        }
+        await barrier;
+        return { status: "completed" as const };
+      }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, { ...options, exportConcurrency: 2 }, sleep);
+
+    await worker.run(controller.signal);
+
+    expect(workerIds.sort()).toEqual(["worker:export-1", "worker:export-2"]);
+  });
+
   it("processes only the explicitly selected job", async () => {
     const value = await setup();
     const second = await value.jobs.enqueue({ jobType: "process_product", payload: { sourceProductId: "2", force: true }, uniqueKey: "two" });

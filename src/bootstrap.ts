@@ -84,8 +84,9 @@ export function createApplication(environment: ApplicationEnvironment = process.
     repositories.references,
     new WordPressTitleBrandAssignmentResolver(targetDictionary),
   );
+  const workerOptions = loadWorkerConfig(environment);
   const exportControl = new PostgresExportControlRepository(pool);
-  const exportCampaigns = new ExportControlService(exportControl, repositories.jobs);
+  const exportCampaigns = new ExportControlService(exportControl, repositories.jobs, workerOptions.exportConcurrency ?? 1);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
   const operationPipeline = new ProductOperationPipeline(
     operations,
@@ -141,7 +142,6 @@ export function createApplication(environment: ApplicationEnvironment = process.
       })();
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync, wordpressVariationPatches, retranslationRunner);
-  const workerOptions = loadWorkerConfig(environment);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,

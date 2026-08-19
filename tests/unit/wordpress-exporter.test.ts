@@ -983,6 +983,24 @@ describe("WordPressExporter", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=job&id=9");
   });
 
+  it("maps a WordPress no-op result to a skipped export", async () => {
+    const input = context();
+    const expectedPayload = await buildWordPressUpsertPayload(input);
+    const payloadHash = String(expectedPayload.payload_hash);
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      ok: true,
+      job: {
+        job_id: 10,
+        status: "done",
+        payload_hash: payloadHash,
+        result: { operation: "unchanged", target_id: 321, matched_by: "source_identity" },
+      },
+    }), { status: 202 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.export(input)).resolves.toMatchObject({ externalId: "321", operation: "skipped" });
+  });
+
   it("blocks an approved export before WordPress when the payload changed", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);

@@ -16,7 +16,7 @@ const candidate: ExportControlExportCandidate = {
   wordpressStateHash: "b".repeat(64),
 };
 
-function setup() {
+function setup(campaignExportConcurrency = 1) {
   const repository = {
     preparePreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]),
     listExportCandidates: vi.fn().mockResolvedValue([candidate]),
@@ -45,7 +45,7 @@ function setup() {
       uniqueKey: input.uniqueKey,
     }))),
   } as unknown as JobRepository;
-  return { repository, jobs, service: new ExportControlService(repository, jobs) };
+  return { repository, jobs, service: new ExportControlService(repository, jobs, campaignExportConcurrency) };
 }
 
 describe("ExportControlService", () => {
@@ -147,6 +147,26 @@ describe("ExportControlService", () => {
       campaignId: "82",
       candidates: [candidate],
     }));
+  });
+
+  it("fills two bounded export slots in one campaign tick", async () => {
+    const { repository, service } = setup(2);
+    const secondCandidate = { ...candidate, reviewId: "12", sourceProductId: "22", internalProductId: "32", externalId: "42" };
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([candidate, secondCandidate]);
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "86", targetId: "10", status: "running", actor: "admin", reason: "parallel",
+      mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 100,
+      itemCount: 10, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 10,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
+      createdAt: "2026-08-19T00:00:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, campaignId: "86" }));
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({ candidates: [candidate, secondCandidate] }));
   });
 
   it("requires a completed WordPress catalog scope for full existing campaigns", async () => {

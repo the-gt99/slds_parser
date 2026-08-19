@@ -23,6 +23,7 @@ export interface WorkerOptions {
   readonly collectionConcurrency?: number;
   readonly preflightConcurrency?: number;
   readonly classificationApplyConcurrency?: number;
+  readonly exportConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
@@ -267,7 +268,8 @@ export class Worker {
           this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:wordpress-variation-refresh-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.classificationApplyConcurrency }, (_, index) =>
           this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
-        this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export`),
+        ...Array.from({ length: this.options.exportConcurrency ?? 1 }, (_, index) =>
+          this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export-${index + 1}`)),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
         ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
       ]);

@@ -64,4 +64,12 @@ describe("worker config", () => {
       "WORKER_CLASSIFICATION_APPLY_CONCURRENCY must be an integer from 1 to 8",
     );
   });
+
+  it("accepts a separately bounded export concurrency", () => {
+    expect(loadWorkerConfig(environment).exportConcurrency).toBe(1);
+    expect(loadWorkerConfig({ ...environment, WORKER_EXPORT_CONCURRENCY: "2" }).exportConcurrency).toBe(2);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_EXPORT_CONCURRENCY: "5" })).toThrow(
+      "WORKER_EXPORT_CONCURRENCY must be an integer from 1 to 4",
+    );
+  });
 });

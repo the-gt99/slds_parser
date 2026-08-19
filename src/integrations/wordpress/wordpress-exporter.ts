@@ -1130,7 +1130,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.19.0";
+  readonly version = "1.20.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
 
   constructor(
@@ -1252,7 +1252,9 @@ export class WordPressExporter {
     const job = await this.waitForJob(jobId, expectedPayloadHash, initialJob);
     const result = record(job.result, "WordPress job result");
     const externalId = String(positiveInteger(result.target_id ?? result.product_id, "WordPress target_id"));
-    const operation = result.operation === "created" ? "created" : result.operation === "updated" ? "updated" : null;
+    const operation = result.operation === "created"
+      ? "created"
+      : result.operation === "updated" ? "updated" : result.operation === "unchanged" ? "skipped" : null;
     if (operation === null) throw new IntegrationContractError("WordPress job result has an unsupported operation");
     return {
       externalId,
