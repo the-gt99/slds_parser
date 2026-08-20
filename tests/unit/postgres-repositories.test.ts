@@ -330,7 +330,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateExecutor.calls[0]?.text).not.toContain("internal_products internal");
     expect(candidateExecutor.calls[1]?.text).toContain("JOIN LATERAL");
     expect(candidateExecutor.calls[1]?.text).toContain("review.id = ANY($1::BIGINT[])");
-    expect(candidateExecutor.calls[2]?.values).toEqual(["10", firstPageLastCheckedAt, "90", 25]);
+    expect(candidateExecutor.calls[2]?.values).toEqual(["10", "4", firstPageLastCheckedAt, "90", 25]);
   });
 
   it("groups every campaign cursor field when returning a newly inserted campaign", async () => {

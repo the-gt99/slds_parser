@@ -32,6 +32,7 @@ export interface ExportProductPayload {
   readonly targetId: string;
   readonly force: boolean;
   readonly batchItemId?: string;
+  readonly sourceRefreshId?: string;
   readonly approval?: {
     readonly preflightReviewId: string;
     readonly payloadHash: string;
@@ -40,6 +41,10 @@ export interface ExportProductPayload {
     readonly matchedBy: string | null;
     readonly wordpressStateHash?: string | null;
   };
+}
+
+export interface RefreshExportSourcePayload {
+  readonly refreshId: string;
 }
 
 export interface PreflightProductPayload {
@@ -135,7 +140,8 @@ export function parseRetranslateProductPayload(value: JsonValue): RetranslatePro
 
 export function parseExportProductPayload(value: JsonValue): ExportProductPayload {
   if (isObject(value) && typeof value.internalProductId === "string" && typeof value.targetId === "string" && typeof value.force === "boolean"
-    && (value.batchItemId === undefined || typeof value.batchItemId === "string")) {
+    && (value.batchItemId === undefined || typeof value.batchItemId === "string")
+    && (value.sourceRefreshId === undefined || (typeof value.sourceRefreshId === "string" && /^\d+$/u.test(value.sourceRefreshId)))) {
     let approval: ExportProductPayload["approval"];
     if (value.approval !== undefined) {
       if (!isObject(value.approval) || typeof value.approval.preflightReviewId !== "string"
@@ -159,10 +165,18 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
       targetId: value.targetId,
       force: value.force,
       ...(value.batchItemId === undefined ? {} : { batchItemId: value.batchItemId }),
+      ...(value.sourceRefreshId === undefined ? {} : { sourceRefreshId: value.sourceRefreshId }),
       ...(approval === undefined ? {} : { approval }),
     };
   }
   throw new InvalidJobPayloadError("export_product");
+}
+
+export function parseRefreshExportSourcePayload(value: JsonValue): RefreshExportSourcePayload {
+  if (isObject(value) && typeof value.refreshId === "string" && /^\d+$/u.test(value.refreshId)) {
+    return { refreshId: value.refreshId };
+  }
+  throw new InvalidJobPayloadError("refresh_export_source");
 }
 
 export function parsePreflightProductPayload(value: JsonValue): PreflightProductPayload {

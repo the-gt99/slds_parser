@@ -36,6 +36,9 @@ function setup(campaignExportConcurrency = 1) {
     })),
     getRunningCampaign: vi.fn().mockResolvedValue(null),
     countActivePreflights: vi.fn().mockResolvedValue(0),
+    countCampaignSourceRefreshBuffer: vi.fn().mockResolvedValue(0),
+    prepareCampaignSourceRefreshCandidates: vi.fn().mockResolvedValue([]),
+    saveCampaignSourceRefreshError: vi.fn(),
     prepareCampaignPreflightCandidates: vi.fn().mockResolvedValue([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]),
     setCampaignStatus: vi.fn(),
   } as unknown as ExportControlRepository;

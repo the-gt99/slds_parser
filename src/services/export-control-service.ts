@@ -5,6 +5,7 @@ import type { ExportCampaignMode, ExportControlFilter, ExportControlListQuery, E
 const maximumPreflightBatch = 100;
 const maximumExportBatch = 5_000;
 const maximumCampaignExports = 500_000;
+const sourceRefreshBufferPerExport = 8;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
@@ -200,6 +201,31 @@ export class ExportControlService {
     }
 
     let queuedExport = false;
+    let queuedSourceRefreshes = 0;
+    if (!limitReached) {
+      const bufferTarget = this.campaignExportConcurrency * sourceRefreshBufferPerExport;
+      const buffered = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
+      if (buffered < bufferTarget) {
+        const refreshCandidates = await this.repository.prepareCampaignSourceRefreshCandidates({
+          campaignId: campaign.id,
+          limit: bufferTarget - buffered,
+        });
+        try {
+          const jobs = await this.jobs.enqueueMany(refreshCandidates.map((candidate) => ({
+            jobType: "refresh_export_source" as const,
+            payload: { refreshId: candidate.id },
+            uniqueKey: `campaign:${campaign.id}:source-refresh:${candidate.internalProductId}`,
+          })));
+          queuedSourceRefreshes = jobs.length;
+        } catch (error) {
+          await Promise.allSettled(refreshCandidates.map((candidate) => this.repository.saveCampaignSourceRefreshError(
+            candidate.id,
+            error instanceof Error ? error.message : String(error),
+          )));
+          throw error;
+        }
+      }
+    }
     const remainingLimit = campaign.maxExports === null ? this.campaignExportConcurrency : campaign.maxExports - campaign.itemCount;
     const availableExportSlots = Math.max(0, Math.min(this.campaignExportConcurrency - exportActive, remainingLimit));
     if (availableExportSlots > 0 && !limitReached) {
@@ -261,9 +287,10 @@ export class ExportControlService {
       }
     }
 
-    if (!queuedExport && exportActive === 0 && queuedPreflights === 0) {
+    if (!queuedExport && exportActive === 0 && queuedPreflights === 0 && queuedSourceRefreshes === 0) {
       const refreshedActive = await this.repository.countActivePreflights(campaign.targetId);
-      if (refreshedActive === 0) {
+      const sourceRefreshBuffer = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
+      if (refreshedActive === 0 && sourceRefreshBuffer === 0) {
         const refreshedCampaign = await this.repository.getRunningCampaign();
         const remainingFilter = {
           status: "ready",
@@ -285,6 +312,6 @@ export class ExportControlService {
         }
       }
     }
-    return queuedExport || queuedPreflights > 0;
+    return queuedExport || queuedPreflights > 0 || queuedSourceRefreshes > 0;
   }
 }

@@ -15,6 +15,8 @@ import type {
   ExportControlPreflightCandidate,
   ExportControlReadinessSummary,
   ExportControlRepository,
+  ExportSourceRefreshCandidate,
+  ExportSourceRefreshRecord,
   SaveExportControlPreflightInput,
 } from "../../../repositories/index.js";
 import type { SqlClient, SqlPool } from "../sql-executor.js";
@@ -64,6 +66,9 @@ function mapExportCandidate(row: DatabaseRow): ExportControlExportCandidate {
     riskLevel: text(row, "risk_level") as ExportControlExportCandidate["riskLevel"],
     changeFlags: flags(row.change_flags),
     wordpressStateHash: nullableText(row, "wordpress_state_hash"),
+    ...(row.source_refresh_id === null || row.source_refresh_id === undefined
+      ? {}
+      : { sourceRefreshId: text(row, "source_refresh_id") }),
   };
 }
 
@@ -652,6 +657,14 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       if (input.excludeNoChanges === true) {
         pageWhere.push("NOT review.change_flags @> ARRAY['no_changes']::TEXT[]");
       }
+      const pageCampaignId = addPage(input.campaignId);
+      pageWhere.push(`EXISTS (
+        SELECT 1 FROM target_export_source_refreshes source_refresh
+        WHERE source_refresh.campaign_id = ${pageCampaignId}::BIGINT
+          AND source_refresh.internal_product_id = review.internal_product_id
+          AND source_refresh.internal_content_hash = review.internal_content_hash
+          AND source_refresh.status = 'ready'
+      )`);
       pageWhere.push(...filterSql(input.filter ?? {}, addPage, { includeStatus: false }));
       if (beforeCheckedAt !== null && beforeId !== null) {
         pageWhere.push(`(review.checked_at, review.id) < (${addPage(beforeCheckedAt)}::TIMESTAMPTZ, ${addPage(beforeId)}::BIGINT)`);
@@ -715,11 +728,16 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       const remainingLimit = addEligibility(input.limit - selected.length);
       const eligible = await queryPool<DatabaseRow>(this.pool,
         `SELECT review.id, review.source_product_id, review.internal_product_id,
-                review.payload_hash, review.will_create, review.external_id,
-                review.matched_by, review.risk_level, review.change_flags,
-                review.wordpress_state_hash
+                 review.payload_hash, review.will_create, review.external_id,
+                 review.matched_by, review.risk_level, review.change_flags,
+                 review.wordpress_state_hash, source_refresh.id AS source_refresh_id
          FROM target_product_preflight_reviews review
          JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         JOIN target_export_source_refreshes source_refresh
+           ON source_refresh.campaign_id = ${campaignId}::BIGINT
+          AND source_refresh.internal_product_id = review.internal_product_id
+          AND source_refresh.internal_content_hash = review.internal_content_hash
+          AND source_refresh.status = 'ready'
          JOIN LATERAL (
            SELECT internal.id
            FROM internal_products internal
@@ -798,6 +816,21 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       if (items.rows.length !== input.candidates.length) {
         throw new IntegrationContractError("Состав готовых товаров изменился; обновите список и повторите экспорт");
       }
+      if (input.campaignId !== undefined) {
+        const refreshIds = input.candidates.map((candidate) => candidate.sourceRefreshId).filter((id): id is string => id !== undefined);
+        if (refreshIds.length !== input.candidates.length) {
+          throw new IntegrationContractError("Для части товаров не готов свежий снимок source");
+        }
+        const readyRefreshes = await client.query<DatabaseRow>(
+          `SELECT COUNT(*)::INT AS count
+           FROM target_export_source_refreshes
+           WHERE id = ANY($1::BIGINT[]) AND campaign_id = $2 AND status = 'ready'`,
+          [refreshIds, input.campaignId],
+        );
+        if (Number(readyRefreshes.rows[0]?.count ?? 0) !== input.candidates.length) {
+          throw new IntegrationContractError("Свежий снимок source изменился до постановки экспорта");
+        }
+      }
       const candidateByInternalId = new Map(input.candidates.map((candidate) => [candidate.internalProductId, candidate]));
       const requestedJobs = items.rows.map((row) => {
         const internalProductId = text(row, "internal_product_id");
@@ -811,6 +844,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
             targetId: input.targetId,
             force: false,
             batchItemId,
+            ...(candidate.sourceRefreshId === undefined ? {} : { sourceRefreshId: candidate.sourceRefreshId }),
             approval: {
               preflightReviewId: candidate.reviewId,
               payloadHash: candidate.payloadHash,
@@ -1160,5 +1194,135 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         refreshWordPress: row.refresh_wordpress === true,
       }));
     });
+  }
+
+  async prepareCampaignSourceRefreshCandidates(input: {
+    readonly campaignId: EntityId;
+    readonly limit: number;
+  }): Promise<readonly ExportSourceRefreshCandidate[]> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `WITH selected AS MATERIALIZED (
+         SELECT campaign.id AS campaign_id, campaign.target_id,
+                review.internal_product_id, review.source_product_id,
+                review.internal_content_hash
+         FROM target_export_campaigns campaign
+         JOIN target_product_preflight_reviews review ON review.target_id = campaign.target_id
+         JOIN target_export_revisions revision
+           ON revision.target_id = review.target_id
+          AND revision.revision = review.configuration_revision
+         JOIN internal_products internal
+           ON internal.id = review.internal_product_id
+          AND internal.content_hash = review.internal_content_hash
+          AND ${exportEligibleInternalSql("internal")}
+         WHERE campaign.id = $1 AND campaign.status = 'running'
+           AND review.status = 'ready'
+           AND review.payload_hash IS NOT NULL
+           AND review.will_create = FALSE
+           AND NOT review.change_flags @> ARRAY['no_changes']::TEXT[]
+           AND (campaign.mode <> 'safe' OR review.risk_level = 'none')
+           AND (campaign.catalog_run_id IS NULL OR EXISTS (
+             SELECT 1 FROM wordpress_catalog_run_items catalog_item
+             WHERE catalog_item.run_id = campaign.catalog_run_id
+               AND catalog_item.internal_product_id = review.internal_product_id
+               AND catalog_item.match_status = 'matched'
+           ))
+           AND NOT EXISTS (
+             SELECT 1 FROM target_export_batch_items item
+             JOIN target_export_batches batch ON batch.id = item.batch_id
+             WHERE batch.campaign_id = campaign.id
+               AND item.internal_product_id = review.internal_product_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM target_export_source_refreshes existing
+             WHERE existing.campaign_id = campaign.id
+               AND existing.internal_product_id = review.internal_product_id
+           )
+         ORDER BY review.checked_at DESC, review.id DESC
+         LIMIT $2
+         FOR UPDATE OF review SKIP LOCKED
+       ), inserted AS (
+         INSERT INTO target_export_source_refreshes (
+           campaign_id, target_id, internal_product_id, source_product_id,
+           internal_content_hash, status
+         )
+         SELECT campaign_id, target_id, internal_product_id, source_product_id,
+                internal_content_hash, 'pending'
+         FROM selected
+         ON CONFLICT (campaign_id, internal_product_id) DO NOTHING
+         RETURNING id, campaign_id, internal_product_id, source_product_id
+       )
+       SELECT * FROM inserted ORDER BY id`,
+      [input.campaignId, input.limit],
+    );
+    return result.rows.map((row) => ({
+      id: text(row, "id"),
+      campaignId: text(row, "campaign_id"),
+      internalProductId: text(row, "internal_product_id"),
+      sourceProductId: text(row, "source_product_id"),
+    }));
+  }
+
+  async countCampaignSourceRefreshBuffer(campaignId: EntityId): Promise<number> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT COUNT(*)::INT AS count
+       FROM target_export_source_refreshes refresh
+       WHERE refresh.campaign_id = $1
+         AND refresh.status IN ('pending', 'ready')
+         AND NOT EXISTS (
+           SELECT 1 FROM target_export_batch_items item
+           JOIN target_export_batches batch ON batch.id = item.batch_id
+           WHERE batch.campaign_id = refresh.campaign_id
+             AND item.internal_product_id = refresh.internal_product_id
+         )`,
+      [campaignId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async saveCampaignSourceRefresh(input: {
+    readonly refreshId: EntityId;
+    readonly variants: ExportSourceRefreshRecord["variants"];
+  }): Promise<void> {
+    const result = await queryPool(this.pool,
+      `UPDATE target_export_source_refreshes
+       SET status = 'ready', variants = $2::JSONB, fetched_at = NOW(), error = NULL, updated_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING id`,
+      [input.refreshId, JSON.stringify(input.variants)],
+    );
+    if (result.rows.length !== 1) throw new IntegrationContractError("Буфер source refresh не найден или уже завершён");
+  }
+
+  async saveCampaignSourceRefreshError(refreshId: EntityId, error: string): Promise<void> {
+    await queryPool(this.pool,
+      `UPDATE target_export_source_refreshes
+       SET status = 'error', error = $2, updated_at = NOW()
+       WHERE id = $1 AND status = 'pending'`,
+      [refreshId, error],
+    );
+  }
+
+  async getCampaignSourceRefresh(refreshId: EntityId): Promise<ExportSourceRefreshRecord | null> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT id, campaign_id, target_id, internal_product_id, source_product_id,
+              internal_content_hash, status, variants
+       FROM target_export_source_refreshes WHERE id = $1`,
+      [refreshId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) return null;
+    if (row.variants !== null && row.variants !== undefined && !Array.isArray(row.variants)) {
+      throw new IntegrationContractError("Буфер source refresh содержит некорректные варианты");
+    }
+    return {
+      id: text(row, "id"),
+      campaignId: text(row, "campaign_id"),
+      targetId: text(row, "target_id"),
+      internalProductId: text(row, "internal_product_id"),
+      sourceProductId: text(row, "source_product_id"),
+      internalContentHash: text(row, "internal_content_hash"),
+      status: text(row, "status") as ExportSourceRefreshRecord["status"],
+      variants: (row.variants ?? null) as ExportSourceRefreshRecord["variants"],
+    };
   }
 }

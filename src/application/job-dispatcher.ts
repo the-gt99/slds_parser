@@ -2,7 +2,8 @@ import { InvalidJobPayloadError } from "../core/errors/index.js";
 import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
-import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshWordPressVariationPatchPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
+import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseRefreshWordPressVariationPatchPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
+import type { ExportSourceRefreshRunner } from "./export-source-refresh-runner.js";
 import type { PreflightRunner } from "./preflight-runner.js";
 import type { ProcessingRunner } from "./processing-runner.js";
 import type { RetranslationRunner } from "./retranslation-runner.js";
@@ -26,7 +27,8 @@ export class JobDispatcher implements JobHandler {
     private readonly classificationApply?: TargetClassificationApplyRunner,
     private readonly wordpressCatalogSync?: WordPressCatalogSyncRunner,
     private readonly wordpressVariationPatches?: WordPressVariationPatchRunner,
-    private readonly retranslations?: RetranslationRunner) {}
+    private readonly retranslations?: RetranslationRunner,
+    private readonly exportSourceRefreshes?: ExportSourceRefreshRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
@@ -67,6 +69,10 @@ export class JobDispatcher implements JobHandler {
         return await this.wordpressVariationPatches.poll(parsePollWordPressVariationPatchesPayload(job.payload));
       }
       case "export_product": return await this.exports.exportProduct(parseExportProductPayload(job.payload));
+      case "refresh_export_source": {
+        if (this.exportSourceRefreshes === undefined) throw new InvalidJobPayloadError("refresh_export_source is not configured");
+        return await this.exportSourceRefreshes.refresh(parseRefreshExportSourcePayload(job.payload));
+      }
       default: throw new InvalidJobPayloadError(String(job.jobType));
     }
   }
@@ -80,6 +86,11 @@ export class JobDispatcher implements JobHandler {
         sourceProductId: payload.sourceProductId,
         error: message,
       });
+      return;
+    }
+    if (job.jobType === "refresh_export_source" && this.exportSourceRefreshes !== undefined) {
+      const payload = parseRefreshExportSourcePayload(job.payload);
+      await this.exportSourceRefreshes.saveError(payload.refreshId, message);
       return;
     }
     if (job.jobType === "sync_target_classifications" && this.classificationSync !== undefined) {

@@ -1131,7 +1131,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.21.0";
+  readonly version = "1.22.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
@@ -1142,7 +1142,7 @@ export class WordPressExporter {
   constructor(
     private readonly config: WordPressTargetConfig,
     private readonly requestImplementation: typeof fetch = fetch,
-    private readonly wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    _wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   ) {
     this.sizeConverter = new WordPressSizeConverter(config, requestImplementation);
   }
@@ -1240,7 +1240,7 @@ export class WordPressExporter {
       if (text(approvedPayload.payload_hash) !== context.approval.payloadHash) {
         throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
       }
-      const current = await this.preflightPayload(payload);
+      const current = prepared.preflight ?? await this.preflightPayload(payload);
       if (current.willCreate !== context.approval.willCreate
         || current.externalId !== context.approval.externalId
         || current.matchedBy !== context.approval.matchedBy) {
@@ -1328,9 +1328,10 @@ export class WordPressExporter {
       if (status === "error") {
         throw new IntegrationContractError(`WordPress upsert job failed at ${text(job.current_step) || "unknown"}: ${text(job.last_error) || "unknown error"}`);
       }
-      if (status !== "pending" && status !== "processing") throw new IntegrationContractError(`WordPress returned an unsupported job status: ${status}`);
+      if (status !== "pending" && status !== "processing" && status !== "waiting") {
+        throw new IntegrationContractError(`WordPress returned an unsupported job status: ${status}`);
+      }
       if (Date.now() >= deadline) throw new RetryableError(`WordPress upsert job timed out: ${jobId}`, { code: "WORDPRESS_JOB_TIMEOUT" });
-      await this.wait(this.config.pollIntervalMs);
       job = await this.readJob(jobId);
     }
   }
@@ -1356,7 +1357,10 @@ export class WordPressExporter {
     try {
       const response = await this.request("jobs-status", {
         method: "POST",
-        body: JSON.stringify({ job_ids: jobIds }),
+        body: JSON.stringify({
+          job_ids: jobIds,
+          wait_ms: Math.min(1_500, Math.max(100, this.config.pollIntervalMs)),
+        }),
       });
       if (!Array.isArray(response.jobs)) {
         throw new IntegrationContractError("WordPress jobs-status jobs must be a list");

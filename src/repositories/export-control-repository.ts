@@ -11,6 +11,8 @@ import type {
   ExportControlListQuery,
   ExportControlListResult,
   ExportControlPreflightCandidate,
+  ExportSourceRefreshCandidate,
+  ExportSourceRefreshRecord,
   SaveExportControlPreflightInput,
 } from "./types.js";
 
@@ -72,4 +74,15 @@ export interface ExportControlRepository {
     readonly campaignId: EntityId;
     readonly limit: number;
   }): Promise<readonly ExportControlPreflightCandidate[]>;
+  prepareCampaignSourceRefreshCandidates(input: {
+    readonly campaignId: EntityId;
+    readonly limit: number;
+  }): Promise<readonly ExportSourceRefreshCandidate[]>;
+  countCampaignSourceRefreshBuffer(campaignId: EntityId): Promise<number>;
+  saveCampaignSourceRefresh(input: {
+    readonly refreshId: EntityId;
+    readonly variants: ExportSourceRefreshRecord["variants"];
+  }): Promise<void>;
+  saveCampaignSourceRefreshError(refreshId: EntityId, error: string): Promise<void>;
+  getCampaignSourceRefresh(refreshId: EntityId): Promise<ExportSourceRefreshRecord | null>;
 }

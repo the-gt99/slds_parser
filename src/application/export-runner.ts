@@ -1,8 +1,8 @@
-import type { JsonValue, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
-import { EntityNotFoundError } from "../core/errors/index.js";
+import type { JsonValue, ProductVariantDTO, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
+import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
-import type { InternalProductRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, TargetRepository } from "../repositories/index.js";
+import type { ExportControlRepository, InternalProductRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, TargetRepository } from "../repositories/index.js";
 import type { TargetReferenceMappingService } from "../services/index.js";
 import type { ExportProductPayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
@@ -24,6 +24,7 @@ export class ExportRunner {
     private readonly sourceRefresher: ExportSourceRefresher,
     private readonly refreshSourceBeforeExport: () => boolean | Promise<boolean> = () => true,
     private readonly currentTime: () => number = Date.now,
+    private readonly sourceRefreshes?: ExportControlRepository,
   ) {}
 
   async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {
@@ -48,9 +49,21 @@ export class ExportRunner {
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
-      const liveVariants = await this.refreshSourceBeforeExport()
-        ? await this.sourceRefresher.refresh(source, sourceProduct)
-        : null;
+      let liveVariants: readonly ProductVariantDTO[] | null;
+      if (payload.sourceRefreshId !== undefined) {
+        if (this.sourceRefreshes === undefined) throw new IntegrationContractError("Буфер source refresh не подключён");
+        const refresh = await this.sourceRefreshes.getCampaignSourceRefresh(payload.sourceRefreshId);
+        if (refresh === null || refresh.status !== "ready"
+          || refresh.internalProductId !== internal.id || refresh.sourceProductId !== sourceProduct.id
+          || refresh.targetId !== target.id || refresh.internalContentHash !== internal.contentHash) {
+          throw new IntegrationContractError("Свежий source refresh не соответствует товару экспорта");
+        }
+        liveVariants = refresh.variants;
+      } else {
+        liveVariants = await this.refreshSourceBeforeExport()
+          ? await this.sourceRefresher.refresh(source, sourceProduct)
+          : null;
+      }
       const exportedContentHash = liveVariants === null
         ? internal.contentHash
         : hashStableJson({ internalContentHash: internal.contentHash, liveVariants } as unknown as JsonValue);

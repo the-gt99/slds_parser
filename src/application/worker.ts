@@ -24,6 +24,7 @@ export interface WorkerOptions {
   readonly preflightConcurrency?: number;
   readonly classificationApplyConcurrency?: number;
   readonly exportConcurrency?: number;
+  readonly exportRefreshConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
@@ -230,6 +231,7 @@ export class Worker {
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const retranslationJobTypes = ["retranslate_product"] satisfies readonly JobType[];
     const exportJobTypes = ["export_product"] satisfies readonly JobType[];
+    const exportRefreshJobTypes = ["refresh_export_source"] satisfies readonly JobType[];
     const preflightJobTypes = ["preflight_product"] satisfies readonly JobType[];
     const classificationSyncJobTypes = ["sync_target_classifications"] satisfies readonly JobType[];
     const classificationApplyJobTypes = ["apply_target_classification_suggestion"] satisfies readonly JobType[];
@@ -270,6 +272,8 @@ export class Worker {
           this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
         ...Array.from({ length: this.options.exportConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export-${index + 1}`)),
+        ...Array.from({ length: this.options.exportRefreshConcurrency ?? 1 }, (_, index) =>
+          this.runLane(controller.signal, exportRefreshJobTypes, `${this.options.workerId}:export-refresh-${index + 1}`)),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
         ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
       ]);

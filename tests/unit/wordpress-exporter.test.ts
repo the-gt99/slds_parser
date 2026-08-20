@@ -981,7 +981,7 @@ describe("WordPressExporter", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-jobs");
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=jobs-status");
-    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ job_ids: [9] });
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ job_ids: [9], wait_ms: 100 });
   });
 
   it("coalesces concurrent WordPress job status reads", async () => {
@@ -1018,7 +1018,7 @@ describe("WordPressExporter", () => {
 
     const statusCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("slds_target_import_api=jobs-status"));
     expect(statusCalls).toHaveLength(1);
-    expect(JSON.parse(String((statusCalls[0]?.[1] as RequestInit).body))).toEqual({ job_ids: [20, 21] });
+    expect(JSON.parse(String((statusCalls[0]?.[1] as RequestInit).body))).toEqual({ job_ids: [20, 21], wait_ms: 100 });
   });
 
   it("maps a WordPress no-op result to a skipped export", async () => {

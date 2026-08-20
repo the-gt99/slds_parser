@@ -1,4 +1,4 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, ExportSourceRefreshRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
@@ -98,7 +98,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const retranslationRunner = new RetranslationRunner(repositories, translationOperation);
   const sourceRefresher = new ExportSourceRefresher(repositories.sourceProducts, unitOfWork, adapters, processors);
   let refreshSourceBeforeExport = true;
-  const exportRunner = new ExportRunner(repositories, exporters, targetMappings, sourceRefresher, () => refreshSourceBeforeExport);
+  const exportRunner = new ExportRunner(repositories, exporters, targetMappings, sourceRefresher,
+    () => refreshSourceBeforeExport, Date.now, exportControl);
+  const exportSourceRefreshRunner = new ExportSourceRefreshRunner(
+    repositories.sources, repositories.sourceProducts, repositories.internalProducts, exportControl, sourceRefresher,
+  );
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
   const wordpressCatalog = new PostgresWordPressCatalogRepository(pool);
@@ -141,7 +145,8 @@ export function createApplication(environment: ApplicationEnvironment = process.
         );
       })();
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
-    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync, wordpressVariationPatches, retranslationRunner);
+    preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
+    wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
@@ -154,6 +159,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
       : async (jobTypes) => {
         const needsGoatProxy = jobTypes.length === 1
           && (jobTypes[0] === "collect_product" || jobTypes[0] === "refresh_wordpress_variation_patch"
+            || jobTypes[0] === "refresh_export_source"
             || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
         return needsGoatProxy
           ? proxyPool.reserveClaim()

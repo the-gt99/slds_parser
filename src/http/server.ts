@@ -556,7 +556,8 @@ function configStatus(value: string | undefined) {
 
 function jobType(value: unknown): JobType {
   if (value !== "discover_source" && value !== "collect_product" && value !== "process_product" && value !== "sync_target_classifications"
-    && value !== "reclassify_product" && value !== "apply_target_classification_suggestion" && value !== "preflight_product" && value !== "export_product") {
+    && value !== "reclassify_product" && value !== "apply_target_classification_suggestion" && value !== "preflight_product"
+    && value !== "refresh_export_source" && value !== "export_product") {
     throw new HttpInputError("Unknown jobType");
   }
   return value;

@@ -6,6 +6,7 @@ import type {
   JsonValue,
   ReferenceCandidateDTO,
   ReferenceResolutionKind,
+  ProductVariantDTO,
   UniversalProductDTO,
 } from "../contracts/index.js";
 
@@ -25,6 +26,7 @@ export type JobType =
   | "prepare_wordpress_variation_patches"
   | "refresh_wordpress_variation_patch"
   | "poll_wordpress_variation_patches"
+  | "refresh_export_source"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";
 
@@ -911,6 +913,21 @@ export interface ExportControlExportCandidate {
   readonly riskLevel: ExportControlRiskLevel;
   readonly changeFlags: readonly string[];
   readonly wordpressStateHash: string | null;
+  readonly sourceRefreshId?: EntityId;
+}
+
+export interface ExportSourceRefreshCandidate {
+  readonly id: EntityId;
+  readonly campaignId: EntityId;
+  readonly internalProductId: EntityId;
+  readonly sourceProductId: EntityId;
+}
+
+export interface ExportSourceRefreshRecord extends ExportSourceRefreshCandidate {
+  readonly targetId: EntityId;
+  readonly internalContentHash: string;
+  readonly status: "pending" | "ready" | "error";
+  readonly variants: readonly ProductVariantDTO[] | null;
 }
 
 export interface ExportControlBatchRecord {
