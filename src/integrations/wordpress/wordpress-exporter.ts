@@ -72,6 +72,7 @@ interface WordPressResponse {
   readonly error?: unknown;
   readonly code?: unknown;
   readonly job?: unknown;
+  readonly jobs?: unknown;
   readonly target_id?: unknown;
   readonly product_id?: unknown;
   readonly matched_by?: unknown;
@@ -1130,8 +1131,13 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.20.0";
+  readonly version = "1.21.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
+  private readonly pendingJobReads = new Map<number, Array<{
+    readonly resolve: (job: WordPressJob) => void;
+    readonly reject: (error: unknown) => void;
+  }>>();
+  private jobReadFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly config: WordPressTargetConfig,
@@ -1211,14 +1217,15 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    const effectiveContext = requiresCurrentTaxonomySnapshot(context.target.config)
-      ? await this.withCurrentTaxonomySnapshot(context)
-      : context;
+    const prepared = requiresCurrentTaxonomySnapshot(context.target.config)
+      ? await this.withCurrentTaxonomySnapshotAndPreflight(context)
+      : { context, preflight: null };
+    const effectiveContext = prepared.context;
     const payload = await this.buildPayload(effectiveContext);
     const expectedPayloadHash = text(payload.payload_hash);
     const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields.map(String) : [];
     if (!managedFields.includes("description") && context.approval === undefined) {
-      const current = await this.preflightPayload(payload);
+      const current = prepared.preflight ?? await this.preflightPayload(payload);
       if (current.willCreate) {
         throw new IntegrationContractError("Нельзя создать товар без управляемого описания: для нового товара нечего сохранять без изменений");
       }
@@ -1268,6 +1275,13 @@ export class WordPressExporter {
   }
 
   private async withCurrentTaxonomySnapshot(context: ExportContext): Promise<ExportContext> {
+    return (await this.withCurrentTaxonomySnapshotAndPreflight(context)).context;
+  }
+
+  private async withCurrentTaxonomySnapshotAndPreflight(context: ExportContext): Promise<{
+    readonly context: ExportContext;
+    readonly preflight: WordPressUpsertPreflightResult;
+  }> {
     const lookupContext: ExportContext = {
       ...context,
       target: {
@@ -1290,9 +1304,12 @@ export class WordPressExporter {
       ...baseContext
     } = context;
     return {
-      ...baseContext,
-      ...(lookup.externalId === null ? {} : { existingExternalId: lookup.externalId }),
-      ...(lookup.snapshot === undefined ? {} : { existingTargetSnapshot: lookup.snapshot }),
+      context: {
+        ...baseContext,
+        ...(lookup.externalId === null ? {} : { existingExternalId: lookup.externalId }),
+        ...(lookup.snapshot === undefined ? {} : { existingTargetSnapshot: lookup.snapshot }),
+      },
+      preflight: lookup,
     };
   }
 
@@ -1314,8 +1331,54 @@ export class WordPressExporter {
       if (status !== "pending" && status !== "processing") throw new IntegrationContractError(`WordPress returned an unsupported job status: ${status}`);
       if (Date.now() >= deadline) throw new RetryableError(`WordPress upsert job timed out: ${jobId}`, { code: "WORDPRESS_JOB_TIMEOUT" });
       await this.wait(this.config.pollIntervalMs);
-      const response = await this.request("job", { method: "GET" }, { id: String(jobId) });
-      job = normalizeJob(response.job);
+      job = await this.readJob(jobId);
+    }
+  }
+
+  private readJob(jobId: number): Promise<WordPressJob> {
+    return new Promise((resolve, reject) => {
+      const waiters = this.pendingJobReads.get(jobId) ?? [];
+      waiters.push({ resolve, reject });
+      this.pendingJobReads.set(jobId, waiters);
+      if (this.jobReadFlushTimer === null) {
+        this.jobReadFlushTimer = setTimeout(() => {
+          this.jobReadFlushTimer = null;
+          void this.flushJobReads();
+        }, 10);
+      }
+    });
+  }
+
+  private async flushJobReads(): Promise<void> {
+    const pending = new Map(this.pendingJobReads);
+    this.pendingJobReads.clear();
+    const jobIds = [...pending.keys()];
+    try {
+      const response = await this.request("jobs-status", {
+        method: "POST",
+        body: JSON.stringify({ job_ids: jobIds }),
+      });
+      if (!Array.isArray(response.jobs)) {
+        throw new IntegrationContractError("WordPress jobs-status jobs must be a list");
+      }
+      const jobs = new Map<number, WordPressJob>();
+      for (const value of response.jobs) {
+        const job = normalizeJob(value);
+        jobs.set(positiveInteger(job.job_id, "WordPress job_id"), job);
+      }
+      for (const jobId of pending.keys()) {
+        if (!jobs.has(jobId)) {
+          throw new IntegrationContractError(`WordPress jobs-status omitted job ${jobId}`);
+        }
+      }
+      for (const [jobId, waiters] of pending) {
+        const job = jobs.get(jobId)!;
+        for (const waiter of waiters) waiter.resolve(job);
+      }
+    } catch (error) {
+      for (const waiters of pending.values()) {
+        for (const waiter of waiters) waiter.reject(error);
+      }
     }
   }
 

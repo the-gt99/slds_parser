@@ -974,13 +974,51 @@ describe("WordPressExporter", () => {
     const payloadHash = String(expectedPayload.payload_hash);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, job: { job_id: 9, status: "pending", payload_hash: payloadHash } }), { status: 202 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, job: { job_id: 9, status: "done", payload_hash: payloadHash, result: { operation: "created", target_id: 321, matched_by: "created" } } }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, jobs: [{ job_id: 9, status: "done", payload_hash: payloadHash, result: { operation: "created", target_id: 321, matched_by: "created" } }] }), { status: 200 }));
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock, async () => {});
 
     await expect(exporter.export(input)).resolves.toEqual({ externalId: "321", operation: "created", metadata: { jobId: 9, payloadHash, matchedBy: "created" } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-jobs");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=job&id=9");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("slds_target_import_api=jobs-status");
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ job_ids: [9] });
+  });
+
+  it("coalesces concurrent WordPress job status reads", async () => {
+    let nextJobId = 20;
+    const firstContext = context();
+    const secondContext = { ...context(), product: { ...context().product, title: "Second product" } };
+    const firstHash = String((await buildWordPressUpsertPayload(firstContext)).payload_hash);
+    const secondHash = String((await buildWordPressUpsertPayload(secondContext)).payload_hash);
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const action = new URL(String(input)).searchParams.get("slds_target_import_api");
+      if (action === "upsert-jobs") {
+        const body = JSON.parse(String(init?.body)) as { payload: JsonObject };
+        const jobId = nextJobId++;
+        return new Response(JSON.stringify({ ok: true, job: { job_id: jobId, status: "pending", payload_hash: body.payload.payload_hash } }), { status: 202 });
+      }
+      const body = JSON.parse(String(init?.body)) as { job_ids: number[] };
+      return new Response(JSON.stringify({
+        ok: true,
+        jobs: body.job_ids.map((jobId) => ({
+          job_id: jobId,
+          status: "done",
+          payload_hash: jobId === 20 ? firstHash : secondHash,
+          result: { operation: "updated", target_id: jobId, matched_by: "source_identity" },
+        })),
+      }), { status: 200 });
+    });
+    const exporter = new WordPressExporter(
+      { baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 },
+      fetchMock,
+      async () => {},
+    );
+
+    await expect(Promise.all([exporter.export(firstContext), exporter.export(secondContext)])).resolves.toHaveLength(2);
+
+    const statusCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("slds_target_import_api=jobs-status"));
+    expect(statusCalls).toHaveLength(1);
+    expect(JSON.parse(String((statusCalls[0]?.[1] as RequestInit).body))).toEqual({ job_ids: [20, 21] });
   });
 
   it("maps a WordPress no-op result to a skipped export", async () => {
