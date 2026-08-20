@@ -1,0 +1,2 @@
+CREATE INDEX target_export_batch_items_internal_product_batch_idx
+  ON target_export_batch_items (internal_product_id, batch_id);

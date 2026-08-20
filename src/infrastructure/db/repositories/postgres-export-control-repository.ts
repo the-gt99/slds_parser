@@ -43,6 +43,32 @@ function flags(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+interface ExportCandidateQuery {
+  readonly targetId: EntityId;
+  readonly sourceProductIds?: readonly EntityId[];
+  readonly filter?: ExportControlFilter;
+  readonly limit: number;
+  readonly campaignId?: EntityId;
+  readonly excludeNoChanges?: boolean;
+}
+
+function mapExportCandidate(row: DatabaseRow): ExportControlExportCandidate {
+  return {
+    reviewId: text(row, "id"),
+    sourceProductId: text(row, "source_product_id"),
+    internalProductId: text(row, "internal_product_id"),
+    payloadHash: text(row, "payload_hash"),
+    willCreate: row.will_create === true,
+    externalId: nullableText(row, "external_id"),
+    matchedBy: nullableText(row, "matched_by"),
+    riskLevel: text(row, "risk_level") as ExportControlExportCandidate["riskLevel"],
+    changeFlags: flags(row.change_flags),
+    wordpressStateHash: nullableText(row, "wordpress_state_hash"),
+  };
+}
+
+const campaignCandidatePageSize = 25;
+
 function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
   return {
     id: text(row, "id"),
@@ -545,15 +571,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     );
   }
 
-  async listExportCandidates(input: {
-    readonly targetId: EntityId;
-    readonly sourceProductIds?: readonly EntityId[];
-    readonly filter?: ExportControlFilter;
-    readonly limit: number;
-    readonly campaignId?: EntityId;
-    readonly excludeNoChanges?: boolean;
-  }): Promise<readonly ExportControlExportCandidate[]> {
+  async listExportCandidates(input: ExportCandidateQuery): Promise<readonly ExportControlExportCandidate[]> {
     if (input.filter?.status !== undefined && input.filter.status !== "ready") return [];
+    if (input.campaignId !== undefined) {
+      return this.listCampaignExportCandidates({ ...input, campaignId: input.campaignId });
+    }
     const parameters: unknown[] = [];
     const add = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
     const where = [
@@ -605,18 +627,116 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        LIMIT ${limit}`,
       parameters,
     );
-    return result.rows.map((row) => ({
-      reviewId: text(row, "id"),
-      sourceProductId: text(row, "source_product_id"),
-      internalProductId: text(row, "internal_product_id"),
-      payloadHash: text(row, "payload_hash"),
-      willCreate: row.will_create === true,
-      externalId: nullableText(row, "external_id"),
-      matchedBy: nullableText(row, "matched_by"),
-      riskLevel: text(row, "risk_level") as ExportControlExportCandidate["riskLevel"],
-      changeFlags: flags(row.change_flags),
-      wordpressStateHash: nullableText(row, "wordpress_state_hash"),
-    }));
+    return result.rows.map(mapExportCandidate);
+  }
+
+  private async listCampaignExportCandidates(
+    input: ExportCandidateQuery & { readonly campaignId: EntityId },
+  ): Promise<readonly ExportControlExportCandidate[]> {
+    const selected: ExportControlExportCandidate[] = [];
+    let beforeCheckedAt: unknown | null = null;
+    let beforeId: EntityId | null = null;
+
+    while (selected.length < input.limit) {
+      const pageParameters: unknown[] = [];
+      const addPage = (value: unknown): string => { pageParameters.push(value); return `$${pageParameters.length}`; };
+      const pageWhere = [
+        `review.target_id = ${addPage(input.targetId)}`,
+        "review.status = 'ready'",
+        "review.configuration_revision = revision.revision",
+        "review.payload_hash IS NOT NULL",
+      ];
+      if (input.sourceProductIds !== undefined) {
+        pageWhere.push(`review.source_product_id = ANY(${addPage(input.sourceProductIds)}::BIGINT[])`);
+      }
+      if (input.excludeNoChanges === true) {
+        pageWhere.push("NOT review.change_flags @> ARRAY['no_changes']::TEXT[]");
+      }
+      pageWhere.push(...filterSql(input.filter ?? {}, addPage, { includeStatus: false }));
+      if (beforeCheckedAt !== null && beforeId !== null) {
+        pageWhere.push(`(review.checked_at, review.id) < (${addPage(beforeCheckedAt)}::TIMESTAMPTZ, ${addPage(beforeId)}::BIGINT)`);
+      }
+      const pageLimit = addPage(campaignCandidatePageSize);
+      const page = await queryPool<DatabaseRow>(this.pool,
+        `SELECT review.id, review.checked_at
+         FROM target_product_preflight_reviews review
+         JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         WHERE ${pageWhere.join(" AND ")}
+         ORDER BY review.checked_at DESC, review.id DESC
+         LIMIT ${pageLimit}`,
+        pageParameters,
+      );
+      if (page.rows.length === 0) break;
+
+      const last = page.rows.at(-1)!;
+      beforeCheckedAt = last.checked_at;
+      beforeId = text(last, "id");
+
+      const eligibilityParameters: unknown[] = [];
+      const addEligibility = (value: unknown): string => {
+        eligibilityParameters.push(value);
+        return `$${eligibilityParameters.length}`;
+      };
+      const eligibilityWhere = [
+        `review.id = ANY(${addEligibility(page.rows.map((row) => text(row, "id")))}::BIGINT[])`,
+        `review.target_id = ${addEligibility(input.targetId)}`,
+        "review.status = 'ready'",
+        "review.configuration_revision = revision.revision",
+        "review.payload_hash IS NOT NULL",
+        "NOT EXISTS (SELECT 1 FROM jobs active_job WHERE active_job.job_type = 'export_product' AND active_job.status IN ('pending', 'running', 'retry') AND active_job.payload->>'targetId' = review.target_id::TEXT AND active_job.payload->>'internalProductId' = review.internal_product_id::TEXT)",
+      ];
+      if (input.sourceProductIds !== undefined) {
+        eligibilityWhere.push(`review.source_product_id = ANY(${addEligibility(input.sourceProductIds)}::BIGINT[])`);
+      }
+      if (input.excludeNoChanges === true) {
+        eligibilityWhere.push("NOT review.change_flags @> ARRAY['no_changes']::TEXT[]");
+      }
+      eligibilityWhere.push(...filterSql(input.filter ?? {}, addEligibility, { includeStatus: false }));
+      const campaignId = addEligibility(input.campaignId);
+      eligibilityWhere.push(`NOT EXISTS (
+        SELECT 1
+        FROM target_export_batch_items previous_item
+        JOIN target_export_batches previous_batch ON previous_batch.id = previous_item.batch_id
+        WHERE previous_batch.campaign_id = ${campaignId}::BIGINT
+          AND previous_item.internal_product_id = review.internal_product_id
+      )`);
+      eligibilityWhere.push(`EXISTS (
+        SELECT 1
+        FROM target_export_campaigns campaign
+        WHERE campaign.id = ${campaignId}::BIGINT
+          AND (campaign.catalog_run_id IS NULL OR EXISTS (
+            SELECT 1
+            FROM wordpress_catalog_run_items catalog_item
+            WHERE catalog_item.run_id = campaign.catalog_run_id
+              AND catalog_item.internal_product_id = review.internal_product_id
+              AND catalog_item.match_status = 'matched'
+          ))
+      )`);
+      const remainingLimit = addEligibility(input.limit - selected.length);
+      const eligible = await queryPool<DatabaseRow>(this.pool,
+        `SELECT review.id, review.source_product_id, review.internal_product_id,
+                review.payload_hash, review.will_create, review.external_id,
+                review.matched_by, review.risk_level, review.change_flags,
+                review.wordpress_state_hash
+         FROM target_product_preflight_reviews review
+         JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         JOIN LATERAL (
+           SELECT internal.id
+           FROM internal_products internal
+           WHERE internal.id = review.internal_product_id
+             AND internal.content_hash = review.internal_content_hash
+             AND ${exportEligibleInternalSql("internal")}
+           LIMIT 1
+         ) eligible_internal ON TRUE
+         WHERE ${eligibilityWhere.join(" AND ")}
+         ORDER BY review.checked_at DESC, review.id DESC
+         LIMIT ${remainingLimit}`,
+        eligibilityParameters,
+      );
+      selected.push(...eligible.rows.map(mapExportCandidate));
+    }
+
+    return selected;
   }
 
   async createBatch(input: {

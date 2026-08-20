@@ -296,6 +296,43 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateExecutor.calls[0]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
   });
 
+  it("walks campaign export candidates through bounded keyset pages", async () => {
+    const firstCheckedAt = new Date("2026-08-20T10:00:00.000Z");
+    const firstPageLastCheckedAt = new Date("2026-08-20T09:59:00.000Z");
+    const secondCheckedAt = new Date("2026-08-20T09:58:00.000Z");
+    const candidateExecutor = new FakeExecutor([
+      [{ id: "91", checked_at: firstCheckedAt }, { id: "90", checked_at: firstPageLastCheckedAt }],
+      [],
+      [{ id: "89", checked_at: secondCheckedAt }],
+      [{
+        id: "89", source_product_id: "21", internal_product_id: "31",
+        payload_hash: "a".repeat(64), will_create: false, external_id: "41",
+        matched_by: "source_identity", risk_level: "review", change_flags: ["field:title"],
+        wordpress_state_hash: "b".repeat(64),
+      }],
+    ]);
+
+    const result = await new PostgresExportControlRepository(pool(candidateExecutor)).listExportCandidates({
+      targetId: "10",
+      filter: { status: "ready", operation: "update" },
+      limit: 1,
+      campaignId: "4",
+      excludeNoChanges: true,
+    });
+
+    expect(result).toEqual([{
+      reviewId: "89", sourceProductId: "21", internalProductId: "31",
+      payloadHash: "a".repeat(64), willCreate: false, externalId: "41",
+      matchedBy: "source_identity", riskLevel: "review", changeFlags: ["field:title"],
+      wordpressStateHash: "b".repeat(64),
+    }]);
+    expect(candidateExecutor.calls).toHaveLength(4);
+    expect(candidateExecutor.calls[0]?.text).not.toContain("internal_products internal");
+    expect(candidateExecutor.calls[1]?.text).toContain("JOIN LATERAL");
+    expect(candidateExecutor.calls[1]?.text).toContain("review.id = ANY($1::BIGINT[])");
+    expect(candidateExecutor.calls[2]?.values).toEqual(["10", firstPageLastCheckedAt, "90", 25]);
+  });
+
   it("groups every campaign cursor field when returning a newly inserted campaign", async () => {
     const executor = new FakeExecutor([[{
       id: "81",
