@@ -73,8 +73,8 @@ function classificationApplyConcurrency(value: string | undefined): number {
 function exportConcurrency(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 1;
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 4) {
-    throw new Error("WORKER_EXPORT_CONCURRENCY must be an integer from 1 to 4");
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 8) {
+    throw new Error("WORKER_EXPORT_CONCURRENCY must be an integer from 1 to 8");
   }
   return parsed;
 }
