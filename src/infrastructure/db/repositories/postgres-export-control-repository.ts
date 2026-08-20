@@ -1201,45 +1201,52 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     readonly limit: number;
   }): Promise<readonly ExportSourceRefreshCandidate[]> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `WITH selected AS MATERIALIZED (
-         SELECT campaign.id AS campaign_id, campaign.target_id,
-                review.internal_product_id, review.source_product_id,
-                review.internal_content_hash
+      `WITH campaign AS MATERIALIZED (
+         SELECT id, target_id, catalog_run_id, mode
          FROM target_export_campaigns campaign
+         WHERE campaign.id = $1 AND campaign.status = 'running'
+       ), eligible_reviews AS MATERIALIZED (
+         SELECT review.id, review.internal_product_id, review.source_product_id,
+                review.internal_content_hash, review.checked_at
+         FROM campaign
          JOIN target_product_preflight_reviews review ON review.target_id = campaign.target_id
          JOIN target_export_revisions revision
            ON revision.target_id = review.target_id
           AND revision.revision = review.configuration_revision
-         JOIN internal_products internal
-           ON internal.id = review.internal_product_id
-          AND internal.content_hash = review.internal_content_hash
-          AND ${exportEligibleInternalSql("internal")}
-         WHERE campaign.id = $1 AND campaign.status = 'running'
-           AND review.status = 'ready'
+         WHERE review.status = 'ready'
            AND review.payload_hash IS NOT NULL
            AND review.will_create = FALSE
            AND NOT review.change_flags @> ARRAY['no_changes']::TEXT[]
            AND (campaign.mode <> 'safe' OR review.risk_level = 'none')
-           AND (campaign.catalog_run_id IS NULL OR EXISTS (
-             SELECT 1 FROM wordpress_catalog_run_items catalog_item
-             WHERE catalog_item.run_id = campaign.catalog_run_id
-               AND catalog_item.internal_product_id = review.internal_product_id
-               AND catalog_item.match_status = 'matched'
-           ))
            AND NOT EXISTS (
              SELECT 1 FROM target_export_batch_items item
              JOIN target_export_batches batch ON batch.id = item.batch_id
-             WHERE batch.campaign_id = campaign.id
+             WHERE batch.campaign_id = $1
                AND item.internal_product_id = review.internal_product_id
            )
            AND NOT EXISTS (
              SELECT 1 FROM target_export_source_refreshes existing
-             WHERE existing.campaign_id = campaign.id
+             WHERE existing.campaign_id = $1
                AND existing.internal_product_id = review.internal_product_id
            )
+       ), selected AS MATERIALIZED (
+         SELECT campaign.id AS campaign_id, campaign.target_id,
+                review.internal_product_id, review.source_product_id,
+                review.internal_content_hash
+         FROM campaign
+         JOIN eligible_reviews review ON TRUE
+         JOIN internal_products internal
+           ON internal.id = review.internal_product_id
+          AND internal.content_hash = review.internal_content_hash
+          AND ${exportEligibleInternalSql("internal")}
+         WHERE campaign.catalog_run_id IS NULL OR EXISTS (
+           SELECT 1 FROM wordpress_catalog_run_items catalog_item
+           WHERE catalog_item.run_id = campaign.catalog_run_id
+             AND catalog_item.internal_product_id = review.internal_product_id
+             AND catalog_item.match_status = 'matched'
+         )
          ORDER BY review.checked_at DESC, review.id DESC
          LIMIT $2
-         FOR UPDATE OF review SKIP LOCKED
        ), inserted AS (
          INSERT INTO target_export_source_refreshes (
            campaign_id, target_id, internal_product_id, source_product_id,

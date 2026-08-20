@@ -175,6 +175,29 @@ describe("ExportControlService", () => {
 
     expect(repository.listExportCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, campaignId: "86" }));
     expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({ candidates: [candidate, secondCandidate] }));
+    expect(vi.mocked(repository.createBatch).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(repository.prepareCampaignSourceRefreshCandidates).mock.invocationCallOrder[0]!);
+  });
+
+  it("does not refill the source buffer after queueing the final bounded exports", async () => {
+    const { repository, service } = setup(2);
+    const secondCandidate = { ...candidate, reviewId: "12", sourceProductId: "22", internalProductId: "32", externalId: "42" };
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([candidate, secondCandidate]);
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "87", targetId: "10", status: "running", actor: "admin", reason: "bounded",
+      mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 12,
+      itemCount: 10, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 10,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
+      createdAt: "2026-08-19T00:00:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({ candidates: [candidate, secondCandidate] }));
+    expect(repository.countCampaignSourceRefreshBuffer).not.toHaveBeenCalled();
+    expect(repository.prepareCampaignSourceRefreshCandidates).not.toHaveBeenCalled();
   });
 
   it("requires a completed WordPress catalog scope for full existing campaigns", async () => {

@@ -201,31 +201,8 @@ export class ExportControlService {
     }
 
     let queuedExport = false;
+    let queuedExportCount = 0;
     let queuedSourceRefreshes = 0;
-    if (!limitReached) {
-      const bufferTarget = this.campaignExportConcurrency * sourceRefreshBufferPerExport;
-      const buffered = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
-      if (buffered < bufferTarget) {
-        const refreshCandidates = await this.repository.prepareCampaignSourceRefreshCandidates({
-          campaignId: campaign.id,
-          limit: bufferTarget - buffered,
-        });
-        try {
-          const jobs = await this.jobs.enqueueMany(refreshCandidates.map((candidate) => ({
-            jobType: "refresh_export_source" as const,
-            payload: { refreshId: candidate.id },
-            uniqueKey: `campaign:${campaign.id}:source-refresh:${candidate.internalProductId}`,
-          })));
-          queuedSourceRefreshes = jobs.length;
-        } catch (error) {
-          await Promise.allSettled(refreshCandidates.map((candidate) => this.repository.saveCampaignSourceRefreshError(
-            candidate.id,
-            error instanceof Error ? error.message : String(error),
-          )));
-          throw error;
-        }
-      }
-    }
     const remainingLimit = campaign.maxExports === null ? this.campaignExportConcurrency : campaign.maxExports - campaign.itemCount;
     const availableExportSlots = Math.max(0, Math.min(this.campaignExportConcurrency - exportActive, remainingLimit));
     if (availableExportSlots > 0 && !limitReached) {
@@ -256,6 +233,34 @@ export class ExportControlService {
           campaignId: campaign.id,
         });
         queuedExport = true;
+        queuedExportCount = candidates.length;
+      }
+    }
+
+    const exportLimitReachedAfterQueue = campaign.maxExports !== null
+      && campaign.itemCount + queuedExportCount >= campaign.maxExports;
+    if (!limitReached && !exportLimitReachedAfterQueue) {
+      const bufferTarget = this.campaignExportConcurrency * sourceRefreshBufferPerExport;
+      const buffered = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
+      if (buffered < bufferTarget) {
+        const refreshCandidates = await this.repository.prepareCampaignSourceRefreshCandidates({
+          campaignId: campaign.id,
+          limit: bufferTarget - buffered,
+        });
+        try {
+          const jobs = await this.jobs.enqueueMany(refreshCandidates.map((candidate) => ({
+            jobType: "refresh_export_source" as const,
+            payload: { refreshId: candidate.id },
+            uniqueKey: `campaign:${campaign.id}:source-refresh:${candidate.internalProductId}`,
+          })));
+          queuedSourceRefreshes = jobs.length;
+        } catch (error) {
+          await Promise.allSettled(refreshCandidates.map((candidate) => this.repository.saveCampaignSourceRefreshError(
+            candidate.id,
+            error instanceof Error ? error.message : String(error),
+          )));
+          throw error;
+        }
       }
     }
 
