@@ -379,13 +379,13 @@ describe("WordPressPreviewService", () => {
   });
 
   it("uses the legacy SKU preflight snapshot when source identity is absent", async () => {
-    const { service, repositories, snapshotReader } = setup(321, "legacy_sku", {
+    const { service, request, repositories, snapshotReader, exportControl } = setup(321, "legacy_sku", {
       savedSnapshotMissing: true,
       remoteSnapshotMissing: true,
       preflightSnapshot: true,
     });
 
-    await expect(service.preview("2", "10")).resolves.toMatchObject({
+    await expect(service.preview("2", "10", [], { saveExportControl: true })).resolves.toMatchObject({
       externalId: "321",
       willCreate: false,
       matchedBy: "legacy_sku",
@@ -397,6 +397,20 @@ describe("WordPressPreviewService", () => {
       sourceProductId: "2",
       externalId: "321",
       sourceExternalId: "100",
+    }));
+    expect(request).toHaveBeenCalledTimes(2);
+    const firstRequest = JSON.parse(String((request.mock.calls[0]?.[1] as RequestInit).body)) as {
+      payload: { identity: { target_id: number }; payload_hash: string };
+    };
+    const confirmedRequest = JSON.parse(String((request.mock.calls[1]?.[1] as RequestInit).body)) as {
+      payload: { identity: { target_id: number }; payload_hash: string };
+    };
+    expect(firstRequest.payload.identity.target_id).toBe(0);
+    expect(confirmedRequest.payload.identity.target_id).toBe(321);
+    expect(exportControl.savePreflight).toHaveBeenCalledWith(expect.objectContaining({
+      payloadHash: confirmedRequest.payload.payload_hash,
+      externalId: "321",
+      willCreate: false,
     }));
   });
 

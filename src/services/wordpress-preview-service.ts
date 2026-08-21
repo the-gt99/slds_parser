@@ -452,7 +452,7 @@ export class WordPressPreviewService {
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     const existingExternalId = targetProduct?.externalId ?? snapshot?.externalId;
-    const context = {
+    let context = {
       source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
       references: {
         resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),
@@ -486,17 +486,27 @@ export class WordPressPreviewService {
         diff: null,
       });
     }
-    const payload = draft.payload;
-    const product = record(payload.product);
-    const variations = record(payload.variations);
-    const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
-    const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
+    let payload = draft.payload;
     let preflight: WordPressUpsertPreflightResult | null = null;
     let preflightError: IntegrationContractError | null = null;
+    let discoveredSnapshot: JsonObject | undefined;
     if (draft.missingRequiredReferences.length === 0) {
       try {
         if (refreshWordPress) {
           preflight = await exporter.preflightPayload(payload);
+          discoveredSnapshot = preflight.snapshot;
+          if (context.existingExternalId === undefined
+            && preflight.externalId !== null
+            && discoveredSnapshot !== undefined) {
+            context = {
+              ...context,
+              existingExternalId: preflight.externalId,
+              existingTargetSnapshot: discoveredSnapshot,
+            };
+            draft = await exporter.previewPayload(context);
+            payload = draft.payload;
+            preflight = await exporter.preflightPayload(payload);
+          }
         } else if (cachedPreflight?.status === "ready" && cachedPreflight.willCreate !== null && cachedPreflight.matchedBy !== null) {
           const cachedPlan = Array.isArray(cachedPreflight.preflightCache.variationPlan)
             ? cachedPreflight.preflightCache.variationPlan.map((item) => record(item) as JsonObject)
@@ -522,14 +532,16 @@ export class WordPressPreviewService {
         preflightError = error;
       }
     }
-    if (snapshot === null && preflight?.snapshot !== undefined && preflight.externalId !== null && sourceProduct.externalId !== null) {
+    const resolvedSnapshot = preflight?.snapshot ?? discoveredSnapshot;
+    if (snapshot === null && resolvedSnapshot !== undefined && preflight !== null
+      && preflight.externalId !== null && sourceProduct.externalId !== null) {
       snapshot = await this.repositories.targets.saveProductSnapshot({
         targetId: target.id,
         sourceProductId: sourceProduct.id,
         externalId: preflight.externalId,
         sourceExternalId: sourceProduct.externalId,
-        payload: preflight.snapshot,
-        contentHash: hashStableJson(preflight.snapshot),
+        payload: resolvedSnapshot,
+        contentHash: hashStableJson(resolvedSnapshot),
         fetchedAt: new Date().toISOString(),
       });
       current = record(snapshot.payload.product);
@@ -545,6 +557,10 @@ export class WordPressPreviewService {
         };
       }
     }
+    const product = record(payload.product);
+    const variations = record(payload.variations);
+    const expectedVariations = Array.isArray(variations.items) ? variations.items : [];
+    const expectedTaxonomies = payloadTaxonomies(product.taxonomies);
     const actualTaxonomies = snapshotTaxonomies(current.taxonomies);
     const variationAvailable = preflight !== null && !preserveCachedVariationSummary;
     const variationResult = !variationAvailable
