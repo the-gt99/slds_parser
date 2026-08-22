@@ -6,6 +6,7 @@ const maximumPreflightBatch = 100;
 const maximumExportBatch = 5_000;
 const maximumCampaignExports = 500_000;
 const sourceRefreshBufferPerExport = 8;
+const campaignExportQueueDepthMultiplier = 2;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
@@ -194,6 +195,7 @@ export class ExportControlService {
     if (campaign === null) return false;
     const exportActive = campaign.pendingCount + campaign.runningCount;
     const exportOutstanding = exportActive + campaign.retryCount;
+    const exportQueueDepth = this.campaignExportConcurrency * campaignExportQueueDepthMultiplier;
     const limitReached = campaign.maxExports !== null && campaign.itemCount >= campaign.maxExports;
     if (limitReached && exportOutstanding === 0) {
       await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
@@ -203,8 +205,8 @@ export class ExportControlService {
     let queuedExport = false;
     let queuedExportCount = 0;
     let queuedSourceRefreshes = 0;
-    const remainingLimit = campaign.maxExports === null ? this.campaignExportConcurrency : campaign.maxExports - campaign.itemCount;
-    const availableExportSlots = Math.max(0, Math.min(this.campaignExportConcurrency - exportActive, remainingLimit));
+    const remainingLimit = campaign.maxExports === null ? exportQueueDepth : campaign.maxExports - campaign.itemCount;
+    const availableExportSlots = Math.max(0, Math.min(exportQueueDepth - exportOutstanding, remainingLimit));
     if (availableExportSlots > 0 && !limitReached) {
       const exportFilter = {
         status: "ready",
