@@ -28,8 +28,8 @@ export class ExportControlService {
     private readonly jobs: JobRepository,
     private readonly campaignExportConcurrency = 1,
   ) {
-    if (!Number.isInteger(campaignExportConcurrency) || campaignExportConcurrency < 1 || campaignExportConcurrency > 8) {
-      throw new IntegrationContractError("Параллельность export-кампании должна быть от 1 до 8");
+    if (!Number.isInteger(campaignExportConcurrency) || campaignExportConcurrency < 1 || campaignExportConcurrency > 16) {
+      throw new IntegrationContractError("Параллельность export-кампании должна быть от 1 до 16");
     }
   }
 

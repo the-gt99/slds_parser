@@ -53,8 +53,8 @@ function setup(campaignExportConcurrency = 1) {
 
 describe("ExportControlService", () => {
   it("accepts the expanded export concurrency limit", () => {
-    expect(() => setup(8)).not.toThrow();
-    expect(() => setup(9)).toThrow("Параллельность export-кампании должна быть от 1 до 8");
+    expect(() => setup(16)).not.toThrow();
+    expect(() => setup(17)).toThrow("Параллельность export-кампании должна быть от 1 до 16");
   });
 
   it("queues only the bounded preflight candidates selected by the repository", async () => {
