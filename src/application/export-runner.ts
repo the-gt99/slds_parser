@@ -69,6 +69,10 @@ export class ExportRunner {
         : hashStableJson({ internalContentHash: internal.contentHash, liveVariants } as unknown as JsonValue);
       const exporter = this.exporters.get(target.exporterCode);
       const existing = await this.repositories.targets.findTargetProduct(target.id, internal.id);
+      const approvedTargetSnapshot = payload.approval === undefined
+        ? null
+        : await this.repositories.targets.findProductSnapshot(target.id, sourceProduct.id);
+      const existingExternalId = existing?.externalId ?? approvedTargetSnapshot?.externalId;
       const contentTemplates = [...await this.repositories.contentTemplates.listActive(target.id)]
         .sort((left, right) => left.field.localeCompare(right.field));
       const mappingRevision = await this.mappings.getTargetMappingRevision(target.id);
@@ -121,7 +125,8 @@ export class ExportRunner {
           matchedBy: payload.approval.matchedBy,
           ...(payload.approval.wordpressStateHash === undefined ? {} : { wordpressStateHash: payload.approval.wordpressStateHash }),
         } }),
-        ...(existing?.externalId === null || existing?.externalId === undefined ? {} : { existingExternalId: existing.externalId }),
+        ...(existingExternalId === null || existingExternalId === undefined ? {} : { existingExternalId }),
+        ...(approvedTargetSnapshot === null ? {} : { existingTargetSnapshot: approvedTargetSnapshot.payload }),
       });
       await this.repositories.targets.saveExportSuccess({
         targetId: target.id,

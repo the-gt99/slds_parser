@@ -1131,7 +1131,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.22.0";
+  readonly version = "1.23.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
@@ -1217,7 +1217,8 @@ export class WordPressExporter {
   }
 
   async export(context: ExportContext): Promise<ExportResult> {
-    const prepared = requiresCurrentTaxonomySnapshot(context.target.config)
+    const hasApprovedSnapshot = context.approval !== undefined && context.existingTargetSnapshot !== undefined;
+    const prepared = requiresCurrentTaxonomySnapshot(context.target.config) && !hasApprovedSnapshot
       ? await this.withCurrentTaxonomySnapshotAndPreflight(context)
       : { context, preflight: null };
     const effectiveContext = prepared.context;
@@ -1240,20 +1241,39 @@ export class WordPressExporter {
       if (text(approvedPayload.payload_hash) !== context.approval.payloadHash) {
         throw new IntegrationContractError("WordPress payload изменился после подтверждённого preflight");
       }
-      const current = prepared.preflight ?? await this.preflightPayload(payload);
-      if (current.willCreate !== context.approval.willCreate
-        || current.externalId !== context.approval.externalId
-        || current.matchedBy !== context.approval.matchedBy) {
-        throw new IntegrationContractError("Состояние товара WordPress изменилось после подтверждённого preflight");
-      }
-      if (context.approval.wordpressStateHash !== undefined) {
-        const currentStateHash = hashStableJson({ externalId: current.externalId, snapshot: current.snapshot ?? null });
-        if (currentStateHash !== context.approval.wordpressStateHash) {
-          throw new IntegrationContractError("Товар WordPress изменился после сохранённого снимка; обновите preflight перед экспортом");
+      if (hasApprovedSnapshot) {
+        const savedExternalId = effectiveContext.existingExternalId ?? null;
+        if (context.approval.willCreate || savedExternalId !== context.approval.externalId) {
+          throw new IntegrationContractError("Сохранённый снимок WordPress не соответствует подтверждённому товару");
+        }
+        if (context.approval.wordpressStateHash !== undefined) {
+          const savedStateHash = hashStableJson({ externalId: savedExternalId, snapshot: effectiveContext.existingTargetSnapshot! });
+          if (savedStateHash !== context.approval.wordpressStateHash) {
+            throw new IntegrationContractError("Сохранённый снимок WordPress изменился после подтверждённого preflight");
+          }
+        }
+      } else {
+        const current = prepared.preflight ?? await this.preflightPayload(payload);
+        if (current.willCreate !== context.approval.willCreate
+          || current.externalId !== context.approval.externalId
+          || current.matchedBy !== context.approval.matchedBy) {
+          throw new IntegrationContractError("Состояние товара WordPress изменилось после подтверждённого preflight");
+        }
+        if (context.approval.wordpressStateHash !== undefined) {
+          const currentStateHash = hashStableJson({ externalId: current.externalId, snapshot: current.snapshot ?? null });
+          if (currentStateHash !== context.approval.wordpressStateHash) {
+            throw new IntegrationContractError("Товар WordPress изменился после сохранённого снимка; обновите preflight перед экспортом");
+          }
         }
       }
     }
-    const created = await this.request("upsert-jobs", { method: "POST", body: JSON.stringify({ payload }) });
+    const created = await this.request("upsert-jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        payload,
+        ...(hasApprovedSnapshot ? { patch: { expected_target_snapshot: effectiveContext.existingTargetSnapshot } } : {}),
+      }),
+    });
     const initialJob = normalizeJob(created.job);
     const jobId = positiveInteger(initialJob.job_id, "WordPress job_id");
     const job = await this.waitForJob(jobId, expectedPayloadHash, initialJob);

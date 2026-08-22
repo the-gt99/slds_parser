@@ -40,6 +40,34 @@ describe("ExportRunner", () => {
     });
     expect(value.implementation).toHaveBeenCalledTimes(2);
   });
+  it("passes the saved WordPress snapshot into an approved export", async () => {
+    const value = await setup();
+    const snapshot = { product: { target_id: 321, title: "Снимок аудита" } };
+    await value.repositories.targets.saveProductSnapshot({
+      targetId: "10",
+      sourceProductId: "2",
+      externalId: "321",
+      sourceExternalId: "100",
+      payload: snapshot,
+      contentHash: "snapshot-hash",
+      fetchedAt: "2026-08-22T00:00:00.000Z",
+    });
+
+    await value.runner.exportProduct({
+      internalProductId: value.internal.id,
+      targetId: "10",
+      force: false,
+      approval: {
+        preflightReviewId: "15",
+        payloadHash: "a".repeat(64),
+        willCreate: false,
+        externalId: "321",
+        matchedBy: "source_identity",
+      },
+    });
+
+    expect(value.implementation).toHaveBeenCalledWith(expect.objectContaining({ existingTargetSnapshot: snapshot }));
+  });
   it("exports after exporter version or mapping revision changes", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); value.store.mappingRevision = "revision-2"; await value.runner.exportProduct(payload); expect(value.implementation).toHaveBeenCalledTimes(2); const changedVersion = vi.fn().mockResolvedValue({ externalId: "ext-1", operation: "updated", metadata: {} }); const registry = new TargetExporterRegistry(); registry.register({ targetCode: "fake-exporter", version: "2", export: changedVersion }); const runner = new ExportRunner(value.repositories, registry, new TargetReferenceMappingService(value.repositories.references), value.sourceRefresher as never); await runner.exportProduct(payload); expect(changedVersion).toHaveBeenCalledOnce(); });
   it("exports again after an active content template changes without processing the product", async () => {
     const value = await setup();

@@ -1172,6 +1172,38 @@ describe("WordPressExporter", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("uses an approved saved snapshot as the WordPress write precondition without a second lookup", async () => {
+    const savedSnapshot = { product: { target_id: 321, title: "До изменения", taxonomies: {} } };
+    const base: ExportContext = { ...context(), existingExternalId: "321", existingTargetSnapshot: savedSnapshot };
+    const payload = await buildWordPressUpsertPayload(base);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      job: {
+        job_id: 91,
+        status: "done",
+        payload_hash: payload.payload_hash,
+        result: { operation: "updated", target_id: 321, matched_by: "target_id+source_identity" },
+      },
+    }), { status: 202 }));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
+
+    await expect(exporter.export({
+      ...base,
+      approval: {
+        payloadHash: String(payload.payload_hash),
+        willCreate: false,
+        externalId: "321",
+        matchedBy: "source_identity",
+        wordpressStateHash: hashStableJson({ externalId: "321", snapshot: savedSnapshot }),
+      },
+    })).resolves.toMatchObject({ externalId: "321", operation: "updated" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("slds_target_import_api=upsert-jobs");
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.patch).toEqual({ expected_target_snapshot: savedSnapshot });
+  });
+
   it("preflights an upsert payload without creating a job", async () => {
     const input = context();
     const payload = await buildWordPressUpsertPayload(input);
