@@ -95,7 +95,7 @@ describe("ExportControlService", () => {
     expect(jobs.enqueueMany).not.toHaveBeenCalled();
   });
 
-  it("keeps one extra safe update queued and keeps the preflight window full", async () => {
+  it("keeps two extra safe updates queued and keeps the preflight window full", async () => {
     const { repository, jobs, service } = setup();
     vi.mocked(repository.listExportCandidates).mockResolvedValue([{ ...candidate, riskLevel: "none" }]);
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
@@ -114,7 +114,7 @@ describe("ExportControlService", () => {
     expect(repository.listExportCandidates).toHaveBeenCalledWith({
       targetId: "10",
       filter: { status: "ready", operation: "update", riskLevel: "none" },
-      limit: 2,
+      limit: 3,
       campaignId: "81",
       excludeNoChanges: true,
     });
@@ -147,7 +147,7 @@ describe("ExportControlService", () => {
     expect(repository.listExportCandidates).toHaveBeenCalledWith({
       targetId: "10",
       filter: { status: "ready", operation: "update" },
-      limit: 2,
+      limit: 3,
       campaignId: "82",
       excludeNoChanges: true,
     });
@@ -157,7 +157,7 @@ describe("ExportControlService", () => {
     }));
   });
 
-  it("fills a queue twice as deep as the worker concurrency", async () => {
+  it("fills a queue three times as deep as the worker concurrency", async () => {
     const { repository, service } = setup(2);
     const secondCandidate = { ...candidate, reviewId: "12", sourceProductId: "22", internalProductId: "32", externalId: "42" };
     vi.mocked(repository.listExportCandidates).mockResolvedValue([candidate, secondCandidate]);
@@ -173,7 +173,7 @@ describe("ExportControlService", () => {
 
     await service.tickCampaign();
 
-    expect(repository.listExportCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 4, campaignId: "86" }));
+    expect(repository.listExportCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 6, campaignId: "86" }));
     expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({ candidates: [candidate, secondCandidate] }));
     expect(vi.mocked(repository.createBatch).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(repository.prepareCampaignSourceRefreshCandidates).mock.invocationCallOrder[0]!);
@@ -258,7 +258,7 @@ describe("ExportControlService", () => {
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "88", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
-      itemCount: 5, pendingCount: 0, retryCount: 1, runningCount: 1, completedCount: 3,
+      itemCount: 6, pendingCount: 0, retryCount: 2, runningCount: 1, completedCount: 3,
       failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
       scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
       createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",

@@ -6,7 +6,7 @@ const maximumPreflightBatch = 100;
 const maximumExportBatch = 5_000;
 const maximumCampaignExports = 500_000;
 const sourceRefreshBufferPerExport = 8;
-const campaignExportQueueDepthMultiplier = 2;
+const campaignExportQueueDepthMultiplier = 3;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
