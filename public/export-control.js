@@ -475,10 +475,13 @@ async function loadCampaigns() {
     for (const campaign of result.items || []) {
       hasRunning ||= campaign.status === "running";
       const wrapper = element("div", "export-batch-row");
+      const modeLabel = campaign.mode === "full_existing"
+        ? `полный режим · снимок #${campaign.catalogRunId}`
+        : campaign.mode === "new_products" ? "создание новых товаров" : "безопасный режим";
       wrapper.append(
         element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`),
         element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`),
-        element("span", "", `${campaign.mode === "full_existing" ? `полный режим · снимок #${campaign.catalogRunId}` : "безопасный режим"} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · отложено ${campaign.retryCount} · работа ${campaign.runningCount}`),
+        element("span", "", `${modeLabel} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · отложено ${campaign.retryCount} · работа ${campaign.runningCount}`),
         element("span", "", `выгружено ${campaign.completedCount} · ошибки ${campaign.failedCount}${campaign.maxExports ? ` · лимит ${campaign.maxExports}` : ""}`),
       );
       if (campaign.lastError) wrapper.append(element("span", "form-error", campaign.lastError));
@@ -518,14 +521,14 @@ async function startCampaign() {
   const maxExports = rawLimit ? Number(rawLimit) : undefined;
   const campaignMode = byId("campaign-mode").value;
   const rawCatalogRunId = byId("campaign-catalog-run").value.trim();
-  const catalogRunId = rawCatalogRunId ? Number(rawCatalogRunId) : undefined;
+  const catalogRunId = campaignMode === "full_existing" && rawCatalogRunId ? Number(rawCatalogRunId) : undefined;
   if (campaignMode === "full_existing" && catalogRunId === undefined) {
     showMessage("Для полного режима укажите ID завершённого снимка WordPress.", "error");
     return;
   }
   const label = campaignMode === "full_existing"
     ? `полную выгрузку существующих товаров снимка #${catalogRunId}`
-    : "безопасную выгрузку";
+    : campaignMode === "new_products" ? "создание новых товаров" : "безопасную выгрузку";
   const message = maxExports
     ? `Запустить ${label}, максимум ${maxExports} товаров?`
     : `Запустить ${label} без общего лимита? Остановить её можно в любой момент.`;

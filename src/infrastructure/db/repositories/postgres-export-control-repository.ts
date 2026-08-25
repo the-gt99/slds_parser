@@ -1093,7 +1093,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
   }): Promise<readonly ExportControlPreflightCandidate[]> {
     return transaction(this.pool, async (client) => {
       const campaign = await client.query<DatabaseRow>(
-        `SELECT id, target_id, catalog_run_id, scan_before_internal_product_id, scan_complete
+        `SELECT id, target_id, mode, catalog_run_id, scan_before_internal_product_id, scan_complete
          FROM target_export_campaigns
          WHERE id = $1 AND status = 'running'
          FOR UPDATE`,
@@ -1130,6 +1130,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND catalog_item.internal_product_id = internal.id
                  AND catalog_item.match_status = 'matched'
              ))
+             AND ($5::TEXT <> 'new_products'
+               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
              AND (review.id IS NULL OR review.status IN ('stale', 'error')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)
@@ -1177,7 +1179,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
         [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit,
-          nullableText(state, "catalog_run_id")],
+          nullableText(state, "catalog_run_id"), text(state, "mode")],
       );
       const last = result.rows.at(-1);
       await client.query(
@@ -1215,7 +1217,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND revision.revision = review.configuration_revision
          WHERE review.status = 'ready'
            AND review.payload_hash IS NOT NULL
-           AND review.will_create = FALSE
+           AND review.will_create = (campaign.mode = 'new_products')
            AND NOT review.change_flags @> ARRAY['no_changes']::TEXT[]
            AND (campaign.mode <> 'safe' OR review.risk_level = 'none')
            AND NOT EXISTS (

@@ -951,7 +951,7 @@ export interface ExportControlBatchItemRecord {
 }
 
 export type ExportCampaignStatus = "running" | "paused" | "completed";
-export type ExportCampaignMode = "safe" | "full_existing";
+export type ExportCampaignMode = "safe" | "full_existing" | "new_products";
 
 export interface ExportCampaignRecord {
   readonly id: EntityId;

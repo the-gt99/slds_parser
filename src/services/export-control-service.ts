@@ -208,9 +208,10 @@ export class ExportControlService {
     const remainingLimit = campaign.maxExports === null ? exportQueueDepth : campaign.maxExports - campaign.itemCount;
     const availableExportSlots = Math.max(0, Math.min(exportQueueDepth - exportOutstanding, remainingLimit));
     if (availableExportSlots > 0 && !limitReached) {
+      const operation = campaign.mode === "new_products" ? "create" : "update";
       const exportFilter = {
         status: "ready",
-        operation: "update",
+        operation,
         ...(campaign.mode === "safe" ? { riskLevel: "none" } : {}),
       } satisfies ExportControlFilter;
       const candidates = await this.repository.listExportCandidates({
@@ -222,7 +223,8 @@ export class ExportControlService {
       });
       if (candidates.length > 0) {
         for (const candidate of candidates) {
-          if (candidate.willCreate || (campaign.mode === "safe" && candidate.riskLevel !== "none")) {
+          if ((campaign.mode === "new_products" ? !candidate.willCreate : candidate.willCreate)
+            || (campaign.mode === "safe" && candidate.riskLevel !== "none")) {
             throw new IntegrationContractError("Кампания получила товар вне безопасного фильтра");
           }
         }
@@ -299,9 +301,10 @@ export class ExportControlService {
       const sourceRefreshBuffer = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
       if (refreshedActive === 0 && sourceRefreshBuffer === 0) {
         const refreshedCampaign = await this.repository.getRunningCampaign();
+        const operation = campaign.mode === "new_products" ? "create" : "update";
         const remainingFilter = {
           status: "ready",
-          operation: "update",
+          operation,
           ...(campaign.mode === "safe" ? { riskLevel: "none" } : {}),
         } satisfies ExportControlFilter;
         const remaining = await this.repository.listExportCandidates({

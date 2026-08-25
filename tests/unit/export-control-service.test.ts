@@ -157,6 +157,33 @@ describe("ExportControlService", () => {
     }));
   });
 
+  it("streams only new products in the dedicated campaign mode", async () => {
+    const { repository, service } = setup();
+    const newProduct = { ...candidate, willCreate: true, externalId: null, matchedBy: null };
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([newProduct]);
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "89", targetId: "10", status: "running", actor: "admin", reason: "new",
+      mode: "new_products", catalogRunId: null, preflightWindow: 25, maxExports: 40_000,
+      itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
+      createdAt: "2026-08-25T00:00:00.000Z", updatedAt: "2026-08-25T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10",
+      filter: { status: "ready", operation: "create" },
+      campaignId: "89",
+    }));
+    expect(repository.createBatch).toHaveBeenCalledWith(expect.objectContaining({
+      campaignId: "89",
+      candidates: [newProduct],
+    }));
+  });
+
   it("fills a queue three times as deep as the worker concurrency", async () => {
     const { repository, service } = setup(2);
     const secondCandidate = { ...candidate, reviewId: "12", sourceProductId: "22", internalProductId: "32", externalId: "42" };

@@ -1520,7 +1520,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       if (preflightWindow === 0) throw new HttpInputError("preflightWindow must be positive");
       if (maxExports === 0) throw new HttpInputError("maxExports must be positive");
       const campaignMode = optionalString(request.body?.campaignMode) ?? "safe";
-      if (campaignMode !== "safe" && campaignMode !== "full_existing") {
+      if (campaignMode !== "safe" && campaignMode !== "full_existing" && campaignMode !== "new_products") {
         throw new HttpInputError("campaignMode is invalid");
       }
       const catalogRunId = request.body?.catalogRunId === undefined || request.body.catalogRunId === ""
