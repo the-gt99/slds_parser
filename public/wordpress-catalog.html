@@ -49,10 +49,10 @@
       <article class="catalog-process-card catalog-price-card" data-process="price">
         <div class="catalog-process-heading"><span class="catalog-step">3</span><div><p class="eyebrow">Цены и остатки</p><h3 id="variation-auto-status">—</h3></div></div>
         <div class="catalog-price-progress"><strong id="variation-completed">0</strong><span>обновлено</span><span id="variation-auto-progress" class="muted">—</span></div>
-        <p class="catalog-process-note">Каждый цикл сначала обновляет sitemap, затем отдельно получает GOAT offers, готовит изменения и отправляет товары в WordPress пачками. Пустой ответ не снимает все размеры с продажи, новые размеры не создаются.</p>
+        <p class="catalog-process-note">Каждый цикл сначала обновляет sitemap. Новые и изменившиеся товары проверяются первыми и через выбранный период, неизменившиеся — раз в сутки. GOAT offers и WordPress обновляются отдельными пачками. Пустой ответ не снимает все размеры с продажи, новые размеры не создаются.</p>
         <div class="catalog-price-actions">
           <label class="field compact-field"><span>Одновременно в очереди</span><select id="batch-limit"><option value="10">10</option><option value="50">50</option><option value="100" selected>100</option><option value="500">500</option></select></label>
-          <label class="field compact-field"><span>Период</span><select id="sync-interval"><option value="60">Каждый час</option><option value="180">Каждые 3 часа</option><option value="360" selected>Каждые 6 часов</option><option value="720">Каждые 12 часов</option><option value="1440">Раз в сутки</option></select></label>
+          <label class="field compact-field"><span>Период активных товаров</span><select id="sync-interval"><option value="60">Каждый час</option><option value="180">Каждые 3 часа</option><option value="360" selected>Каждые 6 часов</option><option value="720">Каждые 12 часов</option><option value="1440">Раз в сутки</option></select></label>
           <button id="auto-sync" class="button primary" type="button" disabled>Включить обновление</button>
           <button id="auto-pause" class="button danger" type="button" hidden>Пауза после окна</button>
           <button id="auto-resume" class="button secondary" type="button" hidden>Продолжить</button>
