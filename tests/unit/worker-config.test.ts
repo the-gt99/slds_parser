@@ -66,6 +66,13 @@ describe("worker config", () => {
     );
   });
 
+  it("allows the isolated inventory preparation lane to use sixteen workers", () => {
+    expect(loadWorkerConfig({ ...environment, WORKER_INVENTORY_PREPARE_CONCURRENCY: "16" }).inventoryPrepareConcurrency).toBe(16);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_INVENTORY_PREPARE_CONCURRENCY: "17" })).toThrow(
+      "WORKER_INVENTORY_PREPARE_CONCURRENCY must be an integer from 1 to 16",
+    );
+  });
+
   it("accepts a separately bounded WordPress classification apply concurrency", () => {
     expect(loadWorkerConfig(environment).classificationApplyConcurrency).toBe(1);
     expect(loadWorkerConfig({ ...environment, WORKER_CLASSIFICATION_APPLY_CONCURRENCY: "4" }).classificationApplyConcurrency).toBe(4);

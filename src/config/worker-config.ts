@@ -73,6 +73,15 @@ function preflightConcurrency(value: string | undefined): number {
   return parsed;
 }
 
+function inventoryPrepareConcurrency(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 1;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 16) {
+    throw new Error("WORKER_INVENTORY_PREPARE_CONCURRENCY must be an integer from 1 to 16");
+  }
+  return parsed;
+}
+
 function classificationApplyConcurrency(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 1;
   const parsed = Number(value);
@@ -116,7 +125,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     exportConcurrency: exportConcurrency(environment.WORKER_EXPORT_CONCURRENCY),
     exportRefreshConcurrency: exportRefreshConcurrency(environment.WORKER_EXPORT_REFRESH_CONCURRENCY),
     inventoryRefreshConcurrency: collectionConcurrency(environment.WORKER_INVENTORY_REFRESH_CONCURRENCY),
-    inventoryPrepareConcurrency: preflightConcurrency(environment.WORKER_INVENTORY_PREPARE_CONCURRENCY),
+    inventoryPrepareConcurrency: inventoryPrepareConcurrency(environment.WORKER_INVENTORY_PREPARE_CONCURRENCY),
     inventorySubmitConcurrency: preflightConcurrency(environment.WORKER_INVENTORY_SUBMIT_CONCURRENCY),
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),
     retryBaseMs: positiveInteger(environment, "JOB_RETRY_BASE_MS"),
