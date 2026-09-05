@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IntegrationContractError, MappingMissingError } from "../../src/core/errors/index.js";
+import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
 import { buildWordPressVariationPatchIdentity, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("buildWordPressVariationPatchIdentity", () => {
@@ -53,5 +53,11 @@ describe("wordpressCatalogItemError", () => {
     expect(wordpressCatalogItemError(new IntegrationContractError("invalid payload"))).toBe("invalid payload");
     expect(wordpressCatalogItemError(new MappingMissingError("target=1"))).toBe("Mapping is missing: target=1");
     expect(wordpressCatalogItemError(new Error("database unavailable"))).toBeNull();
+  });
+
+  it("skips a product removed from GOAT without hiding other transport failures", () => {
+    expect(wordpressCatalogItemError(new PermanentError("GOAT product was not found", { code: "GOAT_PRODUCT_NOT_FOUND" })))
+      .toBe("GOAT product was not found");
+    expect(wordpressCatalogItemError(new PermanentError("GOAT request failed", { code: "GOAT_HTTP_PERMANENT" }))).toBeNull();
   });
 });

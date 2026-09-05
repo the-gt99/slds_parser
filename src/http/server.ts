@@ -1411,7 +1411,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     "/api/wordpress-catalog/runs/:runId/variation-sync",
     { preHandler: [requireAdmin, requireMutationAccess] },
     async (request) => {
-      const window = positiveInteger(String(request.body?.window ?? "100"), 100, 5_000);
+      const window = positiveInteger(String(request.body?.window ?? "1000"), 1_000, 5_000);
       if (window === 0) throw new HttpInputError("Expected an integer from 1 to 5000");
       const intervalMinutes = positiveInteger(String(request.body?.intervalMinutes ?? "360"), 360, 10_080);
       if (intervalMinutes < 5) throw new HttpInputError("Expected an interval from 5 to 10080 minutes");

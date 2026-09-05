@@ -82,6 +82,16 @@ describe("WordPressCatalogService variation auto-sync", () => {
     expect(value.repository.replenishVariationAutoSync).toHaveBeenCalledOnce();
   });
 
+  it("submits ready variation patches in full API batches", async () => {
+    const value = setup(run(), "waiting");
+    value.repository.enqueueReadyVariationBatches = vi.fn().mockResolvedValue(20);
+
+    await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
+
+    expect(value.repository.enqueueReadyVariationBatches).toHaveBeenCalledWith("1", 100);
+    expect(value.repository.replenishVariationAutoSync).not.toHaveBeenCalled();
+  });
+
   it("reports a full window as waiting", async () => {
     const value = setup(run(), "waiting");
 

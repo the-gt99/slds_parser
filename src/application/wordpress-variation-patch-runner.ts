@@ -1,6 +1,6 @@
 import type { WordPressTargetConfig } from "../config/index.js";
 import type { JsonObject, JsonValue, ProductVariantDTO, TargetProjectionResolutionInput, TargetReferenceResolutionInput } from "../contracts/index.js";
-import { IntegrationContractError, MappingMissingError } from "../core/errors/index.js";
+import { IntegrationContractError, MappingMissingError, PermanentError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
   matchExistingWordPressVariations,
@@ -54,6 +54,7 @@ export function wordpressVariationJobOutcome(status: string): "completed" | "fai
 
 export function wordpressCatalogItemError(error: unknown): string | null {
   return error instanceof IntegrationContractError || error instanceof MappingMissingError
+    || (error instanceof PermanentError && error.code === "GOAT_PRODUCT_NOT_FOUND")
     ? error.message
     : null;
 }
@@ -244,17 +245,12 @@ export class WordPressVariationPatchRunner {
     const candidate = candidates.find((item) => item.item.id === payload.itemId);
     if (candidate === undefined) return { status: "skipped" };
     try {
-      const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
-      if (currentWordPress === null) {
-        throw new IntegrationContractError(`WordPress product not found: ${payload.wordpressProductId}`);
-      }
       const refreshedProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
       if (refreshedProduct?.externalId === null || refreshedProduct === null) {
         throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${candidate.sourceProduct.id}`);
       }
       const effectiveCandidate: WordPressCatalogVariationCandidate = {
         ...candidate,
-        item: { ...candidate.item, payload: currentWordPress.snapshot },
         sourceProduct: {
           id: refreshedProduct.id,
           sourceId: refreshedProduct.sourceId,
@@ -268,7 +264,7 @@ export class WordPressVariationPatchRunner {
       const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, candidate.item.variationSourceVariants);
       if (patchPayload === null) return { status: "skipped" };
       const run = await this.repository.getRun(payload.runId);
-      if (run?.variationAutoStatus !== "running") await this.repository.enqueueReadyVariationBatches(payload.runId, 20);
+      if (run?.variationAutoStatus !== "running") await this.repository.enqueueReadyVariationBatches(payload.runId, 100);
       return { status: "completed" };
     } catch (error) {
       const message = wordpressCatalogItemError(error);
@@ -375,7 +371,7 @@ export class WordPressVariationPatchRunner {
     } as JsonObject;
     const patchPayload = { ...basis, idempotency_key: `catalog-${runId}-${candidate.item.id}-${hashStableJson(basis).slice(0, 32)}` } as JsonObject;
     await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "ready", payload: patchPayload,
-      notices: [...matched.ignored, { code: "live_source_refresh", message: "Цены, наличие и текущее состояние WordPress получены непосредственно перед постановкой WordPress job" }] });
+      notices: [...matched.ignored, { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" }] });
     return patchPayload;
   }
 

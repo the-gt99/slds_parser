@@ -296,7 +296,24 @@ describe("GOAT adapter and processor", () => {
 
 describe("GOAT HTTP classification", () => {
   it.each([403, 408, 425, 429, 500, 503])("classifies HTTP %s as retryable", (status) => { expect(() => assertGoatHttpStatus(status, "https://www.goat.com/web-api/x")).toThrow(RetryableError); });
-  it("classifies product 404 and other 4xx as permanent", () => { expect(() => assertGoatHttpStatus(404, "https://www.goat.com/web-api/v1/product_templates/missing")).toThrow(PermanentError); expect(() => assertGoatHttpStatus(422, "https://www.goat.com/web-api/x")).toThrow(PermanentError); });
+  it("classifies product and offers 404 as a missing GOAT product", () => {
+    for (const url of [
+      "https://www.goat.com/web-api/v1/product_templates/missing",
+      "https://www.goat.com/web-api/v1/product_variants/buy_bar_data?productTemplateId=42",
+    ]) {
+      try {
+        assertGoatHttpStatus(404, url);
+        throw new Error("Expected GOAT_PRODUCT_NOT_FOUND");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PermanentError);
+        expect((error as PermanentError).code).toBe("GOAT_PRODUCT_NOT_FOUND");
+      }
+    }
+  });
+
+  it("classifies other 4xx as permanent", () => {
+    expect(() => assertGoatHttpStatus(422, "https://www.goat.com/web-api/x")).toThrow(PermanentError);
+  });
   it("recognizes sanitized challenge HTML", () => { expect(isGoatHtmlChallenge(fixture("challenge.html"))).toBe(true); });
   it("masks proxy credentials", () => { expect(maskProxyCredentials("failed via http://login:password@127.0.0.1:8080")).toBe("failed via http://***:***@127.0.0.1:8080"); });
 });
