@@ -219,6 +219,7 @@ export interface WordPressCatalogRepository {
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
   enqueueReadyVariationBatches(runId: EntityId, batchSize: number): Promise<number>;
   failVariationItems(runId: EntityId, itemIds: readonly EntityId[], error: string): Promise<void>;
+  isVariationAutoSyncRunning(runId: EntityId): Promise<boolean>;
   getActiveVariationSync(): Promise<WordPressVariationAutoSyncState | null>;
   replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome>;
   startVariationAutoSync(runId: EntityId, window: number, intervalMinutes: number): Promise<void>;

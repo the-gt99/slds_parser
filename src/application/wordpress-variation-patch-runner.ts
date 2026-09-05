@@ -263,8 +263,9 @@ export class WordPressVariationPatchRunner {
       };
       const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, candidate.item.variationSourceVariants);
       if (patchPayload === null) return { status: "skipped" };
-      const run = await this.repository.getRun(payload.runId);
-      if (run?.variationAutoStatus !== "running") await this.repository.enqueueReadyVariationBatches(payload.runId, 100);
+      if (!await this.repository.isVariationAutoSyncRunning(payload.runId)) {
+        await this.repository.enqueueReadyVariationBatches(payload.runId, 100);
+      }
       return { status: "completed" };
     } catch (error) {
       const message = wordpressCatalogItemError(error);

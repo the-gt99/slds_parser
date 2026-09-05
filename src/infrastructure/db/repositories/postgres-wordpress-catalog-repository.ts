@@ -879,6 +879,13 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       [runId, itemIds, error]);
   }
 
+  async isVariationAutoSyncRunning(runId: string): Promise<boolean> {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      "SELECT variation_auto_status = 'running' AS is_running FROM wordpress_catalog_runs WHERE id = $1",
+      [runId]);
+    return result.rows[0]?.is_running === true;
+  }
+
   async getActiveVariationSync(): Promise<WordPressVariationAutoSyncState | null> {
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT run.id AS run_id, run.variation_auto_window,
