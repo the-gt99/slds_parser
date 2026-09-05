@@ -64,6 +64,15 @@ function collectionConcurrency(value: string | undefined): number {
   return parsed;
 }
 
+function inventoryRefreshConcurrency(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 1;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 64) {
+    throw new Error("WORKER_INVENTORY_REFRESH_CONCURRENCY must be an integer from 1 to 64");
+  }
+  return parsed;
+}
+
 function preflightConcurrency(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 1;
   const parsed = Number(value);
@@ -124,7 +133,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     classificationApplyConcurrency: classificationApplyConcurrency(environment.WORKER_CLASSIFICATION_APPLY_CONCURRENCY),
     exportConcurrency: exportConcurrency(environment.WORKER_EXPORT_CONCURRENCY),
     exportRefreshConcurrency: exportRefreshConcurrency(environment.WORKER_EXPORT_REFRESH_CONCURRENCY),
-    inventoryRefreshConcurrency: collectionConcurrency(environment.WORKER_INVENTORY_REFRESH_CONCURRENCY),
+    inventoryRefreshConcurrency: inventoryRefreshConcurrency(environment.WORKER_INVENTORY_REFRESH_CONCURRENCY),
     inventoryPrepareConcurrency: inventoryPrepareConcurrency(environment.WORKER_INVENTORY_PREPARE_CONCURRENCY),
     inventorySubmitConcurrency: preflightConcurrency(environment.WORKER_INVENTORY_SUBMIT_CONCURRENCY),
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),

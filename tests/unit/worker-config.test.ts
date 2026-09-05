@@ -58,6 +58,13 @@ describe("worker config", () => {
     );
   });
 
+  it("allows the isolated inventory refresh lane to use up to sixty-four workers", () => {
+    expect(loadWorkerConfig({ ...environment, WORKER_INVENTORY_REFRESH_CONCURRENCY: "32" }).inventoryRefreshConcurrency).toBe(32);
+    expect(() => loadWorkerConfig({ ...environment, WORKER_INVENTORY_REFRESH_CONCURRENCY: "65" })).toThrow(
+      "WORKER_INVENTORY_REFRESH_CONCURRENCY must be an integer from 1 to 64",
+    );
+  });
+
   it("accepts a separately bounded WordPress preflight concurrency", () => {
     expect(loadWorkerConfig(environment).preflightConcurrency).toBe(1);
     expect(loadWorkerConfig({ ...environment, WORKER_PREFLIGHT_CONCURRENCY: "4" }).preflightConcurrency).toBe(4);

@@ -23,8 +23,8 @@ function proxyPoolEnabled(environment: GoatProxyPoolEnvironment): boolean {
 function inventoryProxyHeadroom(environment: GoatProxyPoolEnvironment): number {
   const raw = environment.GOAT_PROXY_INVENTORY_HEADROOM?.trim() || "1";
   const parsed = Number(raw);
-  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 16) {
-    throw new Error("GOAT_PROXY_INVENTORY_HEADROOM must be an integer from 0 to 16");
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 64) {
+    throw new Error("GOAT_PROXY_INVENTORY_HEADROOM must be an integer from 0 to 64");
   }
   return parsed;
 }
