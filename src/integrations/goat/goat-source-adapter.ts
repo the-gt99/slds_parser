@@ -75,7 +75,7 @@ export class GoatSourceAdapter implements SourceAdapter {
   readonly #children = new Map<string, readonly GoatSitemapProduct[]>();
   readonly #indexes = new Map<string, readonly string[]>();
   // TODO: Add ETag/304 revalidation when sitemap refresh scheduling is implemented.
-  #nextRequestAt = 0;
+  readonly #nextRequestAtBySession = new Map<string, number>();
   #client: GoatHttpClient | undefined;
 
   constructor(private readonly request?: GoatRequestExecutor,
@@ -109,19 +109,24 @@ export class GoatSourceAdapter implements SourceAdapter {
   }
 
   async #get(url: string, delay: number, lease?: GoatProxyLease): Promise<Buffer> {
-    const wait = this.#nextRequestAt - Date.now();
+    const sessionKey = lease === undefined ? "direct" : `${lease.proxyId}:${lease.sessionSlot}`;
+    const wait = (this.#nextRequestAtBySession.get(sessionKey) ?? 0) - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const result = this.request ? await this.request(url) : await this.#http(lease).getBuffer(url);
-    this.#nextRequestAt = Date.now() + delay;
+    this.#nextRequestAtBySession.set(sessionKey, Date.now() + delay);
     return result;
   }
 
   async discover(input: DiscoveryInput): Promise<DiscoveryResult> {
     return this.#withLease(async (lease) => {
     const settings = config(input.source.config);
+    let state = checkpoint(input.checkpoint);
+    if (state.childIndex === 0 && state.itemIndex === 0 && state.emitted === 0) {
+      this.#indexes.delete(settings.sitemapUrl);
+      this.#children.clear();
+    }
     let children = this.#indexes.get(settings.sitemapUrl);
     if (!children) { children = parseSitemapIndex(await this.#get(settings.sitemapUrl, settings.requestDelayMs, lease)); this.#indexes.set(settings.sitemapUrl, children); }
-    let state = checkpoint(input.checkpoint);
     const items = [];
     while (items.length < settings.discoveryBatchSize && state.childIndex < children.length) {
       const childUrl = children[state.childIndex];
@@ -186,12 +191,13 @@ export class GoatSourceAdapter implements SourceAdapter {
   }
 
   async #json(url: string, expected: "product" | "offers", delay: number, lease?: GoatProxyLease): Promise<JsonValue> {
-    const wait = this.#nextRequestAt - Date.now();
+    const sessionKey = lease === undefined ? "direct" : `${lease.proxyId}:${lease.sessionSlot}`;
+    const wait = (this.#nextRequestAtBySession.get(sessionKey) ?? 0) - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const result = this.jsonRequest ? await this.jsonRequest(url, expected)
       : this.request ? JSON.parse((await this.request(url)).toString("utf8")) as JsonValue
         : await this.#http(lease).getJson(url, expected);
-    this.#nextRequestAt = Date.now() + delay;
+    this.#nextRequestAtBySession.set(sessionKey, Date.now() + delay);
     return result;
   }
 }

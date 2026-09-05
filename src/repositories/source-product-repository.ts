@@ -6,6 +6,7 @@ import type {
   SourceProductRecord,
   UpdateSourceProductIdentityInput,
   UpsertDiscoveredSourceProductInput,
+  UpsertDiscoveredSourceProductResult,
   UpsertSourceProductPartInput,
   UpsertSourceProductPartResult,
 } from "./types.js";
@@ -14,7 +15,7 @@ export interface SourceProductRepository {
   getById(id: EntityId): Promise<SourceProductRecord | null>;
   listCollectionCandidates(input: SourceProductCollectionCandidateQuery): Promise<readonly SourceProductCollectionCandidate[]>;
   listParts(sourceProductId: EntityId): Promise<readonly SourceProductPartRecord[]>;
-  upsertDiscovered(input: UpsertDiscoveredSourceProductInput): Promise<SourceProductRecord>;
+  upsertDiscovered(input: UpsertDiscoveredSourceProductInput): Promise<UpsertDiscoveredSourceProductResult>;
   updateIdentity(id: EntityId, input: UpdateSourceProductIdentityInput): Promise<SourceProductRecord>;
   upsertPart(input: UpsertSourceProductPartInput): Promise<UpsertSourceProductPartResult>;
 }

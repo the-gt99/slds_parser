@@ -1,4 +1,4 @@
-import type { EntityId, JsonObject, SourceDTO, SourceProductDTO, TargetDTO, UniversalProductDTO } from "../contracts/index.js";
+import type { EntityId, JsonObject, ProductVariantDTO, SourceDTO, SourceProductDTO, TargetDTO, UniversalProductDTO } from "../contracts/index.js";
 
 export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "failed";
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
@@ -125,6 +125,10 @@ export interface WordPressCatalogRunItemRecord {
   readonly wordpressJobId: string | null;
   readonly variationResult: JsonObject | null;
   readonly variationError: string | null;
+  readonly variationSourceHash: string | null;
+  readonly variationAppliedSourceHash: string | null;
+  readonly variationSourceVariants: readonly ProductVariantDTO[];
+  readonly variationSyncCycle: number;
   readonly payload: JsonObject;
   readonly targetTermLabels?: JsonObject;
   readonly proposedImages?: readonly JsonObject[];
@@ -187,6 +191,15 @@ export interface WordPressCatalogRepository {
     readonly notices: readonly JsonObject[];
     readonly error?: string;
   }): Promise<void>;
+  saveVariationSource(input: {
+    readonly runId: EntityId;
+    readonly itemId: EntityId;
+    readonly wordpressProductId: string;
+    readonly sourceHash: string;
+    readonly variants: readonly ProductVariantDTO[];
+    readonly unchanged: boolean;
+  }): Promise<void>;
+  listVariationSubmissionItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<readonly WordPressCatalogRunItemRecord[]>;
   saveVariationSubmission(input: {
     readonly itemId: EntityId;
     readonly wordpressJobId: string;
@@ -204,6 +217,8 @@ export interface WordPressCatalogRepository {
   retryBlockedAudits(runId: EntityId): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
   rebuildAudits(runId: EntityId, changeFlag?: string): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
+  enqueueReadyVariationBatches(runId: EntityId, batchSize: number): Promise<number>;
+  failVariationItems(runId: EntityId, itemIds: readonly EntityId[], error: string): Promise<void>;
   getActiveVariationSync(): Promise<WordPressVariationAutoSyncState | null>;
   replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome>;
   startVariationAutoSync(runId: EntityId, window: number, intervalMinutes: number): Promise<void>;

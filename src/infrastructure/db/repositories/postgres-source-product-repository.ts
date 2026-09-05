@@ -1,6 +1,6 @@
 import { SourceIdentityConflictError } from "../../../core/errors/index.js";
 import type { EntityId } from "../../../contracts/index.js";
-import type { SourceProductCollectionCandidate, SourceProductCollectionCandidateQuery, SourceProductPartRecord, SourceProductRecord, SourceProductRepository, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../../repositories/index.js";
+import type { SourceProductCollectionCandidate, SourceProductCollectionCandidateQuery, SourceProductPartRecord, SourceProductRecord, SourceProductRepository, UpdateSourceProductIdentityInput, UpsertDiscoveredSourceProductInput, UpsertDiscoveredSourceProductResult, UpsertSourceProductPartInput, UpsertSourceProductPartResult } from "../../../repositories/index.js";
 import type { SqlExecutor } from "../sql-executor.js";
 import { isExternalIdentityConflict, requireRow } from "./repository-utils.js";
 import { mapSourceProduct, mapSourceProductPart, type DatabaseRow } from "./row-mappers.js";
@@ -71,10 +71,31 @@ export class PostgresSourceProductRepository implements SourceProductRepository 
     return result.rows.map(mapSourceProductPart);
   }
 
-  async upsertDiscovered(input: UpsertDiscoveredSourceProductInput): Promise<SourceProductRecord> {
+  async upsertDiscovered(input: UpsertDiscoveredSourceProductInput): Promise<UpsertDiscoveredSourceProductResult> {
     try {
-      const result = await this.executor.query<DatabaseRow>(`INSERT INTO source_products (source_id, source_key, external_id, slug, url, discovery_metadata, status, first_seen_at, last_seen_at, last_seen_run_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $8, $9) ON CONFLICT (source_id, source_key) DO UPDATE SET external_id = COALESCE(EXCLUDED.external_id, source_products.external_id), slug = COALESCE(EXCLUDED.slug, source_products.slug), url = COALESCE(EXCLUDED.url, source_products.url), discovery_metadata = EXCLUDED.discovery_metadata, status = EXCLUDED.status, last_seen_at = EXCLUDED.last_seen_at, last_seen_run_id = EXCLUDED.last_seen_run_id, updated_at = NOW() RETURNING *`, [input.sourceId, input.sourceKey, input.externalId ?? null, input.slug ?? null, input.url ?? null, input.discoveryMetadata, input.status, input.seenAt, input.runId]);
-      return mapSourceProduct(requireRow(result.rows, "source product", input.sourceKey));
+      const result = await this.executor.query<DatabaseRow>(`WITH product_lock AS MATERIALIZED (
+        SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2, 0))
+      ), previous AS MATERIALIZED (
+        SELECT discovery_fingerprint FROM source_products, product_lock WHERE source_id = $1 AND source_key = $2
+      ), upserted AS (
+        INSERT INTO source_products (source_id, source_key, external_id, slug, url, discovery_metadata, discovery_fingerprint, discovery_changed_at, status, first_seen_at, last_seen_at, last_seen_run_id)
+        SELECT $1, $2, $3, $4, $5, $6::jsonb, $10, $8, $7, $8, $8, $9 FROM product_lock
+        ON CONFLICT (source_id, source_key) DO UPDATE SET
+          external_id = COALESCE(EXCLUDED.external_id, source_products.external_id),
+          slug = COALESCE(EXCLUDED.slug, source_products.slug),
+          url = COALESCE(EXCLUDED.url, source_products.url),
+          discovery_metadata = EXCLUDED.discovery_metadata,
+          discovery_fingerprint = EXCLUDED.discovery_fingerprint,
+          discovery_changed_at = CASE WHEN source_products.discovery_fingerprint IS DISTINCT FROM EXCLUDED.discovery_fingerprint THEN EXCLUDED.last_seen_at ELSE source_products.discovery_changed_at END,
+          status = EXCLUDED.status, last_seen_at = EXCLUDED.last_seen_at,
+          last_seen_run_id = EXCLUDED.last_seen_run_id, updated_at = NOW()
+        RETURNING *
+      ) SELECT upserted.*,
+          NOT EXISTS (SELECT 1 FROM previous) AS created,
+          NOT EXISTS (SELECT 1 FROM previous WHERE discovery_fingerprint IS NOT DISTINCT FROM $10) AS discovery_changed
+        FROM upserted`, [input.sourceId, input.sourceKey, input.externalId ?? null, input.slug ?? null, input.url ?? null, input.discoveryMetadata, input.status, input.seenAt, input.runId, input.discoveryFingerprint]);
+      const row = requireRow(result.rows, "source product", input.sourceKey);
+      return { product: mapSourceProduct(row), created: Boolean(row.created), discoveryChanged: Boolean(row.discovery_changed) };
     } catch (error) {
       if (isExternalIdentityConflict(error) && input.externalId !== undefined && input.externalId !== null) throw new SourceIdentityConflictError(input.sourceId, input.externalId, { cause: error });
       throw error;

@@ -35,6 +35,20 @@ describe("CollectionRunner", () => {
     expect([...store.jobs.values()].filter((job) => job.jobType === "collect_product")).toHaveLength(0);
   });
 
+  it("enqueues the full pipeline only for products first seen in an inventory discovery", async () => {
+    const discover = vi.fn()
+      .mockResolvedValueOnce({ items: [{ sourceKey: "a", metadata: { lastmod: "2026-09-01" } }], checkpoint: { page: 1 }, hasMore: false, completeness: "complete", stats: { processed: 1, discovered: 1 } })
+      .mockResolvedValueOnce({ items: [{ sourceKey: "a", metadata: { lastmod: "2026-09-02" } }, { sourceKey: "b", metadata: {} }], checkpoint: { page: 1 }, hasMore: false, completeness: "complete", stats: { processed: 2, discovered: 2 } });
+    const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover, collectProduct: vi.fn() };
+    const { runner, store } = setup(adapter);
+    await runner.discoverSource({ sourceId: "1", runType: "full", coverage: "catalog", enqueueCollection: false });
+    store.jobs.clear();
+    await runner.discoverSource({ sourceId: "1", runType: "inventory_refresh", coverage: "full", enqueueCollection: false, enqueueNewCollection: true });
+    const jobs = [...store.jobs.values()].filter((job) => job.jobType === "collect_product");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.payload).toEqual({ sourceProductId: [...store.products.values()].find((item) => item.sourceKey === "b")?.id });
+  });
+
   it("enqueues hash-checked processing after every successful collection", async () => {
     const collectProduct = vi.fn().mockResolvedValue({ sourceKey: "product-1", parts: [{ partKey: "custom", rawPayload: {}, parsedPayload: { value: 1 }, adapterVersion: "1" }] });
     const adapter: SourceAdapter = { code: "fake-adapter", version: "1", discover: vi.fn(), collectProduct };

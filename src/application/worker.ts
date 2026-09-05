@@ -27,6 +27,8 @@ export interface WorkerOptions {
   readonly exportConcurrency?: number;
   readonly exportRefreshConcurrency?: number;
   readonly inventoryRefreshConcurrency?: number;
+  readonly inventoryPrepareConcurrency?: number;
+  readonly inventorySubmitConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
@@ -68,7 +70,8 @@ function usesWordPressRetryPolicy(job: JobRecord, error: unknown): boolean {
   return error instanceof RetryableError
     && error.code.startsWith("WORDPRESS_")
     && (job.jobType === "preflight_product" || job.jobType === "export_product"
-      || job.jobType === "refresh_wordpress_variation_patch" || job.jobType === "poll_wordpress_variation_patches");
+      || job.jobType === "prepare_wordpress_variation_patch" || job.jobType === "submit_wordpress_variation_patches"
+      || job.jobType === "poll_wordpress_variation_patches");
 }
 
 export class Worker {
@@ -243,7 +246,9 @@ export class Worker {
     const classificationApplyJobTypes = ["apply_target_classification_suggestion"] satisfies readonly JobType[];
     const wordpressCatalogJobTypes = ["sync_wordpress_catalog"] satisfies readonly JobType[];
     const wordpressVariationJobTypes = ["prepare_wordpress_variation_patches"] satisfies readonly JobType[];
-    const wordpressVariationRefreshJobTypes = ["refresh_wordpress_variation_patch"] satisfies readonly JobType[];
+    const wordpressVariationCollectJobTypes = ["collect_wordpress_variation_source"] satisfies readonly JobType[];
+    const wordpressVariationPrepareJobTypes = ["prepare_wordpress_variation_patch"] satisfies readonly JobType[];
+    const wordpressVariationSubmitJobTypes = ["submit_wordpress_variation_patches"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
           processConcurrency: this.options.processConcurrency ?? 1,
@@ -283,7 +288,11 @@ export class Worker {
         ...(runInventory ? [
           this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:inventory-poll`),
           ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
-            this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:inventory-refresh-${index + 1}`)),
+            this.runLane(controller.signal, wordpressVariationCollectJobTypes, `${this.options.workerId}:inventory-collect-${index + 1}`)),
+          ...Array.from({ length: this.options.inventoryPrepareConcurrency ?? 4 }, (_, index) =>
+            this.runLane(controller.signal, wordpressVariationPrepareJobTypes, `${this.options.workerId}:inventory-prepare-${index + 1}`)),
+          ...Array.from({ length: this.options.inventorySubmitConcurrency ?? 2 }, (_, index) =>
+            this.runLane(controller.signal, wordpressVariationSubmitJobTypes, `${this.options.workerId}:inventory-submit-${index + 1}`)),
           ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
         ] : []),
       ]);

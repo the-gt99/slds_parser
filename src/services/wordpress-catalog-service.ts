@@ -159,6 +159,8 @@ export class WordPressCatalogService {
   }
 
   async tickVariationAutoSync(): Promise<boolean> {
+    const active = await this.repository.getActiveVariationSync();
+    if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, 20) > 0) return true;
     const outcome = await this.repository.replenishVariationAutoSync();
     return outcome !== "idle" && outcome !== "waiting";
   }

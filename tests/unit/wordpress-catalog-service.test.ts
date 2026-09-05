@@ -33,6 +33,7 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
       cycle: current.variationSyncCycle,
       nextCycleAt: current.variationSyncNextCycleAt,
     }),
+    enqueueReadyVariationBatches: vi.fn().mockResolvedValue(0),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;

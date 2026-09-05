@@ -11,6 +11,7 @@ export * from "./target-classification-sync-runner.js";
 export * from "./target-classification-apply-runner.js";
 export * from "./wordpress-catalog-sync-runner.js";
 export * from "./wordpress-variation-patch-runner.js";
+export * from "./source-part-collector.js";
 export * from "./product-operation-pipeline.js";
 export * from "./runner-result.js";
 export * from "./worker.js";

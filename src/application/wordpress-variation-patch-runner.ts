@@ -1,9 +1,8 @@
 import type { WordPressTargetConfig } from "../config/index.js";
-import type { JsonObject, ProductVariantDTO, TargetProjectionResolutionInput, TargetReferenceResolutionInput } from "../contracts/index.js";
+import type { JsonObject, JsonValue, ProductVariantDTO, TargetProjectionResolutionInput, TargetReferenceResolutionInput } from "../contracts/index.js";
 import { IntegrationContractError, MappingMissingError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
-  changedWordPressVariationPatchItems,
   matchExistingWordPressVariations,
   previewWordPressVariationPatchItems,
   WordPressExporter,
@@ -12,7 +11,7 @@ import {
 } from "../integrations/wordpress/index.js";
 import type { JobRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, WordPressCatalogAuditSaveInput, WordPressCatalogRepository, WordPressCatalogVariationCandidate } from "../repositories/index.js";
 import { buildWordPressCatalogAudit, type TargetReferenceMappingService } from "../services/index.js";
-import type { PollWordPressVariationPatchesPayload, PrepareWordPressVariationPatchesPayload, RefreshWordPressVariationPatchPayload } from "./job-payloads.js";
+import type { CollectWordPressVariationSourcePayload, PollWordPressVariationPatchesPayload, PrepareWordPressVariationPatchPayload, PrepareWordPressVariationPatchesPayload, SubmitWordPressVariationPatchesPayload } from "./job-payloads.js";
 import type { ExportSourceRefresher } from "./export-source-refresher.js";
 import type { RunnerResult } from "./runner-result.js";
 
@@ -60,6 +59,7 @@ export function wordpressCatalogItemError(error: unknown): string | null {
 }
 
 export class WordPressVariationPatchRunner {
+  private static readonly retainedRunCaches = 4;
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
   private readonly referenceCachesByRun = new Map<
@@ -91,7 +91,23 @@ export class WordPressVariationPatchRunner {
     this.exporter = new WordPressExporter(wordpressConfig);
   }
 
+  private trimRunCaches(activeRunId: string): void {
+    const runIds = [...new Set([
+      ...this.referenceCachesByRun.keys(),
+      ...this.projectionCachesByRun.keys(),
+      ...this.assignmentResolversByRun.keys(),
+    ])].filter((runId) => runId !== activeRunId);
+    while (runIds.length >= WordPressVariationPatchRunner.retainedRunCaches) {
+      const oldest = runIds.shift();
+      if (oldest === undefined) break;
+      this.referenceCachesByRun.delete(oldest);
+      this.projectionCachesByRun.delete(oldest);
+      this.assignmentResolversByRun.delete(oldest);
+    }
+  }
+
   async prepare(payload: PrepareWordPressVariationPatchesPayload): Promise<RunnerResult> {
+    this.trimRunCaches(payload.runId);
     const run = await this.repository.getRun(payload.runId);
     if (run === null) throw new IntegrationContractError(`WordPress catalog run not found: ${payload.runId}`);
     const candidates = await this.repository.listVariationCandidates({
@@ -171,9 +187,9 @@ export class WordPressVariationPatchRunner {
       }
       if (run.variationSyncRequested) {
         await this.jobs.enqueue({
-          jobType: "refresh_wordpress_variation_patch",
+          jobType: "collect_wordpress_variation_source",
           payload: { runId: payload.runId, itemId: candidate.item.id, wordpressProductId: candidate.item.wordpressProductId },
-          uniqueKey: `wordpress-variation-refresh:${payload.runId}:${candidate.item.id}`,
+          uniqueKey: `wordpress-variation-collect:${payload.runId}:${candidate.item.id}`,
         });
       }
     }
@@ -181,7 +197,7 @@ export class WordPressVariationPatchRunner {
     return { status: "completed" };
   }
 
-  async refresh(payload: RefreshWordPressVariationPatchPayload): Promise<RunnerResult> {
+  async collect(payload: CollectWordPressVariationSourcePayload): Promise<RunnerResult> {
     const cursor = (BigInt(payload.wordpressProductId) - 1n).toString();
     const candidates = await this.repository.listVariationCandidates({
       runId: payload.runId,
@@ -200,13 +216,41 @@ export class WordPressVariationPatchRunner {
       if (liveVariants.length === 0) {
         throw new IntegrationContractError("GOAT не вернул ни одной вариации; автоматическое снятие всех размеров с продажи запрещено");
       }
+      const sourceHash = hashStableJson(liveVariants as unknown as JsonValue);
+      await this.repository.saveVariationSource({
+        runId: payload.runId,
+        itemId: candidate.item.id,
+        wordpressProductId: payload.wordpressProductId,
+        sourceHash,
+        variants: liveVariants,
+        unchanged: candidate.item.variationAppliedSourceHash === sourceHash,
+      });
+      return { status: "completed" };
+    } catch (error) {
+      const message = wordpressCatalogItemError(error);
+      if (message === null) throw error;
+      await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: [], error: message });
+      return { status: "completed" };
+    }
+  }
+
+  async preparePatch(payload: PrepareWordPressVariationPatchPayload): Promise<RunnerResult> {
+    const cursor = (BigInt(payload.wordpressProductId) - 1n).toString();
+    const candidates = await this.repository.listVariationCandidates({
+      runId: payload.runId,
+      afterWordPressProductId: cursor,
+      throughWordPressProductId: payload.wordpressProductId,
+    });
+    const candidate = candidates.find((item) => item.item.id === payload.itemId);
+    if (candidate === undefined) return { status: "skipped" };
+    try {
       const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
       if (currentWordPress === null) {
         throw new IntegrationContractError(`WordPress product not found: ${payload.wordpressProductId}`);
       }
-      const refreshedProduct = await this.sourceProducts.getById(sourceProduct.id);
+      const refreshedProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
       if (refreshedProduct?.externalId === null || refreshedProduct === null) {
-        throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${sourceProduct.id}`);
+        throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${candidate.sourceProduct.id}`);
       }
       const effectiveCandidate: WordPressCatalogVariationCandidate = {
         ...candidate,
@@ -221,18 +265,10 @@ export class WordPressVariationPatchRunner {
           metadata: refreshedProduct.discoveryMetadata,
         },
       };
-      const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, liveVariants);
+      const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, candidate.item.variationSourceVariants);
       if (patchPayload === null) return { status: "skipped" };
-      const [submission] = await this.client.submitVariationPatches([patchPayload]);
-      if (submission === undefined) throw new IntegrationContractError("WordPress did not return a variation patch result");
-      const wordpressJobId = submission.job === undefined ? null : jobId(submission.job);
-      if (!submission.accepted || wordpressJobId === null) {
-        await this.repository.saveVariationJobResult({ itemId: candidate.item.id, status: "failed", result: record(submission as unknown),
-          error: submission.error ?? submission.code ?? "WordPress rejected variation patch" });
-        return { status: "completed" };
-      }
-      await this.repository.saveVariationSubmission({ itemId: candidate.item.id, wordpressJobId, result: submission.job! });
-      await this.enqueuePoll(payload.runId, [wordpressJobId], 0);
+      const run = await this.repository.getRun(payload.runId);
+      if (run?.variationAutoStatus !== "running") await this.repository.enqueueReadyVariationBatches(payload.runId, 20);
       return { status: "completed" };
     } catch (error) {
       const message = wordpressCatalogItemError(error);
@@ -242,7 +278,67 @@ export class WordPressVariationPatchRunner {
     }
   }
 
+  async submit(payload: SubmitWordPressVariationPatchesPayload): Promise<RunnerResult> {
+    const items = await this.repository.listVariationSubmissionItems(payload.runId, payload.itemIds);
+    if (items.length === 0) return { status: "skipped" };
+    const prepared = items.filter((item): item is typeof item & { variationPayload: JsonObject } => item.variationPayload !== null);
+    if (prepared.length !== items.length) throw new IntegrationContractError("WordPress variation batch contains an item without a prepared payload");
+    const submissions = await this.client.submitVariationPatches(prepared.map((item) => item.variationPayload));
+    const byIndex = new Map(submissions.map((submission) => [submission.index, submission] as const));
+    if (byIndex.size !== prepared.length || prepared.some((_, index) => !byIndex.has(index))) {
+      throw new IntegrationContractError("WordPress returned an incomplete variation patch batch");
+    }
+    const wordpressJobIds: string[] = [];
+    for (const [index, item] of prepared.entries()) {
+      const submission = byIndex.get(index);
+      if (submission === undefined) throw new IntegrationContractError(`WordPress did not return variation patch result ${index}`);
+      const wordpressJobId = submission.job === undefined ? null : jobId(submission.job);
+      if (!submission.accepted || wordpressJobId === null) {
+        await this.repository.saveVariationJobResult({ itemId: item.id, status: "failed", result: record(submission as unknown),
+          error: submission.error ?? submission.code ?? "WordPress rejected variation patch" });
+        continue;
+      }
+      await this.repository.saveVariationSubmission({ itemId: item.id, wordpressJobId, result: submission.job! });
+      wordpressJobIds.push(wordpressJobId);
+    }
+    if (wordpressJobIds.length > 0) await this.enqueuePoll(payload.runId, wordpressJobIds, 0);
+    return { status: "completed" };
+  }
+
   private async buildPatchPayload(candidate: WordPressCatalogVariationCandidate, runId: string, liveVariants: readonly ProductVariantDTO[]): Promise<JsonObject | null> {
+    this.trimRunCaches(runId);
+    let referenceCache = this.referenceCachesByRun.get(runId);
+    if (referenceCache === undefined) {
+      referenceCache = new Map();
+      this.referenceCachesByRun.set(runId, referenceCache);
+    }
+    let projectionCache = this.projectionCachesByRun.get(runId);
+    if (projectionCache === undefined) {
+      projectionCache = new Map();
+      this.projectionCachesByRun.set(runId, projectionCache);
+    }
+    let assignmentResolver = this.assignmentResolversByRun.get(runId);
+    if (assignmentResolver === undefined) {
+      assignmentResolver = this.mappings.createTargetAssignmentResolver(candidate.target.id);
+      this.assignmentResolversByRun.set(runId, assignmentResolver);
+    }
+    const resolveAssignments = await assignmentResolver;
+    const resolveReference = (input: TargetReferenceResolutionInput) => {
+      const key = `${candidate.target.id}:${input.referenceId}:${input.targetScope}`;
+      const cached = referenceCache.get(key);
+      if (cached !== undefined) return cached;
+      const result = this.mappings.resolveTargetMapping(candidate.target.id, input.referenceId, input.targetScope);
+      referenceCache.set(key, result);
+      return result;
+    };
+    const resolveProjections = (inputs: readonly TargetProjectionResolutionInput[]) => Promise.all(inputs.map((input) => {
+      const key = `${candidate.target.id}:${input.resolutionKind}:${input.resolutionId}:${input.referenceId}`;
+      const cached = projectionCache.get(key);
+      if (cached !== undefined) return cached;
+      const result = this.mappings.resolveTargetProjections(candidate.target.id, [input]);
+      projectionCache.set(key, result);
+      return result;
+    })).then((items) => items.flat());
     const draft = await previewWordPressVariationPatchItems({
       source: candidate.source,
       sourceProduct: candidate.sourceProduct,
@@ -252,9 +348,9 @@ export class WordPressVariationPatchRunner {
       existingExternalId: candidate.item.wordpressProductId,
       existingTargetSnapshot: candidate.item.payload,
       references: {
-        resolveReference: (input) => this.mappings.resolveTargetMapping(candidate.target.id, input.referenceId, input.targetScope),
-        resolveProjections: (inputs) => this.mappings.resolveTargetProjections(candidate.target.id, inputs),
-        resolveAssignments: (product) => this.mappings.resolveTargetAssignments(candidate.target.id, product),
+        resolveReference,
+        resolveProjections,
+        resolveAssignments,
       },
     }, this.converter);
     const matched = matchExistingWordPressVariations(draft, candidate.item.payload);
@@ -263,15 +359,6 @@ export class WordPressVariationPatchRunner {
         ? "Нет безопасных существующих вариаций для обновления"
         : "У товара больше 100 обновляемых вариаций; требуется отдельная партия";
       await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: matched.ignored, error });
-      return null;
-    }
-    const changedItems = changedWordPressVariationPatchItems(matched.items, candidate.item.payload);
-    if (changedItems.length === 0) {
-      await this.repository.saveVariationPreparation({
-        itemId: candidate.item.id,
-        status: "skipped",
-        notices: [...matched.ignored, { code: "no_variation_changes", message: "Цена и наличие уже совпадают с WordPress" }],
-      });
       return null;
     }
     const basis = {
@@ -284,7 +371,7 @@ export class WordPressVariationPatchRunner {
         matchMethod: candidate.item.matchMethod,
         sku: candidate.item.sku,
       }),
-      variations: { items: changedItems },
+      variations: { items: matched.items },
     } as JsonObject;
     const patchPayload = { ...basis, idempotency_key: `catalog-${runId}-${candidate.item.id}-${hashStableJson(basis).slice(0, 32)}` } as JsonObject;
     await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "ready", payload: patchPayload,
@@ -321,8 +408,12 @@ export class WordPressVariationPatchRunner {
     return { status: "completed" };
   }
 
-  async failRefresh(itemId: string, error: string): Promise<void> {
+  async failItem(itemId: string, error: string): Promise<void> {
     await this.repository.saveVariationPreparation({ itemId, status: "failed", notices: [], error });
+  }
+
+  async failSubmission(runId: string, itemIds: readonly string[], error: string): Promise<void> {
+    await this.repository.failVariationItems(runId, itemIds, error);
   }
 
   async failPoll(runId: string, jobIds: readonly string[], error: string): Promise<void> {
