@@ -23,6 +23,11 @@ export interface WordPressPatchSubmission {
   readonly error?: string;
 }
 
+interface PendingProductRead {
+  readonly resolve: (item: WordPressCatalogPageItem | null) => void;
+  readonly reject: (error: unknown) => void;
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new IntegrationContractError(`${label} must be an object`);
@@ -41,6 +46,9 @@ function retryableStatus(status: number): boolean {
 }
 
 export class WordPressCatalogClient {
+  private readonly pendingProductReads = new Map<string, PendingProductRead[]>();
+  private productReadTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     private readonly config: WordPressTargetConfig,
     private readonly requestImplementation: typeof fetch = fetch,
@@ -49,15 +57,7 @@ export class WordPressCatalogClient {
   async readPage(cursor: string, limit = 250): Promise<WordPressCatalogPage> {
     if (!/^\d+$/u.test(cursor) || limit < 1 || limit > 500) throw new IntegrationContractError("Invalid WordPress catalog page request");
     const response = await this.request("catalog-export", { cursor: Number(cursor), limit });
-    if (!Array.isArray(response.items)) throw new IntegrationContractError("WordPress catalog response items must be a list");
-    const items = response.items.map((value, index) => {
-      const item = record(value, `WordPress catalog item ${index}`);
-      return {
-        targetId: positiveId(item.target_id, `WordPress catalog item ${index}.target_id`),
-        identity: record(item.identity, `WordPress catalog item ${index}.identity`) as JsonObject,
-        snapshot: record(item.snapshot, `WordPress catalog item ${index}.snapshot`) as JsonObject,
-      };
-    });
+    const items = this.parseCatalogItems(response);
     const nextCursor = String(response.next_cursor ?? "").trim();
     if (!/^\d+$/u.test(nextCursor)) throw new IntegrationContractError("WordPress catalog next_cursor is invalid");
     if (typeof response.has_more !== "boolean") throw new IntegrationContractError("WordPress catalog has_more is invalid");
@@ -66,8 +66,44 @@ export class WordPressCatalogClient {
 
   async readProduct(productId: string): Promise<WordPressCatalogPageItem | null> {
     const normalized = positiveId(productId, "WordPress product ID");
-    const page = await this.readPage((BigInt(normalized) - 1n).toString(), 1);
-    return page.items[0]?.targetId === normalized ? page.items[0] : null;
+    return await new Promise<WordPressCatalogPageItem | null>((resolve, reject) => {
+      const pending = this.pendingProductReads.get(normalized) ?? [];
+      pending.push({ resolve, reject });
+      this.pendingProductReads.set(normalized, pending);
+      if (this.productReadTimer === null) {
+        this.productReadTimer = setTimeout(() => { void this.flushProductReads(); }, 5);
+      }
+    });
+  }
+
+  private async flushProductReads(): Promise<void> {
+    this.productReadTimer = null;
+    const ids = [...this.pendingProductReads.keys()].slice(0, 100);
+    const requests = new Map(ids.map((id) => [id, this.pendingProductReads.get(id)!] as const));
+    for (const id of ids) this.pendingProductReads.delete(id);
+    if (this.pendingProductReads.size > 0) {
+      this.productReadTimer = setTimeout(() => { void this.flushProductReads(); }, 5);
+    }
+    try {
+      const response = await this.request("catalog-export", { product_ids: ids.map(Number) });
+      const items = this.parseCatalogItems(response);
+      const byId = new Map(items.map((item) => [item.targetId, item] as const));
+      for (const [id, pending] of requests) for (const request of pending) request.resolve(byId.get(id) ?? null);
+    } catch (error) {
+      for (const pending of requests.values()) for (const request of pending) request.reject(error);
+    }
+  }
+
+  private parseCatalogItems(response: Record<string, unknown>): readonly WordPressCatalogPageItem[] {
+    if (!Array.isArray(response.items)) throw new IntegrationContractError("WordPress catalog response items must be a list");
+    return response.items.map((value, index) => {
+      const item = record(value, `WordPress catalog item ${index}`);
+      return {
+        targetId: positiveId(item.target_id, `WordPress catalog item ${index}.target_id`),
+        identity: record(item.identity, `WordPress catalog item ${index}.identity`) as JsonObject,
+        snapshot: record(item.snapshot, `WordPress catalog item ${index}.snapshot`) as JsonObject,
+      };
+    });
   }
 
   async submitVariationPatches(payloads: readonly JsonObject[]): Promise<readonly WordPressPatchSubmission[]> {

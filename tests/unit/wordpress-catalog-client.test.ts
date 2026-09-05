@@ -30,7 +30,7 @@ describe("WordPressCatalogClient.readProduct", () => {
       snapshot: { product: { id: 42 } },
     });
     const body = JSON.parse(requestBody!);
-    expect(body).toEqual({ cursor: 41, limit: 1 });
+    expect(body).toEqual({ product_ids: [42] });
   });
 
   it("does not accept the next catalog product as the requested product", async () => {
@@ -43,5 +43,23 @@ describe("WordPressCatalogClient.readProduct", () => {
     const client = new WordPressCatalogClient(config, request as typeof fetch);
 
     await expect(client.readProduct("42")).resolves.toBeNull();
+  });
+
+  it("combines concurrent product reads into one WordPress request", async () => {
+    const bodies: unknown[] = [];
+    const request = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({
+        ok: true,
+        items: [42, 43].map((id) => ({ target_id: id, identity: {}, snapshot: { product: { target_id: id } } })),
+        next_cursor: 43,
+        has_more: false,
+      }), { status: 200 });
+    });
+    const client = new WordPressCatalogClient(config, request as typeof fetch);
+
+    await expect(Promise.all([client.readProduct("42"), client.readProduct("43")])).resolves.toHaveLength(2);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(bodies).toEqual([{ product_ids: [42, 43] }]);
   });
 });

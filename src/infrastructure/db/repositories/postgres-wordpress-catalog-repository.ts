@@ -594,6 +594,11 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              variation_source_variants = CASE WHEN $6 THEN '[]'::JSONB ELSE $5::JSONB END,
              variation_status = CASE WHEN $6 THEN 'skipped' ELSE 'refreshing' END,
              variation_checked_at = CASE WHEN $6 THEN NOW() ELSE NULL END,
+             variation_next_check_at = CASE WHEN $6
+               THEN NOW() + INTERVAL '24 hours'
+               ELSE NOW() + ((SELECT variation_sync_interval_minutes FROM wordpress_catalog_runs WHERE id = $1) * INTERVAL '1 minute') END,
+             variation_unchanged_streak = CASE WHEN $6 THEN variation_unchanged_streak + 1 ELSE 0 END,
+             variation_last_changed_at = CASE WHEN $6 THEN variation_last_changed_at ELSE NOW() END,
              variation_error = NULL,
              variation_notices = CASE WHEN $6
                THEN JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT('code', 'unchanged_source', 'message', 'Данные GOAT не изменились'))
@@ -1031,7 +1036,13 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             JOIN source_products source_product ON source_product.id = item.source_product_id
             WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
               AND item.variation_sync_cycle < $3::BIGINT
-            ORDER BY source_product.discovery_changed_at DESC NULLS LAST,
+              AND (
+                item.variation_next_check_at <= NOW()
+                OR source_product.discovery_changed_at > COALESCE(item.variation_checked_at, '-infinity'::TIMESTAMPTZ)
+              )
+            ORDER BY (source_product.discovery_changed_at > COALESCE(item.variation_checked_at, '-infinity'::TIMESTAMPTZ)) DESC,
+                     item.variation_next_check_at,
+                     source_product.discovery_changed_at DESC NULLS LAST,
                      source_product.first_seen_at DESC,
                      item.id
             LIMIT $2
