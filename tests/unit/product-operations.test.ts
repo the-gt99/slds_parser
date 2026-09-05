@@ -270,6 +270,7 @@ describe("product operations", () => {
       storeOriginal: vi.fn(),
       convertToWebp: vi.fn(),
       publicUrl: vi.fn(),
+      publish: vi.fn(),
     };
     const input = product({ images: [] });
 

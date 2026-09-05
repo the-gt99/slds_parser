@@ -1,9 +1,15 @@
 import { PermanentError } from "../core/errors/index.js";
 
 export interface ProcessingEnvironment {
+  readonly PARSER_IMAGE_STORAGE?: string;
   readonly PARSER_IMAGE_BASE_DIR?: string;
   readonly PARSER_PUBLIC_BASE_URL?: string;
   readonly PARSER_PUBLIC_PATH_PREFIX?: string;
+  readonly PARSER_S3_ENDPOINT?: string;
+  readonly PARSER_S3_REGION?: string;
+  readonly PARSER_S3_BUCKET?: string;
+  readonly PARSER_S3_ACCESS_KEY_ID?: string;
+  readonly PARSER_S3_SECRET_ACCESS_KEY?: string;
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
   readonly PARSER_TRANSLATION_PROVIDER?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
@@ -55,6 +61,20 @@ function httpsUrl(value: string | undefined, fallback: string, name: string): st
   return result;
 }
 
+function imageStorage(value: string | undefined): "local" | "s3" {
+  const result = value?.trim().toLowerCase() || "local";
+  if (result !== "local" && result !== "s3") {
+    throw new PermanentError("PARSER_IMAGE_STORAGE must be local or s3", { code: "INVALID_PROCESSING_CONFIG" });
+  }
+  return result;
+}
+
+function required(value: string | undefined, name: string): string {
+  const result = value?.trim() ?? "";
+  if (result === "") throw new PermanentError(`${name} is required`, { code: "INVALID_PROCESSING_CONFIG" });
+  return result;
+}
+
 export function loadProcessingConfig(environment: ProcessingEnvironment = process.env) {
   const publicBaseUrl = environment.PARSER_PUBLIC_BASE_URL?.trim() ?? "";
   if (publicBaseUrl === "") throw new PermanentError("PARSER_PUBLIC_BASE_URL is required for image publication", { code: "INVALID_PROCESSING_CONFIG" });
@@ -80,6 +100,17 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
     }
   }
   const selectedTranslationProvider = translationProvider(environment.PARSER_TRANSLATION_PROVIDER);
+  const selectedImageStorage = imageStorage(environment.PARSER_IMAGE_STORAGE);
+  const imageStorageConfig = selectedImageStorage === "s3"
+    ? {
+        type: "s3" as const,
+        endpoint: httpsUrl(environment.PARSER_S3_ENDPOINT, "https://storage.yandexcloud.net", "PARSER_S3_ENDPOINT"),
+        region: environment.PARSER_S3_REGION?.trim() || "ru-central1",
+        bucket: required(environment.PARSER_S3_BUCKET, "PARSER_S3_BUCKET"),
+        accessKeyId: required(environment.PARSER_S3_ACCESS_KEY_ID, "PARSER_S3_ACCESS_KEY_ID"),
+        secretAccessKey: required(environment.PARSER_S3_SECRET_ACCESS_KEY, "PARSER_S3_SECRET_ACCESS_KEY"),
+      }
+    : { type: "local" as const };
   const translationApiKey = environment.PARSER_DEEPL_API_KEY?.trim() ?? "";
   if (selectedTranslationProvider === "deepl" && translationApiKey === "") {
     throw new PermanentError("PARSER_DEEPL_API_KEY is required for the DeepL translation provider", { code: "INVALID_PROCESSING_CONFIG" });
@@ -99,6 +130,7 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       webpQuality: 85,
       transportConcurrency: integer(environment.GOAT_IMAGE_DOWNLOAD_CONCURRENCY, 8, "GOAT_IMAGE_DOWNLOAD_CONCURRENCY", 1),
       operationConcurrency: 2,
+      storage: imageStorageConfig,
     },
     translation: selectedTranslationProvider === "deepl"
       ? {

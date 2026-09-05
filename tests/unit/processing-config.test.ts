@@ -6,7 +6,7 @@ import { PermanentError } from "../../src/core/errors/index.js";
 describe("processing config", () => {
   it("uses the confirmed legacy processing defaults", () => {
     expect(loadProcessingConfig({ PARSER_PUBLIC_BASE_URL: "https://parser.example/images" })).toEqual({
-      image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2 },
+      image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2, storage: { type: "local" } },
       translation: { provider: "google", sourceLocale: "en", targetLocale: "ru", timeoutMs: 8_000, attempts: 2, retryDelayMs: 400 },
       shoeHeight: null,
     });
@@ -72,5 +72,30 @@ describe("processing config", () => {
 
   it("requires the public URL used by the old local image publication flow", () => {
     expect(() => loadProcessingConfig({})).toThrow(PermanentError);
+  });
+
+  it("loads an explicit S3 image storage contract", () => {
+    expect(loadProcessingConfig({
+      PARSER_IMAGE_STORAGE: "s3",
+      PARSER_PUBLIC_BASE_URL: "https://storage.yandexcloud.net/slamdunk",
+      PARSER_S3_BUCKET: "slamdunk",
+      PARSER_S3_ACCESS_KEY_ID: "access-key",
+      PARSER_S3_SECRET_ACCESS_KEY: "secret-key",
+    }).image.storage).toEqual({
+      type: "s3",
+      endpoint: "https://storage.yandexcloud.net",
+      region: "ru-central1",
+      bucket: "slamdunk",
+      accessKeyId: "access-key",
+      secretAccessKey: "secret-key",
+    });
+  });
+
+  it("requires complete credentials when S3 image storage is selected", () => {
+    expect(() => loadProcessingConfig({
+      PARSER_IMAGE_STORAGE: "s3",
+      PARSER_PUBLIC_BASE_URL: "https://storage.yandexcloud.net/slamdunk",
+      PARSER_S3_BUCKET: "slamdunk",
+    })).toThrow(PermanentError);
   });
 });

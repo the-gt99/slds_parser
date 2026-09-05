@@ -4,7 +4,7 @@ import type { ImageStore } from "../media/index.js";
 export class PublishImagesOperation implements ProductOperation {
   readonly code = "publish-images";
   readonly name = "Публикация изображений";
-  readonly version = "1.0.0";
+  readonly version = "2.0.0";
   readonly dependsOn = ["convert-images-to-webp"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -17,10 +17,10 @@ export class PublishImagesOperation implements ProductOperation {
   async execute(product: UniversalProductDTO): Promise<UniversalProductDTO> {
     return {
       ...product,
-      images: product.images.map((image) => {
+      images: await Promise.all(product.images.map(async (image) => {
         if (image.webpLocalPath === undefined) throw new Error("Processed image WebP path is missing");
-        return { ...image, url: this.store.publicUrl(image.webpLocalPath) };
-      }),
+        return { ...image, url: await this.store.publish(image.webpLocalPath) };
+      })),
     };
   }
 }

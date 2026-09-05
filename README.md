@@ -85,9 +85,15 @@ GOAT_COHORT_SEED=1
 GOAT_COHORT_APPLY=false
 GOAT_COHORT_ENQUEUE_PROCESSING=true
 GOAT_IMAGE_DOWNLOAD_CONCURRENCY=8
+PARSER_IMAGE_STORAGE=s3
 PARSER_IMAGE_BASE_DIR=/srv/slds-parser/state/images
-PARSER_PUBLIC_BASE_URL=https://static.example.com
+PARSER_PUBLIC_BASE_URL=https://storage.yandexcloud.net/slamdunk
 PARSER_PUBLIC_PATH_PREFIX=products
+PARSER_S3_ENDPOINT=https://storage.yandexcloud.net
+PARSER_S3_REGION=ru-central1
+PARSER_S3_BUCKET=slamdunk
+PARSER_S3_ACCESS_KEY_ID=
+PARSER_S3_SECRET_ACCESS_KEY=
 PARSER_TRANSLATION_PROVIDER=google
 PARSER_DEEPL_API_KEY=
 PARSER_TRANSLATION_SOURCE=en
@@ -103,6 +109,8 @@ SHOE_HEIGHT_API_ATTEMPTS=2
 SHOE_HEIGHT_API_RETRY_DELAY_MS=400
 SHOE_HEIGHT_SOURCE_IMAGE_POSITION=0
 ```
+
+`PARSER_IMAGE_STORAGE=local` сохраняет прежнюю локальную публикацию. При `PARSER_IMAGE_STORAGE=s3` операция `publish-images` загружает готовый WebP в S3-совместимое хранилище под ключом `<PARSER_PUBLIC_PATH_PREFIX>/<source>/<product>/<image>.webp` и записывает в DTO публичный URL. Локальный каталог остаётся рабочим кэшем для проверки и конвертации изображений. Для Yandex Object Storage используются endpoint `https://storage.yandexcloud.net` и регион `ru-central1`. Статические ключи сервисного аккаунта задаются только через окружение runtime и не сохраняются в репозитории.
 
 HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
 
