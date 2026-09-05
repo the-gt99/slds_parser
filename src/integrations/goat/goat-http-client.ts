@@ -63,7 +63,9 @@ function proxyCredentialHints(proxy: string | undefined): readonly string[] {
 
 export function assertGoatHttpStatus(status: number, url: string): void {
   if (status >= 200 && status < 300) return;
-  if (status === 404 && url.includes("/product_templates/")) throw new PermanentError("GOAT product was not found", { code: "GOAT_PRODUCT_NOT_FOUND" });
+  if (status === 404 && (url.includes("/product_templates/") || url.includes("/product_variants/buy_bar_data"))) {
+    throw new PermanentError("GOAT product was not found", { code: "GOAT_PRODUCT_NOT_FOUND" });
+  }
   if (status === 403 || status === 408 || status === 425 || status === 429 || status >= 500) {
     throw new RetryableError(`GOAT request failed with HTTP ${status}`, { code: "GOAT_HTTP_RETRYABLE" });
   }

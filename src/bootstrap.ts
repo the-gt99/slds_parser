@@ -170,8 +170,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
       : async (jobTypes) => {
         const needsGoatProxy = jobTypes.length === 1
           && (jobTypes[0] === "collect_product" || jobTypes[0] === "collect_wordpress_variation_source"
-            || jobTypes[0] === "refresh_export_source"
-            || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
+            || jobTypes[0] === "refresh_export_source");
         return needsGoatProxy
           ? proxyPool.reserveClaim(jobTypes[0] === "collect_wordpress_variation_source" ? 0 : inventoryProxyHeadroom(environment))
           : { run: async (callback) => callback(), releaseUnused: async () => {} };

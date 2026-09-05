@@ -11,6 +11,8 @@ import type {
 } from "../repositories/index.js";
 
 export class WordPressCatalogService {
+  private static readonly variationSubmitBatchSize = 100;
+
   constructor(
     private readonly repository: WordPressCatalogRepository,
     private readonly sources: SourceRepository,
@@ -102,7 +104,7 @@ export class WordPressCatalogService {
     return { queuedCount };
   }
 
-  async startVariationAutoSync(runId: string, window = 100, intervalMinutes = 360) {
+  async startVariationAutoSync(runId: string, window = 1_000, intervalMinutes = 360) {
     const run = await this.getRun(runId);
     if (!run.catalogComplete) throw new IntegrationContractError("Постоянное обновление нельзя включить до полного сохранения каталога WordPress");
     if (run.variationAutoStatus === "running" || run.variationAutoStatus === "paused") {
@@ -160,7 +162,7 @@ export class WordPressCatalogService {
 
   async tickVariationAutoSync(): Promise<boolean> {
     const active = await this.repository.getActiveVariationSync();
-    if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, 20) > 0) return true;
+    if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize) > 0) return true;
     const outcome = await this.repository.replenishVariationAutoSync();
     return outcome !== "idle" && outcome !== "waiting";
   }
