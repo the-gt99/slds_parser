@@ -98,6 +98,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(result.created).toBe(true);
     expect(result.discoveryChanged).toBe(true);
     expect(executor.calls[0]?.text).toContain("discovery_changed_at = CASE");
+    expect(executor.calls[0]?.text).toContain("source_id = $1::BIGINT");
+    expect(executor.calls[0]?.text).toContain("$9::BIGINT FROM product_lock");
     expect(executor.calls[0]?.values.at(-1)).toBe("fingerprint");
   });
 

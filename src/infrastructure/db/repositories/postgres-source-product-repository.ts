@@ -76,10 +76,10 @@ export class PostgresSourceProductRepository implements SourceProductRepository 
       const result = await this.executor.query<DatabaseRow>(`WITH product_lock AS MATERIALIZED (
         SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2, 0))
       ), previous AS MATERIALIZED (
-        SELECT discovery_fingerprint FROM source_products, product_lock WHERE source_id = $1 AND source_key = $2
+        SELECT discovery_fingerprint FROM source_products, product_lock WHERE source_id = $1::BIGINT AND source_key = $2
       ), upserted AS (
         INSERT INTO source_products (source_id, source_key, external_id, slug, url, discovery_metadata, discovery_fingerprint, discovery_changed_at, status, first_seen_at, last_seen_at, last_seen_run_id)
-        SELECT $1, $2, $3, $4, $5, $6::jsonb, $10, $8, $7, $8, $8, $9 FROM product_lock
+        SELECT $1::BIGINT, $2, $3, $4, $5, $6::jsonb, $10, $8, $7, $8, $8, $9::BIGINT FROM product_lock
         ON CONFLICT (source_id, source_key) DO UPDATE SET
           external_id = COALESCE(EXCLUDED.external_id, source_products.external_id),
           slug = COALESCE(EXCLUDED.slug, source_products.slug),
