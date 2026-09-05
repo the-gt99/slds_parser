@@ -9,6 +9,7 @@ import {
   WordPressExporter,
   WordPressSizeConverter,
   type WordPressCatalogClient,
+  type WordPressPatchSubmission,
 } from "../integrations/wordpress/index.js";
 import type { JobRepository, SourceProductRepository, SourceRepository, TargetContentTemplateRepository, WordPressCatalogAuditSaveInput, WordPressCatalogRepository, WordPressCatalogVariationCandidate } from "../repositories/index.js";
 import { buildWordPressCatalogAudit, type TargetReferenceMappingService } from "../services/index.js";
@@ -59,6 +60,68 @@ export function wordpressCatalogItemError(error: unknown): string | null {
     : null;
 }
 
+interface PendingWordPressVariationPatch {
+  readonly payload: JsonObject;
+  readonly resolve: (submission: WordPressPatchSubmission) => void;
+  readonly reject: (error: unknown) => void;
+}
+
+export class WordPressVariationPatchSubmitter {
+  private readonly pending: PendingWordPressVariationPatch[] = [];
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private flushing = false;
+
+  constructor(
+    private readonly client: Pick<WordPressCatalogClient, "submitVariationPatches">,
+    private readonly delayMs = 50,
+  ) {}
+
+  submit(payload: JsonObject): Promise<WordPressPatchSubmission> {
+    const promise = new Promise<WordPressPatchSubmission>((resolve, reject) => {
+      this.pending.push({ payload, resolve, reject });
+    });
+    if (this.pending.length >= 100 && !this.flushing) {
+      if (this.timer !== undefined) clearTimeout(this.timer);
+      this.timer = undefined;
+      void this.flush();
+    } else {
+      this.schedule();
+    }
+    return promise;
+  }
+
+  private schedule(): void {
+    if (this.timer !== undefined || this.flushing) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.flush();
+    }, this.delayMs);
+  }
+
+  private async flush(): Promise<void> {
+    if (this.flushing || this.pending.length === 0) return;
+    this.flushing = true;
+    const batch = this.pending.splice(0, 100);
+    try {
+      const submissions = await this.client.submitVariationPatches(batch.map((item) => item.payload));
+      const byIndex = new Map(submissions.map((submission) => [submission.index, submission]));
+      for (const [index, item] of batch.entries()) {
+        const submission = byIndex.get(index);
+        if (submission === undefined) {
+          item.reject(new IntegrationContractError(`WordPress did not return variation patch result ${index}`));
+        } else {
+          item.resolve(submission);
+        }
+      }
+    } catch (error) {
+      for (const item of batch) item.reject(error);
+    } finally {
+      this.flushing = false;
+      this.schedule();
+    }
+  }
+}
+
 export class WordPressVariationPatchRunner {
   private readonly converter: WordPressSizeConverter;
   private readonly exporter: WordPressExporter;
@@ -74,6 +137,7 @@ export class WordPressVariationPatchRunner {
     string,
     Promise<Awaited<ReturnType<TargetReferenceMappingService["createTargetAssignmentResolver"]>>>
   >();
+  private readonly submitter: WordPressVariationPatchSubmitter;
 
   constructor(
     private readonly repository: WordPressCatalogRepository,
@@ -89,6 +153,7 @@ export class WordPressVariationPatchRunner {
   ) {
     this.converter = new WordPressSizeConverter(wordpressConfig);
     this.exporter = new WordPressExporter(wordpressConfig);
+    this.submitter = new WordPressVariationPatchSubmitter(client);
   }
 
   async prepare(payload: PrepareWordPressVariationPatchesPayload): Promise<RunnerResult> {
@@ -223,8 +288,7 @@ export class WordPressVariationPatchRunner {
       };
       const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, liveVariants);
       if (patchPayload === null) return { status: "skipped" };
-      const [submission] = await this.client.submitVariationPatches([patchPayload]);
-      if (submission === undefined) throw new IntegrationContractError("WordPress did not return a variation patch result");
+      const submission = await this.submitter.submit(patchPayload);
       const wordpressJobId = submission.job === undefined ? null : jobId(submission.job);
       if (!submission.accepted || wordpressJobId === null) {
         await this.repository.saveVariationJobResult({ itemId: candidate.item.id, status: "failed", result: record(submission as unknown),
