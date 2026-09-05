@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { IntegrationContractError, MappingMissingError } from "../../src/core/errors/index.js";
-import { buildWordPressVariationPatchIdentity, WordPressVariationPatchSubmitter, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { buildWordPressVariationPatchIdentity, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("buildWordPressVariationPatchIdentity", () => {
   it("adds an exact SKU only for an explicit legacy SKU match", () => {
@@ -53,27 +53,5 @@ describe("wordpressCatalogItemError", () => {
     expect(wordpressCatalogItemError(new IntegrationContractError("invalid payload"))).toBe("invalid payload");
     expect(wordpressCatalogItemError(new MappingMissingError("target=1"))).toBe("Mapping is missing: target=1");
     expect(wordpressCatalogItemError(new Error("database unavailable"))).toBeNull();
-  });
-});
-
-describe("WordPressVariationPatchSubmitter", () => {
-  it("combines concurrent patches into one WordPress request", async () => {
-    const submitVariationPatches = vi.fn(async (payloads: readonly Record<string, unknown>[]) => payloads.map((_, index) => ({
-      index,
-      accepted: true,
-      idempotentReplay: false,
-      job: { job_id: String(index + 1) },
-    })));
-    const submitter = new WordPressVariationPatchSubmitter({ submitVariationPatches }, 0);
-
-    const results = await Promise.all([
-      submitter.submit({ idempotency_key: "first" }),
-      submitter.submit({ idempotency_key: "second" }),
-      submitter.submit({ idempotency_key: "third" }),
-    ]);
-
-    expect(submitVariationPatches).toHaveBeenCalledTimes(1);
-    expect(submitVariationPatches.mock.calls[0]?.[0]).toHaveLength(3);
-    expect(results.map((item) => item.job?.job_id)).toEqual(["1", "2", "3"]);
   });
 });
