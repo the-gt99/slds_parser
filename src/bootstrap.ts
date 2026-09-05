@@ -171,7 +171,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
             || jobTypes[0] === "refresh_export_source"
             || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
         return needsGoatProxy
-          ? proxyPool.reserveClaim(jobTypes[0] === "collect_wordpress_variation_source" ? inventoryProxyHeadroom(environment) : 0)
+          ? proxyPool.reserveClaim(jobTypes[0] === "collect_wordpress_variation_source" ? 0 : inventoryProxyHeadroom(environment))
           : { run: async (callback) => callback(), releaseUnused: async () => {} };
       },
     async () => {
