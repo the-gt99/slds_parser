@@ -10,6 +10,7 @@ export interface WorkerClaimPermit {
 
 export interface WorkerOptions {
   readonly workerId: string;
+  readonly role?: "all" | "pipeline" | "inventory";
   readonly pollIntervalMs: number;
   readonly lockTimeoutMs: number;
   readonly maxJobAttempts: number;
@@ -25,6 +26,7 @@ export interface WorkerOptions {
   readonly classificationApplyConcurrency?: number;
   readonly exportConcurrency?: number;
   readonly exportRefreshConcurrency?: number;
+  readonly inventoryRefreshConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
@@ -65,7 +67,8 @@ function errorText(error: unknown): string {
 function usesWordPressRetryPolicy(job: JobRecord, error: unknown): boolean {
   return error instanceof RetryableError
     && error.code.startsWith("WORDPRESS_")
-    && (job.jobType === "preflight_product" || job.jobType === "export_product");
+    && (job.jobType === "preflight_product" || job.jobType === "export_product"
+      || job.jobType === "refresh_wordpress_variation_patch" || job.jobType === "poll_wordpress_variation_patches");
 }
 
 export class Worker {
@@ -227,6 +230,9 @@ export class Worker {
   }
 
   async run(signal: AbortSignal): Promise<void> {
+    const role = this.options.role ?? "all";
+    const runPipeline = role === "all" || role === "pipeline";
+    const runInventory = role === "all" || role === "inventory";
     const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const retranslationJobTypes = ["retranslate_product"] satisfies readonly JobType[];
@@ -252,6 +258,7 @@ export class Worker {
     else signal.addEventListener("abort", stop, { once: true });
     try {
       await Promise.all([
+        ...(runPipeline ? [
         this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
@@ -265,9 +272,6 @@ export class Worker {
         this.runLane(controller.signal, wordpressCatalogJobTypes, `${this.options.workerId}:wordpress-catalog`),
         ...Array.from({ length: configuredConcurrency.preflightConcurrency }, (_, index) =>
           this.runLane(controller.signal, wordpressVariationJobTypes, `${this.options.workerId}:wordpress-audit-${index + 1}`)),
-        this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:wordpress-variation-poll`),
-        ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
-          this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:wordpress-variation-refresh-${index + 1}`)),
         ...Array.from({ length: configuredConcurrency.classificationApplyConcurrency }, (_, index) =>
           this.runLane(controller.signal, classificationApplyJobTypes, `${this.options.workerId}:classification-apply-${index + 1}`)),
         ...Array.from({ length: this.options.exportConcurrency ?? 1 }, (_, index) =>
@@ -275,7 +279,13 @@ export class Worker {
         ...Array.from({ length: this.options.exportRefreshConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, exportRefreshJobTypes, `${this.options.workerId}:export-refresh-${index + 1}`)),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
-        ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
+        ] : []),
+        ...(runInventory ? [
+          this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:inventory-poll`),
+          ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
+            this.runLane(controller.signal, wordpressVariationRefreshJobTypes, `${this.options.workerId}:inventory-refresh-${index + 1}`)),
+          ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
+        ] : []),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);

@@ -7,7 +7,7 @@ export type WordPressCatalogAuditFilter = "ready" | "blocked" | "error";
 export type WordPressCatalogRiskFilter = "safe" | "review" | "danger" | "blocked";
 export type WordPressCatalogOperationFilter = "update" | "new" | "unmatched";
 export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
-export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "completed";
+export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "cycle_completed" | "cycle_started";
 
 export interface WordPressCatalogAuditSaveInput {
   readonly itemId: EntityId;
@@ -22,6 +22,9 @@ export interface WordPressVariationAutoSyncState {
   readonly acknowledgedFailedCount: number;
   readonly activeCount: number;
   readonly failedCount: number;
+  readonly intervalMinutes: number;
+  readonly cycle: number;
+  readonly nextCycleAt: string | null;
 }
 
 export interface WordPressCatalogRunRecord {
@@ -40,6 +43,11 @@ export interface WordPressCatalogRunRecord {
   readonly variationAutoError: string | null;
   readonly variationAutoStartedAt: string | null;
   readonly variationAutoCompletedAt: string | null;
+  readonly variationSyncIntervalMinutes: number;
+  readonly variationSyncCycle: number;
+  readonly variationSyncLastCycleStartedAt: string | null;
+  readonly variationSyncLastCycleCompletedAt: string | null;
+  readonly variationSyncNextCycleAt: string | null;
   readonly actor: string;
   readonly reason: string | null;
   readonly lastError: string | null;
@@ -196,13 +204,12 @@ export interface WordPressCatalogRepository {
   retryBlockedAudits(runId: EntityId): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
   rebuildAudits(runId: EntityId, changeFlag?: string): Promise<{ readonly queuedItemCount: number; readonly queuedJobCount: number }>;
   enqueueVariationItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<number>;
-  enqueueVariationBatch(runId: EntityId, limit: number): Promise<number>;
-  getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null>;
+  getActiveVariationSync(): Promise<WordPressVariationAutoSyncState | null>;
   replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome>;
-  startVariationAutoSync(runId: EntityId, window: number): Promise<void>;
+  startVariationAutoSync(runId: EntityId, window: number, intervalMinutes: number): Promise<void>;
   setVariationAutoSyncStatus(input: {
     readonly runId: EntityId;
-    readonly status: "running" | "paused" | "completed";
+    readonly status: "running" | "paused" | "inactive";
     readonly error?: string;
     readonly acknowledgeFailures?: number;
   }): Promise<void>;

@@ -56,6 +56,26 @@ describe("Worker", () => {
     );
   });
   it("stops all lanes through AbortSignal", async () => { const value = await setup(); value.store.jobs.clear(); const controller = new AbortController(); const sleep = vi.fn(async (_ms: number, signal: AbortSignal) => { controller.abort(); expect(signal.aborted).toBe(true); }); const worker = new Worker(value.jobs, value.handler, options, sleep); await worker.run(controller.signal); expect(sleep).toHaveBeenCalledOnce(); });
+  it("keeps inventory jobs out of the pipeline worker", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    const inventory = await jobs.enqueue({ jobType: "refresh_wordpress_variation_patch", payload: {}, uniqueKey: "inventory" });
+    const pipeline = await jobs.enqueue({ jobType: "process_product", payload: {}, uniqueKey: "pipeline" });
+    const controller = new AbortController();
+    const handler: JobHandler = {
+      dispatch: vi.fn(async () => { controller.abort(); return { status: "completed" as const }; }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal) => {
+      if (!signal.aborted) await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, { ...options, role: "pipeline" }, sleep);
+
+    await worker.run(controller.signal);
+
+    expect(store.jobs.get(pipeline.id)?.status).toBe("completed");
+    expect(store.jobs.get(inventory.id)?.status).toBe("pending");
+  });
   it("claims only the job types assigned to a lane", async () => {
     const value = await setup();
     await value.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: "2" }, uniqueKey: "two" });

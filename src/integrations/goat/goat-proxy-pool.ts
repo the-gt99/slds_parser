@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 
 import type { EntityId } from "../../contracts/index.js";
 import { ProxyCredentialsCrypto, type ProxyCredentials, type ProxyRecord, type ProxyRepository } from "../../proxies/index.js";
@@ -8,6 +9,8 @@ export interface GoatProxyPoolEnvironment extends GoatHttpEnvironment {
   readonly GOAT_PROXY_POOL_ENABLED?: string;
   readonly GOAT_PROXY_CONCURRENCY_PER_PROXY?: string;
   readonly PARSER_PROXY_ENCRYPTION_KEY?: string;
+  readonly GOAT_PROXY_LEASE_TTL_MS?: string;
+  readonly GOAT_PROXY_INVENTORY_HEADROOM?: string;
 }
 
 export interface GoatProxyLease {
@@ -33,6 +36,15 @@ function concurrencyPerProxy(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 16) {
     throw new Error("GOAT_PROXY_CONCURRENCY_PER_PROXY must be an integer from 1 to 16");
+  }
+  return parsed;
+}
+
+function leaseTtlMs(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 900_000;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 60_000 || parsed > 3_600_000) {
+    throw new Error("GOAT_PROXY_LEASE_TTL_MS must be an integer from 60000 to 3600000");
   }
   return parsed;
 }
@@ -77,6 +89,8 @@ export class GoatProxyPool {
   readonly #activeSlots = new Map<EntityId, Set<number>>();
   readonly #clients = new Map<string, { readonly transport: string; readonly client: GoatHttpClient }>();
   readonly #concurrencyPerProxy: number;
+  readonly #leaseTtlMs: number;
+  readonly #leaseOwner = randomUUID();
   #roundRobin = 0;
 
   constructor(
@@ -86,6 +100,7 @@ export class GoatProxyPool {
   ) {
     this.#crypto = crypto ?? new ProxyCredentialsCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY);
     this.#concurrencyPerProxy = concurrencyPerProxy(environment.GOAT_PROXY_CONCURRENCY_PER_PROXY);
+    this.#leaseTtlMs = leaseTtlMs(environment.GOAT_PROXY_LEASE_TTL_MS);
   }
 
   get enabled(): boolean {
@@ -111,9 +126,9 @@ export class GoatProxyPool {
     return client;
   }
 
-  async reserveClaim(): Promise<WorkerClaimPermit | null> {
+  async reserveClaim(headroom = 0): Promise<WorkerClaimPermit | null> {
     if (!this.enabled) return { run: async (callback) => callback(), releaseUnused: async () => {} };
-    const lease = await this.tryAcquire();
+    const lease = await this.tryAcquire(headroom);
     if (lease === null) return null;
     let used = false;
     return {
@@ -146,9 +161,25 @@ export class GoatProxyPool {
     }
   }
 
-  async tryAcquire(): Promise<GoatProxyLease | null> {
+  async tryAcquire(headroom = 0): Promise<GoatProxyLease | null> {
+    if (this.repository.tryAcquireSessionLease !== undefined) {
+      const leased = await this.repository.tryAcquireSessionLease({
+        ownerId: this.#leaseOwner,
+        concurrencyPerProxy: this.#concurrencyPerProxy,
+        headroom,
+        ttlMs: this.#leaseTtlMs,
+      });
+      if (leased === null) return null;
+      const credentials = leased.proxy.credentialsCiphertext === null ? null : this.#crypto.decrypt(leased.proxy.credentialsCiphertext);
+      const active = this.#activeSlots.get(leased.proxy.id) ?? new Set<number>();
+      active.add(leased.sessionSlot);
+      this.#activeSlots.set(leased.proxy.id, active);
+      return new Lease(this, leased.proxy, credentials, leased.sessionSlot);
+    }
     const available = await this.repository.listAvailable();
     if (available.length === 0) return null;
+    const activeCount = [...this.#activeSlots.values()].reduce((total, slots) => total + slots.size, 0);
+    if (available.length * this.#concurrencyPerProxy - activeCount <= headroom) return null;
     for (let offset = 0; offset < available.length; offset += 1) {
       const index = (this.#roundRobin + offset) % available.length;
       const record = available[index]!;
@@ -169,6 +200,7 @@ export class GoatProxyPool {
     const active = this.#activeSlots.get(id);
     active?.delete(sessionSlot);
     if (active?.size === 0) this.#activeSlots.delete(id);
+    await this.repository.releaseSessionLease?.({ proxyId: id, sessionSlot, ownerId: this.#leaseOwner });
     if (success !== null) await this.repository.recordUse(id, { success, latencyMs });
   }
 }

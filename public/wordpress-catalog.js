@@ -53,19 +53,26 @@ function renderRun() {
   byId("variation-skipped").textContent = count(run.variationSkippedCount);
   byId("variation-failed").textContent = `ошибок: ${count(run.variationFailedCount)}`;
   const active = Number(run.variationPendingCount || 0) + Number(run.variationSubmittedCount || 0);
-  const autoLabels = { inactive: "Не запущен", running: "Выполняется", paused: "Приостановлен", completed: "Завершён" };
-  byId("variation-auto-status").textContent = autoLabels[run.variationAutoStatus] || run.variationAutoStatus;
-  byId("variation-auto-progress").textContent = `в работе ${count(active)} · осталось ${count(run.variationNotStartedCount)} · окно ${count(run.variationAutoWindow)}`;
+  const autoLabels = { inactive: "Выключено", running: "Работает постоянно", paused: "Приостановлено", completed: "Выключено" };
+  const waiting = run.variationAutoStatus === "running" && active === 0 && run.variationSyncNextCycleAt;
+  byId("variation-auto-status").textContent = waiting ? "Ожидает следующего запуска" : autoLabels[run.variationAutoStatus] || run.variationAutoStatus;
+  byId("variation-auto-progress").textContent = `цикл ${count(run.variationSyncCycle)} · в работе ${count(active)} · осталось ${count(run.variationNotStartedCount)} · следующий ${date(run.variationSyncNextCycleAt)}`;
   byId("variation-error").hidden = !run.variationAutoError;
   byId("variation-error").textContent = run.variationAutoError || "";
+  if ([...byId("batch-limit").options].some((option) => Number(option.value) === Number(run.variationAutoWindow))) {
+    byId("batch-limit").value = String(run.variationAutoWindow);
+  }
+  if ([...byId("sync-interval").options].some((option) => Number(option.value) === Number(run.variationSyncIntervalMinutes))) {
+    byId("sync-interval").value = String(run.variationSyncIntervalMinutes);
+  }
 
   byId("start").disabled = run.status === "running";
   byId("start").textContent = run.status === "running" ? "Снимок скачивается" : "Скачать новый снимок";
   const autoActive = run.variationAutoStatus === "running" || run.variationAutoStatus === "paused";
-  byId("batch-sync").disabled = run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive;
-  byId("auto-sync").disabled = !run.catalogComplete || run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive || run.variationNotStartedCount < 1;
+  byId("auto-sync").disabled = !run.catalogComplete || run.variationCompletedCount < 1 || run.variationFailedCount > 0 || autoActive;
   byId("auto-pause").hidden = run.variationAutoStatus !== "running";
   byId("auto-resume").hidden = run.variationAutoStatus !== "paused";
+  byId("auto-stop").hidden = !autoActive;
 }
 
 function taxonomyName(taxonomy) { return taxonomyLabels[taxonomy] || taxonomy; }
@@ -182,7 +189,9 @@ function scheduleRunRefresh() {
   if (state.timer) window.clearTimeout(state.timer);
   const run = state.run;
   const active = Number(run?.variationPendingCount || 0) + Number(run?.variationSubmittedCount || 0);
-  if (!document.hidden && (run?.status === "running" || run?.variationAutoStatus === "running" || active > 0)) state.timer = window.setTimeout(() => refresh(false), 5000);
+  if (!document.hidden && (run?.status === "running" || run?.variationAutoStatus === "running" || active > 0)) {
+    state.timer = window.setTimeout(() => refresh(false), active > 0 || run?.status === "running" ? 5000 : 60000);
+  }
 }
 
 async function refresh(reloadItems = true) {
@@ -608,9 +617,9 @@ byId("close-diff").addEventListener("click", () => byId("diff-dialog").close());
 byId("diff-visual-tab").addEventListener("click", () => setDiffMode("visual"));
 byId("diff-technical-tab").addEventListener("click", () => setDiffMode("technical"));
 byId("start").addEventListener("click", async () => { try { const data = await api("/api/wordpress-catalog/runs", { method: "POST", body: { targetId: state.targetId, sourceCode: "goat", auditRequested: true, variationSyncRequested: false, reason: "Полный снимок каталога WordPress" } }); state.run = data.item; renderRun(); message("Скачивание каталога поставлено в очередь. WordPress не изменяется.", "success"); scheduleRunRefresh(); } catch (error) { message(error.message, "error"); } });
-byId("batch-sync").addEventListener("click", async () => { const limit = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Поставить в очередь ${count(limit)} товаров? Изменятся только цены и остатки существующих вариаций.`)) return; try { const data = await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-batch`, { method: "POST", body: { limit } }); message(`Поставлено задач: ${count(data.result.queuedCount)}.`, "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
-byId("auto-sync").addEventListener("click", async () => { const windowSize = Number(byId("batch-limit").value); if (!state.run || !window.confirm(`Запустить price-only автопрогон для ${count(state.run.variationNotStartedCount)} товаров с окном ${count(windowSize)}?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST", body: { window: windowSize } }); message("Автопрогон запущен.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-sync").addEventListener("click", async () => { const windowSize = Number(byId("batch-limit").value); const intervalMinutes = Number(byId("sync-interval").value); if (!state.run || !window.confirm(`Включить постоянное обновление цен и наличия для ${count(state.run.matchedCount)} товаров?`)) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync`, { method: "POST", body: { window: windowSize, intervalMinutes } }); message("Постоянное обновление включено.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
 byId("auto-pause").addEventListener("click", async () => { if (!state.run || !window.confirm("Остановить пополнение? Уже поставленные задачи завершатся.")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/pause`, { method: "POST" }); message("Пополнение очереди остановлено.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
-byId("auto-resume").addEventListener("click", async () => { if (!state.run || !window.confirm("Возобновить автопрогон после проверки журнала?")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/resume`, { method: "POST" }); message("Автопрогон возобновлён.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-resume").addEventListener("click", async () => { if (!state.run || !window.confirm("Возобновить постоянное обновление после проверки ошибок?")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/resume`, { method: "POST" }); message("Постоянное обновление возобновлено.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
+byId("auto-stop").addEventListener("click", async () => { if (!state.run || !window.confirm("Отключить постоянное обновление? Уже поставленные задачи завершатся.")) return; try { await api(`/api/wordpress-catalog/runs/${state.run.id}/variation-sync/stop`, { method: "POST" }); message("Постоянное обновление отключено.", "success"); await refresh(true); } catch (error) { message(error.message, "error"); } });
 document.addEventListener("visibilitychange", () => { if (document.hidden && state.timer) window.clearTimeout(state.timer); else scheduleRunRefresh(); });
 void initialize().catch((error) => { byId("loading").hidden = true; byId("error").textContent = error.message; byId("error").hidden = false; });

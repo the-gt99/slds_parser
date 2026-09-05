@@ -20,6 +20,15 @@ function proxyPoolEnabled(environment: GoatProxyPoolEnvironment): boolean {
   return environment.GOAT_PROXY_POOL_ENABLED === "1" || environment.GOAT_PROXY_POOL_ENABLED?.toLowerCase() === "true";
 }
 
+function inventoryProxyHeadroom(environment: GoatProxyPoolEnvironment): number {
+  const raw = environment.GOAT_PROXY_INVENTORY_HEADROOM?.trim() || "1";
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 16) {
+    throw new Error("GOAT_PROXY_INVENTORY_HEADROOM must be an integer from 0 to 16");
+  }
+  return parsed;
+}
+
 export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
   const processing = loadProcessingConfig(environment);
   const imageStore = new LocalImageStore(processing.image);
@@ -162,7 +171,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
             || jobTypes[0] === "refresh_export_source"
             || (jobTypes[0] === "export_product" && refreshSourceBeforeExport));
         return needsGoatProxy
-          ? proxyPool.reserveClaim()
+          ? proxyPool.reserveClaim(jobTypes[0] === "refresh_wordpress_variation_patch" ? inventoryProxyHeadroom(environment) : 0)
           : { run: async (callback) => callback(), releaseUnused: async () => {} };
       },
     async () => {

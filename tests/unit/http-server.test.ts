@@ -632,6 +632,30 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("controls the continuous WordPress inventory schedule", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const wordpressCatalog = {
+      startVariationAutoSync: vi.fn().mockResolvedValue({ variationAutoStatus: "running" }),
+      pauseVariationAutoSync: vi.fn().mockResolvedValue({ variationAutoStatus: "paused" }),
+      resumeVariationAutoSync: vi.fn().mockResolvedValue({ variationAutoStatus: "running" }),
+      stopVariationAutoSync: vi.fn().mockResolvedValue({ variationAutoStatus: "inactive" }),
+    } as unknown as WordPressCatalogService;
+    const server = createHttpServer({ ...dependencies(database), wordpressCatalog });
+    const headers = { authorization: `Bearer ${adminToken}` };
+
+    const started = await server.inject({ method: "POST", url: "/api/wordpress-catalog/runs/1/variation-sync", headers, payload: { window: 100, intervalMinutes: 360 } });
+    const paused = await server.inject({ method: "POST", url: "/api/wordpress-catalog/runs/1/variation-sync/pause", headers });
+    const resumed = await server.inject({ method: "POST", url: "/api/wordpress-catalog/runs/1/variation-sync/resume", headers });
+    const stopped = await server.inject({ method: "POST", url: "/api/wordpress-catalog/runs/1/variation-sync/stop", headers });
+
+    expect([started.statusCode, paused.statusCode, resumed.statusCode, stopped.statusCode]).toEqual([200, 200, 200, 200]);
+    expect(wordpressCatalog.startVariationAutoSync).toHaveBeenCalledWith("1", 100, 360);
+    expect(wordpressCatalog.pauseVariationAutoSync).toHaveBeenCalledWith("1");
+    expect(wordpressCatalog.resumeVariationAutoSync).toHaveBeenCalledWith("1");
+    expect(wordpressCatalog.stopVariationAutoSync).toHaveBeenCalledWith("1");
+    await server.close();
+  });
+
   it("creates additional WordPress assignments from an internal value", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const classifier = {

@@ -64,6 +64,12 @@ export class WordPressCatalogClient {
     return { items, nextCursor, hasMore: response.has_more };
   }
 
+  async readProduct(productId: string): Promise<WordPressCatalogPageItem | null> {
+    const normalized = positiveId(productId, "WordPress product ID");
+    const page = await this.readPage((BigInt(normalized) - 1n).toString(), 1);
+    return page.items[0]?.targetId === normalized ? page.items[0] : null;
+  }
+
   async submitVariationPatches(payloads: readonly JsonObject[]): Promise<readonly WordPressPatchSubmission[]> {
     if (payloads.length < 1 || payloads.length > 100) throw new IntegrationContractError("WordPress variation patch batch must contain from 1 to 100 payloads");
     const response = await this.request("variation-patch-jobs", { payloads });

@@ -272,7 +272,7 @@ describe("PostgresGoatProxyRepository", () => {
   it("queries only enabled healthy proxies for leases and writes audit payload as jsonb", async () => {
     const calls: { text: string; values?: readonly unknown[] }[] = [];
     const executor = { query: vi.fn(async (text: string, values?: readonly unknown[]) => { calls.push({ text, ...(values === undefined ? {} : { values }) }); return { rows: [], rowCount: 0 }; }) };
-    const repository = new PostgresGoatProxyRepository(executor);
+    const repository = new PostgresGoatProxyRepository(executor as never);
 
     await repository.listAvailable();
     await repository.audit({ proxyId: "1", action: "test", actor: "admin", payload: { healthy: true } });
@@ -280,5 +280,25 @@ describe("PostgresGoatProxyRepository", () => {
     expect(calls[0]?.text).toContain("enabled = TRUE AND health_status = 'healthy'");
     expect(calls[1]?.text).toContain("goat_proxy_audit");
     expect(calls[1]?.values?.[3]).toBe("{\"healthy\":true}");
+  });
+
+  it("uses database leases to coordinate proxy sessions between worker processes", async () => {
+    const calls: { text: string; values?: readonly unknown[] }[] = [];
+    const executor = { query: vi.fn(async (text: string, values?: readonly unknown[]) => {
+      calls.push({ text, ...(values === undefined ? {} : { values }) });
+      return text.includes("SELECT proxy.*")
+        ? { rows: [{ ...proxy({ id: "7" }), session_slot: 2 }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+    }) };
+    const repository = new PostgresGoatProxyRepository(executor as never);
+
+    await expect(repository.tryAcquireSessionLease({ ownerId: "inventory-1", concurrencyPerProxy: 3, headroom: 1, ttlMs: 900_000 }))
+      .resolves.toMatchObject({ proxy: { id: "7" }, sessionSlot: 2 });
+    await repository.releaseSessionLease({ proxyId: "7", sessionSlot: 2, ownerId: "inventory-1" });
+
+    expect(calls[0]?.text).toContain("goat_proxy_session_leases");
+    expect(calls[0]?.text).toContain("capacity.total_slots - active.active_slots > $3");
+    expect(calls[0]?.values).toEqual(["inventory-1", 3, 1, 900_000]);
+    expect(calls[1]?.text).toContain("DELETE FROM goat_proxy_session_leases");
   });
 });

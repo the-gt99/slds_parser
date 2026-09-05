@@ -25,6 +25,10 @@ export class WordPressCatalogService {
     readonly actor: string;
     readonly reason?: string;
   }) {
+    const activeSync = await this.repository.getActiveVariationSync();
+    if (activeSync !== null) {
+      throw new IntegrationContractError(`Сначала отключите постоянное обновление каталога #${activeSync.runId}`);
+    }
     if (input.variationSyncRequested) {
       throw new IntegrationContractError("Параллельную запись нельзя включить до успешного canary; сначала создайте снимок, затем запускайте ограниченные пакеты");
     }
@@ -98,20 +102,26 @@ export class WordPressCatalogService {
     return { queuedCount };
   }
 
-  async startVariationAutoSync(runId: string, window = 5_000) {
+  async startVariationAutoSync(runId: string, window = 100, intervalMinutes = 360) {
     const run = await this.getRun(runId);
-    if (!run.catalogComplete) throw new IntegrationContractError("Автопрогон нельзя запустить до полного сохранения каталога WordPress");
+    if (!run.catalogComplete) throw new IntegrationContractError("Постоянное обновление нельзя включить до полного сохранения каталога WordPress");
+    if (run.variationAutoStatus === "running" || run.variationAutoStatus === "paused") {
+      throw new IntegrationContractError("Постоянное обновление уже настроено; сначала отключите его");
+    }
     if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
       throw new IntegrationContractError("Полный поток нельзя включить до успешного canary без ошибок");
     }
     if (!Number.isInteger(window) || window < 1 || window > 5_000) {
-      throw new IntegrationContractError("Окно автопрогона должно быть от 1 до 5000 товаров");
+      throw new IntegrationContractError("Окно обновления должно быть от 1 до 5000 товаров");
     }
-    const active = await this.repository.getRunningVariationAutoSync();
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 10_080) {
+      throw new IntegrationContractError("Интервал обновления должен быть от 5 минут до 7 дней");
+    }
+    const active = await this.repository.getActiveVariationSync();
     if (active !== null && active.runId !== runId) {
-      throw new IntegrationContractError(`Уже выполняется автопрогон каталога #${active.runId}`);
+      throw new IntegrationContractError(`Уже выполняется постоянное обновление каталога #${active.runId}`);
     }
-    await this.repository.startVariationAutoSync(runId, window);
+    await this.repository.startVariationAutoSync(runId, window, intervalMinutes);
     await this.tickVariationAutoSync();
     return this.getRun(runId);
   }
@@ -119,7 +129,7 @@ export class WordPressCatalogService {
   async pauseVariationAutoSync(runId: string) {
     const run = await this.getRun(runId);
     if (run.variationAutoStatus !== "running") {
-      throw new IntegrationContractError("Автопрогон сейчас не выполняется");
+      throw new IntegrationContractError("Постоянное обновление сейчас не выполняется");
     }
     await this.repository.setVariationAutoSyncStatus({ runId, status: "paused" });
     return this.getRun(runId);
@@ -139,19 +149,18 @@ export class WordPressCatalogService {
     return this.getRun(runId);
   }
 
+  async stopVariationAutoSync(runId: string) {
+    const run = await this.getRun(runId);
+    if (run.variationAutoStatus !== "running" && run.variationAutoStatus !== "paused") {
+      throw new IntegrationContractError("Постоянное обновление сейчас не запущено");
+    }
+    await this.repository.setVariationAutoSyncStatus({ runId, status: "inactive" });
+    return this.getRun(runId);
+  }
+
   async tickVariationAutoSync(): Promise<boolean> {
     const outcome = await this.repository.replenishVariationAutoSync();
     return outcome !== "idle" && outcome !== "waiting";
   }
 
-  async enqueueVariationBatch(runId: string, limit: number) {
-    const run = await this.getRun(runId);
-    if (run.variationAutoStatus === "running" || run.variationAutoStatus === "paused") {
-      throw new IntegrationContractError("Ручной пакет недоступен, пока автопрогон выполняется или остановлен для проверки");
-    }
-    if (run.variationCompletedCount < 1 || run.variationFailedCount > 0) {
-      throw new IntegrationContractError("Пакет нельзя запустить до успешного canary без ошибок");
-    }
-    return { queuedCount: await this.repository.enqueueVariationBatch(runId, Math.max(1, Math.min(5_000, limit))) };
-  }
 }
