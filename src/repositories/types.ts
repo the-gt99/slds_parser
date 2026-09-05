@@ -24,7 +24,9 @@ export type JobType =
   | "preflight_product"
   | "sync_wordpress_catalog"
   | "prepare_wordpress_variation_patches"
-  | "refresh_wordpress_variation_patch"
+  | "collect_wordpress_variation_source"
+  | "prepare_wordpress_variation_patch"
+  | "submit_wordpress_variation_patches"
   | "poll_wordpress_variation_patches"
   | "refresh_export_source"
   | "export_product";
@@ -124,6 +126,13 @@ export interface UpsertDiscoveredSourceProductInput {
   readonly status: string;
   readonly seenAt: Timestamp;
   readonly runId: EntityId;
+  readonly discoveryFingerprint: string;
+}
+
+export interface UpsertDiscoveredSourceProductResult {
+  readonly product: SourceProductRecord;
+  readonly created: boolean;
+  readonly discoveryChanged: boolean;
 }
 
 export interface UpdateSourceProductIdentityInput {

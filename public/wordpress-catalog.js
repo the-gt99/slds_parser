@@ -26,7 +26,7 @@ function asArray(value) { return Array.isArray(value) ? value : []; }
 
 const auditLabels = { pending: "Ожидает", running: "Выполняется", ready: "Аудит готов", blocked: "Заблокирован", error: "Ошибка", skipped: "Не применим" };
 const riskLabels = { none: "Без изменений", review: "Нужен просмотр", danger: "Опасные изменения", blocked: "Заблокировано" };
-const variationLabels = { pending: "В очереди", refreshing: "Получает GOAT offers", ready: "Готов к WordPress", submitted: "В WordPress", completed: "Обновлено", skipped: "Пропущено", failed: "Ошибка" };
+const variationLabels = { pending: "В очереди GOAT", refreshing: "Готовит обновление", ready: "Готов к WordPress", submitted: "В WordPress", completed: "Обновлено", skipped: "Без изменений", failed: "Ошибка" };
 const taxonomyLabels = { pa_brand: "Бренды", pa_model: "Модели", product_cat: "Категории", product_tag: "Метки", pa_tsvet: "Цвет", pa_material: "Материал", pa_vid: "Назначение", pa_shoe_height: "Высота", pa_season: "Сезон" };
 const fieldLabels = { title: "Название", slug: "Slug", sku: "SKU", description_html: "Описание", short_description_html: "Краткое описание" };
 

@@ -2,7 +2,7 @@ import { InvalidJobPayloadError } from "../core/errors/index.js";
 import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
-import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseRefreshWordPressVariationPatchPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
+import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseCollectWordPressVariationSourcePayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseSubmitWordPressVariationPatchesPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
 import type { ExportSourceRefreshRunner } from "./export-source-refresh-runner.js";
 import type { PreflightRunner } from "./preflight-runner.js";
 import type { ProcessingRunner } from "./processing-runner.js";
@@ -60,9 +60,17 @@ export class JobDispatcher implements JobHandler {
         if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("prepare_wordpress_variation_patches is not configured");
         return await this.wordpressVariationPatches.prepare(parsePrepareWordPressVariationPatchesPayload(job.payload));
       }
-      case "refresh_wordpress_variation_patch": {
-        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("refresh_wordpress_variation_patch is not configured");
-        return await this.wordpressVariationPatches.refresh(parseRefreshWordPressVariationPatchPayload(job.payload));
+      case "collect_wordpress_variation_source": {
+        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("collect_wordpress_variation_source is not configured");
+        return await this.wordpressVariationPatches.collect(parseCollectWordPressVariationSourcePayload(job.payload));
+      }
+      case "prepare_wordpress_variation_patch": {
+        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("prepare_wordpress_variation_patch is not configured");
+        return await this.wordpressVariationPatches.preparePatch(parsePrepareWordPressVariationPatchPayload(job.payload));
+      }
+      case "submit_wordpress_variation_patches": {
+        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("submit_wordpress_variation_patches is not configured");
+        return await this.wordpressVariationPatches.submit(parseSubmitWordPressVariationPatchesPayload(job.payload));
       }
       case "poll_wordpress_variation_patches": {
         if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("poll_wordpress_variation_patches is not configured");
@@ -108,9 +116,17 @@ export class JobDispatcher implements JobHandler {
       await this.wordpressCatalogSync.fail(payload.runId, message);
       return;
     }
-    if (job.jobType === "refresh_wordpress_variation_patch" && this.wordpressVariationPatches !== undefined) {
-      const payload = parseRefreshWordPressVariationPatchPayload(job.payload);
-      await this.wordpressVariationPatches.failRefresh(payload.itemId, message);
+    if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "prepare_wordpress_variation_patch")
+      && this.wordpressVariationPatches !== undefined) {
+      const payload = job.jobType === "collect_wordpress_variation_source"
+        ? parseCollectWordPressVariationSourcePayload(job.payload)
+        : parsePrepareWordPressVariationPatchPayload(job.payload);
+      await this.wordpressVariationPatches.failItem(payload.itemId, message);
+      return;
+    }
+    if (job.jobType === "submit_wordpress_variation_patches" && this.wordpressVariationPatches !== undefined) {
+      const payload = parseSubmitWordPressVariationPatchesPayload(job.payload);
+      await this.wordpressVariationPatches.failSubmission(payload.runId, payload.itemIds, message);
       return;
     }
     if (job.jobType === "poll_wordpress_variation_patches" && this.wordpressVariationPatches !== undefined) {

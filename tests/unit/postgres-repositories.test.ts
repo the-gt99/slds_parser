@@ -80,6 +80,27 @@ const contentTemplateRow = {
 };
 
 describe("PostgreSQL repository mapping and SQL", () => {
+  it("marks sitemap inserts and changes inside the source product upsert", async () => {
+    const executor = new FakeExecutor([[{
+      id: "10", source_id: "1", source_key: "goat:1", external_id: "1", slug: "shoe", url: "https://example.test/shoe",
+      discovery_metadata: { lastmod: "2026-09-01" }, status: "discovered", first_seen_at: "2026-09-01T00:00:00.000Z",
+      last_seen_at: "2026-09-01T00:00:00.000Z", last_seen_run_id: "2", created_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-09-01T00:00:00.000Z", created: true, discovery_changed: true,
+    }]]);
+    const repository = new PostgresSourceProductRepository(executor);
+
+    const result = await repository.upsertDiscovered({
+      sourceId: "1", sourceKey: "goat:1", externalId: "1", slug: "shoe", url: "https://example.test/shoe",
+      discoveryMetadata: { lastmod: "2026-09-01" }, discoveryFingerprint: "fingerprint", status: "discovered",
+      seenAt: "2026-09-01T00:00:00.000Z", runId: "2",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.discoveryChanged).toBe(true);
+    expect(executor.calls[0]?.text).toContain("discovery_changed_at = CASE");
+    expect(executor.calls[0]?.values.at(-1)).toBe("fingerprint");
+  });
+
   it("matches target assignment source facts directly and treats missing facts as non-matches", async () => {
     const executor = new FakeExecutor([[{ product_count: 1, examples: [{ sourceProductId: "13791", title: "Obsidian", sku: "921948 400" }] }]]);
     const repository = new PostgresTargetAssignmentRuleRepository(pool(executor));
@@ -191,23 +212,53 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["4", "taxonomy_removed:pa_model"]);
   });
 
-  it("starts a new continuous variation cycle and resets terminal item state", async () => {
-    const executor = new FakeExecutor([[], [{ id: "4" }], [], []]);
+  it("starts a new continuous variation cycle with sitemap discovery", async () => {
+    const executor = new FakeExecutor([[], [{ id: "4", source_code: "goat", variation_sync_cycle: "3" }], [{ id: "1" }], [{ id: "90" }], [], []]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
 
     await repository.startVariationAutoSync("4", 100, 360);
 
     expect(executor.calls[1]?.text).toContain("variation_sync_cycle = variation_sync_cycle + 1");
     expect(executor.calls[1]?.values).toEqual(["4", 100, 360]);
-    expect(executor.calls[2]?.text).toContain("variation_checked_at = NULL");
-    expect(executor.calls[2]?.text).toContain("variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')");
+    expect(executor.calls[3]?.text).toContain("'discover_source'");
+    expect(executor.calls[3]?.text).toContain("'enqueueCollection', FALSE");
+    expect(executor.calls[3]?.text).toContain("'enqueueNewCollection', TRUE");
+  });
+
+  it("stores changed GOAT variants and queues WordPress preparation", async () => {
+    const executor = new FakeExecutor([[], [{ id: "7" }], [], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await repository.saveVariationSource({
+      runId: "4", itemId: "7", wordpressProductId: "100", sourceHash: "hash",
+      variants: [{ sourceVariantKey: "offer-1", sku: "SKU-10", size: { sourceValue: "10", displayValue: "10" },
+        price: { amount: "100.00", currency: "USD" }, inventory: { availability: "available" }, attributes: {} }],
+      unchanged: false,
+    });
+
+    expect(executor.calls).toHaveLength(4);
+    expect(executor.calls[1]?.text).toContain("variation_source_hash = $4");
+    expect(executor.calls[2]?.text).toContain("'prepare_wordpress_variation_patch'");
+  });
+
+  it("batches prepared WordPress updates into one submit job", async () => {
+    const executor = new FakeExecutor([[], [{ id: "7" }, { id: "8" }], [], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.enqueueReadyVariationBatches("4", 20)).resolves.toBe(2);
+
+    expect(executor.calls).toHaveLength(4);
+    expect(executor.calls[1]?.values).toEqual(["4", 20]);
+    expect(executor.calls[2]?.text).toContain("'submit_wordpress_variation_patches'");
+    expect(executor.calls[2]?.values[1]).toBe('["7","8"]');
   });
 
   it("schedules the next continuous cycle after the current window is drained", async () => {
     const executor = new FakeExecutor([
       [],
       [{ id: "4", variation_auto_window: 100, variation_auto_acknowledged_failed_count: 0,
-        variation_sync_interval_minutes: 360, variation_sync_next_cycle_at: null }],
+        source_code: "goat", variation_sync_interval_minutes: 360, variation_sync_next_cycle_at: null,
+        variation_sync_cycle: "2", variation_discovery_job_id: "90", variation_discovery_completed_at: "2026-08-13T00:00:00.000Z" }],
       [{ active_count: 0, failed_count: 0 }],
       [],
       [],

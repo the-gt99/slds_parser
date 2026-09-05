@@ -94,26 +94,3 @@ export function matchExistingWordPressVariations(
   }
   return { items, ignored };
 }
-
-export function changedWordPressVariationPatchItems(
-  items: readonly JsonObject[],
-  snapshot: JsonObject,
-): readonly JsonObject[] {
-  const product = record(snapshot.product);
-  const variations = Array.isArray(product.variations) ? product.variations.map(record) : [];
-  const byId = new Map(variations.flatMap((variation) => {
-    const id = positiveInteger(variation.variation_id);
-    return id === null ? [] : [[id, variation] as const];
-  }));
-  return items.filter((item) => {
-    const current = byId.get(positiveInteger(item.variation_id) ?? -1);
-    if (current === undefined) return true;
-    const price = record(item.price);
-    const sourceMinorAmount = typeof price.source_minor_amount === "string" ? price.source_minor_amount : null;
-    if (sourceMinorAmount !== null && String(current.regular_price ?? "") !== sourceMinorAmount) return true;
-    const inventory = record(item.inventory);
-    const availability = inventory.availability;
-    const expectedStockStatus = availability === "available" ? "instock" : availability === "unavailable" ? "outofstock" : null;
-    return expectedStockStatus !== null && String(current.stock_status ?? "") !== expectedStockStatus;
-  });
-}

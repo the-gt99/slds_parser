@@ -13,6 +13,8 @@ export interface WorkerEnvironment {
   readonly WORKER_EXPORT_CONCURRENCY?: string;
   readonly WORKER_EXPORT_REFRESH_CONCURRENCY?: string;
   readonly WORKER_INVENTORY_REFRESH_CONCURRENCY?: string;
+  readonly WORKER_INVENTORY_PREPARE_CONCURRENCY?: string;
+  readonly WORKER_INVENTORY_SUBMIT_CONCURRENCY?: string;
   readonly MAX_JOB_ATTEMPTS?: string;
   readonly JOB_RETRY_BASE_MS?: string;
   readonly JOB_RETRY_MAX_MS?: string;
@@ -114,6 +116,8 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     exportConcurrency: exportConcurrency(environment.WORKER_EXPORT_CONCURRENCY),
     exportRefreshConcurrency: exportRefreshConcurrency(environment.WORKER_EXPORT_REFRESH_CONCURRENCY),
     inventoryRefreshConcurrency: collectionConcurrency(environment.WORKER_INVENTORY_REFRESH_CONCURRENCY),
+    inventoryPrepareConcurrency: preflightConcurrency(environment.WORKER_INVENTORY_PREPARE_CONCURRENCY),
+    inventorySubmitConcurrency: preflightConcurrency(environment.WORKER_INVENTORY_SUBMIT_CONCURRENCY),
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),
     retryBaseMs: positiveInteger(environment, "JOB_RETRY_BASE_MS"),
     retryMaxMs: positiveInteger(environment, "JOB_RETRY_MAX_MS"),

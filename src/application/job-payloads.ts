@@ -6,6 +6,7 @@ export interface DiscoverSourcePayload {
   readonly runType: string;
   readonly coverage: string;
   readonly enqueueCollection?: boolean;
+  readonly enqueueNewCollection?: boolean;
 }
 
 export interface CollectProductPayload {
@@ -81,10 +82,21 @@ export interface PollWordPressVariationPatchesPayload {
   readonly poll: number;
 }
 
-export interface RefreshWordPressVariationPatchPayload {
+export interface CollectWordPressVariationSourcePayload {
   readonly runId: string;
   readonly itemId: string;
   readonly wordpressProductId: string;
+}
+
+export interface PrepareWordPressVariationPatchPayload {
+  readonly runId: string;
+  readonly itemId: string;
+  readonly wordpressProductId: string;
+}
+
+export interface SubmitWordPressVariationPatchesPayload {
+  readonly runId: string;
+  readonly itemIds: readonly string[];
 }
 
 function isObject(value: JsonValue): value is { readonly [key: string]: JsonValue } {
@@ -97,9 +109,11 @@ function isStringArray(value: JsonValue | undefined): value is readonly string[]
 
 export function parseDiscoverSourcePayload(value: JsonValue): DiscoverSourcePayload {
   if (isObject(value) && typeof value.sourceId === "string" && typeof value.runType === "string" && typeof value.coverage === "string"
-    && (value.enqueueCollection === undefined || typeof value.enqueueCollection === "boolean")) {
+    && (value.enqueueCollection === undefined || typeof value.enqueueCollection === "boolean")
+    && (value.enqueueNewCollection === undefined || typeof value.enqueueNewCollection === "boolean")) {
     return { sourceId: value.sourceId, runType: value.runType, coverage: value.coverage,
-      ...(value.enqueueCollection === undefined ? {} : { enqueueCollection: value.enqueueCollection }) };
+      ...(value.enqueueCollection === undefined ? {} : { enqueueCollection: value.enqueueCollection }),
+      ...(value.enqueueNewCollection === undefined ? {} : { enqueueNewCollection: value.enqueueNewCollection }) };
   }
   throw new InvalidJobPayloadError("discover_source");
 }
@@ -231,10 +245,27 @@ export function parsePollWordPressVariationPatchesPayload(value: JsonValue): Pol
   throw new InvalidJobPayloadError("poll_wordpress_variation_patches");
 }
 
-export function parseRefreshWordPressVariationPatchPayload(value: JsonValue): RefreshWordPressVariationPatchPayload {
+export function parseCollectWordPressVariationSourcePayload(value: JsonValue): CollectWordPressVariationSourcePayload {
   if (isObject(value) && typeof value.runId === "string" && typeof value.itemId === "string" && typeof value.wordpressProductId === "string"
     && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)) {
     return { runId: value.runId, itemId: value.itemId, wordpressProductId: value.wordpressProductId };
   }
-  throw new InvalidJobPayloadError("refresh_wordpress_variation_patch");
+  throw new InvalidJobPayloadError("collect_wordpress_variation_source");
+}
+
+export function parsePrepareWordPressVariationPatchPayload(value: JsonValue): PrepareWordPressVariationPatchPayload {
+  if (isObject(value) && typeof value.runId === "string" && typeof value.itemId === "string" && typeof value.wordpressProductId === "string"
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)) {
+    return { runId: value.runId, itemId: value.itemId, wordpressProductId: value.wordpressProductId };
+  }
+  throw new InvalidJobPayloadError("prepare_wordpress_variation_patch");
+}
+
+export function parseSubmitWordPressVariationPatchesPayload(value: JsonValue): SubmitWordPressVariationPatchesPayload {
+  if (isObject(value) && typeof value.runId === "string" && /^\d+$/u.test(value.runId)
+    && isStringArray(value.itemIds) && value.itemIds.length > 0 && value.itemIds.length <= 100
+    && value.itemIds.every((id) => /^\d+$/u.test(id))) {
+    return { runId: value.runId, itemIds: value.itemIds };
+  }
+  throw new InvalidJobPayloadError("submit_wordpress_variation_patches");
 }

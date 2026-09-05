@@ -1,10 +1,11 @@
-import type { DiscoveredSourceProduct, SourceDTO, SourceProductDTO } from "../contracts/index.js";
+import type { DiscoveredSourceProduct, SourceDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { SourceAdapterRegistry } from "../core/registry/index.js";
 import { hashStableJson, stableJsonStringify } from "../core/utils/index.js";
 import type { SourceProductRepository, SourceRepository, SourceRunRepository, UnitOfWork } from "../repositories/index.js";
 import type { CollectProductPayload, DiscoverSourcePayload } from "./job-payloads.js";
 import type { RunnerResult } from "./runner-result.js";
+import { SourcePartCollector } from "./source-part-collector.js";
 
 export interface CollectionRunnerRepositories {
   readonly sources: SourceRepository;
@@ -19,11 +20,16 @@ function sourceDto(source: { readonly id: string; readonly code: string; readonl
 }
 
 export class CollectionRunner {
+  private readonly partCollector: SourcePartCollector;
+
   constructor(
     private readonly repositories: CollectionRunnerRepositories,
     private readonly unitOfWork: UnitOfWork,
     private readonly adapters: SourceAdapterRegistry,
-  ) {}
+    partCollector?: SourcePartCollector,
+  ) {
+    this.partCollector = partCollector ?? new SourcePartCollector(repositories.sourceProducts, unitOfWork, adapters);
+  }
 
   async discoverSource(payload: DiscoverSourcePayload): Promise<RunnerResult> {
     const source = await this.repositories.sources.getById(payload.sourceId);
@@ -44,15 +50,22 @@ export class CollectionRunner {
       for (const item of page.items) uniqueItems.set(item.sourceKey, item);
       await this.unitOfWork.transaction(async (repositories) => {
         for (const item of uniqueItems.values()) {
-          const product = await repositories.sourceProducts.upsertDiscovered({
+          const discovered = await repositories.sourceProducts.upsertDiscovered({
             sourceId: source.id, sourceKey: item.sourceKey,
             ...(item.externalId === undefined ? {} : { externalId: item.externalId }),
             ...(item.slug === undefined ? {} : { slug: item.slug }),
             ...(item.url === undefined ? {} : { url: item.url }),
             discoveryMetadata: item.metadata, status: "discovered", seenAt: now(), runId: run.id,
+            discoveryFingerprint: hashStableJson({
+              sourceKey: item.sourceKey,
+              externalId: item.externalId ?? null,
+              slug: item.slug ?? null,
+              url: item.url ?? null,
+              metadata: item.metadata,
+            }),
           });
-          if (payload.enqueueCollection !== false) {
-            await repositories.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: product.id }, uniqueKey: `source-product:${product.id}:collect` });
+          if (payload.enqueueCollection !== false || (payload.enqueueNewCollection === true && discovered.created)) {
+            await repositories.jobs.enqueue({ jobType: "collect_product", payload: { sourceProductId: discovered.product.id }, uniqueKey: `source-product:${discovered.product.id}:collect` });
           }
         }
         await repositories.sourceRuns.recordPage(run.id, {
@@ -70,30 +83,7 @@ export class CollectionRunner {
     if (product === null) throw new EntityNotFoundError("Source product", payload.sourceProductId);
     const source = await this.repositories.sources.getById(product.sourceId);
     if (source === null) throw new EntityNotFoundError("Source", product.sourceId);
-    const adapter = this.adapters.get(source.adapterCode);
-    const dto: SourceProductDTO = { id: product.id, sourceId: product.sourceId, sourceKey: product.sourceKey,
-      ...(product.externalId === null ? {} : { externalId: product.externalId }), ...(product.slug === null ? {} : { slug: product.slug }),
-      ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
-    const collected = await adapter.collectProduct({ source: sourceDto(source), product: dto, ...(payload.requestedPartKeys === undefined ? {} : { requestedPartKeys: payload.requestedPartKeys }) });
-    if (collected.sourceKey !== product.sourceKey) throw new IntegrationContractError(`Collected sourceKey does not match product ${product.id}`);
-    const parts = new Map<string, (typeof collected.parts)[number]>();
-    for (const part of collected.parts) {
-      if (parts.has(part.partKey)) throw new IntegrationContractError(`Duplicate collected part: ${part.partKey}`);
-      parts.set(part.partKey, part);
-    }
-    for (const requested of payload.requestedPartKeys ?? []) {
-      if (!parts.has(requested)) throw new IntegrationContractError(`Requested part is missing: ${requested}`);
-    }
-    await this.unitOfWork.transaction(async (repositories) => {
-      await repositories.sourceProducts.updateIdentity(product.id, {
-        ...(collected.externalId === undefined ? {} : { externalId: collected.externalId }),
-        ...(collected.slug === undefined ? {} : { slug: collected.slug }), ...(collected.url === undefined ? {} : { url: collected.url }),
-      });
-      for (const part of parts.values()) {
-        await repositories.sourceProducts.upsertPart({ sourceProductId: product.id, partKey: part.partKey,
-          rawPayload: part.rawPayload, parsedPayload: part.parsedPayload, contentHash: hashStableJson(part.parsedPayload),
-          ...(part.sourceUpdatedAt === undefined ? {} : { sourceUpdatedAt: part.sourceUpdatedAt }), fetchedAt: now(), adapterVersion: part.adapterVersion });
-      }
+    await this.partCollector.collect(source, product, payload.requestedPartKeys, async (repositories) => {
       if (payload.enqueueProcessing !== false) {
         // ProcessingRunner owns the full input hash, including processor and operation versions.
         // Enqueue after every successful collection so code changes are applied even when source JSON is unchanged.
