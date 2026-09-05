@@ -279,6 +279,26 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[4]?.text).not.toContain("variation_auto_status = 'completed'");
   });
 
+  it("fills the variation queue while sitemap discovery is still running", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{ id: "4", variation_auto_window: 100, variation_auto_acknowledged_failed_count: 0,
+        source_code: "goat", variation_sync_interval_minutes: 5, variation_sync_next_cycle_at: null,
+        variation_sync_cycle: "2", variation_discovery_job_id: "90", variation_discovery_completed_at: null }],
+      [{ status: "running", last_error: null }],
+      [{ active_count: 0, failed_count: 0 }],
+      [{ id: "7", wordpress_product_id: "100" }],
+      [],
+      [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.replenishVariationAutoSync()).resolves.toBe("queued");
+
+    expect(executor.calls[4]?.text).toContain("item.variation_sync_cycle < $3::BIGINT AND item.variation_next_check_at <= NOW()");
+    expect(executor.calls[5]?.text).toContain("'collect_wordpress_variation_source'");
+  });
+
   it("keeps source product id typed as bigint while building preflight search text", async () => {
     const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
     const repository = new PostgresExportControlRepository(pool(executor));

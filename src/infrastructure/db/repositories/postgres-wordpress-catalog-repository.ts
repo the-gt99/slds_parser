@@ -987,7 +987,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         await client.query("UPDATE wordpress_catalog_runs SET variation_discovery_job_id = $2 WHERE id = $1", [runId, text(discovery.rows[0]!, "id")]);
         return "cycle_started";
       }
-      if (run.variation_discovery_completed_at === null || run.variation_discovery_completed_at === undefined) {
+      let discoveryComplete = run.variation_discovery_completed_at !== null && run.variation_discovery_completed_at !== undefined;
+      if (!discoveryComplete) {
         const discoveryJobId = nullableText(run, "variation_discovery_job_id");
         if (discoveryJobId === null) throw new Error(`Inventory discovery job is missing for run ${runId}`);
         const discovery = await client.query<DatabaseRow>("SELECT status, last_error FROM jobs WHERE id = $1", [discoveryJobId]);
@@ -1003,8 +1004,10 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
           );
           return "paused";
         }
-        if (discoveryStatus !== "completed") return "waiting";
-        await client.query("UPDATE wordpress_catalog_runs SET variation_discovery_completed_at = NOW(), updated_at = NOW() WHERE id = $1", [runId]);
+        if (discoveryStatus === "completed") {
+          await client.query("UPDATE wordpress_catalog_runs SET variation_discovery_completed_at = NOW(), updated_at = NOW() WHERE id = $1", [runId]);
+          discoveryComplete = true;
+        }
       }
       const counts = await client.query<DatabaseRow>(
         `SELECT (SELECT COUNT(*) FROM wordpress_catalog_run_items
@@ -1035,9 +1038,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             FROM wordpress_catalog_run_items item
             JOIN source_products source_product ON source_product.id = item.source_product_id
             WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
-              AND item.variation_sync_cycle < $3::BIGINT
               AND (
-                item.variation_next_check_at <= NOW()
+                (item.variation_sync_cycle < $3::BIGINT AND item.variation_next_check_at <= NOW())
                 OR source_product.discovery_changed_at > COALESCE(item.variation_checked_at, '-infinity'::TIMESTAMPTZ)
               )
             ORDER BY (source_product.discovery_changed_at > COALESCE(item.variation_checked_at, '-infinity'::TIMESTAMPTZ)) DESC,
@@ -1071,6 +1073,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         return "queued";
       }
       if (activeCount > 0) return "waiting";
+      if (!discoveryComplete) return "waiting";
       await client.query(
         `UPDATE wordpress_catalog_runs
          SET variation_auto_error = NULL,
