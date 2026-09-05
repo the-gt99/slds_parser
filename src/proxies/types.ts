@@ -80,4 +80,11 @@ export interface ProxyRepository {
   recordTest(id: EntityId, result: ProxyTestResult): Promise<ProxyRecord>;
   recordUse(id: EntityId, input: { readonly success: boolean; readonly latencyMs: number | null }): Promise<void>;
   audit(input: { readonly proxyId: EntityId | null; readonly action: ProxyAuditAction; readonly actor: string; readonly payload: Record<string, unknown> }): Promise<void>;
+  tryAcquireSessionLease?(input: {
+    readonly ownerId: string;
+    readonly concurrencyPerProxy: number;
+    readonly headroom: number;
+    readonly ttlMs: number;
+  }): Promise<{ readonly proxy: ProxyRecord; readonly sessionSlot: number } | null>;
+  releaseSessionLease?(input: { readonly proxyId: EntityId; readonly sessionSlot: number; readonly ownerId: string }): Promise<void>;
 }

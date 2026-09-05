@@ -61,6 +61,49 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
     return result.rows.map(mapProxy);
   }
 
+  async tryAcquireSessionLease(input: Parameters<NonNullable<ProxyRepository["tryAcquireSessionLease"]>>[0]) {
+    const result = await this.executor.query<DatabaseRow>(
+      `WITH capacity AS (
+         SELECT COUNT(*)::INTEGER * $2::INTEGER AS total_slots
+         FROM goat_proxies WHERE enabled = TRUE AND health_status = 'healthy'
+       ), active AS (
+         SELECT COUNT(*)::INTEGER AS active_slots FROM goat_proxy_session_leases WHERE leased_until > NOW()
+       ), candidate AS (
+         SELECT proxy.id AS proxy_id, slot.session_slot
+         FROM goat_proxies proxy
+         CROSS JOIN LATERAL GENERATE_SERIES(1, $2::INTEGER) AS slot(session_slot)
+         CROSS JOIN capacity
+         CROSS JOIN active
+         LEFT JOIN goat_proxy_session_leases lease
+           ON lease.proxy_id = proxy.id AND lease.session_slot = slot.session_slot AND lease.leased_until > NOW()
+         WHERE proxy.enabled = TRUE AND proxy.health_status = 'healthy' AND lease.proxy_id IS NULL
+           AND capacity.total_slots - active.active_slots > $3::INTEGER
+         ORDER BY proxy.last_used_at NULLS FIRST, proxy.id, slot.session_slot
+         LIMIT 1
+       ), leased AS (
+         INSERT INTO goat_proxy_session_leases (proxy_id, session_slot, owner_id, leased_until)
+         SELECT proxy_id, session_slot, $1, NOW() + ($4::BIGINT * INTERVAL '1 millisecond') FROM candidate
+         ON CONFLICT (proxy_id, session_slot) DO UPDATE
+           SET owner_id = EXCLUDED.owner_id, leased_until = EXCLUDED.leased_until, created_at = NOW()
+           WHERE goat_proxy_session_leases.leased_until <= NOW()
+         RETURNING proxy_id, session_slot
+       )
+       SELECT proxy.*, leased.session_slot
+       FROM leased JOIN goat_proxies proxy ON proxy.id = leased.proxy_id`,
+      [input.ownerId, input.concurrencyPerProxy, input.headroom, input.ttlMs],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : { proxy: mapProxy(row), sessionSlot: integer(row, "session_slot") };
+  }
+
+  async releaseSessionLease(input: Parameters<NonNullable<ProxyRepository["releaseSessionLease"]>>[0]): Promise<void> {
+    await this.executor.query(
+      `DELETE FROM goat_proxy_session_leases
+       WHERE proxy_id = $1 AND session_slot = $2 AND owner_id = $3`,
+      [input.proxyId, input.sessionSlot, input.ownerId],
+    );
+  }
+
   async getById(id: EntityId): Promise<ProxyRecord | null> {
     const result = await this.executor.query<DatabaseRow>("SELECT * FROM goat_proxies WHERE id = $1", [id]);
     return result.rows[0] ? mapProxy(result.rows[0]) : null;

@@ -8,6 +8,9 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
     catalogCursor: "100", catalogComplete: true, auditRequested: true, variationSyncRequested: true,
     variationAutoStatus: "running", variationAutoWindow: 5_000, variationAutoAcknowledgedFailedCount: 0,
     variationAutoError: null, variationAutoStartedAt: "2026-08-13T00:00:00.000Z", variationAutoCompletedAt: null,
+    variationSyncIntervalMinutes: 360, variationSyncCycle: 2,
+    variationSyncLastCycleStartedAt: "2026-08-13T00:00:00.000Z",
+    variationSyncLastCycleCompletedAt: null, variationSyncNextCycleAt: null,
     actor: "admin", reason: null, lastError: null, createdAt: "2026-08-13T00:00:00.000Z",
     updatedAt: "2026-08-13T00:00:00.000Z", completedAt: "2026-08-13T01:00:00.000Z",
     totalCount: 10_000, matchedCount: 9_000, unmatchedCount: 1_000, ambiguousCount: 0,
@@ -18,17 +21,19 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
   };
 }
 
-function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "waiting" | "queued" | "paused" | "completed" = "queued") {
+function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "waiting" | "queued" | "paused" | "cycle_completed" | "cycle_started" = "queued") {
   const repository = {
-    getRunningVariationAutoSync: vi.fn().mockResolvedValue(current === null ? null : {
+    getActiveVariationSync: vi.fn().mockResolvedValue(current === null ? null : {
       runId: current.id,
       window: current.variationAutoWindow,
       acknowledgedFailedCount: current.variationAutoAcknowledgedFailedCount,
       activeCount: current.variationPendingCount + current.variationSubmittedCount,
       failedCount: current.variationFailedCount,
+      intervalMinutes: current.variationSyncIntervalMinutes,
+      cycle: current.variationSyncCycle,
+      nextCycleAt: current.variationSyncNextCycleAt,
     }),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
-    enqueueVariationBatch: vi.fn(async (_runId: string, limit: number) => Math.min(limit, current?.variationNotStartedCount ?? 0)),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;
   const service = new WordPressCatalogService(
@@ -40,6 +45,34 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
 }
 
 describe("WordPressCatalogService variation auto-sync", () => {
+  it("starts a continuous schedule with a bounded interval", async () => {
+    const current = run({ variationAutoStatus: "inactive", variationPendingCount: 0, variationSubmittedCount: 0 });
+    const value = setup(current);
+    value.repository.getRun = vi.fn().mockResolvedValue(current);
+    value.repository.startVariationAutoSync = vi.fn().mockResolvedValue(undefined);
+
+    await expect(value.service.startVariationAutoSync("1", 100, 360)).resolves.toEqual(current);
+    expect(value.repository.startVariationAutoSync).toHaveBeenCalledWith("1", 100, 360);
+  });
+
+  it("rejects an unsafe schedule interval", async () => {
+    const current = run({ variationAutoStatus: "inactive" });
+    const value = setup(current);
+    value.repository.getRun = vi.fn().mockResolvedValue(current);
+
+    await expect(value.service.startVariationAutoSync("1", 100, 1)).rejects.toThrow("Интервал обновления");
+  });
+
+  it("stops a running continuous schedule", async () => {
+    const current = run();
+    const stopped = run({ variationAutoStatus: "inactive" });
+    const value = setup(current);
+    value.repository.getRun = vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(stopped);
+
+    await expect(value.service.stopVariationAutoSync("1")).resolves.toEqual(stopped);
+    expect(value.repository.setVariationAutoSyncStatus).toHaveBeenCalledWith({ runId: "1", status: "inactive" });
+  });
+
   it("reports a replenished window as work", async () => {
     const value = setup(run(), "queued");
 
@@ -60,8 +93,8 @@ describe("WordPressCatalogService variation auto-sync", () => {
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
   });
 
-  it("reports completion as work", async () => {
-    const value = setup(run(), "completed");
+  it("reports a completed cycle as work", async () => {
+    const value = setup(run(), "cycle_completed");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
   });

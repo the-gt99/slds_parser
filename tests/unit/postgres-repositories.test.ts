@@ -191,6 +191,36 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["4", "taxonomy_removed:pa_model"]);
   });
 
+  it("starts a new continuous variation cycle and resets terminal item state", async () => {
+    const executor = new FakeExecutor([[], [{ id: "4" }], [], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await repository.startVariationAutoSync("4", 100, 360);
+
+    expect(executor.calls[1]?.text).toContain("variation_sync_cycle = variation_sync_cycle + 1");
+    expect(executor.calls[1]?.values).toEqual(["4", 100, 360]);
+    expect(executor.calls[2]?.text).toContain("variation_checked_at = NULL");
+    expect(executor.calls[2]?.text).toContain("variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')");
+  });
+
+  it("schedules the next continuous cycle after the current window is drained", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{ id: "4", variation_auto_window: 100, variation_auto_acknowledged_failed_count: 0,
+        variation_sync_interval_minutes: 360, variation_sync_next_cycle_at: null }],
+      [{ active_count: 0, failed_count: 0 }],
+      [],
+      [],
+      [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.replenishVariationAutoSync()).resolves.toBe("cycle_completed");
+
+    expect(executor.calls[4]?.text).toContain("variation_sync_next_cycle_at");
+    expect(executor.calls[4]?.text).not.toContain("variation_auto_status = 'completed'");
+  });
+
   it("keeps source product id typed as bigint while building preflight search text", async () => {
     const executor = new FakeExecutor([[], [{ id: "31" }], [], []]);
     const repository = new PostgresExportControlRepository(pool(executor));

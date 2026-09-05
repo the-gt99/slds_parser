@@ -2,6 +2,7 @@ import type { WorkerOptions } from "../application/index.js";
 
 export interface WorkerEnvironment {
   readonly WORKER_ID?: string;
+  readonly WORKER_ROLE?: string;
   readonly WORKER_POLL_INTERVAL_MS?: string;
   readonly WORKER_LOCK_TIMEOUT_MS?: string;
   readonly WORKER_PROCESS_CONCURRENCY?: string;
@@ -11,12 +12,21 @@ export interface WorkerEnvironment {
   readonly WORKER_CLASSIFICATION_APPLY_CONCURRENCY?: string;
   readonly WORKER_EXPORT_CONCURRENCY?: string;
   readonly WORKER_EXPORT_REFRESH_CONCURRENCY?: string;
+  readonly WORKER_INVENTORY_REFRESH_CONCURRENCY?: string;
   readonly MAX_JOB_ATTEMPTS?: string;
   readonly JOB_RETRY_BASE_MS?: string;
   readonly JOB_RETRY_MAX_MS?: string;
   readonly WORDPRESS_MAX_JOB_ATTEMPTS?: string;
   readonly WORDPRESS_RETRY_BASE_MS?: string;
   readonly WORDPRESS_RETRY_MAX_MS?: string;
+}
+
+function workerRole(value: string | undefined): "all" | "pipeline" | "inventory" {
+  const normalized = value?.trim().toLocaleLowerCase("en-US") || "all";
+  if (normalized !== "all" && normalized !== "pipeline" && normalized !== "inventory") {
+    throw new Error("WORKER_ROLE must be all, pipeline or inventory");
+  }
+  return normalized;
 }
 
 function positiveInteger(environment: WorkerEnvironment, key: keyof WorkerEnvironment): number {
@@ -93,6 +103,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
   if (!workerId) throw new Error("WORKER_ID is required");
   const options = {
     workerId,
+    role: workerRole(environment.WORKER_ROLE),
     pollIntervalMs: positiveInteger(environment, "WORKER_POLL_INTERVAL_MS"),
     lockTimeoutMs: positiveInteger(environment, "WORKER_LOCK_TIMEOUT_MS"),
     processConcurrency: processConcurrency(environment.WORKER_PROCESS_CONCURRENCY),
@@ -102,6 +113,7 @@ export function loadWorkerConfig(environment: WorkerEnvironment = process.env): 
     classificationApplyConcurrency: classificationApplyConcurrency(environment.WORKER_CLASSIFICATION_APPLY_CONCURRENCY),
     exportConcurrency: exportConcurrency(environment.WORKER_EXPORT_CONCURRENCY),
     exportRefreshConcurrency: exportRefreshConcurrency(environment.WORKER_EXPORT_REFRESH_CONCURRENCY),
+    inventoryRefreshConcurrency: collectionConcurrency(environment.WORKER_INVENTORY_REFRESH_CONCURRENCY),
     maxJobAttempts: positiveInteger(environment, "MAX_JOB_ATTEMPTS"),
     retryBaseMs: positiveInteger(environment, "JOB_RETRY_BASE_MS"),
     retryMaxMs: positiveInteger(environment, "JOB_RETRY_MAX_MS"),

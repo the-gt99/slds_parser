@@ -73,6 +73,11 @@ function mapRun(row: DatabaseRow): WordPressCatalogRunRecord {
     variationAutoError: nullableText(row, "variation_auto_error"),
     variationAutoStartedAt: nullableTimestamp(row, "variation_auto_started_at"),
     variationAutoCompletedAt: nullableTimestamp(row, "variation_auto_completed_at"),
+    variationSyncIntervalMinutes: Number(row.variation_sync_interval_minutes),
+    variationSyncCycle: Number(row.variation_sync_cycle),
+    variationSyncLastCycleStartedAt: nullableTimestamp(row, "variation_sync_last_cycle_started_at"),
+    variationSyncLastCycleCompletedAt: nullableTimestamp(row, "variation_sync_last_cycle_completed_at"),
+    variationSyncNextCycleAt: nullableTimestamp(row, "variation_sync_next_cycle_at"),
     actor: text(row, "actor"),
     reason: nullableText(row, "reason"),
     lastError: nullableText(row, "last_error"),
@@ -773,17 +778,19 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
     });
   }
 
-  async getRunningVariationAutoSync(): Promise<WordPressVariationAutoSyncState | null> {
+  async getActiveVariationSync(): Promise<WordPressVariationAutoSyncState | null> {
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT run.id AS run_id, run.variation_auto_window,
               run.variation_auto_acknowledged_failed_count,
+              run.variation_sync_interval_minutes, run.variation_sync_cycle,
+              run.variation_sync_next_cycle_at,
               (SELECT COUNT(*) FROM wordpress_catalog_run_items item
                WHERE item.run_id = run.id
                  AND item.variation_status IN ('pending', 'refreshing', 'ready', 'submitted')) AS active_count,
               (SELECT COUNT(*) FROM wordpress_catalog_run_items item
                WHERE item.run_id = run.id AND item.variation_status = 'failed') AS failed_count
        FROM wordpress_catalog_runs run
-       WHERE run.variation_auto_status = 'running'
+       WHERE run.variation_auto_status IN ('running', 'paused')
        LIMIT 1`);
     const row = result.rows[0];
     return row === undefined ? null : {
@@ -792,31 +799,49 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       acknowledgedFailedCount: Number(row.variation_auto_acknowledged_failed_count),
       activeCount: Number(row.active_count),
       failedCount: Number(row.failed_count),
+      intervalMinutes: Number(row.variation_sync_interval_minutes),
+      cycle: Number(row.variation_sync_cycle),
+      nextCycleAt: nullableTimestamp(row, "variation_sync_next_cycle_at"),
     };
   }
 
-  async startVariationAutoSync(runId: string, window: number): Promise<void> {
-    const result = await queryPool<DatabaseRow>(this.pool,
-      `UPDATE wordpress_catalog_runs AS run
-       SET variation_sync_requested = TRUE,
-           variation_auto_status = 'running', variation_auto_window = $2,
-           variation_auto_acknowledged_failed_count = (
-             SELECT COUNT(*) FROM wordpress_catalog_run_items item
-             WHERE item.run_id = run.id AND item.variation_status = 'failed'
-           ),
-           variation_auto_error = NULL,
-           variation_auto_started_at = COALESCE(variation_auto_started_at, NOW()),
-           variation_auto_completed_at = NULL, updated_at = NOW()
-       WHERE run.id = $1 RETURNING run.id`,
-      [runId, window],
-    );
-    if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${runId}`);
+  async startVariationAutoSync(runId: string, window: number, intervalMinutes: number): Promise<void> {
+    await transaction(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_runs AS run
+         SET variation_sync_requested = TRUE,
+             variation_auto_status = 'running', variation_auto_window = $2,
+             variation_sync_interval_minutes = $3,
+             variation_auto_acknowledged_failed_count = 0,
+             variation_auto_error = NULL,
+             variation_auto_started_at = COALESCE(variation_auto_started_at, NOW()),
+             variation_auto_completed_at = NULL,
+             variation_sync_cycle = variation_sync_cycle + 1,
+             variation_sync_last_cycle_started_at = NOW(),
+             variation_sync_last_cycle_completed_at = NULL,
+             variation_sync_next_cycle_at = NULL,
+             updated_at = NOW()
+         WHERE run.id = $1 RETURNING run.id`,
+        [runId, window, intervalMinutes],
+      );
+      if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${runId}`);
+      await client.query(
+        `UPDATE wordpress_catalog_run_items
+         SET variation_status = 'skipped', variation_payload = NULL, variation_notices = '[]'::JSONB,
+             wordpress_job_id = NULL, variation_result = NULL, variation_error = NULL,
+             variation_checked_at = NULL, updated_at = NOW()
+         WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
+           AND variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')`,
+        [runId],
+      );
+    });
   }
 
   async replenishVariationAutoSync(): Promise<WordPressVariationAutoTickOutcome> {
     return transaction(this.pool, async (client) => {
       const activeRun = await client.query<DatabaseRow>(
-        `SELECT id, variation_auto_window, variation_auto_acknowledged_failed_count
+        `SELECT id, variation_auto_window, variation_auto_acknowledged_failed_count,
+                variation_sync_interval_minutes, variation_sync_next_cycle_at
          FROM wordpress_catalog_runs
          WHERE variation_auto_status = 'running'
          LIMIT 1
@@ -825,6 +850,28 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       const run = activeRun.rows[0];
       if (run === undefined) return "idle";
       const runId = text(run, "id");
+      const nextCycleAt = nullableTimestamp(run, "variation_sync_next_cycle_at");
+      if (nextCycleAt !== null) {
+        if (new Date(nextCycleAt).valueOf() > Date.now()) return "waiting";
+        await client.query(
+          `UPDATE wordpress_catalog_run_items
+           SET variation_status = 'skipped', variation_payload = NULL, variation_notices = '[]'::JSONB,
+               wordpress_job_id = NULL, variation_result = NULL, variation_error = NULL,
+               variation_checked_at = NULL, updated_at = NOW()
+           WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
+             AND variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')`,
+          [runId],
+        );
+        await client.query(
+          `UPDATE wordpress_catalog_runs
+           SET variation_sync_cycle = variation_sync_cycle + 1,
+               variation_sync_last_cycle_started_at = NOW(),
+               variation_sync_last_cycle_completed_at = NULL,
+               variation_sync_next_cycle_at = NULL, variation_auto_error = NULL, updated_at = NOW()
+           WHERE id = $1`,
+          [runId],
+        );
+      }
       const counts = await client.query<DatabaseRow>(
         `SELECT (SELECT COUNT(*) FROM wordpress_catalog_run_items
                  WHERE run_id = $1 AND variation_status IN ('pending', 'refreshing', 'ready', 'submitted')) AS active_count,
@@ -838,7 +885,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         await client.query(
           `UPDATE wordpress_catalog_runs
            SET variation_auto_status = 'paused',
-               variation_auto_error = 'Автопрогон остановлен после ошибки товара. Проверьте журнал и возобновите вручную.',
+               variation_auto_error = 'Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную.',
                updated_at = NOW()
            WHERE id = $1`,
           [runId],
@@ -879,65 +926,47 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       if (activeCount > 0) return "waiting";
       await client.query(
         `UPDATE wordpress_catalog_runs
-         SET variation_auto_status = 'completed', variation_auto_error = NULL,
-             variation_auto_completed_at = NOW(), updated_at = NOW()
+         SET variation_auto_error = NULL,
+             variation_sync_last_cycle_completed_at = NOW(),
+             variation_sync_next_cycle_at = NOW() + (variation_sync_interval_minutes * INTERVAL '1 minute'),
+             updated_at = NOW()
          WHERE id = $1`,
         [runId],
       );
-      return "completed";
+      return nextCycleAt === null ? "cycle_completed" : "cycle_started";
     });
   }
 
   async setVariationAutoSyncStatus(input: {
     readonly runId: string;
-    readonly status: "running" | "paused" | "completed";
+    readonly status: "running" | "paused" | "inactive";
     readonly error?: string;
     readonly acknowledgeFailures?: number;
   }): Promise<void> {
-    const result = await queryPool<DatabaseRow>(this.pool,
-      `UPDATE wordpress_catalog_runs
-       SET variation_auto_status = $2,
-           variation_auto_error = $3,
-           variation_auto_acknowledged_failed_count = COALESCE($4, variation_auto_acknowledged_failed_count),
-           variation_auto_completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE NULL END,
-           updated_at = NOW()
-       WHERE id = $1 RETURNING id`,
-      [input.runId, input.status, input.error ?? null, input.acknowledgeFailures ?? null],
-    );
-    if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${input.runId}`);
-  }
-
-  async enqueueVariationBatch(runId: string, limit: number): Promise<number> {
-    return transaction(this.pool, async (client) => {
-      const updated = await client.query<DatabaseRow>(
-        `WITH selected AS (
-           SELECT id
-           FROM wordpress_catalog_run_items
-           WHERE run_id = $1 AND match_status = 'matched' AND internal_product_id IS NOT NULL
-             AND variation_status = 'skipped' AND variation_checked_at IS NULL
-           ORDER BY id
-           LIMIT $2
-           FOR UPDATE SKIP LOCKED
-         )
-         UPDATE wordpress_catalog_run_items AS item
-         SET variation_status = 'pending', variation_error = NULL, updated_at = NOW()
-         FROM selected
-         WHERE item.id = selected.id
-         RETURNING item.id, item.wordpress_product_id`,
-        [runId, limit],
+    await transaction(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_runs
+         SET variation_auto_status = $2,
+             variation_auto_error = $3,
+             variation_auto_acknowledged_failed_count = COALESCE($4, variation_auto_acknowledged_failed_count),
+             variation_auto_completed_at = CASE WHEN $2 = 'inactive' THEN NOW() ELSE NULL END,
+             variation_sync_next_cycle_at = CASE WHEN $2 = 'inactive' THEN NULL ELSE variation_sync_next_cycle_at END,
+             updated_at = NOW()
+         WHERE id = $1 RETURNING id`,
+        [input.runId, input.status, input.error ?? null, input.acknowledgeFailures ?? null],
       );
-      if (updated.rows.length > 0) {
+      if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${input.runId}`);
+      if (input.status === "running" && input.acknowledgeFailures !== undefined) {
         await client.query(
-          `INSERT INTO jobs (job_type, payload, status, unique_key)
-           SELECT 'refresh_wordpress_variation_patch',
-                  JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', value.id::TEXT, 'wordpressProductId', value.wordpress_product_id::TEXT),
-                  'pending', 'wordpress-variation-refresh:' || $1::TEXT || ':' || value.id::TEXT
-           FROM JSONB_TO_RECORDSET($2::JSONB) AS value(id BIGINT, wordpress_product_id BIGINT)
-           ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
-          [runId, JSON.stringify(updated.rows)],
+          `UPDATE wordpress_catalog_run_items
+           SET variation_status = 'skipped', variation_payload = NULL, variation_notices = '[]'::JSONB,
+               wordpress_job_id = NULL, variation_result = NULL, variation_error = NULL,
+               variation_checked_at = NULL, updated_at = NOW()
+           WHERE run_id = $1 AND variation_status = 'failed'`,
+          [input.runId],
         );
       }
-      return updated.rows.length;
     });
   }
+
 }

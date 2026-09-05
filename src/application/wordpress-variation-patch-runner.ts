@@ -3,6 +3,7 @@ import type { JsonObject, ProductVariantDTO, TargetProjectionResolutionInput, Ta
 import { IntegrationContractError, MappingMissingError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
+  changedWordPressVariationPatchItems,
   matchExistingWordPressVariations,
   previewWordPressVariationPatchItems,
   WordPressExporter,
@@ -196,12 +197,20 @@ export class WordPressVariationPatchRunner {
       if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
+      if (liveVariants.length === 0) {
+        throw new IntegrationContractError("GOAT не вернул ни одной вариации; автоматическое снятие всех размеров с продажи запрещено");
+      }
+      const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
+      if (currentWordPress === null) {
+        throw new IntegrationContractError(`WordPress product not found: ${payload.wordpressProductId}`);
+      }
       const refreshedProduct = await this.sourceProducts.getById(sourceProduct.id);
       if (refreshedProduct?.externalId === null || refreshedProduct === null) {
         throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${sourceProduct.id}`);
       }
       const effectiveCandidate: WordPressCatalogVariationCandidate = {
         ...candidate,
+        item: { ...candidate.item, payload: currentWordPress.snapshot },
         sourceProduct: {
           id: refreshedProduct.id,
           sourceId: refreshedProduct.sourceId,
@@ -256,6 +265,15 @@ export class WordPressVariationPatchRunner {
       await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: matched.ignored, error });
       return null;
     }
+    const changedItems = changedWordPressVariationPatchItems(matched.items, candidate.item.payload);
+    if (changedItems.length === 0) {
+      await this.repository.saveVariationPreparation({
+        itemId: candidate.item.id,
+        status: "skipped",
+        notices: [...matched.ignored, { code: "no_variation_changes", message: "Цена и наличие уже совпадают с WordPress" }],
+      });
+      return null;
+    }
     const basis = {
       contract_version: "slds.wordpress.variation-patch.v2",
       mode: "patch_existing_variations",
@@ -266,11 +284,11 @@ export class WordPressVariationPatchRunner {
         matchMethod: candidate.item.matchMethod,
         sku: candidate.item.sku,
       }),
-      variations: { items: matched.items },
+      variations: { items: changedItems },
     } as JsonObject;
     const patchPayload = { ...basis, idempotency_key: `catalog-${runId}-${candidate.item.id}-${hashStableJson(basis).slice(0, 32)}` } as JsonObject;
     await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "ready", payload: patchPayload,
-      notices: [...matched.ignored, { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job" }] });
+      notices: [...matched.ignored, { code: "live_source_refresh", message: "Цены, наличие и текущее состояние WordPress получены непосредственно перед постановкой WordPress job" }] });
     return patchPayload;
   }
 
