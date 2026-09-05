@@ -11,7 +11,7 @@ WorkingDirectory=/srv/slds-parser/app
 EnvironmentFile=/srv/slds-parser/app/.env
 Environment=WORKER_ROLE=inventory
 Environment=WORKER_ID=inventory-worker
-Environment=WORKER_INVENTORY_REFRESH_CONCURRENCY=1
+Environment=WORKER_INVENTORY_REFRESH_CONCURRENCY=16
 ExecStart=/usr/local/bin/node dist/src/cli/worker.js
 Restart=always
 RestartSec=5
