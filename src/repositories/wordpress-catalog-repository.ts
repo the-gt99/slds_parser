@@ -183,6 +183,7 @@ export interface WordPressCatalogRepository {
     readonly runId: EntityId;
     readonly afterWordPressProductId: string;
     readonly throughWordPressProductId: string;
+    readonly itemId?: EntityId;
   }): Promise<readonly WordPressCatalogVariationCandidate[]>;
   saveVariationPreparation(input: {
     readonly itemId: EntityId;
