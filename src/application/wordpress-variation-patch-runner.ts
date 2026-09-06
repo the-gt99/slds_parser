@@ -408,6 +408,7 @@ export class WordPressVariationPatchRunner {
       runId,
       afterWordPressProductId: cursor,
       throughWordPressProductId: item.wordpressProductId,
+      itemId: item.id,
     });
     const candidate = candidates.find((entry) => entry.item.id === item.id);
     if (candidate === undefined) throw new IntegrationContractError(`WordPress catalog item not found: ${item.id}`);

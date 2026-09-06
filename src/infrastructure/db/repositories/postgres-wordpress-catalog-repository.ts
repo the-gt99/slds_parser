@@ -551,11 +551,12 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
        WHERE item.run_id = $1
          AND item.wordpress_product_id > $2::BIGINT
          AND item.wordpress_product_id <= $3::BIGINT
+         AND ($4::BIGINT IS NULL OR item.id = $4::BIGINT)
          AND item.match_status = 'matched'
          AND item.internal_product_id IS NOT NULL
-          AND (item.audit_status = 'pending' OR item.variation_status IN ('pending', 'refreshing', 'ready'))
+         AND ($4::BIGINT IS NOT NULL OR item.audit_status = 'pending' OR item.variation_status IN ('pending', 'refreshing', 'ready'))
        ORDER BY item.wordpress_product_id`,
-      [input.runId, input.afterWordPressProductId, input.throughWordPressProductId],
+      [input.runId, input.afterWordPressProductId, input.throughWordPressProductId, input.itemId ?? null],
     );
     return result.rows.map((row) => ({
       item: mapItem(row),
