@@ -52,6 +52,16 @@ export function wordpressVariationJobOutcome(status: string): "completed" | "fai
   return "pending";
 }
 
+const freshTargetSnapshotNotice = "fresh_target_snapshot";
+
+export function shouldRefreshWordPressVariationSnapshot(
+  error: string,
+  notices: readonly JsonObject[],
+): boolean {
+  return /Variation patch permanent \[(?:variation_identity_conflict|variation_not_found|variation_size_changed)\]/u.test(error)
+    && !notices.some((notice) => notice.code === freshTargetSnapshotNotice);
+}
+
 export function wordpressCatalogItemError(error: unknown): string | null {
   return error instanceof IntegrationContractError || error instanceof MappingMissingError
     || (error instanceof PermanentError && error.code === "GOAT_PRODUCT_NOT_FOUND")
@@ -302,7 +312,12 @@ export class WordPressVariationPatchRunner {
     return { status: "completed" };
   }
 
-  private async buildPatchPayload(candidate: WordPressCatalogVariationCandidate, runId: string, liveVariants: readonly ProductVariantDTO[]): Promise<JsonObject | null> {
+  private async buildPatchPayload(
+    candidate: WordPressCatalogVariationCandidate,
+    runId: string,
+    liveVariants: readonly ProductVariantDTO[],
+    targetSnapshotRefreshed = false,
+  ): Promise<JsonObject | null> {
     this.trimRunCaches(runId);
     let referenceCache = this.referenceCachesByRun.get(runId);
     if (referenceCache === undefined) {
@@ -372,8 +387,51 @@ export class WordPressVariationPatchRunner {
     } as JsonObject;
     const patchPayload = { ...basis, idempotency_key: `catalog-${runId}-${candidate.item.id}-${hashStableJson(basis).slice(0, 32)}` } as JsonObject;
     await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "ready", payload: patchPayload,
-      notices: [...matched.ignored, { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" }] });
+      notices: [
+        ...matched.ignored,
+        { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" },
+        ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта identity" }] : []),
+      ] });
     return patchPayload;
+  }
+
+  private async retryWithFreshTargetSnapshot(
+    runId: string,
+    item: Awaited<ReturnType<WordPressCatalogRepository["listSubmittedVariationItems"]>>[number],
+  ): Promise<void> {
+    const currentWordPress = await this.client.readProduct(item.wordpressProductId);
+    if (currentWordPress === null) {
+      throw new IntegrationContractError(`WordPress product not found: ${item.wordpressProductId}`);
+    }
+    const cursor = (BigInt(item.wordpressProductId) - 1n).toString();
+    const candidates = await this.repository.listVariationCandidates({
+      runId,
+      afterWordPressProductId: cursor,
+      throughWordPressProductId: item.wordpressProductId,
+    });
+    const candidate = candidates.find((entry) => entry.item.id === item.id);
+    if (candidate === undefined) throw new IntegrationContractError(`WordPress catalog item not found: ${item.id}`);
+    const refreshedProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
+    if (refreshedProduct?.externalId === null || refreshedProduct === null) {
+      throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${candidate.sourceProduct.id}`);
+    }
+    const effectiveCandidate: WordPressCatalogVariationCandidate = {
+      ...candidate,
+      item: { ...candidate.item, payload: currentWordPress.snapshot },
+      sourceProduct: {
+        id: refreshedProduct.id,
+        sourceId: refreshedProduct.sourceId,
+        sourceKey: refreshedProduct.sourceKey,
+        externalId: refreshedProduct.externalId,
+        ...(refreshedProduct.slug === null ? {} : { slug: refreshedProduct.slug }),
+        ...(refreshedProduct.url === null ? {} : { url: refreshedProduct.url }),
+        metadata: refreshedProduct.discoveryMetadata,
+      },
+    };
+    const patchPayload = await this.buildPatchPayload(effectiveCandidate, runId, item.variationSourceVariants, true);
+    if (patchPayload !== null && !await this.repository.isVariationAutoSyncRunning(runId)) {
+      await this.repository.enqueueReadyVariationBatches(runId, 100);
+    }
   }
 
   async poll(payload: PollWordPressVariationPatchesPayload): Promise<RunnerResult> {
@@ -393,7 +451,19 @@ export class WordPressVariationPatchRunner {
       if (outcome === "completed") {
         await this.repository.saveVariationJobResult({ itemId: item.id, status: "completed", result: job! });
       } else if (outcome === "failed") {
-        await this.repository.saveVariationJobResult({ itemId: item.id, status: "failed", result: job!, error: String(job?.last_error ?? "WordPress job failed") });
+        const error = String(job?.last_error ?? "WordPress job failed");
+        if (shouldRefreshWordPressVariationSnapshot(error, item.variationNotices)) {
+          try {
+            await this.retryWithFreshTargetSnapshot(payload.runId, item);
+            continue;
+          } catch (retryError) {
+            const message = wordpressCatalogItemError(retryError);
+            if (message === null) throw retryError;
+            await this.repository.saveVariationJobResult({ itemId: item.id, status: "failed", result: job!, error: `${error} Fresh snapshot retry failed: ${message}` });
+            continue;
+          }
+        }
+        await this.repository.saveVariationJobResult({ itemId: item.id, status: "failed", result: job!, error });
       } else {
         remaining.push(id);
       }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
-import { buildWordPressVariationPatchIdentity, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("buildWordPressVariationPatchIdentity", () => {
   it("adds an exact SKU only for an explicit legacy SKU match", () => {
@@ -59,5 +59,20 @@ describe("wordpressCatalogItemError", () => {
     expect(wordpressCatalogItemError(new PermanentError("GOAT product was not found", { code: "GOAT_PRODUCT_NOT_FOUND" })))
       .toBe("GOAT product was not found");
     expect(wordpressCatalogItemError(new PermanentError("GOAT request failed", { code: "GOAT_HTTP_PERMANENT" }))).toBeNull();
+  });
+});
+
+describe("shouldRefreshWordPressVariationSnapshot", () => {
+  it("retries stale target variation identities only once", () => {
+    const error = "Variation patch permanent [variation_identity_conflict]: Variation 12 does not belong to product 10.";
+    expect(shouldRefreshWordPressVariationSnapshot(error, [])).toBe(true);
+    expect(shouldRefreshWordPressVariationSnapshot(error, [{ code: "fresh_target_snapshot" }])).toBe(false);
+  });
+
+  it("does not retry unrelated permanent failures", () => {
+    expect(shouldRefreshWordPressVariationSnapshot(
+      "Variation patch permanent [legacy_sku_identity_conflict]: identity does not match.",
+      [],
+    )).toBe(false);
   });
 });
