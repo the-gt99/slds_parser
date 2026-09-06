@@ -109,7 +109,7 @@ def main():
     database = open_manifest(options.manifest)
     client = s3_client()
     bucket = os.environ["SLDS_S3_BUCKET"]
-    totals = {"listed": 0, "skipped": 0, "verified": 0, "uploaded": 0, "existing": 0, "errors": 0, "bytes_uploaded": 0}
+    totals = {"listed": 0, "skipped": 0, "missing_sources": 0, "verified": 0, "uploaded": 0, "existing": 0, "errors": 0, "bytes_uploaded": 0}
     started = time.monotonic()
 
     for paths in chunks(options.source_list, options.chunk_size):
@@ -118,7 +118,7 @@ def main():
             totals["listed"] += 1
             extension = os.path.splitext(path)[1].lower()
             if extension not in IMAGE_EXTENSIONS or not os.path.isfile(path):
-                totals["errors"] += 1
+                totals["missing_sources"] += 1
                 continue
             stat = os.stat(path)
             row = database.execute("SELECT size_bytes, mtime_ns, status FROM media_map WHERE source_path=?", (path,)).fetchone()
@@ -134,6 +134,8 @@ def main():
             for future in as_completed(prepared):
                 try:
                     items.append(future.result())
+                except FileNotFoundError:
+                    totals["missing_sources"] += 1
                 except Exception as error:
                     totals["errors"] += 1
                     print(f"prepare_error path={prepared[future]!r} error={type(error).__name__}:{error}", file=sys.stderr, flush=True)
@@ -141,6 +143,8 @@ def main():
             for future in as_completed(uploaded):
                 try:
                     results.append(future.result())
+                except FileNotFoundError:
+                    totals["missing_sources"] += 1
                 except Exception as error:
                     totals["errors"] += 1
                     print(f"upload_error path={uploaded[future]['path']!r} error={type(error).__name__}:{error}", file=sys.stderr, flush=True)

@@ -1,0 +1,21 @@
+[Unit]
+Description=SLDS product media upload to Yandex Object Storage
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/root/.config/slds-media-s3.env
+ExecStart=/usr/bin/python3 /var/www/u0347517/data/media-migration/migrate-media-s3.py --source-list /var/www/u0347517/data/media-migration/products.list --manifest /var/www/u0347517/data/media-migration/manifest.sqlite3 --category products --workers 16 --chunk-size 500
+Restart=on-failure
+RestartSec=15
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+StandardOutput=append:/var/www/u0347517/data/media-migration/upload-products.out.log
+StandardError=append:/var/www/u0347517/data/media-migration/upload-products.err.log
+
+[Install]
+WantedBy=multi-user.target
