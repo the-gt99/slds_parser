@@ -224,9 +224,6 @@ export class WordPressVariationPatchRunner {
       if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
-      if (liveVariants.length === 0) {
-        throw new IntegrationContractError("GOAT не вернул ни одной вариации; автоматическое снятие всех размеров с продажи запрещено");
-      }
       const sourceHash = hashStableJson(liveVariants as unknown as JsonValue);
       await this.repository.saveVariationSource({
         runId: payload.runId,
@@ -390,6 +387,7 @@ export class WordPressVariationPatchRunner {
       notices: [
         ...matched.ignored,
         { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" },
+        ...(liveVariants.length === 0 ? [{ code: "confirmed_source_sold_out", message: "GOAT вернул корректный пустой список вариаций; существующие размеры WordPress будут сняты с продажи без удаления и изменения цен" }] : []),
         ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта identity" }] : []),
       ] });
     return patchPayload;
