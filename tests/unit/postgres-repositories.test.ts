@@ -246,6 +246,15 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[2]?.text).toContain("'prepare_wordpress_variation_patch'");
   });
 
+  it("forces a manually queued WordPress variation canary", async () => {
+    const executor = new FakeExecutor([[], [{ id: "7", wordpress_product_id: "100" }], [], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.enqueueVariationItems("4", ["7"])).resolves.toBe(1);
+
+    expect(executor.calls[2]?.text).toContain("'force', true");
+  });
+
   it("batches prepared WordPress updates into one submit job", async () => {
     const executor = new FakeExecutor([[], [{ id: "7" }, { id: "8" }], [], []]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
