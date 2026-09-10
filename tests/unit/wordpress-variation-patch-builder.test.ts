@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { matchExistingWordPressVariations } from "../../src/integrations/wordpress/index.js";
+import { hasAvailableWordPressVariation, matchExistingWordPressVariations } from "../../src/integrations/wordpress/index.js";
+
+describe("hasAvailableWordPressVariation", () => {
+  it("detects target stock drift after GOAT became sold out", () => {
+    expect(hasAvailableWordPressVariation({ product: { variations: [
+      { variation_id: 500, stock_status: "outofstock" },
+      { variation_id: 501, stock_status: "instock" },
+    ] } })).toBe(true);
+    expect(hasAvailableWordPressVariation({ product: { variations: [
+      { variation_id: 500, stock_status: "outofstock" },
+      { variation_id: 501, stock_status: "outofstock" },
+    ] } })).toBe(false);
+  });
+});
 
 describe("matchExistingWordPressVariations", () => {
   it("updates only exact existing sizes and records absent sizes", () => {
