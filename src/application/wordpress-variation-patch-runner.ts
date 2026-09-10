@@ -241,6 +241,7 @@ export class WordPressVariationPatchRunner {
         sourceHash,
         variants: liveVariants,
         unchanged,
+        force: payload.force === true,
       });
       return { status: "completed" };
     } catch (error) {
@@ -266,7 +267,7 @@ export class WordPressVariationPatchRunner {
         throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${candidate.sourceProduct.id}`);
       }
       let targetSnapshot = candidate.item.payload;
-      if (candidate.item.variationSourceVariants.length === 0) {
+      if (payload.force === true || candidate.item.variationSourceVariants.length === 0) {
         const currentWordPress = await this.client.readProduct(candidate.item.wordpressProductId);
         if (currentWordPress === null) {
           throw new IntegrationContractError(`WordPress product not found: ${candidate.item.wordpressProductId}`);
