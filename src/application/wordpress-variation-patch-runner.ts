@@ -226,7 +226,7 @@ export class WordPressVariationPatchRunner {
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
       const sourceHash = hashStableJson(liveVariants as unknown as JsonValue);
-      let unchanged = candidate.item.variationAppliedSourceHash === sourceHash;
+      let unchanged = payload.force !== true && candidate.item.variationAppliedSourceHash === sourceHash;
       if (unchanged && liveVariants.length === 0) {
         const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
         if (currentWordPress === null) {

@@ -86,6 +86,7 @@ export interface CollectWordPressVariationSourcePayload {
   readonly runId: string;
   readonly itemId: string;
   readonly wordpressProductId: string;
+  readonly force?: boolean;
 }
 
 export interface PrepareWordPressVariationPatchPayload {
