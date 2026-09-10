@@ -236,6 +236,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
       variants: [{ sourceVariantKey: "offer-1", sku: "SKU-10", size: { sourceValue: "10", displayValue: "10" },
         price: { amount: "100.00", currency: "USD" }, inventory: { availability: "available" }, attributes: {} }],
       unchanged: false,
+      force: true,
     });
 
     expect(executor.calls).toHaveLength(4);
@@ -244,6 +245,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[1]?.text).toContain("INTERVAL '24 hours'");
     expect(executor.calls[1]?.text).toContain("variation_unchanged_streak");
     expect(executor.calls[2]?.text).toContain("'prepare_wordpress_variation_patch'");
+    expect(executor.calls[2]?.values[3]).toBe(true);
   });
 
   it("forces a manually queued WordPress variation canary", async () => {

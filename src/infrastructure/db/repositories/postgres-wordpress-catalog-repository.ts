@@ -614,10 +614,10 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         await client.query(
           `INSERT INTO jobs (job_type, payload, status, unique_key)
            VALUES ('prepare_wordpress_variation_patch',
-                   JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', $2::TEXT, 'wordpressProductId', $3::TEXT),
+                   JSONB_BUILD_OBJECT('runId', $1::TEXT, 'itemId', $2::TEXT, 'wordpressProductId', $3::TEXT, 'force', $4::BOOLEAN),
                    'pending', 'wordpress-variation-prepare-item:' || $1::TEXT || ':' || $2::TEXT)
            ON CONFLICT (job_type, unique_key) WHERE status IN ('pending', 'running', 'retry') DO NOTHING`,
-          [input.runId, input.itemId, input.wordpressProductId],
+          [input.runId, input.itemId, input.wordpressProductId, input.force === true],
         );
       }
     });

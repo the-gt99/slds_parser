@@ -199,6 +199,7 @@ export interface WordPressCatalogRepository {
     readonly sourceHash: string;
     readonly variants: readonly ProductVariantDTO[];
     readonly unchanged: boolean;
+    readonly force?: boolean;
   }): Promise<void>;
   listVariationSubmissionItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<readonly WordPressCatalogRunItemRecord[]>;
   saveVariationSubmission(input: {

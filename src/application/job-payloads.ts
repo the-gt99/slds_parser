@@ -93,6 +93,7 @@ export interface PrepareWordPressVariationPatchPayload {
   readonly runId: string;
   readonly itemId: string;
   readonly wordpressProductId: string;
+  readonly force?: boolean;
 }
 
 export interface SubmitWordPressVariationPatchesPayload {
@@ -262,8 +263,14 @@ export function parseCollectWordPressVariationSourcePayload(value: JsonValue): C
 
 export function parsePrepareWordPressVariationPatchPayload(value: JsonValue): PrepareWordPressVariationPatchPayload {
   if (isObject(value) && typeof value.runId === "string" && typeof value.itemId === "string" && typeof value.wordpressProductId === "string"
-    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)) {
-    return { runId: value.runId, itemId: value.itemId, wordpressProductId: value.wordpressProductId };
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)
+    && (value.force === undefined || typeof value.force === "boolean")) {
+    return {
+      runId: value.runId,
+      itemId: value.itemId,
+      wordpressProductId: value.wordpressProductId,
+      ...(value.force === undefined ? {} : { force: value.force }),
+    };
   }
   throw new InvalidJobPayloadError("prepare_wordpress_variation_patch");
 }
