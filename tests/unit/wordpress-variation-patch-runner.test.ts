@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
+import { parseCollectWordPressVariationSourcePayload } from "../../src/application/job-payloads.js";
 import { buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+
+describe("parseCollectWordPressVariationSourcePayload", () => {
+  it("keeps the force flag for a manual canary", () => {
+    expect(parseCollectWordPressVariationSourcePayload({
+      runId: "4", itemId: "577974", wordpressProductId: "2154349", force: true,
+    })).toEqual({ runId: "4", itemId: "577974", wordpressProductId: "2154349", force: true });
+  });
+});
 
 describe("buildWordPressVariationPatchIdentity", () => {
   it("adds an exact SKU only for an explicit legacy SKU match", () => {

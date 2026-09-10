@@ -248,8 +248,14 @@ export function parsePollWordPressVariationPatchesPayload(value: JsonValue): Pol
 
 export function parseCollectWordPressVariationSourcePayload(value: JsonValue): CollectWordPressVariationSourcePayload {
   if (isObject(value) && typeof value.runId === "string" && typeof value.itemId === "string" && typeof value.wordpressProductId === "string"
-    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)) {
-    return { runId: value.runId, itemId: value.itemId, wordpressProductId: value.wordpressProductId };
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.itemId) && /^\d+$/u.test(value.wordpressProductId)
+    && (value.force === undefined || typeof value.force === "boolean")) {
+    return {
+      runId: value.runId,
+      itemId: value.itemId,
+      wordpressProductId: value.wordpressProductId,
+      ...(value.force === undefined ? {} : { force: value.force }),
+    };
   }
   throw new InvalidJobPayloadError("collect_wordpress_variation_source");
 }
