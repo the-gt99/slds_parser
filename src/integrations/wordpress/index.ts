@@ -31,7 +31,7 @@ export {
   type WordPressSizeConversionInput,
   type WordPressSizeConverterLike,
 } from "./wordpress-size-converter.js";
-export { matchExistingWordPressVariations } from "./wordpress-variation-patch-builder.js";
+export { hasAvailableWordPressVariation, matchExistingWordPressVariations } from "./wordpress-variation-patch-builder.js";
 export {
   contentTemplateCatalog,
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,

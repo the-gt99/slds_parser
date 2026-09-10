@@ -3,6 +3,7 @@ import type { JsonObject, JsonValue, ProductVariantDTO, TargetProjectionResoluti
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../core/errors/index.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
+  hasAvailableWordPressVariation,
   matchExistingWordPressVariations,
   previewWordPressVariationPatchItems,
   WordPressExporter,
@@ -225,13 +226,21 @@ export class WordPressVariationPatchRunner {
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
       const sourceHash = hashStableJson(liveVariants as unknown as JsonValue);
+      let unchanged = candidate.item.variationAppliedSourceHash === sourceHash;
+      if (unchanged && liveVariants.length === 0) {
+        const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
+        if (currentWordPress === null) {
+          throw new IntegrationContractError(`WordPress product not found: ${payload.wordpressProductId}`);
+        }
+        unchanged = !hasAvailableWordPressVariation(currentWordPress.snapshot);
+      }
       await this.repository.saveVariationSource({
         runId: payload.runId,
         itemId: candidate.item.id,
         wordpressProductId: payload.wordpressProductId,
         sourceHash,
         variants: liveVariants,
-        unchanged: candidate.item.variationAppliedSourceHash === sourceHash,
+        unchanged,
       });
       return { status: "completed" };
     } catch (error) {
@@ -256,8 +265,17 @@ export class WordPressVariationPatchRunner {
       if (refreshedProduct?.externalId === null || refreshedProduct === null) {
         throw new IntegrationContractError(`Source refresh did not resolve externalId for product ${candidate.sourceProduct.id}`);
       }
+      let targetSnapshot = candidate.item.payload;
+      if (candidate.item.variationSourceVariants.length === 0) {
+        const currentWordPress = await this.client.readProduct(candidate.item.wordpressProductId);
+        if (currentWordPress === null) {
+          throw new IntegrationContractError(`WordPress product not found: ${candidate.item.wordpressProductId}`);
+        }
+        targetSnapshot = currentWordPress.snapshot;
+      }
       const effectiveCandidate: WordPressCatalogVariationCandidate = {
         ...candidate,
+        item: { ...candidate.item, payload: targetSnapshot },
         sourceProduct: {
           id: refreshedProduct.id,
           sourceId: refreshedProduct.sourceId,

@@ -11,6 +11,13 @@ function positiveInteger(value: unknown): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+export function hasAvailableWordPressVariation(snapshot: JsonObject): boolean {
+  const product = record(snapshot.product);
+  const variations = Array.isArray(product.variations) ? product.variations.map(record) : [];
+  return variations.some((variation) => positiveInteger(variation.variation_id) !== null
+    && String(variation.stock_status ?? "") !== "outofstock");
+}
+
 export function matchExistingWordPressVariations(
   draft: WordPressVariationPatchDraft,
   snapshot: JsonObject,
