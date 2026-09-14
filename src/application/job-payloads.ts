@@ -68,6 +68,8 @@ export interface ApplyTargetClassificationSuggestionPayload {
 export interface SyncWordPressCatalogPayload {
   readonly runId: string;
   readonly cursor: string;
+  /** Inventory reconciliation uses a target_products cursor, not a catalog cursor. */
+  readonly mode?: "inventory";
 }
 
 export interface PrepareWordPressVariationPatchesPayload {
@@ -223,8 +225,9 @@ export function parseApplyTargetClassificationSuggestionPayload(value: JsonValue
 
 export function parseSyncWordPressCatalogPayload(value: JsonValue): SyncWordPressCatalogPayload {
   if (isObject(value) && typeof value.runId === "string" && typeof value.cursor === "string"
-    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.cursor)) {
-    return { runId: value.runId, cursor: value.cursor };
+    && /^\d+$/u.test(value.runId) && /^\d+$/u.test(value.cursor)
+    && (value.mode === undefined || value.mode === "inventory")) {
+    return { runId: value.runId, cursor: value.cursor, ...(value.mode === "inventory" ? { mode: "inventory" as const } : {}) };
   }
   throw new InvalidJobPayloadError("sync_wordpress_catalog");
 }

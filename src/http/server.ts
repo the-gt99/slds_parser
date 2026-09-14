@@ -836,6 +836,12 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     return { items, total };
   });
 
+  server.get("/api/inventory-health", async (_request, reply) => {
+    if (dependencies.wordpressCatalog === undefined) return reply.code(503).send({ status: "unavailable" });
+    const health = await dependencies.wordpressCatalog.inventoryHealth();
+    return reply.code(health.status === "ok" ? 200 : 503).send(health);
+  });
+
   server.get<{ Params: ReviewExamplesParams; Querystring: ReviewExamplesQuery }>(
     "/api/classifier/queue/:reviewGroupId/examples",
     { preHandler: requireAdmin },

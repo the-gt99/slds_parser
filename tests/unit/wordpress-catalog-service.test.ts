@@ -34,6 +34,8 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
       nextCycleAt: current.variationSyncNextCycleAt,
     }),
     enqueueReadyVariationBatches: vi.fn().mockResolvedValue(0),
+    enqueueInventoryReconciliation: vi.fn().mockResolvedValue(undefined),
+    recoverOrphanedVariationItems: vi.fn().mockResolvedValue(0),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;
@@ -46,6 +48,16 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
 }
 
 describe("WordPressCatalogService variation auto-sync", () => {
+  it("reports an operationally stopped inventory even when the database responds", async () => {
+    const value = setup(run());
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "paused", products: 10, overdue: 0, failed: 0, lastCheckedAt: null }]);
+    await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "degraded" });
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "running", products: 10, overdue: 1, failed: 0, lastCheckedAt: null }]);
+    await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "degraded" });
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "running", products: 10, overdue: 0, failed: 0, lastCheckedAt: "2026-09-14T00:00:00Z" }]);
+    await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "ok" });
+  });
+
   it("starts a continuous schedule with a bounded interval", async () => {
     const current = run({ variationAutoStatus: "inactive", variationPendingCount: 0, variationSubmittedCount: 0 });
     const value = setup(current);
