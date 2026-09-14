@@ -171,6 +171,7 @@ export interface WordPressCatalogRepository {
   }): Promise<{ readonly items: readonly WordPressCatalogRunItemSummaryRecord[]; readonly total: number }>;
   getItem(runId: EntityId, itemId: EntityId): Promise<WordPressCatalogRunItemRecord | null>;
   savePage(input: {
+    readonly inventoryOnly?: boolean;
     readonly runId: EntityId;
     readonly expectedCursor: string;
     readonly nextCursor: string;
@@ -178,6 +179,15 @@ export interface WordPressCatalogRepository {
     readonly fetchedAt: string;
     readonly items: readonly WordPressCatalogPageInput[];
   }): Promise<WordPressCatalogRunRecord>;
+  listInventoryCandidates(runId: EntityId, afterId: string, limit: number): Promise<readonly {
+    readonly id: string; readonly wordpressProductId: string; readonly sourceCode: string; readonly sourceExternalId: string;
+  }[]>;
+  enqueueInventoryReconciliation(runId: EntityId, cursor?: string): Promise<void>;
+  recoverOrphanedVariationItems(runId: EntityId): Promise<number>;
+  getInventoryHealth(): Promise<readonly {
+    readonly runId: string; readonly status: string; readonly products: number;
+    readonly overdue: number; readonly failed: number; readonly lastCheckedAt: string | null;
+  }[]>;
   failRun(runId: EntityId, error: string): Promise<void>;
   listVariationCandidates(input: {
     readonly runId: EntityId;

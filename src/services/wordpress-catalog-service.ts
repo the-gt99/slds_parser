@@ -12,6 +12,7 @@ import type {
 
 export class WordPressCatalogService {
   private static readonly variationSubmitBatchSize = 100;
+  private nextCoverageCheckAt = 0;
 
   constructor(
     private readonly repository: WordPressCatalogRepository,
@@ -162,9 +163,20 @@ export class WordPressCatalogService {
 
   async tickVariationAutoSync(): Promise<boolean> {
     const active = await this.repository.getActiveVariationSync();
+    if (active !== null && Date.now() >= this.nextCoverageCheckAt) {
+      await this.repository.recoverOrphanedVariationItems(active.runId);
+      await this.repository.enqueueInventoryReconciliation(active.runId);
+      this.nextCoverageCheckAt = Date.now() + 60_000;
+    }
     if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize) > 0) return true;
     const outcome = await this.repository.replenishVariationAutoSync();
     return outcome !== "idle" && outcome !== "waiting";
+  }
+
+  async inventoryHealth() {
+    const runs = await this.repository.getInventoryHealth();
+    return { status: runs.length > 0 && runs.every((run) => run.status === "running" && run.overdue === 0 && run.failed === 0)
+      ? "ok" : "degraded", runs };
   }
 
 }

@@ -113,7 +113,7 @@ export class JobDispatcher implements JobHandler {
     }
     if (job.jobType === "sync_wordpress_catalog" && this.wordpressCatalogSync !== undefined) {
       const payload = parseSyncWordPressCatalogPayload(job.payload);
-      await this.wordpressCatalogSync.fail(payload.runId, message);
+      if (payload.mode !== "inventory") await this.wordpressCatalogSync.fail(payload.runId, message);
       return;
     }
     if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "prepare_wordpress_variation_patch")

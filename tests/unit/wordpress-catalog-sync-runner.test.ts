@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { WordPressCatalogSyncRunner } from "../../src/application/index.js";
+import { parseSyncWordPressCatalogPayload } from "../../src/application/job-payloads.js";
 
 describe("WordPressCatalogSyncRunner", () => {
+  it("enrolls an exported product from its live identity without advancing the catalog", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue({ id: "7", status: "completed", catalogComplete: true, catalogCursor: "500" }),
+      listInventoryCandidates: vi.fn().mockResolvedValue([{ id: "8", wordpressProductId: "101", sourceCode: "goat", sourceExternalId: "42" }]),
+      savePage: vi.fn(), enqueueInventoryReconciliation: vi.fn(),
+    };
+    const client = { readProduct: vi.fn().mockResolvedValue({ targetId: "101", identity: { source_code: "goat", source_external_id: "42" }, snapshot: { product: { target_id: 101 } } }) };
+    const runner = new WordPressCatalogSyncRunner(repository as never, client as never);
+    await expect(runner.sync(parseSyncWordPressCatalogPayload({ runId: "7", cursor: "0", mode: "inventory" }))).resolves.toEqual({ status: "completed" });
+    expect(repository.savePage).toHaveBeenCalledWith(expect.objectContaining({ inventoryOnly: true, expectedCursor: "500", nextCursor: "500" }));
+    expect(repository.enqueueInventoryReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("does not enroll a product whose current identity differs from the export link", async () => {
+    const repository = {
+      getRun: vi.fn().mockResolvedValue({ id: "7", status: "completed", catalogComplete: true, catalogCursor: "500" }),
+      listInventoryCandidates: vi.fn().mockResolvedValue([{ id: "8", wordpressProductId: "101", sourceCode: "goat", sourceExternalId: "42" }]),
+      savePage: vi.fn(),
+    };
+    const client = { readProduct: vi.fn().mockResolvedValue({ targetId: "101", identity: { source_code: "goat", source_external_id: "99", legacy_goat_id: "42" }, snapshot: {} }) };
+    const runner = new WordPressCatalogSyncRunner(repository as never, client as never);
+    await expect(runner.sync({ runId: "7", cursor: "0", mode: "inventory" })).rejects.toThrow("identity mismatch");
+    expect(repository.savePage).not.toHaveBeenCalled();
+  });
+
   it("validates and persists an ordered catalog page", async () => {
     const repository = {
       getRun: vi.fn().mockResolvedValue({ id: "7", status: "running", catalogCursor: "100" }),

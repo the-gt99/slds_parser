@@ -12,6 +12,8 @@ export interface ProcessingEnvironment {
   readonly PARSER_S3_SECRET_ACCESS_KEY?: string;
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
   readonly PARSER_TRANSLATION_PROVIDER?: string;
+  readonly PARSER_OPENROUTER_API_KEY?: string;
+  readonly PARSER_OPENROUTER_MODEL?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
   readonly PARSER_DEEPL_API_URL?: string;
   readonly PARSER_TRANSLATION_SOURCE?: string;
@@ -39,10 +41,10 @@ function locale(value: string | undefined, fallback: string, name: string): stri
   return result;
 }
 
-function translationProvider(value: string | undefined): "google" | "deepl" {
+function translationProvider(value: string | undefined): "google" | "deepl" | "openrouter" {
   const result = value?.trim().toLowerCase() || "google";
-  if (result !== "google" && result !== "deepl") {
-    throw new PermanentError("PARSER_TRANSLATION_PROVIDER must be google or deepl", { code: "INVALID_PROCESSING_CONFIG" });
+  if (result !== "google" && result !== "deepl" && result !== "openrouter") {
+    throw new PermanentError("PARSER_TRANSLATION_PROVIDER must be google, deepl or openrouter", { code: "INVALID_PROCESSING_CONFIG" });
   }
   return result;
 }
@@ -112,13 +114,17 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       }
     : { type: "local" as const };
   const translationApiKey = environment.PARSER_DEEPL_API_KEY?.trim() ?? "";
+  const openRouterApiKey = environment.PARSER_OPENROUTER_API_KEY?.trim() ?? "";
+  if (selectedTranslationProvider === "openrouter" && openRouterApiKey === "") {
+    throw new PermanentError("PARSER_OPENROUTER_API_KEY is required", { code: "INVALID_PROCESSING_CONFIG" });
+  }
   if (selectedTranslationProvider === "deepl" && translationApiKey === "") {
     throw new PermanentError("PARSER_DEEPL_API_KEY is required for the DeepL translation provider", { code: "INVALID_PROCESSING_CONFIG" });
   }
   const translationOptions = {
     sourceLocale: locale(environment.PARSER_TRANSLATION_SOURCE, "en", "PARSER_TRANSLATION_SOURCE"),
     targetLocale: locale(environment.PARSER_TRANSLATION_TARGET, "ru", "PARSER_TRANSLATION_TARGET"),
-    timeoutMs: integer(environment.PARSER_TRANSLATION_TIMEOUT_MS, 8_000, "PARSER_TRANSLATION_TIMEOUT_MS", 1),
+    timeoutMs: integer(environment.PARSER_TRANSLATION_TIMEOUT_MS, selectedTranslationProvider === "openrouter" ? 60_000 : 8_000, "PARSER_TRANSLATION_TIMEOUT_MS", 1),
     attempts: integer(environment.PARSER_TRANSLATION_ATTEMPTS, 2, "PARSER_TRANSLATION_ATTEMPTS", 1),
     retryDelayMs: integer(environment.PARSER_TRANSLATION_RETRY_DELAY_MS, 400, "PARSER_TRANSLATION_RETRY_DELAY_MS", 0),
   } as const;
@@ -139,7 +145,11 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
           apiKey: translationApiKey,
           apiUrl: httpsUrl(environment.PARSER_DEEPL_API_URL, "https://api.deepl.com/v2/translate", "PARSER_DEEPL_API_URL"),
         }
-      : { ...translationOptions, provider: "google" as const },
+      : selectedTranslationProvider === "openrouter"
+        ? { ...translationOptions, provider: "openrouter" as const,
+          apiKey: openRouterApiKey,
+          model: environment.PARSER_OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v3.2" }
+        : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {
       apiUrl: shoeHeightApiUrl,
       timeoutMs: integer(environment.SHOE_HEIGHT_API_TIMEOUT_MS, 20_000, "SHOE_HEIGHT_API_TIMEOUT_MS", 1),

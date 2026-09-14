@@ -4,6 +4,14 @@ import { loadProcessingConfig } from "../../src/config/index.js";
 import { PermanentError } from "../../src/core/errors/index.js";
 
 describe("processing config", () => {
+  it("requires a key for the explicitly selected OpenRouter provider", () => {
+    const environment = { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_TRANSLATION_PROVIDER: "openrouter" };
+    expect(() => loadProcessingConfig(environment)).toThrow("PARSER_OPENROUTER_API_KEY");
+    expect(loadProcessingConfig({ ...environment, PARSER_OPENROUTER_API_KEY: "test-key" }).translation).toMatchObject({
+      provider: "openrouter", model: "deepseek/deepseek-v3.2", timeoutMs: 60_000,
+    });
+  });
+
   it("uses the confirmed legacy processing defaults", () => {
     expect(loadProcessingConfig({ PARSER_PUBLIC_BASE_URL: "https://parser.example/images" })).toEqual({
       image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2, storage: { type: "local" } },

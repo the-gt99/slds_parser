@@ -72,6 +72,19 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("accepts the explicitly allowed translator while retaining existing translations", async () => {
+    const requiredTranslation = { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" };
+    const alternative = { ...requiredTranslation, providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2" };
+    const base = context({ requiredTranslation, acceptedTranslations: [alternative] });
+    await expect(buildWordPressUpsertPayload(base)).resolves.toBeDefined();
+    await expect(buildWordPressUpsertPayload({ ...base, product: { ...base.product,
+      translatedContent: { ...base.product.translatedContent!, ...alternative } } })).resolves.toBeDefined();
+    await expect(buildWordPressUpsertPayload({ ...base, product: { ...base.product,
+      translatedContent: { ...base.product.translatedContent!, ...alternative, providerVersion: "unknown" } } })).rejects.toThrow("deepl");
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation,
+      acceptedTranslations: [{ ...alternative, targetLocale: "de" }] }))).rejects.toThrow("required locales");
+  });
+
   it("requires the configured current translation before building a full payload", async () => {
     const requiredTranslation = { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" };
     await expect(buildWordPressUpsertPayload(context({ requiredTranslation }))).resolves.toBeDefined();

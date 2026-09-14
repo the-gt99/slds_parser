@@ -3,7 +3,7 @@ import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore, S3ImageStore } from "./infrastructure/media/index.js";
-import { CachedTranslationProvider, DeepLTranslationProvider, LegacyGoogleTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
+import { CachedTranslationProvider, createTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
@@ -34,9 +34,7 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
   const imageStore = processing.image.storage.type === "s3"
     ? new S3ImageStore({ ...processing.image, ...processing.image.storage })
     : new LocalImageStore(processing.image);
-  const configuredTranslationProvider = processing.translation.provider === "deepl"
-    ? new DeepLTranslationProvider(processing.translation)
-    : new LegacyGoogleTranslationProvider(processing.translation);
+  const configuredTranslationProvider = createTranslationProvider(processing.translation);
   const translationProvider = translationCache === undefined
     ? configuredTranslationProvider
     : new CachedTranslationProvider(configuredTranslationProvider, translationCache);

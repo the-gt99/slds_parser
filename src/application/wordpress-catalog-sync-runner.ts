@@ -16,6 +16,27 @@ export class WordPressCatalogSyncRunner {
   async sync(payload: SyncWordPressCatalogPayload): Promise<RunnerResult> {
     const run = await this.repository.getRun(payload.runId);
     if (run === null) throw new IntegrationContractError(`WordPress catalog run not found: ${payload.runId}`);
+    if (payload.mode === "inventory") {
+      if (!run.catalogComplete) throw new IntegrationContractError("Inventory reconciliation requires a complete catalog");
+      const candidates = await this.repository.listInventoryCandidates(payload.runId, payload.cursor, 100);
+      const snapshots = await Promise.all(candidates.map((item) => this.client.readProduct(item.wordpressProductId)));
+      const items = candidates.map((candidate, index) => {
+        const item = snapshots[index];
+        if (item === null || item === undefined) throw new IntegrationContractError(`WordPress inventory product not found: ${candidate.wordpressProductId}`);
+        const canonical = item.identity.source_code === candidate.sourceCode
+          && String(item.identity.source_external_id ?? "") === candidate.sourceExternalId;
+        const legacy = candidate.sourceCode === "goat" && String(item.identity.legacy_goat_id ?? "") === candidate.sourceExternalId
+          && !item.identity.source_external_id;
+        if (!canonical && !legacy) throw new IntegrationContractError(`WordPress inventory identity mismatch: ${candidate.wordpressProductId}`);
+        return { wordpressProductId: item.targetId, identity: item.identity, snapshot: item.snapshot,
+          contentHash: hashStableJson(item.snapshot as JsonValue) };
+      });
+      await this.repository.savePage({ runId: payload.runId, inventoryOnly: true,
+        expectedCursor: run.catalogCursor, nextCursor: run.catalogCursor, hasMore: false,
+        fetchedAt: new Date().toISOString(), items });
+      if (candidates.length === 100) await this.repository.enqueueInventoryReconciliation(payload.runId, candidates.at(-1)!.id);
+      return { status: "completed" };
+    }
     if (run.status !== "running") return { status: "skipped" };
     if (run.catalogCursor !== payload.cursor) {
       if (BigInt(run.catalogCursor) > BigInt(payload.cursor)) return { status: "skipped" };
