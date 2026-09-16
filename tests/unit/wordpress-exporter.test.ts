@@ -74,6 +74,48 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("keeps reviewed native sizes separate in full export and inventory without leaking to other products", async () => {
+    const base = context({ nativeSizeProfiles: [{ sourceProductIds: ["2"], sizeMappings: [
+      { sourceValue: "40.5", system: "eu-numeric", audience: "men", taxonomy: "pa_razmer", termId: 9405 },
+      { sourceValue: "41", system: "eu-numeric", audience: "men", taxonomy: "pa_razmer", termId: 9410 },
+    ] }] });
+    const input: ExportContext = { ...base, product: { ...base.product, variants: ["40.5", "41"].map((value) => ({
+      ...base.product.variants[0]!, sourceVariantKey: `eu-${value}`,
+      size: { sourceValue: value, displayValue: value, system: "eu-numeric", audience: "men" as const },
+    })) } };
+    const original = structuredClone(input.product);
+    const converter = { supports: vi.fn(() => true), convert: vi.fn(async () => ({
+      sourceValue: "7", displayValue: "7", system: "us-numeric", audience: "men" as const,
+    })) };
+    const preview = await previewWordPressUpsertPayload(input, converter);
+    const full = await buildWordPressUpsertPayload(input, converter);
+    const live = await previewWordPressVariationPatchItems({ ...input, liveVariants: input.product.variants }, converter);
+    const expected = [9405, 9410].map((term_id) => ({ size: { taxonomy: "pa_razmer", term_id } }));
+    expect((preview.payload.variations as JsonObject).items).toMatchObject(expected);
+    expect((full.variations as JsonObject).items).toMatchObject(expected);
+    expect(live.items).toMatchObject(expected);
+    expect(converter.convert).not.toHaveBeenCalled();
+    expect(input.product).toEqual(original);
+    expect(() => matchExistingWordPressVariations(live, { product: { variations: [
+      { variation_id: 500, stock_status: "instock", attributes: [{ taxonomy: "pa_razmer", term_id: 107 }] },
+    ] } })).toThrow("requires full product synchronization");
+    const other = { ...input, sourceProduct: { ...input.sourceProduct, id: "3" } };
+    await expect(buildWordPressUpsertPayload(other, converter)).rejects.toThrow("same WordPress size");
+    expect(converter.convert).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not convert a missing native size or accept overlapping native profiles", async () => {
+    const profile = { sourceProductIds: ["2"], sizeMappings: [
+      { sourceValue: "41", system: "eu-numeric", audience: "men", taxonomy: "pa_razmer", termId: 9410 },
+    ] };
+    const input = context({ nativeSizeProfiles: [profile] });
+    const converter = { supports: vi.fn(() => true), convert: vi.fn() };
+    await expect(buildWordPressUpsertPayload(input, converter)).rejects.toThrow("size mapping is missing");
+    expect(converter.convert).not.toHaveBeenCalled();
+    await expect(buildWordPressUpsertPayload(context({ nativeSizeProfiles: [profile, profile] })))
+      .rejects.toThrow("More than one native size profile");
+  });
+
   function childContext(): ExportContext {
     const base = context({ sizeMappings: [
       { sourceValue: "3", system: "us-numeric", audience: "youth", taxonomy: "pa_razmer", termId: 1412 },
