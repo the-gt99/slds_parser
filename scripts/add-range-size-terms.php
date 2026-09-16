@@ -27,4 +27,3 @@ try {
  } else $wpdb->query('ROLLBACK');
  echo json_encode(['apply'=>$apply,'items'=>$result],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 } catch(Throwable $e) {$wpdb->query('ROLLBACK');throw $e;}
-

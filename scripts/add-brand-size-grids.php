@@ -34,4 +34,3 @@ try {
   echo json_encode(['audit'=>$backup,'applied'=>count($prepared)]),"\n";
  } else $wpdb->query('ROLLBACK');
 } catch(Throwable $e){$wpdb->query('ROLLBACK');throw $e;}
-

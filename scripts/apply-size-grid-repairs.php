@@ -45,4 +45,3 @@ try {
   echo json_encode(['backup'=>$backup,'applied'=>count($prepared)],JSON_UNESCAPED_UNICODE), "\n";
  } else $wpdb->query('ROLLBACK');
 } catch (Throwable $e) { $wpdb->query('ROLLBACK'); throw $e; }
-
