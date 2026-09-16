@@ -12,6 +12,14 @@ const config = {
 };
 
 describe("WordPressSizeConverter", () => {
+  it("preserves the child scale specified by the brand table rather than treating C as Y", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ conversion_table: { "31": "13.5C", "32": "1Y" } })));
+    const converter = new WordPressSizeConverter(config, request);
+    const input = { brandTermId: 31, categoryTermId: 865, size: { sourceValue: "31", displayValue: "31", system: "eu-numeric", audience: "youth" as const } };
+    await expect(converter.convert(input)).resolves.toMatchObject({ sourceValue: "13.5", audience: "infant" });
+    await expect(converter.convert({ ...input, size: { ...input.size, sourceValue: "32", audience: "infant" } })).resolves.toMatchObject({ sourceValue: "1", audience: "youth" });
+    expect(input.size.audience).toBe("youth");
+  });
   it("keeps model-specific tables separate in requests and cache", async () => {
     const request = vi.fn(async (url: URL | RequestInfo) => {
       const ids = new URL(String(url)).searchParams.getAll("model_ids[]");

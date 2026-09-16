@@ -116,10 +116,15 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
     if (converted === undefined) {
       throw new WordPressSizeConversionMissingError(`WordPress size conversion is missing: ${originalKey}`);
     }
+    const childLabel = /^(\d+(?:[.,]\d+)?)([CY])$/iu.exec(converted.trim());
+    const convertedAudience = (audience === "youth" || audience === "infant") && childLabel !== null
+      ? childLabel[2]!.toUpperCase() === "C" ? "infant" : "youth"
+      : input.size.audience;
     return {
       ...input.size,
-      sourceValue: canonicalUsSize(converted, input.size.audience),
-      displayValue: canonicalUsSize(converted, input.size.audience),
+      ...(convertedAudience === undefined ? {} : { audience: convertedAudience }),
+      sourceValue: canonicalUsSize(converted, convertedAudience),
+      displayValue: canonicalUsSize(converted, convertedAudience),
       system: "us-numeric",
     };
   }
