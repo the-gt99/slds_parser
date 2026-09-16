@@ -29,6 +29,7 @@ interface ResolvedSizeTable {
 export interface WordPressSizeConversionInput {
   readonly brandTermId: number;
   readonly categoryTermId: number;
+  readonly modelTermIds?: readonly number[];
   readonly size: ProductSizeDTO;
 }
 
@@ -90,12 +91,14 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
       throw new IntegrationContractError(`WordPress size system cannot be converted: ${originalKey}`);
     }
     const audience = input.size.audience ?? "unisex";
-    const cacheKey = [input.brandTermId, input.categoryTermId, system, audience].join(":");
+    const modelTermIds = [...new Set(input.modelTermIds ?? [])].sort((a, b) => a - b);
+    const cacheKey = [input.brandTermId, input.categoryTermId, system, audience, modelTermIds.join(",")].join(":");
     const pending = this.tableCache.get(cacheKey) ?? this.fetchTable({
       brandTermId: input.brandTermId,
       categoryTermId: input.categoryTermId,
       sourceSystem: system,
       audience,
+      modelTermIds,
     });
     this.tableCache.set(cacheKey, pending);
     let table: ResolvedSizeTable;
@@ -125,6 +128,7 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
     readonly brandTermId: number;
     readonly categoryTermId: number;
     readonly sourceSystem: string;
+    readonly modelTermIds: readonly number[];
     readonly audience: NonNullable<ProductSizeDTO["audience"]>;
   }): Promise<ResolvedSizeTable> {
     const url = new URL(`${this.config.baseUrl}/wp-json/slamdunk/size-converter/v1/convert`);
@@ -132,6 +136,7 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
     url.searchParams.set("category_id", String(input.categoryTermId));
     url.searchParams.set("from_system", input.sourceSystem);
     url.searchParams.set("audience", input.audience);
+    for (const id of input.modelTermIds) url.searchParams.append("model_ids[]", String(id));
     let response: Response;
     try {
       response = await this.requestImplementation(url, {

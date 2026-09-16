@@ -12,6 +12,18 @@ const config = {
 };
 
 describe("WordPressSizeConverter", () => {
+  it("keeps model-specific tables separate in requests and cache", async () => {
+    const request = vi.fn(async (url: URL | RequestInfo) => {
+      const ids = new URL(String(url)).searchParams.getAll("model_ids[]");
+      return new Response(JSON.stringify({ conversion_table: { "40": ids.includes("51") ? "7" : "8" } }));
+    });
+    const converter = new WordPressSizeConverter(config, request);
+    const input = { brandTermId: 31, categoryTermId: 75, size: { sourceValue: "40", displayValue: "40", system: "eu-numeric", audience: "men" as const } };
+    expect((await converter.convert({ ...input, modelTermIds: [51] })).sourceValue).toBe("7");
+    expect((await converter.convert({ ...input, modelTermIds: [52] })).sourceValue).toBe("8");
+    expect((await converter.convert({ ...input, modelTermIds: [51, 51] })).sourceValue).toBe("7");
+    expect(request).toHaveBeenCalledTimes(2);
+  });
   it("uses the WordPress brand table and caches it per conversion context", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       brand_id: 31,

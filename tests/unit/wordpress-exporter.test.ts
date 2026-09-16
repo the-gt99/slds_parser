@@ -734,7 +734,7 @@ describe("WordPressExporter", () => {
 
     const payload = await buildWordPressUpsertPayload(input, converter);
 
-    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, size: input.product.variants[0]!.size });
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, modelTermIds: [], size: input.product.variants[0]!.size });
     expect((payload.product as JsonObject).taxonomies).toEqual({
       pa_brand: { mode: "replace", term_ids: [31, 32] },
       product_cat: { mode: "replace", term_ids: [41] },
@@ -764,7 +764,7 @@ describe("WordPressExporter", () => {
     const payload = await buildWordPressUpsertPayload(input, converter);
     const item = ((payload.variations as JsonObject).items as readonly JsonObject[])[0]!;
 
-    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, size: input.product.variants[0]!.size });
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 41, modelTermIds: [], size: input.product.variants[0]!.size });
     expect(item.size).toEqual({ taxonomy: "pa_razmer", term_id: 108 });
     expect(input.product.variants[0]!.size).toEqual({ sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" });
   });
@@ -794,7 +794,7 @@ describe("WordPressExporter", () => {
 
     const payload = await buildWordPressUpsertPayload(input, converter);
 
-    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 75, size: input.product.variants[0]!.size });
+    expect(converter.convert).toHaveBeenCalledWith({ brandTermId: 31, categoryTermId: 75, modelTermIds: [], size: input.product.variants[0]!.size });
     expect((payload.product as JsonObject).taxonomies).toMatchObject({
       product_cat: { mode: "replace", term_ids: [25922] },
     });

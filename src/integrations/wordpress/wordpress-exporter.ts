@@ -411,7 +411,7 @@ function sizeConversionIdentity(
   taxonomies: JsonObject,
   config: JsonObject,
   primaryBrandTermId: number | null,
-): { readonly brandTermId: number; readonly categoryTermId: number } {
+): { readonly brandTermId: number; readonly categoryTermId: number; readonly modelTermIds: readonly number[] } {
   if (primaryBrandTermId === null) {
     throw new IntegrationContractError("WordPress size conversion requires exactly one primary resolved pa_brand term");
   }
@@ -426,7 +426,7 @@ function sizeConversionIdentity(
   if (candidates.length !== 1) {
     throw new IntegrationContractError("WordPress size conversion requires exactly one configured product_cat term");
   }
-  return { brandTermId: primaryBrandTermId, categoryTermId: candidates[0]! };
+  return { brandTermId: primaryBrandTermId, categoryTermId: candidates[0]!, modelTermIds: taxonomyTermIds(taxonomies, "pa_model") };
 }
 
 async function resolveVariationSize(
@@ -1132,7 +1132,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.25.0";
+  readonly version = "1.26.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
