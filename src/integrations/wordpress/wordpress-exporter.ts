@@ -11,6 +11,7 @@ import type {
 } from "../../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import { hashStableJson } from "../../core/utils/index.js";
+import { resolveWordPressSourceSize } from "./wordpress-size-rules.js";
 import { WordPressSizeConverter, WordPressSizeConversionMissingError, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 import {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
@@ -441,11 +442,19 @@ function sizeConversionIdentity(
 }
 
 async function resolveVariationSize(
+  context: ExportContext,
   size: ProductSizeDTO,
   mappings: readonly SizeMapping[],
   converter: WordPressSizeConverterLike | undefined,
   identity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
 ): Promise<{ readonly mapping: SizeMapping; readonly size: ProductSizeDTO }> {
+  const sourceSize = resolveWordPressSourceSize(context, size);
+  if (sourceSize !== size) {
+    // A corrected audience must use an explicit mapping, never an unscoped one
+    // or the original Youth mapping, even when partial export is allowed.
+    return { mapping: resolveSize(sourceSize, mappings.filter((mapping) =>
+      mapping.system === sourceSize.system && mapping.audience === sourceSize.audience)), size: sourceSize };
+  }
   const direct = findSizeMapping(size, mappings);
   if (direct !== null) return { mapping: direct, size };
   if (converter === undefined || !converter.supports(size) || identity === undefined) return { mapping: resolveSize(size, mappings), size };
@@ -458,13 +467,14 @@ async function resolveVariationSize(
 }
 
 async function variationPayload(
+  context: ExportContext,
   variant: ProductVariantDTO,
   identityKey: string,
   mappings: readonly SizeMapping[],
   converter: WordPressSizeConverterLike | undefined,
   conversionIdentity: { readonly brandTermId: number; readonly categoryTermId: number } | undefined,
 ): Promise<{ readonly payload: JsonObject; readonly size: ProductSizeDTO; readonly availability: ProductVariantDTO["inventory"]["availability"] }> {
-  const resolvedSize = await resolveVariationSize(variant.size, mappings, converter, conversionIdentity);
+  const resolvedSize = await resolveVariationSize(context, variant.size, mappings, converter, conversionIdentity);
   if (variant.inventory.availability !== "available" && variant.inventory.availability !== "unavailable") {
     throw new IntegrationContractError(`Unsupported WordPress availability for variant ${variant.sourceVariantKey}: ${variant.inventory.availability}`);
   }
@@ -491,6 +501,7 @@ async function variationPayload(
 }
 
 async function resolveVariationSet(
+  context: ExportContext,
   variants: readonly ProductVariantDTO[],
   identityKey: string,
   mappings: readonly SizeMapping[],
@@ -503,7 +514,7 @@ async function resolveVariationSet(
 }> {
   const rows = await Promise.all(variants.map(async (variant) => {
     try {
-      return { resolved: await variationPayload(variant, identityKey, mappings, converter, conversionIdentity), ignored: null };
+      return { resolved: await variationPayload(context, variant, identityKey, mappings, converter, conversionIdentity), ignored: null };
     } catch (error) {
       if (!ignoreMissingMappings || !isMissingSizeMappingError(error)) throw error;
       return { resolved: null, ignored: ignoredSizeVariant(variant, error.message) };
@@ -960,6 +971,7 @@ async function buildWordPressPayload(
     ? sizeConversionIdentity(taxonomies, context.target.config, primaryBrandTermId)
     : undefined;
   const outputResolution = await resolveVariationSet(
+    context,
     outputVariants,
     externalKey,
     mappings,
@@ -990,6 +1002,7 @@ async function buildWordPressPayload(
   const contentResolution = context.liveVariants === undefined
     ? outputResolution
     : await resolveVariationSet(
+      context,
       context.product.variants,
       externalKey,
       mappings,
@@ -1056,6 +1069,8 @@ export async function previewWordPressUpsertPayload(
 }
 
 export interface WordPressVariationPatchDraft {
+  /** Old target terms that require full synchronization before inventory patches. */
+  readonly replacedTargetSizes?: readonly string[];
   readonly items: readonly JsonObject[];
   readonly sourceTargetSizes: readonly string[];
   readonly knownTargetSizes: readonly string[];
@@ -1085,7 +1100,16 @@ export async function previewWordPressVariationPatchItems(
   const conversionIdentity = needsConversion && converter !== undefined
     ? sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId)
     : undefined;
-  const resolution = await resolveVariationSet(variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
+  const resolution = await resolveVariationSet(context, variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
+  const replacedTargetSizes = [...new Set(variants.flatMap((variant) => {
+    const corrected = resolveWordPressSourceSize(context, variant.size);
+    if (corrected === variant.size) return [];
+    const previous = findSizeMapping(variant.size, mappings);
+    const current = findSizeMapping(corrected, mappings.filter((mapping) =>
+      mapping.system === corrected.system && mapping.audience === corrected.audience));
+    if (previous !== null && current?.termId === previous.termId && current.taxonomy === previous.taxonomy) return [];
+    return previous === null ? [] : [`${previous.taxonomy}:${previous.termId}`];
+  }))];
   const priceRatio = maximumVariantPriceRatio(context.target.config);
   const unsafeKeys = unsafeVariantPriceKeys(variants, priceRatio);
   const items = resolution.resolved.map((item) => unsafeKeys.has(String(item.payload.source_variant_key))
@@ -1101,6 +1125,7 @@ export async function previewWordPressVariationPatchItems(
   const variantByKey = new Map(variants.map((variant) => [variant.sourceVariantKey, variant]));
   return {
     items: items.map((item) => item.payload),
+    ...(replacedTargetSizes.length === 0 ? {} : { replacedTargetSizes }),
     sourceTargetSizes: [...new Set(resolution.resolved.map((item) => {
       const size = item.payload.size as JsonObject;
       return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -1143,7 +1168,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.26.1";
+  readonly version = "1.27.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
