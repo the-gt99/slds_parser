@@ -1,3 +1,4 @@
+import { matchExistingWordPressVariations } from "../../src/integrations/wordpress/wordpress-variation-patch-builder.js";
 import { WordPressSizeConverter } from "../../src/integrations/wordpress/wordpress-size-converter.js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -73,6 +74,71 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  function childContext(): ExportContext {
+    const base = context({ sizeMappings: [
+      { sourceValue: "3", system: "us-numeric", audience: "youth", taxonomy: "pa_razmer", termId: 1412 },
+      { sourceValue: "10.5", system: "us-numeric", audience: "youth", taxonomy: "pa_razmer", termId: 1551 },
+      { sourceValue: "10.5", system: "us-numeric", audience: "infant", taxonomy: "pa_razmer", termId: 1401 },
+      { sourceValue: "11.5", system: "us-numeric", audience: "infant", taxonomy: "pa_razmer", termId: 1403 },
+      { sourceValue: "12.5", system: "us-numeric", audience: "infant", taxonomy: "pa_razmer", termId: 1405 },
+      { sourceValue: "13.5", system: "us-numeric", audience: "infant", taxonomy: "pa_razmer", termId: 1407 },
+    ] });
+    return { ...base, product: { ...base.product, metadata: { route: "sneakers" },
+      variants: ["3", "10.5", "11.5", "12.5", "13.5"].map((value) => ({ ...base.product.variants[0]!,
+        sourceVariantKey: `child-${value}`, sku: `CHILD-${value}`,
+        size: { sourceValue: value, displayValue: value, system: "us-numeric", audience: "youth" as const },
+      })) } };
+  }
+
+  it("uses the same corrected child terms in preview, full export and live inventory", async () => {
+    const input = childContext();
+    const original = structuredClone(input.product);
+    const preview = await previewWordPressUpsertPayload(input);
+    const payload = await buildWordPressUpsertPayload(input);
+    const live = await previewWordPressVariationPatchItems({ ...input, liveVariants: input.product.variants });
+    const expected = [1412, 1401, 1403, 1405, 1407].map((term_id) => ({ size: { taxonomy: "pa_razmer", term_id } }));
+    expect((preview.payload.variations as JsonObject).items).toMatchObject(expected);
+    expect((payload.variations as JsonObject).items).toMatchObject(expected);
+    expect(live.items).toMatchObject(expected);
+    expect(preview.ignoredSizeVariants).toEqual([]);
+    expect(live.replacedTargetSizes).toEqual(["pa_razmer:1551"]);
+    expect(input.product).toEqual(original);
+    expect(live.items.map((item) => item.source_variant_key)).toEqual(input.product.variants.map((variant) => variant.sourceVariantKey));
+    const refreshed = await previewWordPressUpsertPayload({ ...input, liveVariants: [input.product.variants[2]!] });
+    expect((refreshed.payload.variations as JsonObject).items).toMatchObject([expected[2]]);
+  });
+
+  it("requires exact K mappings and never falls back to Y or an audience-free mapping", async () => {
+    const base = childContext();
+    const input = { ...base, target: { ...base.target, config: { ...base.target.config,
+      sizeMappings: [
+        { sourceValue: "3", system: "us-numeric", audience: "youth", taxonomy: "pa_razmer", termId: 1412 },
+        { sourceValue: "10.5", system: "us-numeric", audience: "youth", taxonomy: "pa_razmer", termId: 1551 },
+        { sourceValue: "10.5", taxonomy: "pa_razmer", termId: 1551 },
+      ],
+    } } };
+    await expect(buildWordPressUpsertPayload(input)).rejects.toThrow("us-numeric/infant/10.5");
+    const partial = await previewWordPressUpsertPayload({ ...input, target: { ...input.target,
+      config: { ...input.target.config, ignoreUnmappedSizeVariants: true } } });
+    expect((partial.payload.variations as JsonObject).items).toHaveLength(1);
+    expect(partial.ignoredSizeVariants).toHaveLength(4);
+    expect(partial.ignoredSizeVariants[0]).toMatchObject({ sourceValue: "10.5", audience: "youth",
+      reason: expect.stringContaining("us-numeric/infant/10.5") });
+  });
+
+  it("blocks inventory-only updates of old Y variations until full synchronization", async () => {
+    const draft = await previewWordPressVariationPatchItems(childContext());
+    const oldSnapshot = { product: { variations: [
+      { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 1551 }] },
+    ] } };
+    expect(() => matchExistingWordPressVariations(draft, oldSnapshot)).toThrow("requires full product synchronization");
+    const repaired = matchExistingWordPressVariations(draft, { product: { variations: [
+      { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 1401 }] },
+      { variation_id: 501, stock_status: "outofstock", attributes: [{ taxonomy: "pa_razmer", term_id: 1551 }] },
+    ] } });
+    expect(repaired.items).toContainEqual(expect.objectContaining({ variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 1401 } }));
+  });
+
   it("keeps a converted range as one exact target size", async () => {
     const base = context({ sizeMappings: [
       { sourceValue: "7-7.5", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 26209 },

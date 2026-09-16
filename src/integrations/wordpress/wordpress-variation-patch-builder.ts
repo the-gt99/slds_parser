@@ -65,6 +65,11 @@ export function matchExistingWordPressVariations(
   for (const [key, matches] of bySize) {
     if (matches.length > 1) throw new IntegrationContractError(`WordPress contains more than one variation for size ${key}`);
   }
+  for (const key of draft.replacedTargetSizes ?? []) {
+    if (bySize.get(key)?.some((variation) => variation.stock_status !== "outofstock")) {
+      throw new IntegrationContractError(`WordPress size ${key} requires full product synchronization before inventory updates`);
+    }
+  }
 
   const items: JsonObject[] = [];
   const ignored: JsonObject[] = [...draft.ignored];
