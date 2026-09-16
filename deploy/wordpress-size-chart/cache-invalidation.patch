@@ -1,0 +1,12 @@
+--- a/wp-content/themes/slds/single_product/prepare_data.php
++++ b/wp-content/themes/slds/single_product/prepare_data.php
+@@ -12,6 +12,9 @@
+ $ts = strtotime($product_data['post_modified_gmt']);
+ $ts_threrhold = strtotime("2026-09-07 11:42:00");
+ if($ts < $ts_threrhold) $ts = $ts_threrhold;
++foreach (['prepare_razmer_setki.php', 'razmer_setki.php', 'razmer_setka_body.php', 'size-chart-choice.js'] as $chart_file) {
++    $ts = max($ts, (int) filemtime(__DIR__ . '/' . $chart_file));
++}
+ scv3_http_apply_last_modified_header($ts);
+ if(scv3_http_handle_if_modified_since($ts, true)){
+     exit();
