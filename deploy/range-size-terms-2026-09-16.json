@@ -1,0 +1,170 @@
+[
+  {
+    "sourceValue": "6-6.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 6-6,5M",
+    "slug": "us-6-6-5m"
+  },
+  {
+    "sourceValue": "7-7.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 7-7,5M",
+    "slug": "us-7-7-5m"
+  },
+  {
+    "sourceValue": "8-8.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 8-8,5M",
+    "slug": "us-8-8-5m"
+  },
+  {
+    "sourceValue": "9-9.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 9-9,5M",
+    "slug": "us-9-9-5m"
+  },
+  {
+    "sourceValue": "10-10.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 10-10,5M",
+    "slug": "us-10-10-5m"
+  },
+  {
+    "sourceValue": "11-11.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 11-11,5M",
+    "slug": "us-11-11-5m"
+  },
+  {
+    "sourceValue": "12-12.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 12-12,5M",
+    "slug": "us-12-12-5m"
+  },
+  {
+    "sourceValue": "13-13.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 13-13,5M",
+    "slug": "us-13-13-5m"
+  },
+  {
+    "sourceValue": "14-14.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 14-14,5M",
+    "slug": "us-14-14-5m"
+  },
+  {
+    "sourceValue": "15-15.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 15-15,5M",
+    "slug": "us-15-15-5m"
+  },
+  {
+    "sourceValue": "16-16.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 16-16,5M",
+    "slug": "us-16-16-5m"
+  },
+  {
+    "sourceValue": "17-17.5",
+    "system": "us-numeric",
+    "audience": "men",
+    "taxonomy": "pa_razmer",
+    "name": "US 17-17,5M",
+    "slug": "us-17-17-5m"
+  },
+  {
+    "sourceValue": "4-4.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 4-4,5W",
+    "slug": "us-4-4-5w"
+  },
+  {
+    "sourceValue": "5-5.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 5-5,5W",
+    "slug": "us-5-5-5w"
+  },
+  {
+    "sourceValue": "6-6.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 6-6,5W",
+    "slug": "us-6-6-5w"
+  },
+  {
+    "sourceValue": "7-7.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 7-7,5W",
+    "slug": "us-7-7-5w"
+  },
+  {
+    "sourceValue": "8-8.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 8-8,5W",
+    "slug": "us-8-8-5w"
+  },
+  {
+    "sourceValue": "9-9.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 9-9,5W",
+    "slug": "us-9-9-5w"
+  },
+  {
+    "sourceValue": "10-10.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 10-10,5W",
+    "slug": "us-10-10-5w"
+  },
+  {
+    "sourceValue": "11-11.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 11-11,5W",
+    "slug": "us-11-11-5w"
+  },
+  {
+    "sourceValue": "12-12.5",
+    "system": "us-numeric",
+    "audience": "women",
+    "taxonomy": "pa_razmer",
+    "name": "US 12-12,5W",
+    "slug": "us-12-12-5w"
+  }
+]

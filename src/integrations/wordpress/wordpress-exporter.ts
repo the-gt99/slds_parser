@@ -1143,8 +1143,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.24.0";
-  private readonly sizeConverter: WordPressSizeConverterLike;
+  readonly version = "1.25.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
@@ -1155,9 +1154,7 @@ export class WordPressExporter {
     private readonly config: WordPressTargetConfig,
     private readonly requestImplementation: typeof fetch = fetch,
     _wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
-  ) {
-    this.sizeConverter = new WordPressSizeConverter(config, requestImplementation);
-  }
+  ) {}
 
   async previewPayload(context: ExportContext): Promise<WordPressUpsertPayloadPreview> {
     const effectiveContext = requiresCurrentTaxonomySnapshot(context.target.config)
@@ -1165,11 +1162,11 @@ export class WordPressExporter {
       && context.existingExternalId !== undefined
       ? await this.withCurrentTaxonomySnapshot(context)
       : context;
-    return previewWordPressUpsertPayload(effectiveContext, this.sizeConverter);
+    return previewWordPressUpsertPayload(effectiveContext, new WordPressSizeConverter(this.config, this.requestImplementation));
   }
 
   async buildPayload(context: ExportContext): Promise<JsonObject> {
-    return buildWordPressUpsertPayload(context, this.sizeConverter);
+    return buildWordPressUpsertPayload(context, new WordPressSizeConverter(this.config, this.requestImplementation));
   }
 
   async preflightPayload(payload: JsonObject): Promise<WordPressUpsertPreflightResult> {

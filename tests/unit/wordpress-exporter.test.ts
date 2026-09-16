@@ -73,6 +73,47 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("keeps a converted range as one exact target size", async () => {
+    const base = context({ sizeMappings: [
+      { sourceValue: "7-7.5", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 26209 },
+    ] });
+    const input: ExportContext = { ...base, product: { ...base.product, variants: [{
+      ...base.product.variants[0]!, size: { sourceValue: "40", displayValue: "40", system: "eu-numeric", audience: "men" },
+    }] } };
+    const request = vi.fn(async () => new Response(JSON.stringify({ conversion_table: { "40": "7-7,5" }, conflicts: {} })));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token",
+      timeoutMs: 1000, jobTimeoutMs: 1000, pollIntervalMs: 10 }, request);
+    const result = await exporter.previewPayload(input);
+    const variants = (result.payload.variations as JsonObject).items;
+    expect(variants).toMatchObject([{ size: { taxonomy: "pa_razmer", term_id: 26209 } }]);
+    expect(variants).toHaveLength(1);
+    expect(result.ignoredSizeVariants).toEqual([]);
+  });
+
+  it("reloads corrected size tables between payloads while sharing one table across their variants", async () => {
+    const base = context({ sizeMappings: [
+      { sourceValue: "7", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 107 },
+      { sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 },
+    ] });
+    const input: ExportContext = { ...base, product: { ...base.product, variants: ["40", "41"].map((size) => ({
+      ...base.product.variants[0]!, sourceVariantKey: `eu-${size}`, sku: `EU-${size}`,
+      size: { sourceValue: size, displayValue: size, system: "eu-numeric", audience: "men" as const },
+    })) } };
+    let conflicting = true;
+    const request = vi.fn(async () => new Response(JSON.stringify({
+      conversion_table: { "40": "7", "41": "8" }, conflicts: conflicting ? { "40": ["7", "10"] } : {},
+    })));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token",
+      timeoutMs: 1000, jobTimeoutMs: 1000, pollIntervalMs: 10 }, request);
+    await expect(exporter.previewPayload(input)).rejects.toThrow("size conversion is ambiguous");
+    conflicting = false;
+    await expect(exporter.previewPayload(input)).resolves.toHaveProperty("payload");
+    expect(request).toHaveBeenCalledTimes(2);
+    conflicting = true;
+    await expect(exporter.buildPayload(input)).rejects.toThrow("size conversion is ambiguous");
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
   it("reports a missing conversion row as an omitted variant only under the explicit policy", async () => {
     const base = context({ ignoreUnmappedSizeVariants: true,
       sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }] });
