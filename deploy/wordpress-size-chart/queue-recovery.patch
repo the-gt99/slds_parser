@@ -1,0 +1,20 @@
+--- a/wp-content/themes/slds/inc/catalog/admin/target-import/queue.php
++++ b/wp-content/themes/slds/inc/catalog/admin/target-import/queue.php
+@@ -1120,4 +1120,16 @@
+ 		. " WHERE status = 'pending' AND available_at <= NOW(){$lane_sql} LIMIT 1"
+ 	);
+-	return ! empty( $has );
++	if ( ! empty( $has ) ) {
++        return true;
++    }
++    // A crashed worker can leave only expired claims, with no pending jobs.
++    // Report those as work so claim_batch can recover them using the same lease policy.
++    $has = $wpdb->get_var(
++        'SELECT 1 FROM ' . slds_target_import_queue_table()
++        . " WHERE status = 'processing' AND locked_at IS NOT NULL"
++        . " AND ((source = 'parser-product-media' AND locked_at < (NOW() - INTERVAL 60 MINUTE))"
++        . " OR (source <> 'parser-product-media' AND locked_at < (NOW() - INTERVAL 15 MINUTE)))"
++        . "{$lane_sql} LIMIT 1"
++    );
++    return ! empty( $has );
+ }
