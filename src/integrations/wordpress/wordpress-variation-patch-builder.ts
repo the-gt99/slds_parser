@@ -11,9 +11,16 @@ function positiveInteger(value: unknown): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-export function hasAvailableWordPressVariation(snapshot: JsonObject): boolean {
+function inventoryVariations(snapshot: JsonObject): Record<string, unknown>[] {
   const product = record(snapshot.product);
   const variations = Array.isArray(product.variations) ? product.variations.map(record) : [];
+  // Старые снимки не передавали статус. Явно архивные варианты не обновляем.
+  return variations.filter((variation) => variation.status === undefined
+    || variation.status === "publish" || variation.status === "private");
+}
+
+export function hasAvailableWordPressVariation(snapshot: JsonObject): boolean {
+  const variations = inventoryVariations(snapshot);
   return variations.some((variation) => positiveInteger(variation.variation_id) !== null
     && String(variation.stock_status ?? "") !== "outofstock");
 }
@@ -22,8 +29,7 @@ export function matchExistingWordPressVariations(
   draft: WordPressVariationPatchDraft,
   snapshot: JsonObject,
 ): { readonly items: readonly JsonObject[]; readonly ignored: readonly JsonObject[] } {
-  const product = record(snapshot.product);
-  const variations = Array.isArray(product.variations) ? product.variations.map(record) : [];
+  const variations = inventoryVariations(snapshot);
   if (draft.deactivateAll) {
     const items: JsonObject[] = [];
     const ignored: JsonObject[] = [...draft.ignored];
