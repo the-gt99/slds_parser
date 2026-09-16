@@ -71,6 +71,15 @@ export function matchExistingWordPressVariations(
     }
   }
 
+  if (draft.requiresExactSizeSet) {
+    const nativeSizes = new Set(draft.knownTargetSizes);
+    for (const [key, matches] of bySize) {
+      if (!nativeSizes.has(key) && matches.some((variation) => variation.stock_status !== "outofstock")) {
+        throw new IntegrationContractError(`WordPress size ${key} requires full product synchronization before native size inventory updates`);
+      }
+    }
+  }
+
   const items: JsonObject[] = [];
   const ignored: JsonObject[] = [...draft.ignored];
   for (const rawItem of draft.items) {

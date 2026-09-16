@@ -200,6 +200,26 @@ function resolveSize(size: ProductSizeDTO, mappings: readonly SizeMapping[]): Si
   throw new IntegrationContractError(`WordPress size mapping is missing: ${key}`);
 }
 
+function nativeSizeProfile(context: ExportContext): JsonObject | null {
+  const profiles = context.target.config.nativeSizeProfiles;
+  if (profiles === undefined) return null;
+  if (!Array.isArray(profiles)) throw new IntegrationContractError("target.config.nativeSizeProfiles must be a list");
+  const matches = profiles.map((value) => {
+    const profile = record(value, "native size profile");
+    if (!Array.isArray(profile.sourceProductIds) || profile.sourceProductIds.length === 0
+      || profile.sourceProductIds.some((id) => typeof id !== "string" || !/^[1-9]\d*$/u.test(id))) {
+      throw new IntegrationContractError("Native size profiles require explicit source product IDs");
+    }
+    const mappings = sizeMappings(profile as JsonObject);
+    if (mappings.some((mapping) => mapping.system === undefined || mapping.audience === undefined)) {
+      throw new IntegrationContractError("Native size mappings require an explicit system and audience");
+    }
+    return profile;
+  }).filter((profile) => (profile.sourceProductIds as string[]).includes(context.sourceProduct.id));
+  if (matches.length > 1) throw new IntegrationContractError("More than one native size profile applies to the product");
+  return (matches[0] as JsonObject | undefined) ?? null;
+}
+
 function requiredTranslation(config: JsonObject): WordPressRequiredTranslation | null {
   if (config.requiredTranslation === undefined) return null;
   const value = record(config.requiredTranslation, "target.config.requiredTranslation");
@@ -928,7 +948,9 @@ async function buildWordPressPayload(
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(sourceCode)) throw new IntegrationContractError(`Source code cannot be used in WordPress identity: ${context.source.code}`);
   const externalKey = `${sourceCode}:${sourceExternalId}`;
   const required = requiredReferenceTypes(context.target.config);
-  const mappings = sizeMappings(context.target.config);
+  const nativeProfile = nativeSizeProfile(context);
+  const mappings = sizeMappings(nativeProfile ?? context.target.config);
+  if (nativeProfile !== null) converter = undefined;
   const ignoreMissingSizeMappings = ignoreUnmappedSizeVariants(context.target.config);
   const taxonomyResult = await taxonomyPayload(context, required, allowMissingRequired);
   const {
@@ -1058,6 +1080,7 @@ export async function previewWordPressUpsertPayload(
 }
 
 export interface WordPressVariationPatchDraft {
+  readonly requiresExactSizeSet?: boolean;
   /** Old target terms that require full synchronization before inventory patches. */
   readonly replacedTargetSizes?: readonly string[];
   readonly items: readonly JsonObject[];
@@ -1079,7 +1102,9 @@ export async function previewWordPressVariationPatchItems(
   }
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
   const externalKey = `${sourceCode}:${sourceExternalId}`;
-  const mappings = sizeMappings(context.target.config);
+  const nativeProfile = nativeSizeProfile(context);
+  const mappings = sizeMappings(nativeProfile ?? context.target.config);
+  if (nativeProfile !== null) converter = undefined;
   const ignoreMissing = ignoreUnmappedSizeVariants(context.target.config);
   const taxonomyResult = await taxonomyPayload(context, requiredReferenceTypes(context.target.config), true);
   const taxonomies = mergePreservedTaxonomyTerms(context, taxonomyResult.taxonomies);
@@ -1113,6 +1138,7 @@ export async function previewWordPressVariationPatchItems(
   }
   const variantByKey = new Map(variants.map((variant) => [variant.sourceVariantKey, variant]));
   return {
+    ...(nativeProfile === null ? {} : { requiresExactSizeSet: true }),
     items: items.map((item) => item.payload),
     ...(replacedTargetSizes.length === 0 ? {} : { replacedTargetSizes }),
     sourceTargetSizes: [...new Set(resolution.resolved.map((item) => {
@@ -1157,7 +1183,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.27.0";
+  readonly version = "1.28.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
