@@ -1,8 +1,6 @@
 --- a/wp-content/themes/slds/inc/catalog/admin/target-import/queue.php
 +++ b/wp-content/themes/slds/inc/catalog/admin/target-import/queue.php
-@@ -1120,4 +1120,16 @@
- 		. " WHERE status = 'pending' AND available_at <= NOW(){$lane_sql} LIMIT 1"
- 	);
+@@ -1122 +1122,13 @@
 -	return ! empty( $has );
 +	if ( ! empty( $has ) ) {
 +        return true;
@@ -17,4 +15,3 @@
 +        . "{$lane_sql} LIMIT 1"
 +    );
 +    return ! empty( $has );
- }
