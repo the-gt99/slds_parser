@@ -11,7 +11,7 @@ import type {
 } from "../../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import { hashStableJson } from "../../core/utils/index.js";
-import { WordPressSizeConverter, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
+import { WordPressSizeConverter, WordPressSizeConversionMissingError, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 import {
   DEFAULT_WORDPRESS_DESCRIPTION_TEMPLATE,
   renderWordPressContentTemplate,
@@ -284,7 +284,8 @@ function priceOutlierReason(ratio: bigint | null): string {
 
 function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
   return error instanceof IntegrationContractError
-    && (error.message.startsWith("WordPress size mapping is missing:")
+    && (error instanceof WordPressSizeConversionMissingError
+      || error.message.startsWith("WordPress size mapping is missing:")
       || error.message.startsWith("WordPress size mapping is missing after conversion:"));
 }
 
@@ -1142,7 +1143,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.23.0";
+  readonly version = "1.24.0";
   private readonly sizeConverter: WordPressSizeConverterLike;
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;

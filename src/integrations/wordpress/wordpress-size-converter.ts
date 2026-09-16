@@ -19,6 +19,13 @@ interface WordPressSizeConverterResponse {
   readonly conflicts?: unknown;
 }
 
+export class WordPressSizeConversionMissingError extends IntegrationContractError {}
+
+interface ResolvedSizeTable {
+  readonly values: ReadonlyMap<string, string>;
+  readonly conflicts: ReadonlySet<string>;
+}
+
 export interface WordPressSizeConversionInput {
   readonly brandTermId: number;
   readonly categoryTermId: number;
@@ -65,7 +72,7 @@ function retryableHttpStatus(status: number): boolean {
 }
 
 export class WordPressSizeConverter implements WordPressSizeConverterLike {
-  private readonly tableCache = new Map<string, Promise<ReadonlyMap<string, string>>>();
+  private readonly tableCache = new Map<string, Promise<ResolvedSizeTable>>();
 
   constructor(
     private readonly config: WordPressTargetConfig,
@@ -91,7 +98,7 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
       audience,
     });
     this.tableCache.set(cacheKey, pending);
-    let table: ReadonlyMap<string, string>;
+    let table: ResolvedSizeTable;
     try {
       table = await pending;
     } catch (error) {
@@ -99,9 +106,12 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
       throw error;
     }
     const sourceValue = input.size.sourceValue.trim().replaceAll(",", ".");
-    const converted = table.get(sourceValue);
+    if (table.conflicts.has(sourceValue)) {
+      throw new IntegrationContractError(`WordPress size conversion is ambiguous: ${originalKey}`);
+    }
+    const converted = table.values.get(sourceValue);
     if (converted === undefined) {
-      throw new IntegrationContractError(`WordPress size conversion is missing: ${originalKey}`);
+      throw new WordPressSizeConversionMissingError(`WordPress size conversion is missing: ${originalKey}`);
     }
     return {
       ...input.size,
@@ -116,7 +126,7 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
     readonly categoryTermId: number;
     readonly sourceSystem: string;
     readonly audience: NonNullable<ProductSizeDTO["audience"]>;
-  }): Promise<ReadonlyMap<string, string>> {
+  }): Promise<ResolvedSizeTable> {
     const url = new URL(`${this.config.baseUrl}/wp-json/slamdunk/size-converter/v1/convert`);
     url.searchParams.set("brand_id", String(input.brandTermId));
     url.searchParams.set("category_id", String(input.categoryTermId));
@@ -162,6 +172,12 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
       }
       throw new IntegrationContractError(`WordPress size converter request failed: ${message}`);
     }
-    return conversionTable(decoded.conversion_table);
+    const conflicts = decoded.conflicts;
+    if (conflicts !== undefined && (conflicts === null || typeof conflicts !== "object"
+      || (Array.isArray(conflicts) && conflicts.length > 0))) {
+      throw new IntegrationContractError("WordPress size converter returned invalid conflicts");
+    }
+    return { values: conversionTable(decoded.conversion_table),
+      conflicts: new Set(Object.keys(conflicts ?? {}).map((key) => key.trim().replaceAll(",", "."))) };
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
 import { hashStableJson } from "../../src/core/utils/index.js";
+import { WordPressSizeConverter } from "../../src/integrations/wordpress/wordpress-size-converter.js";
 import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, previewWordPressVariationPatchItems, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
@@ -72,6 +73,35 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("reports a missing conversion row as an omitted variant only under the explicit policy", async () => {
+    const base = context({ ignoreUnmappedSizeVariants: true,
+      sizeMappings: [{ sourceValue: "8", system: "us-numeric", audience: "men", taxonomy: "pa_razmer", termId: 108 }] });
+    const input: ExportContext = { ...base, product: { ...base.product, variants: ["36", "41"].map((size) => ({
+      ...base.product.variants[0]!, sourceVariantKey: `eu-${size}`, sku: `EU-${size}`,
+      size: { sourceValue: size, displayValue: size, system: "eu-numeric", audience: "men" as const },
+    })) } };
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ conversion_table: { "41": "8" }, conflicts: {} })));
+    const converter = new WordPressSizeConverter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 1000, jobTimeoutMs: 1000, pollIntervalMs: 10 }, request);
+    const preview = await previewWordPressUpsertPayload(input, converter);
+    expect((preview.payload.variations as JsonObject).items).toHaveLength(1);
+    expect(preview.ignoredSizeVariants).toEqual([expect.objectContaining({ sourceValue: "36", reason: "WordPress size conversion is missing: eu-numeric/men/36" })]);
+    await expect(buildWordPressUpsertPayload({ ...input, target: { ...input.target,
+      config: { ...input.target.config, ignoreUnmappedSizeVariants: false } } }, converter)).rejects.toThrow("conversion is missing");
+    await expect(buildWordPressUpsertPayload({ ...input, product: { ...input.product, variants: [input.product.variants[0]!] } }, converter)).rejects.toThrow("no variants with mapped sizes");
+  });
+
+  it.each(["conflict", "missing-table"])("keeps %s errors blocking even when partial sizes are allowed", async (failure) => {
+    const base = context({ ignoreUnmappedSizeVariants: true });
+    const input: ExportContext = { ...base, product: { ...base.product, variants: base.product.variants.map((variant) => ({
+      ...variant, size: { sourceValue: "41", displayValue: "41", system: "eu-numeric", audience: "men" as const },
+    })) } };
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify(failure === "conflict"
+      ? { conversion_table: {}, conflicts: { "41": ["7", "8"] } }
+      : { code: "size_table_not_found", message: "missing table" }), { status: failure === "conflict" ? 200 : 404 }));
+    const converter = new WordPressSizeConverter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 1000, jobTimeoutMs: 1000, pollIntervalMs: 10 }, request);
+    await expect(previewWordPressUpsertPayload(input, converter)).rejects.toThrow(failure === "conflict" ? "ambiguous" : "missing table");
+  });
+
   it("accepts the explicitly allowed translator while retaining existing translations", async () => {
     const requiredTranslation = { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" };
     const alternative = { ...requiredTranslation, providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2" };
