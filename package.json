@@ -12,6 +12,7 @@
     "classifier:exact-matches": "node --env-file-if-exists=.env --import tsx src/cli/classifier-exact-matches.ts",
     "classifier:legacy-import": "node --env-file-if-exists=.env --import tsx src/cli/legacy-classification-import.ts",
     "classifier:import-pa-vid": "node --env-file-if-exists=.env --import tsx src/cli/import-wordpress-pa-vid-rules.ts",
+    "classifier:import-footwear-rules": "node --env-file-if-exists=.env --import tsx src/cli/import-wordpress-footwear-rules.ts",
     "classifier:audit-pa-vid": "node --env-file-if-exists=.env --import tsx src/cli/audit-pa-vid-rules.ts",
     "classifier:enqueue-stale": "node --env-file-if-exists=.env --import tsx src/cli/enqueue-stale-processing.ts",
     "translation:enqueue": "node --env-file-if-exists=.env --import tsx src/cli/enqueue-retranslation.ts",
