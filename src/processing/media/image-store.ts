@@ -17,4 +17,5 @@ export interface ImageStore {
   ): Promise<StoredImageAsset>;
   convertToWebp(localPath: string): Promise<string>;
   publicUrl(localPath: string): string;
+  publish(localPath: string): Promise<string>;
 }

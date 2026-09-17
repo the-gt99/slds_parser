@@ -1,8 +1,12 @@
 import { loadProcessingConfig } from "../config/index.js";
-import { DeepLTranslationProvider, LegacyGoogleTranslationProvider } from "../infrastructure/translation/index.js";
+import { createTranslationProvider } from "../infrastructure/translation/index.js";
 import { createPostgresPool } from "../infrastructure/db/index.js";
 
 const apply = process.env.RETRANSLATION_APPLY === "true";
+const scope = process.env.RETRANSLATION_SCOPE ?? "outdated";
+if (scope !== "outdated" && scope !== "missing-provider") {
+  throw new Error("RETRANSLATION_SCOPE must be outdated or missing-provider");
+}
 if (process.env.RETRANSLATION_APPLY !== undefined && !["true", "false"].includes(process.env.RETRANSLATION_APPLY)) {
   throw new Error("RETRANSLATION_APPLY must be true or false");
 }
@@ -12,9 +16,7 @@ if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500_000) {
 }
 
 const processing = loadProcessingConfig();
-const provider = processing.translation.provider === "deepl"
-  ? new DeepLTranslationProvider(processing.translation)
-  : new LegacyGoogleTranslationProvider(processing.translation);
+const provider = createTranslationProvider(processing.translation);
 const identity = {
   providerCode: provider.code,
   providerVersion: provider.version,
@@ -26,10 +28,11 @@ const pool = createPostgresPool();
 try {
   const eligibilitySql = `
     FROM internal_products internal
-    WHERE COALESCE(internal.data #>> '{translatedContent,providerCode}', '') <> $1
+    WHERE (${scope === "missing-provider" ? "COALESCE(internal.data #>> '{translatedContent,providerCode}', '') = ''" : "TRUE"})
+      AND (COALESCE(internal.data #>> '{translatedContent,providerCode}', '') <> $1
        OR COALESCE(internal.data #>> '{translatedContent,providerVersion}', '') <> $2
        OR COALESCE(internal.data #>> '{translatedContent,sourceLocale}', '') <> $3
-       OR COALESCE(internal.data #>> '{translatedContent,targetLocale}', '') <> $4`;
+       OR COALESCE(internal.data #>> '{translatedContent,targetLocale}', '') <> $4)`;
   const parameters = [identity.providerCode, identity.providerVersion, identity.sourceLocale, identity.targetLocale];
   const products = await pool.query<{ count: string }>(`SELECT COUNT(*)::TEXT AS count ${eligibilitySql}`, parameters);
   const texts = await pool.query<{ occurrences: string; occurrence_characters: string; distinct_texts: string; distinct_characters: string }>(
@@ -61,6 +64,7 @@ try {
   );
   console.log(JSON.stringify({
     provider: identity,
+    scope,
     eligibleProducts: Number(products.rows[0]?.count ?? 0),
     sourceTextUpperBound: {
       occurrences: Number(texts.rows[0]?.occurrences ?? 0),

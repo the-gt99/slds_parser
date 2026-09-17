@@ -131,6 +131,11 @@ export class LocalImageStore implements ImageStore {
     return `${base}/${prefix === "" ? "" : `${prefix}/`}${relative}`;
   }
 
+  async publish(localPath: string): Promise<string> {
+    await this.read(localPath);
+    return this.publicUrl(localPath);
+  }
+
   resolvePath(localPath: string): string {
     const relative = localPath.replaceAll("\\", "/").replace(/^\/+/, "");
     if (relative === "") throw new Error("Local image path is empty");

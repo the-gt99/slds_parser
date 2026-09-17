@@ -237,12 +237,23 @@ function requiredTranslation(config: JsonObject): WordPressRequiredTranslation |
 
 export function assertWordPressRequiredTranslation(product: UniversalProductDTO, config: JsonObject): void {
   const required = requiredTranslation(config);
+  const alternatives = config.acceptedTranslations;
+  if (alternatives !== undefined && (!Array.isArray(alternatives) || required === null)) {
+    throw new IntegrationContractError("target.config.acceptedTranslations requires requiredTranslation and an array");
+  }
   if (required === null) return;
+  const accepted = [required, ...(Array.isArray(alternatives) ? alternatives.map((value) => {
+    const identity = requiredTranslation({ requiredTranslation: value });
+    if (identity === null || identity.sourceLocale !== required.sourceLocale || identity.targetLocale !== required.targetLocale) {
+      throw new IntegrationContractError("Accepted translations must use the required locales");
+    }
+    return identity;
+  }) : [])];
   const actual = product.translatedContent;
-  if (actual?.providerCode !== required.providerCode
-    || actual.providerVersion !== required.providerVersion
-    || actual.sourceLocale !== required.sourceLocale
-    || actual.targetLocale !== required.targetLocale) {
+  if (!accepted.some((identity) => actual?.providerCode === identity.providerCode
+    && actual.providerVersion === identity.providerVersion
+    && actual.sourceLocale === identity.sourceLocale
+    && actual.targetLocale === identity.targetLocale)) {
     throw new WordPressTranslationRequiredError(required);
   }
 }
@@ -1183,7 +1194,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.28.1";
+  readonly version = "1.29.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;

@@ -74,6 +74,13 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("accepts reviewed existing translations when switching the required provider", async () => {
+    const requiredTranslation = { providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2", sourceLocale: "en", targetLocale: "ru" };
+    const acceptedTranslations = [{ providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" }];
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation }))).rejects.toThrow();
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation, acceptedTranslations }))).resolves.toBeDefined();
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation, acceptedTranslations: [{ ...acceptedTranslations[0], targetLocale: "de" }] }))).rejects.toThrow("locales");
+  });
   it("keeps reviewed native sizes separate in full export and inventory without leaking to other products", async () => {
     const base = context({ nativeSizeProfiles: [{ sourceProductIds: ["2"], sizeMappings: [
       { sourceValue: "40.5", system: "eu-numeric", audience: "men", taxonomy: "pa_razmer", termId: 9405 },

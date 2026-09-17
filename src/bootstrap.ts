@@ -2,8 +2,8 @@ import { CollectionRunner, ExportRunner, ExportSourceRefresher, ExportSourceRefr
 import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
-import { LocalImageStore } from "./infrastructure/media/index.js";
-import { CachedTranslationProvider, DeepLTranslationProvider, LegacyGoogleTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
+import { LocalImageStore, S3ImageStore } from "./infrastructure/media/index.js";
+import { CachedTranslationProvider, createTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
@@ -31,10 +31,10 @@ function inventoryProxyHeadroom(environment: GoatProxyPoolEnvironment): number {
 
 export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
   const processing = loadProcessingConfig(environment);
-  const imageStore = new LocalImageStore(processing.image);
-  const configuredTranslationProvider = processing.translation.provider === "deepl"
-    ? new DeepLTranslationProvider(processing.translation)
-    : new LegacyGoogleTranslationProvider(processing.translation);
+  const imageStore = processing.image.storage.type === "s3"
+    ? new S3ImageStore({ ...processing.image, ...processing.image.storage })
+    : new LocalImageStore(processing.image);
+  const configuredTranslationProvider = createTranslationProvider(processing.translation);
   const translationProvider = translationCache === undefined
     ? configuredTranslationProvider
     : new CachedTranslationProvider(configuredTranslationProvider, translationCache);
