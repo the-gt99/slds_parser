@@ -59,10 +59,19 @@ export class S3ImageStore implements ImageStore {
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     }
-    const result = await this.#client.send(new GetObjectCommand({
-      Bucket: this.options.bucket,
-      Key: objectKey(this.options.publicPathPrefix, localPath),
-    })) as GetObjectCommandOutput;
+    let result: GetObjectCommandOutput;
+    try {
+      result = await this.#client.send(new GetObjectCommand({
+        Bucket: this.options.bucket,
+        Key: objectKey(this.options.publicPathPrefix, localPath),
+      })) as GetObjectCommandOutput;
+    } catch (error) {
+      // The downloader already treats an absent stored copy as a source download.
+      if (error instanceof Error && error.name === "NoSuchKey") {
+        throw Object.assign(new Error("Stored image does not exist", { cause: error }), { code: "ENOENT" });
+      }
+      throw error;
+    }
     if (result.Body === undefined) throw new Error("Stored image body is missing");
     const binary = Buffer.from(await result.Body.transformToByteArray());
     if (result.ContentLength !== undefined && binary.length !== result.ContentLength) {

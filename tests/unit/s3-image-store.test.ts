@@ -17,6 +17,7 @@ describe("S3 image store", () => {
     const client: ObjectStorageClient = {
       send: vi.fn(async (command) => {
         commands.push(command);
+        if (command instanceof GetObjectCommand && stored === undefined) throw Object.assign(new Error("Missing"), { name: "NoSuchKey" });
         if (command instanceof GetObjectCommand) return {
           Body: { transformToByteArray: async () => stored! }, ContentLength: stored!.length,
         };
@@ -38,6 +39,8 @@ describe("S3 image store", () => {
     }, client);
 
     try {
+      await expect(store.read("goat/item_2/missing.webp")).rejects.toMatchObject({ code: "ENOENT" });
+      commands.length = 0;
       const binary = await sharp({
         create: { width: 2, height: 3, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } },
       }).png().toBuffer();
