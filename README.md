@@ -97,6 +97,7 @@ PARSER_S3_SECRET_ACCESS_KEY=
 PARSER_TRANSLATION_PROVIDER=openrouter
 PARSER_OPENROUTER_API_KEY=
 PARSER_OPENROUTER_MODEL=deepseek/deepseek-v3.2
+PARSER_OPENROUTER_PROXY_URL=
 PARSER_DEEPL_API_KEY=
 PARSER_TRANSLATION_SOURCE=en
 PARSER_TRANSLATION_TARGET=ru
@@ -115,6 +116,8 @@ SHOE_HEIGHT_SOURCE_IMAGE_POSITION=0
 `PARSER_IMAGE_STORAGE=local` сохраняет прежнюю локальную публикацию. При `PARSER_IMAGE_STORAGE=s3` операция `publish-images` загружает готовый WebP в S3 под ключом `<PARSER_PUBLIC_PATH_PREFIX>/<source>/<product>/<image>.<sha256>.webp` и записывает в DTO URL CDN. Файл на диске служит временной копией для проверки и конвертации; после успешной загрузки с проверкой Content-MD5 он удаляется. При ошибке загрузки копия сохраняется. Повторное чтение опубликованного изображения идёт из S3 с проверкой хеша. Адрес включает хеш содержимого, поэтому новое фото не зависит от очистки кеша CDN. Старые локальные изображения автоматически не удаляются: для них необходим перенос и проверка ссылок. Для Yandex Object Storage используются endpoint `https://storage.yandexcloud.net` и регион `ru-central1`. Ключи задаются только через окружение runtime.
 
 Для нового перевода используется `PARSER_TRANSLATION_PROVIDER=openrouter` с явной моделью DeepSeek. Повторный перевод выполняется через `retranslate_product`, без processing и скачивания media. `RETRANSLATION_SCOPE=missing-provider` ограничивает CLI товарами без записанной идентичности переводчика, а `outdated` выбирает все несовпадающие версии. Настройка target `requiredTranslation` должна соответствовать новой модели; `acceptedTranslations` позволяет сохранить ранее проверенные переводы DeepL с теми же языками. Это список допустимых готовых переводов, а не переключение провайдера при ошибке.
+
+`PARSER_OPENROUTER_PROXY_URL` задаёт отдельный HTTP(S)-прокси только для запросов перевода. При его настройке прямого повторного запроса после ошибки прокси нет; соединения GOAT, WordPress и S3 эта настройка не меняет. Адрес с credentials хранится только в защищённом окружении сервиса.
 
 HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
 

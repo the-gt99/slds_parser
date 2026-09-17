@@ -1,5 +1,6 @@
 import { IntegrationContractError, PermanentError, RetryableError } from "../../core/errors/index.js";
 import type { TextTranslationProvider } from "../../processing/content/text-translation-provider.js";
+import { ProxyAgent } from "undici";
 
 export interface OpenRouterTranslationOptions {
   readonly apiKey: string;
@@ -7,6 +8,7 @@ export interface OpenRouterTranslationOptions {
   readonly timeoutMs: number;
   readonly attempts: number;
   readonly retryDelayMs: number;
+  readonly proxyUrl?: string | undefined;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -16,6 +18,7 @@ function object(value: unknown): Record<string, unknown> {
 export class OpenRouterTranslationProvider implements TextTranslationProvider {
   readonly code = "openrouter";
   readonly version: string;
+  readonly #proxy: ProxyAgent | undefined;
 
   constructor(private readonly options: OpenRouterTranslationOptions, private readonly request: typeof fetch = globalThis.fetch) {
     if (!options.apiKey.trim()) throw new Error("OpenRouter API key is required");
@@ -24,6 +27,13 @@ export class OpenRouterTranslationProvider implements TextTranslationProvider {
       if (!Number.isSafeInteger(value) || value < 1) throw new Error("Translation timeout and attempts must be positive integers");
     }
     if (!Number.isSafeInteger(options.retryDelayMs) || options.retryDelayMs < 0) throw new Error("Translation retry delay must be non-negative");
+    if (options.proxyUrl !== undefined) {
+      let url: URL;
+      try { url = new URL(options.proxyUrl); }
+      catch { throw new Error("OpenRouter proxy URL is invalid"); }
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("OpenRouter proxy must use HTTP or HTTPS");
+      this.#proxy = new ProxyAgent(url.toString());
+    }
     this.version = `1.0.0:${options.model}`;
   }
 
@@ -44,6 +54,7 @@ export class OpenRouterTranslationProvider implements TextTranslationProvider {
       response = await this.request("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST", headers: { Authorization: `Bearer ${this.options.apiKey}`, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.options.timeoutMs),
+        ...(this.#proxy === undefined ? {} : { dispatcher: this.#proxy }),
         body: JSON.stringify({ model: this.options.model, stream: false, temperature: 0, max_tokens: 8192,
           reasoning: { enabled: false },
           provider: { sort: "price", allow_fallbacks: false, max_price: { prompt: 0.30, completion: 0.50 } },
