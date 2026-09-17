@@ -115,6 +115,7 @@ async function main(): Promise<void> {
   const configPath = process.env.WORDPRESS_FOOTWEAR_RULES_PATH?.trim() || "config/wordpress-footwear-rules.json";
   const apply = ["1", "true"].includes(process.env.WORDPRESS_FOOTWEAR_RULES_APPLY?.toLocaleLowerCase("en-US") ?? "");
   const preserveExisting = process.env.WORDPRESS_FOOTWEAR_RULES_REPLACE !== "1";
+  const rewriteExistingRules = process.env.WORDPRESS_FOOTWEAR_RULES_REWRITE === "1";
   const config = parseFootwearRuleConfig(JSON.parse(await readFile(configPath, "utf8")));
   const wordpress = loadWordPressTargetConfig();
   if (wordpress === null) throw new IntegrationContractError("WordPress target configuration is required");
@@ -160,13 +161,15 @@ async function main(): Promise<void> {
           const existing = rules.find((item) => item.name === draft.name && item.groupCode === draft.groupCode);
           if (apply) {
             if (existing === undefined) await admin.create(draft);
-            else await admin.update(target.id, existing.id, draft, existing.revision, "footwear-rule-import", "Повторный импорт правил категорий обуви");
+            else if (rewriteExistingRules) await admin.update(target.id, existing.id, draft, existing.revision, "footwear-rule-import", "Повторный импорт правил категорий обуви");
           }
-          results.push({ name: draft.name, existing: existing !== undefined, action: apply ? (existing === undefined ? "created" : "updated") : "preview" });
+          results.push({ name: draft.name, existing: existing !== undefined, action: apply
+            ? (existing === undefined ? "created" : rewriteExistingRules ? "updated" : "kept")
+            : "preview" });
         }
       }
     }
-    console.log(JSON.stringify({ mode: apply ? "apply" : "preview", target: target.code, preserveExisting,
+    console.log(JSON.stringify({ mode: apply ? "apply" : "preview", target: target.code, preserveExisting, rewriteExistingRules,
       categories: config.categories.map((item) => ({ code: item.code, models: item.models.length, aliases: item.aliases.length })), rules: results }, null, 2));
   } finally {
     await pool.end();
