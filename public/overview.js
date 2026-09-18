@@ -101,29 +101,33 @@ function renderExport(target, result) {
 
 async function load() {
   byId("overview-error").hidden = true;
-  try {
-    const [runtime, inventory, targets, classification] = await Promise.all([
-      api("/api/runtime"),
-      api("/api/inventory-health", { allowErrorBody: true }),
-      api("/api/targets"),
-      api("/api/classifier/queue?limit=1"),
-    ]);
-    const target = targets.items.find((item) => item.code === "slamdunk") || targets.items[0];
-    if (!target) throw new Error("Target не настроен");
-    const exportControl = await api(`/api/export-control?targetId=${encodeURIComponent(target.id)}&limit=1`);
-    renderRuntime(runtime);
-    renderInventory(inventory);
-    renderExport(target, exportControl);
-    byId("classification-total").textContent = count(classification.total);
-    badge("classification-status", Number(classification.total || 0) > 0 ? "Есть блокеры" : "Готово", Number(classification.total || 0) > 0 ? "status-retry" : "status-completed");
-    const healthy = runtime.worker?.active && inventory.status === "ok" && !target.enabled;
-    byId("overview-health").textContent = healthy ? "Процессы работают · выгрузка безопасно выключена" : "Есть процессы, требующие внимания";
-    byId("overview-health").className = `overview-health ${healthy ? "ok" : "warning"}`;
-  } catch (error) {
-    if (error.status === 401) return showLogin();
-    byId("overview-error").textContent = error.message;
+  let runtime;
+  let inventory;
+  let target;
+  const tasks = [
+    api("/api/runtime").then((value) => { runtime = value; renderRuntime(value); }),
+    api("/api/inventory-health", { allowErrorBody: true }).then((value) => { inventory = value; renderInventory(value); }),
+    api("/api/classifier/queue?limit=1").then((value) => {
+      byId("classification-total").textContent = count(value.total);
+      badge("classification-status", Number(value.total || 0) > 0 ? "Есть блокеры" : "Готово", Number(value.total || 0) > 0 ? "status-retry" : "status-completed");
+    }),
+    api("/api/targets").then(async (targets) => {
+      target = targets.items.find((item) => item.code === "slamdunk") || targets.items[0];
+      if (!target) throw new Error("Target не настроен");
+      const exportControl = await api(`/api/export-control?targetId=${encodeURIComponent(target.id)}&limit=1`);
+      renderExport(target, exportControl);
+    }),
+  ];
+  const results = await Promise.allSettled(tasks);
+  const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason);
+  if (errors.some((error) => error.status === 401)) return showLogin();
+  if (errors.length) {
+    byId("overview-error").textContent = `Не удалось обновить часть сводки: ${errors.map((error) => error.message).join("; ")}`;
     byId("overview-error").hidden = false;
   }
+  const healthy = errors.length === 0 && runtime?.worker?.active && inventory?.status === "ok" && target?.enabled === false;
+  byId("overview-health").textContent = healthy ? "Процессы работают · выгрузка безопасно выключена" : "Есть процессы, требующие внимания";
+  byId("overview-health").className = `overview-health ${healthy ? "ok" : "warning"}`;
 }
 
 byId("login-form").addEventListener("submit", async (event) => {
