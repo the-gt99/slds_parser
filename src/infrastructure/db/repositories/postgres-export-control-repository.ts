@@ -313,17 +313,20 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     );
     const candidateCount = await this.eligibleCandidateCount();
     const summaryResult = await queryPool<DatabaseRow>(this.pool,
-      `WITH states AS MATERIALIZED (
+      `WITH target_reviews AS MATERIALIZED (
+         SELECT review.*
+         FROM target_product_preflight_reviews review
+         WHERE review.target_id = $1
+       ), states AS MATERIALIZED (
          SELECT internal.id AS internal_product_id,
                 review.id AS review_id,
                 ${effectiveStatusSql} AS effective_status,
                 review.payload_hash,
                 review.target_id
-         FROM target_product_preflight_reviews review
+         FROM target_reviews review
          JOIN target_export_revisions revision ON revision.target_id = review.target_id
          JOIN internal_products internal ON internal.id = review.internal_product_id
-         WHERE review.target_id = $1
-           AND ${exportEligibleInternalSql("internal")}
+         WHERE ${exportEligibleInternalSql("internal")}
        )
        SELECT $2::BIGINT AS candidate_count,
               COUNT(states.review_id)::BIGINT AS reviewed_count,
