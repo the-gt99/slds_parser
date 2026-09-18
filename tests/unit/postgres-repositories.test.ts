@@ -517,6 +517,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'images') > 0");
     expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'variants') > 0");
     expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'");
+    expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'\n               OR review.id IS NULL");
     expect(candidateQuery).toContain("NOT EXISTS");
     expect(executor.calls[2]?.values).toEqual(["10", null, 100, "4", "footwear_readiness"]);
   });

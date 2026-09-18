@@ -1214,7 +1214,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              )
              AND ($5::TEXT <> 'new_products'
                OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
-             AND (review.id IS NULL OR review.status IN ('stale', 'error')
+             AND ($5::TEXT = 'footwear_readiness'
+               OR review.id IS NULL OR review.status IN ('stale', 'error')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)
              AND NOT EXISTS (
