@@ -1175,11 +1175,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       const readinessOnly = mode === "footwear_readiness";
       if (readinessOnly && state.candidates_prepared !== true) {
         await client.query(
-          `WITH inserted AS (
-             INSERT INTO target_export_campaign_preflight_items (
-               campaign_id, source_product_id, internal_product_id
-             )
-             SELECT $1, source_product.id, internal.id
+          `WITH absent AS MATERIALIZED (
+             SELECT source_product.id AS source_product_id, internal.id AS internal_product_id
              FROM source_products source_product
              JOIN internal_products internal ON internal.source_product_id = source_product.id
              LEFT JOIN wordpress_catalog_run_items catalog_item
@@ -1187,12 +1184,20 @@ export class PostgresExportControlRepository implements ExportControlRepository 
               AND catalog_item.internal_product_id = internal.id
               AND catalog_item.match_status = 'matched'
              WHERE source_product.discovery_metadata->>'route' = 'sneakers'
-               AND ${exportEligibleInternalSql("internal")}
+               AND internal.status IN ('classified', 'classification_pending')
+               AND catalog_item.id IS NULL
+           ), inserted AS (
+             INSERT INTO target_export_campaign_preflight_items (
+               campaign_id, source_product_id, internal_product_id
+             )
+             SELECT $1, absent.source_product_id, absent.internal_product_id
+             FROM absent
+             JOIN internal_products internal ON internal.id = absent.internal_product_id
+             WHERE internal.data->'classification'->>'status' IN ('complete', 'partial')
                AND JSONB_TYPEOF(internal.data->'images') = 'array'
                AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
                AND JSONB_TYPEOF(internal.data->'variants') = 'array'
                AND JSONB_ARRAY_LENGTH(internal.data->'variants') > 0
-               AND catalog_item.id IS NULL
              ON CONFLICT DO NOTHING
              RETURNING 1
            )

@@ -515,6 +515,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     const preparationQuery = executor.calls[2]?.text ?? "";
     const candidateQuery = executor.calls[3]?.text ?? "";
+    expect(preparationQuery).toContain("WITH absent AS MATERIALIZED");
     expect(preparationQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
     expect(preparationQuery).toContain("target_export_campaign_preflight_items");
     expect(candidateQuery).toContain("source_product.id AS scan_cursor_id");
