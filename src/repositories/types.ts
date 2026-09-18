@@ -960,7 +960,7 @@ export interface ExportControlBatchItemRecord {
 }
 
 export type ExportCampaignStatus = "running" | "paused" | "completed";
-export type ExportCampaignMode = "safe" | "full_existing" | "new_products";
+export type ExportCampaignMode = "safe" | "full_existing" | "new_products" | "footwear_readiness";
 
 export interface ExportCampaignRecord {
   readonly id: EntityId;
@@ -980,6 +980,7 @@ export interface ExportCampaignRecord {
   readonly failedCount: number;
   readonly acknowledgedFailedCount: number;
   readonly activePreflightCount: number;
+  readonly scannedCount: number;
   readonly scanBeforeInternalProductId: EntityId | null;
   readonly scanComplete: boolean;
   readonly lastError: string | null;

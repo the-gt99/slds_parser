@@ -39,11 +39,11 @@
     </section>
 
     <section class="section export-batches-section">
-      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Управляемая массовая выгрузка</h2><p class="muted">Поддерживает ограниченный буфер проверок и записей. Полный режим обновляет только сопоставленные товары выбранного снимка WordPress, а отдельный режим создания работает только с ранее проверенными новыми товарами.</p></div><span id="campaign-target-status" class="badge">—</span></div>
-      <div id="campaign-disabled-note" class="inline-message warning" hidden>Target выключен. Запуск и продолжение массовых кампаний заблокированы; просмотр и ручной preflight доступны.</div>
+      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Подготовка и управляемая выгрузка</h2><p class="muted">Подготовительный режим проверяет отсутствующую в снимке обувь с фотографиями и вариациями, но ничего не записывает в WordPress. Режимы выгрузки работают отдельно.</p></div><span id="campaign-target-status" class="badge">—</span></div>
+      <div id="campaign-disabled-note" class="inline-message warning" hidden>Target выключен. Выгрузка заблокирована, но подготовку обуви без записи в WordPress можно запускать.</div>
       <div class="runtime-actions">
-        <label class="field compact-field"><span>Режим</span><select id="campaign-mode"><option value="safe">Только без риска</option><option value="full_existing">Все готовые обновления</option><option value="new_products">Создание новых товаров</option></select></label>
-        <label class="field compact-field"><span>ID снимка WordPress</span><input id="campaign-catalog-run" type="number" min="1" placeholder="для полного режима"></label>
+        <label class="field compact-field"><span>Режим</span><select id="campaign-mode"><option value="footwear_readiness">Подготовить отсутствующую обувь</option><option value="safe">Только без риска</option><option value="full_existing">Все готовые обновления</option><option value="new_products">Создание новых товаров</option></select></label>
+        <label class="field compact-field"><span>ID снимка WordPress</span><input id="campaign-catalog-run" type="number" min="1" placeholder="для подготовки или полного режима"></label>
         <label class="field compact-field"><span>Окно preflight</span><select id="campaign-window"><option>25</option><option>50</option><option selected>100</option></select></label>
         <label class="field compact-field"><span>Лимит товаров</span><input id="campaign-limit" type="number" min="1" max="500000" placeholder="без лимита"></label>
         <label class="field"><span>Комментарий</span><input id="campaign-reason" maxlength="300" placeholder="Безопасная массовая выгрузка"></label>

@@ -11,6 +11,7 @@ const state = {
   campaignTimer: null,
   targets: [],
   targetEnabled: false,
+  hasRunningCampaign: false,
   readinessRequest: null,
   batchesRequest: null,
   campaignsRequest: null,
@@ -478,29 +479,38 @@ async function loadCampaignsOnce() {
       const wrapper = element("article", "export-campaign-card");
       const modeLabel = campaign.mode === "full_existing"
         ? `полный режим · снимок #${campaign.catalogRunId}`
-        : campaign.mode === "new_products" ? "создание новых товаров" : "безопасный режим";
+        : campaign.mode === "new_products" ? "создание новых товаров"
+          : campaign.mode === "footwear_readiness" ? `подготовка обуви · снимок #${campaign.catalogRunId}` : "безопасный режим";
       const heading = element("div", "export-campaign-heading");
       const title = element("div", "");
-      title.append(element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`), element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`));
+      const campaignTitle = campaign.mode === "footwear_readiness" ? "Подготовка" : "Выгрузка";
+      title.append(element("strong", "", `${campaignTitle} #${campaign.id} · ${campaignStatusLabel(campaign.status)}`), element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`));
       heading.append(title, badge(campaign.status === "running" ? "Работает" : campaignStatusLabel(campaign.status), campaign.status === "running" ? "safe" : "neutral"));
       const metrics = element("div", "export-campaign-metrics");
-      for (const [label, value] of [["Режим", modeLabel], ["Preflight", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Очередь", campaign.pendingCount], ["В работе", campaign.runningCount], ["Выгружено", campaign.completedCount], ["Ошибки", campaign.failedCount]]) {
+      const campaignMetrics = campaign.mode === "footwear_readiness"
+        ? [["Режим", modeLabel], ["Отобрано", campaign.scannedCount], ["Сейчас проверяются", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Сканирование", campaign.scanComplete ? "завершено" : "идёт"]]
+        : [["Режим", modeLabel], ["Preflight", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Очередь", campaign.pendingCount], ["В работе", campaign.runningCount], ["Выгружено", campaign.completedCount], ["Ошибки", campaign.failedCount]];
+      for (const [label, value] of campaignMetrics) {
         const item = element("div", ""); item.append(element("span", "", label), element("strong", Number.isFinite(Number(value)) ? count(value) : value)); metrics.append(item);
       }
       wrapper.append(heading, metrics);
       if (campaign.maxExports) wrapper.append(element("p", "muted", `Лимит кампании: ${count(campaign.maxExports)} товаров.`));
       if (campaign.lastError) wrapper.append(element("p", "form-error", campaign.lastError));
       const actions = element("div", "runtime-actions");
-      const itemsButton = element("button", "button quiet", "Показать товары");
-      itemsButton.type = "button";
       const items = element("div", "export-batches");
       items.hidden = true;
-      itemsButton.addEventListener("click", () => {
-        items.hidden = !items.hidden;
-        itemsButton.textContent = items.hidden ? "Показать товары" : "Скрыть товары";
-        if (!items.hidden) void loadCampaignItems(campaign, items);
-      });
-      actions.append(itemsButton);
+      if (campaign.mode === "footwear_readiness") {
+        actions.append(element("span", "muted", "Результаты появляются в списке готовности ниже."));
+      } else {
+        const itemsButton = element("button", "button quiet", "Показать товары");
+        itemsButton.type = "button";
+        itemsButton.addEventListener("click", () => {
+          items.hidden = !items.hidden;
+          itemsButton.textContent = items.hidden ? "Показать товары" : "Скрыть товары";
+          if (!items.hidden) void loadCampaignItems(campaign, items);
+        });
+        actions.append(itemsButton);
+      }
       if (campaign.status === "running") {
         const pause = element("button", "button secondary", "Остановить");
         pause.type = "button";
@@ -509,8 +519,8 @@ async function loadCampaignsOnce() {
       } else if (campaign.status === "paused") {
         const resume = element("button", "button primary", "Продолжить");
         resume.type = "button";
-        resume.disabled = !state.targetEnabled;
-        if (!state.targetEnabled) resume.title = "Target выключен";
+        resume.disabled = !state.targetEnabled && campaign.mode !== "footwear_readiness";
+        if (resume.disabled) resume.title = "Target выключен";
         resume.addEventListener("click", () => setCampaignStatus(campaign, "resume"));
         actions.append(resume);
       }
@@ -521,33 +531,40 @@ async function loadCampaignsOnce() {
     if (active.children.length) box.append(active);
     if (historyCount > 0) {
       const details = element("details", "export-campaign-history");
-      details.append(element("summary", "", `История выгрузок · ${historyCount}`), history);
+      details.append(element("summary", "", `История кампаний · ${historyCount}`), history);
       box.append(details);
     }
-    if (!box.children.length) box.append(element("p", "muted", "Массовая выгрузка ещё не запускалась."));
-    byId("start-campaign").disabled = hasRunning || !state.targetEnabled;
+    if (!box.children.length) box.append(element("p", "muted", "Массовые кампании ещё не запускались."));
+    state.hasRunningCampaign = hasRunning;
+    byId("start-campaign").disabled = hasRunning
+      || (!state.targetEnabled && byId("campaign-mode").value !== "footwear_readiness");
     if (hasRunning && !document.hidden) state.campaignTimer = window.setTimeout(loadCampaigns, 5_000);
   } catch (error) { box.replaceChildren(element("p", "form-error", error.message)); }
 }
 
 async function startCampaign() {
-  if (!state.targetEnabled) {
+  const campaignMode = byId("campaign-mode").value;
+  const readinessOnly = campaignMode === "footwear_readiness";
+  if (!state.targetEnabled && !readinessOnly) {
     showMessage("Target выключен. Запуск массовой выгрузки заблокирован.", "error");
     return;
   }
   const rawLimit = byId("campaign-limit").value.trim();
-  const maxExports = rawLimit ? Number(rawLimit) : undefined;
-  const campaignMode = byId("campaign-mode").value;
+  const maxExports = !readinessOnly && rawLimit ? Number(rawLimit) : undefined;
   const rawCatalogRunId = byId("campaign-catalog-run").value.trim();
-  const catalogRunId = campaignMode === "full_existing" && rawCatalogRunId ? Number(rawCatalogRunId) : undefined;
-  if (campaignMode === "full_existing" && catalogRunId === undefined) {
-    showMessage("Для полного режима укажите ID завершённого снимка WordPress.", "error");
+  const catalogScoped = campaignMode === "full_existing" || readinessOnly;
+  const catalogRunId = catalogScoped && rawCatalogRunId ? Number(rawCatalogRunId) : undefined;
+  if (catalogScoped && catalogRunId === undefined) {
+    showMessage("Для выбранного режима укажите ID завершённого снимка WordPress.", "error");
     return;
   }
   const label = campaignMode === "full_existing"
     ? `полную выгрузку существующих товаров снимка #${catalogRunId}`
-    : campaignMode === "new_products" ? "создание новых товаров" : "безопасную выгрузку";
-  const message = maxExports
+    : campaignMode === "new_products" ? "создание новых товаров"
+      : readinessOnly ? `подготовку отсутствующей обуви по снимку #${catalogRunId} без записи в WordPress` : "безопасную выгрузку";
+  const message = readinessOnly
+    ? `Запустить ${label}? Будут отобраны только товары с фотографиями и вариациями.`
+    : maxExports
     ? `Запустить ${label}, максимум ${maxExports} товаров?`
     : `Запустить ${label} без общего лимита? Остановить её можно в любой момент.`;
   if (!window.confirm(message)) return;
@@ -560,7 +577,7 @@ async function startCampaign() {
       ...(maxExports === undefined ? {} : { maxExports }),
       ...(byId("campaign-reason").value.trim() ? { reason: byId("campaign-reason").value.trim() } : {}),
     } });
-    showMessage(`Выгрузка #${result.campaign.id} запущена.`, "success");
+    showMessage(`${readinessOnly ? "Подготовка" : "Выгрузка"} #${result.campaign.id} запущена.`, "success");
     await loadCampaigns();
   } catch (error) { showMessage(error.message, "error"); }
 }
@@ -575,6 +592,7 @@ async function initialize() {
   state.targetId = target.id;
   state.targetEnabled = target.enabled === true;
   updateTargetStatus();
+  updateCampaignMode();
   await Promise.all([load(true), loadBatches(), loadCampaigns()]);
 }
 
@@ -582,6 +600,12 @@ function updateTargetStatus() {
   byId("campaign-target-status").textContent = state.targetEnabled ? "Target включён" : "Target выключен";
   byId("campaign-target-status").className = `badge ${state.targetEnabled ? "status-running" : "status-retry"}`;
   byId("campaign-disabled-note").hidden = state.targetEnabled;
+}
+
+function updateCampaignMode() {
+  const readinessOnly = byId("campaign-mode").value === "footwear_readiness";
+  byId("campaign-limit").disabled = readinessOnly;
+  byId("start-campaign").disabled = state.hasRunningCampaign || (!state.targetEnabled && !readinessOnly);
 }
 
 byId("login-form").addEventListener("submit", async (event) => {
@@ -600,6 +624,7 @@ byId("target").addEventListener("change", () => { state.targetId = byId("target"
 byId("refresh").addEventListener("click", () => Promise.all([load(true), loadBatches(), loadCampaigns()]));
 byId("refresh-batches").addEventListener("click", loadBatches);
 byId("start-campaign").addEventListener("click", startCampaign);
+byId("campaign-mode").addEventListener("change", updateCampaignMode);
 byId("check-next").addEventListener("click", () => enqueuePreflight());
 byId("refresh-selected").addEventListener("click", () => enqueuePreflight([...state.selected]));
 byId("select-page").addEventListener("click", () => { for (const item of state.items) state.selected.add(item.sourceProductId); updateSelection(); });

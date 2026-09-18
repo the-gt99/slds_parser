@@ -30,7 +30,7 @@ function setup(campaignExportConcurrency = 1) {
       reason: input.reason ?? null, mode: input.mode, catalogRunId: input.catalogRunId ?? null,
       preflightWindow: input.preflightWindow, maxExports: input.maxExports ?? null,
       itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
-      acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
+      acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0, scanBeforeInternalProductId: null,
       scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
       updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
     })),
@@ -102,7 +102,7 @@ describe("ExportControlService", () => {
       id: "81", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "safe", catalogRunId: null,
       preflightWindow: 25, maxExports: 100, itemCount: 3, pendingCount: 0, retryCount: 0, runningCount: 0,
-      completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5,
+      completedCount: 3, failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 5, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: false,
       lastError: null, createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -136,7 +136,7 @@ describe("ExportControlService", () => {
       id: "82", targetId: "10", status: "running", actor: "admin", reason: "full",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
       itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0, failedCount: 0,
-      acknowledgedFailedCount: 0, activePreflightCount: 0, scanBeforeInternalProductId: null,
+      acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0, scanBeforeInternalProductId: null,
       scanComplete: false, lastError: null, createdAt: "2026-08-17T00:00:00.000Z",
       updatedAt: "2026-08-17T00:00:00.000Z", pausedAt: null, completedAt: null,
     });
@@ -165,7 +165,7 @@ describe("ExportControlService", () => {
       id: "89", targetId: "10", status: "running", actor: "admin", reason: "new",
       mode: "new_products", catalogRunId: null, preflightWindow: 25, maxExports: 40_000,
       itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
       createdAt: "2026-08-25T00:00:00.000Z", updatedAt: "2026-08-25T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -192,7 +192,7 @@ describe("ExportControlService", () => {
       id: "86", targetId: "10", status: "running", actor: "admin", reason: "parallel",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 100,
       itemCount: 10, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 10,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
       createdAt: "2026-08-19T00:00:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -214,7 +214,7 @@ describe("ExportControlService", () => {
       id: "87", targetId: "10", status: "running", actor: "admin", reason: "bounded",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 12,
       itemCount: 10, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 10,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
       createdAt: "2026-08-19T00:00:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -242,13 +242,73 @@ describe("ExportControlService", () => {
     }));
   });
 
+  it("requires a catalog snapshot and no export limit for footwear preparation", async () => {
+    const { repository, service } = setup();
+
+    await expect(service.startCampaign({ targetId: "10", mode: "footwear_readiness" }, "admin"))
+      .rejects.toThrow("снимок каталога WordPress");
+    await expect(service.startCampaign({
+      targetId: "10", mode: "footwear_readiness", catalogRunId: "4", maxExports: 100,
+    }, "admin")).rejects.toThrow("без лимита выгрузки");
+    await service.startCampaign({ targetId: "10", mode: "footwear_readiness", catalogRunId: "4" }, "admin");
+
+    expect(repository.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
+      targetId: "10", actor: "admin", mode: "footwear_readiness", catalogRunId: "4",
+    }));
+  });
+
+  it("prepares absent footwear without queueing refreshes or WordPress writes", async () => {
+    const { repository, jobs, service } = setup();
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "90", targetId: "10", status: "running", actor: "admin", reason: "readiness",
+      mode: "footwear_readiness", catalogRunId: "4", preflightWindow: 25, maxExports: null,
+      itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
+      scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
+      createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).not.toHaveBeenCalled();
+    expect(repository.createBatch).not.toHaveBeenCalled();
+    expect(repository.prepareCampaignSourceRefreshCandidates).not.toHaveBeenCalled();
+    expect(repository.prepareCampaignPreflightCandidates).toHaveBeenCalledWith({ campaignId: "90", limit: 25 });
+    expect(jobs.enqueueMany).toHaveBeenCalledWith([{
+      jobType: "preflight_product",
+      payload: { sourceProductId: "21", targetId: "10", refreshWordPress: true },
+      uniqueKey: "target-product:10:21:preflight",
+    }]);
+  });
+
+  it("completes footwear preparation after the scan and preflights finish", async () => {
+    const { repository, service } = setup();
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({
+      id: "91", targetId: "10", status: "running", actor: "admin", reason: "readiness",
+      mode: "footwear_readiness", catalogRunId: "4", preflightWindow: 25, maxExports: null,
+      itemCount: 0, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
+      scanBeforeInternalProductId: "31", scanComplete: true, lastError: null,
+      createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z",
+      pausedAt: null, completedAt: null,
+    });
+
+    await service.tickCampaign();
+
+    expect(repository.listExportCandidates).not.toHaveBeenCalled();
+    expect(repository.createBatch).not.toHaveBeenCalled();
+    expect(repository.prepareCampaignSourceRefreshCandidates).not.toHaveBeenCalled();
+    expect(repository.setCampaignStatus).toHaveBeenCalledWith({ campaignId: "91", status: "completed" });
+  });
+
   it("continues with the next product after a terminal product failure", async () => {
     const { repository, service } = setup();
     vi.mocked(repository.getRunningCampaign).mockResolvedValue({
       id: "83", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
       itemCount: 4, pendingCount: 0, retryCount: 0, runningCount: 0, completedCount: 3,
-      failedCount: 1, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 1, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: false, lastError: null,
       createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -269,7 +329,7 @@ describe("ExportControlService", () => {
       id: "84", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
       itemCount: 4, pendingCount: 0, retryCount: 1, runningCount: 0, completedCount: 3,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
       createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -286,7 +346,7 @@ describe("ExportControlService", () => {
       id: "88", targetId: "10", status: "running", actor: "admin", reason: "mass",
       mode: "full_existing", catalogRunId: "4", preflightWindow: 25, maxExports: 250_000,
       itemCount: 6, pendingCount: 0, retryCount: 2, runningCount: 1, completedCount: 3,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
       createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
       pausedAt: null, completedAt: null,
@@ -303,7 +363,7 @@ describe("ExportControlService", () => {
       id: "85", targetId: "10", status: "running" as const, actor: "admin", reason: "mass",
       mode: "full_existing" as const, catalogRunId: "4", preflightWindow: 25, maxExports: 4,
       itemCount: 4, pendingCount: 0, retryCount: 1, runningCount: 0, completedCount: 3,
-      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0,
+      failedCount: 0, acknowledgedFailedCount: 0, activePreflightCount: 0, scannedCount: 0,
       scanBeforeInternalProductId: null, scanComplete: true, lastError: null,
       createdAt: "2026-08-17T00:00:00.000Z", updatedAt: "2026-08-17T00:00:00.000Z",
       pausedAt: null, completedAt: null,

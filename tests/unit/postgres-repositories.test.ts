@@ -496,6 +496,31 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("campaign.scan_before_internal_product_id, campaign.scan_complete");
   });
 
+  it("selects only absent footwear with images and variants for readiness preparation", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{
+        id: "90", target_id: "10", mode: "footwear_readiness", catalog_run_id: "4",
+        scan_before_internal_product_id: null, scan_complete: false,
+      }],
+      [{ source_product_id: "21", internal_product_id: "31", refresh_wordpress: true }],
+      [],
+      [],
+    ]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await expect(repository.prepareCampaignPreflightCandidates({ campaignId: "90", limit: 100 }))
+      .resolves.toEqual([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]);
+
+    const candidateQuery = executor.calls[2]?.text ?? "";
+    expect(candidateQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
+    expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'images') > 0");
+    expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'variants') > 0");
+    expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'");
+    expect(candidateQuery).toContain("NOT EXISTS");
+    expect(executor.calls[2]?.values).toEqual(["10", null, 100, "4", "footwear_readiness"]);
+  });
+
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
     const executor = new FakeExecutor([
       [],

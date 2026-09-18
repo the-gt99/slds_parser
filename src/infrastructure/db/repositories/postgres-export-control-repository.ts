@@ -93,6 +93,7 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
     failedCount: Number(row.failed_count ?? 0),
     acknowledgedFailedCount: Number(row.acknowledged_failed_count ?? 0),
     activePreflightCount: Number(row.active_preflight_count ?? 0),
+    scannedCount: Number(row.scanned_count ?? 0),
     scanBeforeInternalProductId: nullableText(row, "scan_before_internal_product_id"),
     scanComplete: row.scan_complete === true,
     lastError: nullableText(row, "last_error"),
@@ -996,7 +997,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                   campaign.mode, campaign.catalog_run_id,
                   campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
                   campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at,
-                  campaign.scan_before_internal_product_id, campaign.scan_complete`,
+                  campaign.scan_before_internal_product_id, campaign.scan_complete, campaign.scanned_count`,
         [input.targetId, input.actor, input.reason ?? null, input.mode, input.catalogRunId ?? null,
           input.preflightWindow, input.maxExports ?? null],
       );
@@ -1188,13 +1189,29 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE ${exportEligibleInternalSql("internal")}
              AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
-             AND ($4::BIGINT IS NULL OR EXISTS (
-               SELECT 1
-               FROM wordpress_catalog_run_items catalog_item
-               WHERE catalog_item.run_id = $4::BIGINT
-                 AND catalog_item.internal_product_id = internal.id
-                 AND catalog_item.match_status = 'matched'
-             ))
+             AND (
+               ($5::TEXT = 'footwear_readiness'
+                 AND $4::BIGINT IS NOT NULL
+                 AND source_product.discovery_metadata->>'route' = 'sneakers'
+                 AND JSONB_TYPEOF(internal.data->'images') = 'array'
+                 AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
+                 AND JSONB_TYPEOF(internal.data->'variants') = 'array'
+                 AND JSONB_ARRAY_LENGTH(internal.data->'variants') > 0
+                 AND NOT EXISTS (
+                   SELECT 1
+                   FROM wordpress_catalog_run_items catalog_item
+                   WHERE catalog_item.run_id = $4::BIGINT
+                     AND catalog_item.internal_product_id = internal.id
+                     AND catalog_item.match_status = 'matched'
+                 ))
+               OR ($5::TEXT <> 'footwear_readiness' AND ($4::BIGINT IS NULL OR EXISTS (
+                 SELECT 1
+                 FROM wordpress_catalog_run_items catalog_item
+                 WHERE catalog_item.run_id = $4::BIGINT
+                   AND catalog_item.internal_product_id = internal.id
+                   AND catalog_item.match_status = 'matched'
+               )))
+             )
              AND ($5::TEXT <> 'new_products'
                OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
              AND (review.id IS NULL OR review.status IN ('stale', 'error')
@@ -1251,9 +1268,10 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         `UPDATE target_export_campaigns
          SET scan_before_internal_product_id = COALESCE($2, scan_before_internal_product_id),
              scan_complete = $3,
+             scanned_count = scanned_count + $4,
              updated_at = NOW()
          WHERE id = $1`,
-        [input.campaignId, last === undefined ? null : text(last, "internal_product_id"), last === undefined],
+        [input.campaignId, last === undefined ? null : text(last, "internal_product_id"), last === undefined, result.rows.length],
       );
       return result.rows.map((row) => ({
         sourceProductId: text(row, "source_product_id"),
