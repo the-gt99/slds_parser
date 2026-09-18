@@ -113,6 +113,44 @@ describe("Worker", () => {
     expect([...store.jobs.values()].filter((job) => job.status === "pending")).toHaveLength(4);
   });
 
+  it("processes reclassification while full processing jobs are available", async () => {
+    const store = new MemoryStore();
+    const jobs = new MemoryJobRepository(store);
+    const processing = await jobs.enqueue({
+      jobType: "process_product",
+      payload: { sourceProductId: "1", force: false },
+      uniqueKey: "process-1",
+    });
+    const reclassification = await jobs.enqueue({
+      jobType: "reclassify_product",
+      payload: { sourceProductId: "2" },
+      uniqueKey: "reclassify-2",
+    });
+    const controller = new AbortController();
+    const handler: JobHandler = {
+      dispatch: vi.fn(async (job) => {
+        if (job.jobType === "reclassify_product") controller.abort();
+        return { status: "completed" as const };
+      }),
+      handleTerminalFailure: vi.fn(),
+    };
+    const sleep = async (_milliseconds: number, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    };
+    const worker = new Worker(jobs, handler, options, sleep, Date.now, console.error, undefined, async () => ({
+      collectionConcurrency: 1,
+      processConcurrency: 1,
+      preflightConcurrency: 1,
+      classificationApplyConcurrency: 1,
+    }));
+
+    await worker.run(controller.signal);
+
+    expect(store.jobs.get(processing.id)?.status).toBe("completed");
+    expect(store.jobs.get(reclassification.id)?.status).toBe("completed");
+  });
+
   it("polls one hundred WordPress variation jobs with one request", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
