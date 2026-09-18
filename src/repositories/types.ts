@@ -980,6 +980,7 @@ export interface ExportCampaignRecord {
   readonly failedCount: number;
   readonly acknowledgedFailedCount: number;
   readonly activePreflightCount: number;
+  readonly candidateCount: number;
   readonly scannedCount: number;
   readonly scanBeforeInternalProductId: EntityId | null;
   readonly scanComplete: boolean;

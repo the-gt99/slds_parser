@@ -488,7 +488,7 @@ async function loadCampaignsOnce() {
       heading.append(title, badge(campaign.status === "running" ? "Работает" : campaignStatusLabel(campaign.status), campaign.status === "running" ? "safe" : "neutral"));
       const metrics = element("div", "export-campaign-metrics");
       const campaignMetrics = campaign.mode === "footwear_readiness"
-        ? [["Режим", modeLabel], ["Отобрано", campaign.scannedCount], ["Сейчас проверяются", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Сканирование", campaign.scanComplete ? "завершено" : "идёт"]]
+        ? [["Режим", modeLabel], ["Подходят", campaign.candidateCount], ["Отправлено на проверку", campaign.scannedCount], ["Сейчас проверяются", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Сканирование", campaign.scanComplete ? "завершено" : "идёт"]]
         : [["Режим", modeLabel], ["Preflight", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Очередь", campaign.pendingCount], ["В работе", campaign.runningCount], ["Выгружено", campaign.completedCount], ["Ошибки", campaign.failedCount]];
       for (const [label, value] of campaignMetrics) {
         const item = element("div", ""); item.append(element("span", "", label), element("strong", Number.isFinite(Number(value)) ? count(value) : value)); metrics.append(item);
