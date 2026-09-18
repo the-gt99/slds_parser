@@ -503,7 +503,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
         id: "90", target_id: "10", mode: "footwear_readiness", catalog_run_id: "4",
         scan_before_internal_product_id: null, scan_complete: false,
       }],
-      [{ source_product_id: "21", internal_product_id: "31", refresh_wordpress: true }],
+      [{ source_product_id: "21", internal_product_id: "31", scan_cursor_id: "21", refresh_wordpress: true }],
       [],
       [],
     ]);
@@ -514,10 +514,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     const candidateQuery = executor.calls[2]?.text ?? "";
     expect(candidateQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
+    expect(candidateQuery).toContain("source_product.id AS scan_cursor_id");
+    expect(candidateQuery).toContain("ORDER BY source_product.id DESC");
     expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'images') > 0");
     expect(candidateQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'variants') > 0");
     expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'");
-    expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'\n               OR review.id IS NULL");
     expect(candidateQuery).toContain("NOT EXISTS");
     expect(executor.calls[2]?.values).toEqual(["10", null, 100, "4", "footwear_readiness"]);
   });

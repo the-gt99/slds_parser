@@ -1168,9 +1168,39 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       const state = campaign.rows[0];
       if (state === undefined || state.scan_complete === true) return [];
       const targetId = text(state, "target_id");
+      const mode = text(state, "mode");
+      const readinessOnly = mode === "footwear_readiness";
+      const scanCursorSql = readinessOnly ? "source_product.id" : "internal.id";
+      const campaignScopeSql = readinessOnly
+        ? `AND $5::TEXT = 'footwear_readiness'
+             AND source_product.discovery_metadata->>'route' = 'sneakers'
+             AND JSONB_TYPEOF(internal.data->'images') = 'array'
+             AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
+             AND JSONB_TYPEOF(internal.data->'variants') = 'array'
+             AND JSONB_ARRAY_LENGTH(internal.data->'variants') > 0
+             AND NOT EXISTS (
+               SELECT 1
+               FROM wordpress_catalog_run_items catalog_item
+               WHERE catalog_item.run_id = $4::BIGINT
+                 AND catalog_item.internal_product_id = internal.id
+                 AND catalog_item.match_status = 'matched'
+             )`
+        : `AND ($4::BIGINT IS NULL OR EXISTS (
+               SELECT 1
+               FROM wordpress_catalog_run_items catalog_item
+               WHERE catalog_item.run_id = $4::BIGINT
+                 AND catalog_item.internal_product_id = internal.id
+                 AND catalog_item.match_status = 'matched'
+             ))
+             AND ($5::TEXT <> 'new_products'
+               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
+             AND (review.id IS NULL OR review.status IN ('stale', 'error')
+               OR review.configuration_revision <> revision.revision
+               OR review.internal_content_hash <> internal.content_hash)`;
       const result = await client.query<DatabaseRow>(
         `WITH selected AS MATERIALIZED (
            SELECT internal.id AS internal_product_id, internal.source_product_id,
+                  ${scanCursorSql} AS scan_cursor_id,
                   internal.content_hash, source.code AS source_code,
                   source_product.external_id AS source_external_id,
                   COALESCE(NULLIF(internal.data->>'title', ''), source_product.source_key) AS title,
@@ -1188,36 +1218,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            LEFT JOIN target_product_preflight_reviews review
              ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE ${exportEligibleInternalSql("internal")}
-             AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
-             AND (
-               ($5::TEXT = 'footwear_readiness'
-                 AND $4::BIGINT IS NOT NULL
-                 AND source_product.discovery_metadata->>'route' = 'sneakers'
-                 AND JSONB_TYPEOF(internal.data->'images') = 'array'
-                 AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
-                 AND JSONB_TYPEOF(internal.data->'variants') = 'array'
-                 AND JSONB_ARRAY_LENGTH(internal.data->'variants') > 0
-                 AND NOT EXISTS (
-                   SELECT 1
-                   FROM wordpress_catalog_run_items catalog_item
-                   WHERE catalog_item.run_id = $4::BIGINT
-                     AND catalog_item.internal_product_id = internal.id
-                     AND catalog_item.match_status = 'matched'
-                 ))
-               OR ($5::TEXT <> 'footwear_readiness' AND ($4::BIGINT IS NULL OR EXISTS (
-                 SELECT 1
-                 FROM wordpress_catalog_run_items catalog_item
-                 WHERE catalog_item.run_id = $4::BIGINT
-                   AND catalog_item.internal_product_id = internal.id
-                   AND catalog_item.match_status = 'matched'
-               )))
-             )
-             AND ($5::TEXT <> 'new_products'
-               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
-             AND ($5::TEXT = 'footwear_readiness'
-               OR review.id IS NULL OR review.status IN ('stale', 'error')
-               OR review.configuration_revision <> revision.revision
-               OR review.internal_content_hash <> internal.content_hash)
+             AND ($2::BIGINT IS NULL OR ${scanCursorSql} < $2::BIGINT)
+             ${campaignScopeSql}
              AND NOT EXISTS (
                SELECT 1 FROM jobs job
                WHERE job.job_type = 'preflight_product'
@@ -1225,7 +1227,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND job.payload->>'targetId' = $1::TEXT
                  AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
              )
-           ORDER BY internal.id DESC
+           ORDER BY ${scanCursorSql} DESC
            LIMIT $3
            FOR UPDATE OF internal SKIP LOCKED
          ), marked AS (
@@ -1272,7 +1274,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              scanned_count = scanned_count + $4,
              updated_at = NOW()
          WHERE id = $1`,
-        [input.campaignId, last === undefined ? null : text(last, "internal_product_id"), last === undefined, result.rows.length],
+        [input.campaignId, last === undefined ? null : text(last, "scan_cursor_id"), last === undefined, result.rows.length],
       );
       return result.rows.map((row) => ({
         sourceProductId: text(row, "source_product_id"),
