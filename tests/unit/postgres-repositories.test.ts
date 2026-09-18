@@ -519,6 +519,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(preparationQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
     expect(preparationQuery).toContain("target_export_campaign_preflight_items");
     expect(candidateQuery).toContain("source_product.id AS scan_cursor_id");
+    expect(candidateQuery).toContain("SELECT marked.*, selected.scan_cursor_id");
     expect(candidateQuery).toContain("ORDER BY source_product.id DESC");
     expect(preparationQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'images') > 0");
     expect(preparationQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'variants') > 0");

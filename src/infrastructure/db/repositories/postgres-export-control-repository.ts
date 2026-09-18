@@ -1294,7 +1294,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                checked_at = NOW(), updated_at = NOW()
            RETURNING source_product_id, internal_product_id
          )
-         SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
+         SELECT marked.*, selected.scan_cursor_id,
+                NOT selected.use_cached_wordpress AS refresh_wordpress
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
         [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit,
