@@ -678,26 +678,31 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         parameters,
       );
       const byTypeStatus = await client.query<DatabaseRow>(
-        `SELECT job_type, status, COUNT(*)::INT AS count,
-                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
-                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
-                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h,
-                PERCENTILE_CONT(0.75) WITHIN GROUP (
-                  ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000
-                ) FILTER (
-                  WHERE status = 'completed'
-                    AND finished_at >= NOW() - INTERVAL '24 hours'
-                    AND started_at IS NOT NULL
-                ) AS estimated_duration_ms
+        `SELECT job_type, status, COUNT(*)::INT AS count
          FROM jobs
          GROUP BY job_type, status
          ORDER BY job_type, status`,
+      );
+      const throughput = await client.query<DatabaseRow>(
+        `SELECT job_type,
+                COUNT(*) FILTER (WHERE finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
+                COUNT(*) FILTER (WHERE finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
+                COUNT(*)::INT AS last24h,
+                PERCENTILE_CONT(0.75) WITHIN GROUP (
+                  ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000
+                ) FILTER (WHERE started_at IS NOT NULL) AS estimated_duration_ms
+         FROM jobs
+         WHERE status = 'completed'
+           AND finished_at >= NOW() - INTERVAL '24 hours'
+         GROUP BY job_type
+         ORDER BY job_type`,
       );
       const errorGroups = await client.query<DatabaseRow>(
           `SELECT job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240) AS message,
                   COUNT(*)::INT AS count, MAX(updated_at) AS latest_at
            FROM jobs
            WHERE status = 'failed'
+             AND created_at >= NOW() - INTERVAL '7 days'
            GROUP BY job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240)
            ORDER BY count DESC, latest_at DESC
            LIMIT 25`,
@@ -728,6 +733,11 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         const jobType = row.job_type as JobType;
         const current = metricsByType.get(jobType) ?? { remaining: 0, last15m: 0, last1h: 0, last24h: 0, estimatedDurationMs: null };
         if (["pending", "running", "retry"].includes(String(row.status))) current.remaining += Number(row.count);
+        metricsByType.set(jobType, current);
+      }
+      for (const row of throughput.rows) {
+        const jobType = row.job_type as JobType;
+        const current = metricsByType.get(jobType) ?? { remaining: 0, last15m: 0, last1h: 0, last24h: 0, estimatedDurationMs: null };
         current.last15m += Number(row.last15m ?? 0);
         current.last1h += Number(row.last1h ?? 0);
         current.last24h += Number(row.last24h ?? 0);

@@ -313,41 +313,52 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     );
     const candidateCount = await this.eligibleCandidateCount();
     const summaryResult = await queryPool<DatabaseRow>(this.pool,
-      `WITH target_reviews AS MATERIALIZED (
-         SELECT review.*
+      `WITH current_revision AS MATERIALIZED (
+         SELECT revision
+         FROM target_export_revisions
+         WHERE target_id = $1
+       ), review_counts AS MATERIALIZED (
+         SELECT CASE
+                  WHEN review.status = 'checking' THEN 'checking'
+                  WHEN review.status = 'stale'
+                    OR review.configuration_revision <> revision.revision THEN 'stale'
+                  ELSE review.status
+                END AS effective_status,
+                COUNT(*)::BIGINT AS count
          FROM target_product_preflight_reviews review
+         CROSS JOIN current_revision revision
          WHERE review.target_id = $1
-       ), states AS MATERIALIZED (
-         SELECT internal.id AS internal_product_id,
-                review.id AS review_id,
-                ${effectiveStatusSql} AS effective_status,
-                review.payload_hash,
-                review.target_id
-         FROM target_reviews review
-         JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         GROUP BY effective_status
+       ), exportable_reviews AS MATERIALIZED (
+         SELECT review.internal_product_id, review.target_id
+         FROM target_product_preflight_reviews review
+         CROSS JOIN current_revision revision
          JOIN internal_products internal ON internal.id = review.internal_product_id
-         WHERE ${exportEligibleInternalSql("internal")}
+         WHERE review.target_id = $1
+           AND review.status = 'ready'
+           AND review.configuration_revision = revision.revision
+           AND review.internal_content_hash = internal.content_hash
+           AND review.payload_hash IS NOT NULL
+           AND ${exportEligibleInternalSql("internal")}
        )
        SELECT $2::BIGINT AS candidate_count,
-              COUNT(states.review_id)::BIGINT AS reviewed_count,
-              ($2::BIGINT - COUNT(states.review_id))::BIGINT AS unreviewed_count,
-              COUNT(*) FILTER (WHERE effective_status = 'checking')::BIGINT AS checking_count,
-              COUNT(*) FILTER (WHERE effective_status = 'ready')::BIGINT AS ready_count,
-              COUNT(*) FILTER (
-                WHERE effective_status = 'ready'
-                  AND payload_hash IS NOT NULL
-                  AND NOT EXISTS (
-                    SELECT 1 FROM jobs active_job
-                    WHERE active_job.job_type = 'export_product'
-                      AND active_job.status IN ('pending', 'running', 'retry')
-                      AND active_job.payload->>'targetId' = states.target_id::TEXT
-                      AND active_job.payload->>'internalProductId' = states.internal_product_id::TEXT
-                  )
-              )::BIGINT AS exportable_count,
-              COUNT(*) FILTER (WHERE effective_status = 'blocked')::BIGINT AS blocked_count,
-              COUNT(*) FILTER (WHERE effective_status = 'stale')::BIGINT AS stale_count,
-              COUNT(*) FILTER (WHERE effective_status = 'error')::BIGINT AS error_count
-       FROM states`,
+              COALESCE(SUM(count), 0)::BIGINT AS reviewed_count,
+              GREATEST($2::BIGINT - COALESCE(SUM(count), 0), 0)::BIGINT AS unreviewed_count,
+              COALESCE(SUM(count) FILTER (WHERE effective_status = 'checking'), 0)::BIGINT AS checking_count,
+              COALESCE(SUM(count) FILTER (WHERE effective_status = 'ready'), 0)::BIGINT AS ready_count,
+              (SELECT COUNT(*)::BIGINT
+               FROM exportable_reviews review
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM jobs active_job
+                 WHERE active_job.job_type = 'export_product'
+                   AND active_job.status IN ('pending', 'running', 'retry')
+                   AND active_job.payload->>'targetId' = review.target_id::TEXT
+                   AND active_job.payload->>'internalProductId' = review.internal_product_id::TEXT
+               )) AS exportable_count,
+              COALESCE(SUM(count) FILTER (WHERE effective_status = 'blocked'), 0)::BIGINT AS blocked_count,
+              COALESCE(SUM(count) FILTER (WHERE effective_status = 'stale'), 0)::BIGINT AS stale_count,
+              COALESCE(SUM(count) FILTER (WHERE effective_status = 'error'), 0)::BIGINT AS error_count
+       FROM review_counts`,
       [query.targetId, candidateCount],
     );
     const hasMore = result.rows.length > query.limit;

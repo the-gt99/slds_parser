@@ -383,6 +383,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[1]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
     expect(executor.calls[1]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
     expect(executor.calls[2]?.values).toEqual(["10", 12917]);
+    expect(executor.calls[2]?.text).toContain("review_counts AS MATERIALIZED");
+    expect(executor.calls[2]?.text).toContain("GROUP BY effective_status");
   });
 
   it("selects only existing stale reviews for automatic preflight maintenance", async () => {
@@ -1267,7 +1269,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
       [{ total: "1" }],
       [{ ...jobRow, source_product_id: "87549", duration_ms: 1000 }],
       [{ job_type: "process_product", status: "pending", count: 2, last15m: 0, last1h: 0, last24h: 0, estimated_duration_ms: null },
-       { job_type: "process_product", status: "completed", count: 30, last15m: 10, last1h: 20, last24h: 30, estimated_duration_ms: 12_500 }],
+       { job_type: "process_product", status: "completed", count: 30 }],
+      [{ job_type: "process_product", last15m: 10, last1h: 20, last24h: 30, estimated_duration_ms: 12_500 }],
       [],
       [{ process_concurrency: 3 }],
     ]);
@@ -1281,10 +1284,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("searched_internal.source_product_id = $1::BIGINT");
     expect(executor.calls[0]?.text).not.toContain("internal.source_product_id::TEXT = $1");
     expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(selected.payload->>'internalProductId', '')::BIGINT");
-    expect(executor.calls[2]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
     expect(executor.calls[2]?.text).toContain("GROUP BY job_type, status");
-    expect(executor.calls[2]?.text).toContain("PERCENTILE_CONT(0.75)");
-    expect(executor.calls[4]?.text).toContain("applied_process_concurrency");
+    expect(executor.calls[3]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
+    expect(executor.calls[3]?.text).toContain("PERCENTILE_CONT(0.75)");
+    expect(executor.calls[4]?.text).toContain("created_at >= NOW() - INTERVAL '7 days'");
+    expect(executor.calls[5]?.text).toContain("applied_process_concurrency");
     expect(executor.calls[1]?.text).toContain("selected.finished_at - selected.started_at");
     expect(result.summary.byJobType[0]).toEqual({
       jobType: "process_product",
