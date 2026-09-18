@@ -39,7 +39,8 @@
     </section>
 
     <section class="section export-batches-section">
-      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Управляемая массовая выгрузка</h2><p class="muted">Поддерживает ограниченный буфер проверок и записей. Полный режим обновляет только сопоставленные товары выбранного снимка WordPress, а отдельный режим создания работает только с ранее проверенными новыми товарами.</p></div></div>
+      <div class="section-title"><div><p class="eyebrow">Поточная обработка</p><h2>Управляемая массовая выгрузка</h2><p class="muted">Поддерживает ограниченный буфер проверок и записей. Полный режим обновляет только сопоставленные товары выбранного снимка WordPress, а отдельный режим создания работает только с ранее проверенными новыми товарами.</p></div><span id="campaign-target-status" class="badge">—</span></div>
+      <div id="campaign-disabled-note" class="inline-message warning" hidden>Target выключен. Запуск и продолжение массовых кампаний заблокированы; просмотр и ручной preflight доступны.</div>
       <div class="runtime-actions">
         <label class="field compact-field"><span>Режим</span><select id="campaign-mode"><option value="safe">Только без риска</option><option value="full_existing">Все готовые обновления</option><option value="new_products">Создание новых товаров</option></select></label>
         <label class="field compact-field"><span>ID снимка WordPress</span><input id="campaign-catalog-run" type="number" min="1" placeholder="для полного режима"></label>
@@ -48,13 +49,13 @@
         <label class="field"><span>Комментарий</span><input id="campaign-reason" maxlength="300" placeholder="Безопасная массовая выгрузка"></label>
         <button id="start-campaign" class="button primary" type="button">Запустить</button>
       </div>
-      <div id="campaigns" class="export-batches"></div>
+      <div id="campaigns" class="export-campaigns"></div>
     </section>
 
     <section class="export-readiness-summary" aria-label="Готовность товаров к экспорту">
       <article class="export-readiness-card primary"><span>Можно экспортировать</span><strong id="summary-exportable">—</strong><small>актуальный preflight, нет активного экспорта</small></article>
       <article class="export-readiness-card"><span>Готовы</span><strong id="summary-ready">—</strong><small>успешно прошли preflight</small></article>
-      <article class="export-readiness-card warning"><span>Нужно перепроверить</span><strong id="summary-stale">—</strong><small id="summary-maintenance">обновятся автоматически</small></article>
+      <article class="export-readiness-card warning"><span>Нужно перепроверить</span><strong id="summary-stale">—</strong><small id="summary-maintenance">запускаются вручную</small></article>
       <article class="export-readiness-card"><span>Проверяются</span><strong id="summary-checking">—</strong><small>задачи в очереди или работе</small></article>
       <article class="export-readiness-card danger"><span>Заблокированы</span><strong id="summary-blocked">—</strong><small id="summary-blocked-note">не прошли требования экспорта</small></article>
       <article class="export-readiness-card"><span>Не проверены</span><strong id="summary-unreviewed">—</strong><small>можно брать следующими пачками</small></article>

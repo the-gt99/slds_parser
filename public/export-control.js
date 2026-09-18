@@ -8,9 +8,9 @@ const state = {
   selected: new Set(),
   pendingExport: null,
   summary: null,
-  refreshTimer: null,
-  maintenanceRunning: false,
   campaignTimer: null,
+  targets: [],
+  targetEnabled: false,
 };
 
 async function api(url, options = {}) {
@@ -107,46 +107,8 @@ function renderSummary(summary) {
   byId("summary-maintenance").textContent = summary.checkingCount > 0
     ? `${count(summary.checkingCount)} в очереди или работе`
     : summary.staleCount > 0
-      ? "автоматическая перепроверка запускается"
+      ? "нажмите «Проверить ещё» для следующей пачки"
       : "актуальные результаты";
-}
-
-function clearScheduledRefresh() {
-  if (state.refreshTimer !== null) window.clearTimeout(state.refreshTimer);
-  state.refreshTimer = null;
-}
-
-function scheduleReadinessMaintenance() {
-  clearScheduledRefresh();
-  if (document.hidden || !state.summary || state.maintenanceRunning) return;
-  if (state.summary.checkingCount > 0) {
-    state.refreshTimer = window.setTimeout(() => load(true), 8_000);
-    return;
-  }
-  if (state.summary.staleCount > 0) void enqueueStalePreflights();
-}
-
-async function enqueueStalePreflights() {
-  if (state.maintenanceRunning || document.hidden || !state.targetId) return;
-  state.maintenanceRunning = true;
-  byId("summary-maintenance").textContent = "ставим устаревшие проверки в очередь";
-  try {
-    const result = await api("/api/export-control/preflights", {
-      method: "POST",
-      body: { targetId: state.targetId, mode: "stale", limit: 100 },
-    });
-    await load(true, { scheduleMaintenance: false });
-    if (result.result.queuedCount === 0 && state.summary?.staleCount > 0) {
-      byId("summary-maintenance").textContent = "ожидаем освобождения очереди";
-      state.refreshTimer = window.setTimeout(() => load(true), 8_000);
-    }
-  } catch (error) {
-    byId("summary-maintenance").textContent = `автопроверка остановлена: ${error.message}`;
-    state.refreshTimer = window.setTimeout(() => load(true), 30_000);
-  } finally {
-    state.maintenanceRunning = false;
-    if (state.refreshTimer === null) scheduleReadinessMaintenance();
-  }
 }
 
 function updateSelection() {
@@ -329,7 +291,7 @@ function render(reset) {
   updateSelection();
 }
 
-async function load(reset = true, options = {}) {
+async function load(reset = true) {
   if (!state.targetId) return;
   if (reset) {
     state.cursor = null;
@@ -352,7 +314,6 @@ async function load(reset = true, options = {}) {
     state.cursor = result.nextCursor;
     renderSummary(result.summary || {});
     render(true);
-    if (reset && options.scheduleMaintenance !== false) scheduleReadinessMaintenance();
   } catch (error) {
     if (error.status === 401) return showLogin();
     byId("error").textContent = error.message;
@@ -456,6 +417,10 @@ async function loadCampaignItems(campaign, container) {
 }
 
 async function setCampaignStatus(campaign, action) {
+  if (action === "resume" && !state.targetEnabled) {
+    showMessage("Target выключен. Продолжение массовой выгрузки заблокировано.", "error");
+    return;
+  }
   try {
     await api(`/api/export-control/campaigns/${encodeURIComponent(campaign.id)}/${action}`, { method: "POST", body: {} });
     showMessage(action === "pause" ? `Выгрузка #${campaign.id} остановлена.` : `Выгрузка #${campaign.id} продолжена.`, "success");
@@ -472,19 +437,26 @@ async function loadCampaigns() {
     const result = await api(`/api/export-control/campaigns?targetId=${encodeURIComponent(state.targetId)}&limit=10`);
     box.replaceChildren();
     let hasRunning = false;
+    const active = element("div", "export-campaign-active");
+    const history = element("div", "export-campaign-history-list");
+    let historyCount = 0;
     for (const campaign of result.items || []) {
       hasRunning ||= campaign.status === "running";
-      const wrapper = element("div", "export-batch-row");
+      const wrapper = element("article", "export-campaign-card");
       const modeLabel = campaign.mode === "full_existing"
         ? `полный режим · снимок #${campaign.catalogRunId}`
         : campaign.mode === "new_products" ? "создание новых товаров" : "безопасный режим";
-      wrapper.append(
-        element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`),
-        element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`),
-        element("span", "", `${modeLabel} · проверки ${campaign.activePreflightCount}/${campaign.preflightWindow} · очередь ${campaign.pendingCount} · отложено ${campaign.retryCount} · работа ${campaign.runningCount}`),
-        element("span", "", `выгружено ${campaign.completedCount} · ошибки ${campaign.failedCount}${campaign.maxExports ? ` · лимит ${campaign.maxExports}` : ""}`),
-      );
-      if (campaign.lastError) wrapper.append(element("span", "form-error", campaign.lastError));
+      const heading = element("div", "export-campaign-heading");
+      const title = element("div", "");
+      title.append(element("strong", "", `Выгрузка #${campaign.id} · ${campaignStatusLabel(campaign.status)}`), element("span", "muted", `${date(campaign.createdAt)} · ${campaign.actor}`));
+      heading.append(title, badge(campaign.status === "running" ? "Работает" : campaignStatusLabel(campaign.status), campaign.status === "running" ? "safe" : "neutral"));
+      const metrics = element("div", "export-campaign-metrics");
+      for (const [label, value] of [["Режим", modeLabel], ["Preflight", `${campaign.activePreflightCount}/${campaign.preflightWindow}`], ["Очередь", campaign.pendingCount], ["В работе", campaign.runningCount], ["Выгружено", campaign.completedCount], ["Ошибки", campaign.failedCount]]) {
+        const item = element("div", ""); item.append(element("span", "", label), element("strong", Number.isFinite(Number(value)) ? count(value) : value)); metrics.append(item);
+      }
+      wrapper.append(heading, metrics);
+      if (campaign.maxExports) wrapper.append(element("p", "muted", `Лимит кампании: ${count(campaign.maxExports)} товаров.`));
+      if (campaign.lastError) wrapper.append(element("p", "form-error", campaign.lastError));
       const actions = element("div", "runtime-actions");
       const itemsButton = element("button", "button quiet", "Показать товары");
       itemsButton.type = "button";
@@ -504,19 +476,32 @@ async function loadCampaigns() {
       } else if (campaign.status === "paused") {
         const resume = element("button", "button primary", "Продолжить");
         resume.type = "button";
+        resume.disabled = !state.targetEnabled;
+        if (!state.targetEnabled) resume.title = "Target выключен";
         resume.addEventListener("click", () => setCampaignStatus(campaign, "resume"));
         actions.append(resume);
       }
       wrapper.append(actions, items);
-      box.append(wrapper);
+      if (campaign.status === "running") active.append(wrapper);
+      else { history.append(wrapper); historyCount += 1; }
+    }
+    if (active.children.length) box.append(active);
+    if (historyCount > 0) {
+      const details = element("details", "export-campaign-history");
+      details.append(element("summary", "", `История выгрузок · ${historyCount}`), history);
+      box.append(details);
     }
     if (!box.children.length) box.append(element("p", "muted", "Массовая выгрузка ещё не запускалась."));
-    byId("start-campaign").disabled = hasRunning;
+    byId("start-campaign").disabled = hasRunning || !state.targetEnabled;
     if (hasRunning && !document.hidden) state.campaignTimer = window.setTimeout(loadCampaigns, 5_000);
   } catch (error) { box.replaceChildren(element("p", "form-error", error.message)); }
 }
 
 async function startCampaign() {
+  if (!state.targetEnabled) {
+    showMessage("Target выключен. Запуск массовой выгрузки заблокирован.", "error");
+    return;
+  }
   const rawLimit = byId("campaign-limit").value.trim();
   const maxExports = rawLimit ? Number(rawLimit) : undefined;
   const campaignMode = byId("campaign-mode").value;
@@ -549,12 +534,21 @@ async function startCampaign() {
 
 async function initialize() {
   const targets = await api("/api/targets");
+  state.targets = targets.items;
   const target = targets.items.find((item) => item.code === "slamdunk") || targets.items[0];
   if (!target) throw new Error("Target не настроен");
   for (const item of targets.items) byId("target").append(new Option(`${item.name}${item.enabled ? "" : " · автоэкспорт выключен"}`, item.id));
   byId("target").value = target.id;
   state.targetId = target.id;
+  state.targetEnabled = target.enabled === true;
+  updateTargetStatus();
   await Promise.all([load(true), loadBatches(), loadCampaigns()]);
+}
+
+function updateTargetStatus() {
+  byId("campaign-target-status").textContent = state.targetEnabled ? "Target включён" : "Target выключен";
+  byId("campaign-target-status").className = `badge ${state.targetEnabled ? "status-running" : "status-retry"}`;
+  byId("campaign-disabled-note").hidden = state.targetEnabled;
 }
 
 byId("login-form").addEventListener("submit", async (event) => {
@@ -569,7 +563,7 @@ byId("login-form").addEventListener("submit", async (event) => {
 });
 byId("logout-button").addEventListener("click", async () => { try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {} state.session = null; showLogin(); });
 byId("filters").addEventListener("submit", (event) => { event.preventDefault(); load(true); });
-byId("target").addEventListener("change", () => { state.targetId = byId("target").value; state.selected.clear(); Promise.all([load(true), loadBatches(), loadCampaigns()]); });
+byId("target").addEventListener("change", () => { state.targetId = byId("target").value; state.targetEnabled = state.targets.find((item) => item.id === state.targetId)?.enabled === true; updateTargetStatus(); state.selected.clear(); Promise.all([load(true), loadBatches(), loadCampaigns()]); });
 byId("refresh").addEventListener("click", () => Promise.all([load(true), loadBatches(), loadCampaigns()]));
 byId("refresh-batches").addEventListener("click", loadBatches);
 byId("start-campaign").addEventListener("click", startCampaign);
@@ -581,8 +575,7 @@ byId("preview-export").addEventListener("click", () => previewExport(state.selec
 byId("confirm-export").addEventListener("click", applyExport);
 byId("load-more").addEventListener("click", () => load(false));
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) clearScheduledRefresh();
-  else load(true);
+  if (!document.hidden) Promise.all([load(true), loadCampaigns()]);
 });
 
 api("/api/auth/session").then(async (session) => {
