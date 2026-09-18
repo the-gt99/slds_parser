@@ -341,11 +341,12 @@ export class Worker {
   private async runProcessingLane(signal: AbortSignal, workerId: string): Promise<void> {
     while (!signal.aborted) {
       const processedProduct = await this.processNext(["process_product"], workerId);
-      const processed = processedProduct || await this.processMany(
+      const reclassifiedProducts = await this.processMany(
         "reclassify_product",
         workerId,
         Worker.reclassificationBatchSize,
       );
+      const processed = processedProduct || reclassifiedProducts;
       if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
     }
   }
