@@ -1203,7 +1203,9 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            )
            UPDATE target_export_campaigns
            SET candidates_prepared = TRUE,
-               candidate_count = (SELECT COUNT(*) FROM target_export_campaign_preflight_items WHERE campaign_id = $1),
+               candidate_count =
+                 (SELECT COUNT(*) FROM target_export_campaign_preflight_items WHERE campaign_id = $1)
+                 + (SELECT COUNT(*) FROM inserted),
                updated_at = NOW()
            WHERE id = $1`,
           [input.campaignId, nullableText(state, "catalog_run_id")],

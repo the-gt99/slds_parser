@@ -518,6 +518,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(preparationQuery).toContain("WITH absent AS MATERIALIZED");
     expect(preparationQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
     expect(preparationQuery).toContain("target_export_campaign_preflight_items");
+    expect(preparationQuery).toContain("+ (SELECT COUNT(*) FROM inserted)");
     expect(candidateQuery).toContain("source_product.id AS scan_cursor_id");
     expect(candidateQuery).toContain("SELECT marked.*, selected.scan_cursor_id");
     expect(candidateQuery).toContain("ORDER BY source_product.id DESC");
