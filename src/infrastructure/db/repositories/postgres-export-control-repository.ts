@@ -255,7 +255,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     this.eligibleCandidateCountRequest = request;
     try {
       const value = await request;
-      this.eligibleCandidateCountCache = { value, expiresAt: Date.now() + 30_000 };
+      this.eligibleCandidateCountCache = { value, expiresAt: Date.now() + 300_000 };
       return value;
     } finally {
       if (this.eligibleCandidateCountRequest === request) this.eligibleCandidateCountRequest = null;
