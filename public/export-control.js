@@ -11,6 +11,9 @@ const state = {
   campaignTimer: null,
   targets: [],
   targetEnabled: false,
+  readinessRequest: null,
+  batchesRequest: null,
+  campaignsRequest: null,
 };
 
 async function api(url, options = {}) {
@@ -291,7 +294,17 @@ function render(reset) {
   updateSelection();
 }
 
-async function load(reset = true) {
+function load(reset = true) {
+  if (state.readinessRequest !== null) return state.readinessRequest;
+  const request = loadReadiness(reset);
+  state.readinessRequest = request.finally(() => {
+    if (state.readinessRequest === wrapped) state.readinessRequest = null;
+  });
+  const wrapped = state.readinessRequest;
+  return wrapped;
+}
+
+async function loadReadiness(reset = true) {
   if (!state.targetId) return;
   if (reset) {
     state.cursor = null;
@@ -371,7 +384,17 @@ async function applyExport() {
   finally { button.disabled = false; }
 }
 
-async function loadBatches() {
+function loadBatches() {
+  if (state.batchesRequest !== null) return state.batchesRequest;
+  const request = loadBatchesOnce();
+  state.batchesRequest = request.finally(() => {
+    if (state.batchesRequest === wrapped) state.batchesRequest = null;
+  });
+  const wrapped = state.batchesRequest;
+  return wrapped;
+}
+
+async function loadBatchesOnce() {
   if (!state.targetId) return;
   try {
     const result = await api(`/api/export-control/batches?targetId=${encodeURIComponent(state.targetId)}&limit=20`);
@@ -428,7 +451,17 @@ async function setCampaignStatus(campaign, action) {
   } catch (error) { showMessage(error.message, "error"); }
 }
 
-async function loadCampaigns() {
+function loadCampaigns() {
+  if (state.campaignsRequest !== null) return state.campaignsRequest;
+  const request = loadCampaignsOnce();
+  state.campaignsRequest = request.finally(() => {
+    if (state.campaignsRequest === wrapped) state.campaignsRequest = null;
+  });
+  const wrapped = state.campaignsRequest;
+  return wrapped;
+}
+
+async function loadCampaignsOnce() {
   if (!state.targetId) return;
   if (state.campaignTimer !== null) window.clearTimeout(state.campaignTimer);
   state.campaignTimer = null;

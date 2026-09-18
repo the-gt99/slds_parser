@@ -646,34 +646,52 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
         }
       }
       const filter = where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`;
-      const from = `FROM jobs job LEFT JOIN internal_products internal ON internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT`;
-      const count = await client.query<DatabaseRow>(`SELECT COUNT(*) AS total ${from} ${filter}`, parameters);
+      const count = query.search
+        ? await client.query<DatabaseRow>(`SELECT COUNT(*) AS total FROM jobs job ${filter}`, parameters)
+        : null;
       const limit = add(query.limit);
       const offset = add(query.offset);
       const rows = await client.query<DatabaseRow>(
-        `SELECT job.*,
-                COALESCE(job.payload->>'sourceProductId', internal.source_product_id::TEXT) AS source_product_id,
+        `WITH selected AS MATERIALIZED (
+           SELECT job.*
+           FROM jobs job
+           ${filter}
+           ORDER BY job.created_at DESC, job.id DESC
+           LIMIT ${limit} OFFSET ${offset}
+         )
+         SELECT selected.*,
+                COALESCE(selected.payload->>'sourceProductId', internal.source_product_id::TEXT) AS source_product_id,
                 CASE
-                  WHEN job.status = 'pending' THEN EXTRACT(EPOCH FROM (NOW() - job.created_at)) * 1000
-                  WHEN job.status = 'retry' THEN EXTRACT(EPOCH FROM (NOW() - job.updated_at)) * 1000
-                  WHEN job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.started_at - job.created_at)) * 1000
+                  WHEN selected.status = 'pending' THEN EXTRACT(EPOCH FROM (NOW() - selected.created_at)) * 1000
+                  WHEN selected.status = 'retry' THEN EXTRACT(EPOCH FROM (NOW() - selected.updated_at)) * 1000
+                  WHEN selected.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (selected.started_at - selected.created_at)) * 1000
                   ELSE NULL
                 END AS queue_wait_ms,
                 CASE
-                  WHEN job.status = 'running' AND job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (NOW() - job.started_at)) * 1000
-                  WHEN job.finished_at IS NOT NULL AND job.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (job.finished_at - job.started_at)) * 1000
+                  WHEN selected.status = 'running' AND selected.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (NOW() - selected.started_at)) * 1000
+                  WHEN selected.finished_at IS NOT NULL AND selected.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (selected.finished_at - selected.started_at)) * 1000
                   ELSE NULL
                 END AS duration_ms
-         ${from} ${filter}
-         ORDER BY job.created_at DESC, job.id DESC
-         LIMIT ${limit} OFFSET ${offset}`,
+         FROM selected
+         LEFT JOIN internal_products internal ON internal.id = NULLIF(selected.payload->>'internalProductId', '')::BIGINT
+         ORDER BY selected.created_at DESC, selected.id DESC`,
         parameters,
       );
-      const byStatus = await client.query<DatabaseRow>(
-        "SELECT status, COUNT(*)::INT AS count FROM jobs GROUP BY status ORDER BY status",
-      );
       const byTypeStatus = await client.query<DatabaseRow>(
-        "SELECT job_type, status, COUNT(*)::INT AS count FROM jobs GROUP BY job_type, status ORDER BY job_type, status",
+        `SELECT job_type, status, COUNT(*)::INT AS count,
+                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
+                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
+                COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h,
+                PERCENTILE_CONT(0.75) WITHIN GROUP (
+                  ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000
+                ) FILTER (
+                  WHERE status = 'completed'
+                    AND finished_at >= NOW() - INTERVAL '24 hours'
+                    AND started_at IS NOT NULL
+                ) AS estimated_duration_ms
+         FROM jobs
+         GROUP BY job_type, status
+         ORDER BY job_type, status`,
       );
       const errorGroups = await client.query<DatabaseRow>(
           `SELECT job_type, LEFT(COALESCE(last_error, 'Без текста ошибки'), 240) AS message,
@@ -684,83 +702,50 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
            ORDER BY count DESC, latest_at DESC
            LIMIT 25`,
       );
-      const throughput = await client.query<DatabaseRow>(
-          `WITH stats AS (
-             SELECT job_type,
-                    COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'retry'))::INT AS remaining,
-                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '15 minutes')::INT AS last15m,
-                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '1 hour')::INT AS last1h,
-                    COUNT(*) FILTER (WHERE status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')::INT AS last24h
-               FROM jobs
-              WHERE status IN ('pending', 'running', 'retry')
-                 OR (status = 'completed' AND finished_at >= NOW() - INTERVAL '24 hours')
-              GROUP BY job_type
-           ), durations AS (
-             SELECT job_type,
-                    PERCENTILE_CONT(0.75) WITHIN GROUP (
-                      ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000
-                    ) AS estimated_duration_ms
-               FROM jobs
-              WHERE status = 'completed'
-                AND finished_at >= NOW() - INTERVAL '24 hours'
-                AND started_at IS NOT NULL
-              GROUP BY job_type
-           ), configured AS (
-             SELECT
-               COALESCE((
-                 SELECT COALESCE(applied_collection_concurrency, collection_concurrency)
-                   FROM runtime_worker_settings WHERE singleton = TRUE
-               ), 1)::INT AS collection_concurrency,
-               COALESCE((
-                 SELECT COALESCE(applied_process_concurrency, process_concurrency)
-                   FROM runtime_worker_settings WHERE singleton = TRUE
-               ), 1)::INT AS process_concurrency,
-               COALESCE((
-                 SELECT COALESCE(applied_preflight_concurrency, preflight_concurrency)
-                   FROM runtime_worker_settings WHERE singleton = TRUE
-               ), 1)::INT AS preflight_concurrency,
-               COALESCE((
-                 SELECT COALESCE(applied_classification_apply_concurrency, classification_apply_concurrency)
-                   FROM runtime_worker_settings WHERE singleton = TRUE
-               ), 1)::INT AS classification_apply_concurrency
-           ), metrics AS (
-             SELECT stats.*, durations.estimated_duration_ms,
-                    CASE stats.job_type
-                      WHEN 'collect_product' THEN configured.collection_concurrency
-                      WHEN 'process_product' THEN configured.process_concurrency
-                      WHEN 'reclassify_product' THEN configured.process_concurrency
-                      WHEN 'preflight_product' THEN configured.preflight_concurrency
-                      WHEN 'apply_target_classification_suggestion' THEN configured.classification_apply_concurrency
-                      ELSE 1
-                    END AS concurrency
-               FROM stats
-               LEFT JOIN durations USING (job_type)
-               CROSS JOIN configured
-           )
-           SELECT *,
-                  CASE
-                    WHEN remaining = 0 THEN NULL
-                    WHEN estimated_duration_ms > 0 THEN GREATEST(1, CEIL(
-                      remaining * estimated_duration_ms / (concurrency * 60000)
-                    ))::INT
-                    WHEN last15m > 0 THEN CEIL(remaining / (last15m::NUMERIC / 15))::INT
-                    WHEN last1h > 0 THEN CEIL(remaining / (last1h::NUMERIC / 60))::INT
-                    ELSE NULL
-                  END AS eta_minutes,
-                  CASE
-                    WHEN remaining = 0 THEN NULL
-                    WHEN estimated_duration_ms > 0 THEN 'duration'
-                    WHEN last15m > 0 OR last1h > 0 THEN 'throughput'
-                    ELSE NULL
-                  END AS eta_basis
-             FROM metrics
-            ORDER BY job_type`,
+      const configured = await client.query<DatabaseRow>(
+          `SELECT COALESCE(applied_collection_concurrency, collection_concurrency, 1)::INT AS collection_concurrency,
+                  COALESCE(applied_process_concurrency, process_concurrency, 1)::INT AS process_concurrency,
+                  COALESCE(applied_preflight_concurrency, preflight_concurrency, 1)::INT AS preflight_concurrency,
+                  COALESCE(applied_classification_apply_concurrency, classification_apply_concurrency, 1)::INT AS classification_apply_concurrency
+           FROM runtime_worker_settings
+           WHERE singleton = TRUE`,
       );
+      const statusCounts = new Map<string, number>();
+      for (const row of byTypeStatus.rows) {
+        const status = String(row.status);
+        statusCounts.set(status, (statusCounts.get(status) ?? 0) + Number(row.count));
+      }
+      const filteredTotal = query.search
+        ? Number(count?.rows[0]?.total ?? 0)
+        : byTypeStatus.rows.reduce((total, row) => {
+          if (query.jobType && row.job_type !== query.jobType) return total;
+          if (query.status && row.status !== query.status) return total;
+          return total + Number(row.count);
+        }, 0);
+      const configuredRow = configured.rows[0] ?? {};
+      const metricsByType = new Map<JobType, { remaining: number; last15m: number; last1h: number; last24h: number; estimatedDurationMs: number | null }>();
+      for (const row of byTypeStatus.rows) {
+        const jobType = row.job_type as JobType;
+        const current = metricsByType.get(jobType) ?? { remaining: 0, last15m: 0, last1h: 0, last24h: 0, estimatedDurationMs: null };
+        if (["pending", "running", "retry"].includes(String(row.status))) current.remaining += Number(row.count);
+        current.last15m += Number(row.last15m ?? 0);
+        current.last1h += Number(row.last1h ?? 0);
+        current.last24h += Number(row.last24h ?? 0);
+        if (row.estimated_duration_ms !== null && row.estimated_duration_ms !== undefined) current.estimatedDurationMs = Number(row.estimated_duration_ms);
+        metricsByType.set(jobType, current);
+      }
+      const concurrencyFor = (jobType: JobType): number => {
+        if (jobType === "collect_product") return Number(configuredRow.collection_concurrency ?? 1);
+        if (jobType === "process_product" || jobType === "reclassify_product") return Number(configuredRow.process_concurrency ?? 1);
+        if (jobType === "preflight_product") return Number(configuredRow.preflight_concurrency ?? 1);
+        if (jobType === "apply_target_classification_suggestion") return Number(configuredRow.classification_apply_concurrency ?? 1);
+        return 1;
+      };
       return {
-        total: Number(count.rows[0]?.total ?? 0),
+        total: filteredTotal,
         items: rows.rows.map(mapJobAdmin),
         summary: {
-          byStatus: byStatus.rows.map((row) => ({ status: row.status as JobAdminListItem["status"], count: Number(row.count) })),
+          byStatus: [...statusCounts].sort(([left], [right]) => left.localeCompare(right)).map(([status, count]) => ({ status: status as JobAdminListItem["status"], count })),
           byTypeStatus: byTypeStatus.rows.map((row) => ({ jobType: row.job_type as JobType, status: row.status as JobAdminListItem["status"], count: Number(row.count) })),
           errorGroups: errorGroups.rows.map((row) => ({
             jobType: row.job_type as JobType,
@@ -768,19 +753,28 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
             count: Number(row.count),
             latestAt: timestamp(row, "latest_at"),
           })),
-          byJobType: throughput.rows.map((row) => ({
-            jobType: row.job_type as JobType,
-            remaining: Number(row.remaining ?? 0),
+          byJobType: [...metricsByType].filter(([, metrics]) => metrics.remaining > 0 || metrics.last24h > 0).map(([jobType, metrics]) => {
+            const concurrency = concurrencyFor(jobType);
+            const etaBasis = metrics.remaining === 0 ? null
+              : metrics.estimatedDurationMs !== null && metrics.estimatedDurationMs > 0 ? "duration"
+                : metrics.last15m > 0 || metrics.last1h > 0 ? "throughput" : null;
+            const etaMinutes = etaBasis === "duration"
+              ? Math.max(1, Math.ceil(metrics.remaining * metrics.estimatedDurationMs! / (concurrency * 60_000)))
+              : metrics.last15m > 0 ? Math.ceil(metrics.remaining / (metrics.last15m / 15))
+                : metrics.last1h > 0 ? Math.ceil(metrics.remaining / (metrics.last1h / 60)) : null;
+            return {
+            jobType,
+            remaining: metrics.remaining,
             completion: {
-              last15m: Number(row.last15m ?? 0),
-              last1h: Number(row.last1h ?? 0),
-              last24h: Number(row.last24h ?? 0),
+              last15m: metrics.last15m,
+              last1h: metrics.last1h,
+              last24h: metrics.last24h,
             },
-            concurrency: Number(row.concurrency ?? 1),
-            estimatedDurationMs: row.estimated_duration_ms === null || row.estimated_duration_ms === undefined ? null : Number(row.estimated_duration_ms),
-            etaBasis: row.eta_basis === "duration" ? "duration" : row.eta_basis === "throughput" ? "throughput" : null,
-            etaMinutes: row.eta_minutes === null || row.eta_minutes === undefined ? null : Number(row.eta_minutes),
-          })),
+            concurrency,
+            estimatedDurationMs: metrics.estimatedDurationMs,
+            etaBasis,
+            etaMinutes,
+          }; }),
         },
       };
     } finally { client.release(); }

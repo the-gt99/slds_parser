@@ -237,7 +237,30 @@ async function queryPool<Row extends Record<string, unknown> = DatabaseRow>(
 }
 
 export class PostgresExportControlRepository implements ExportControlRepository {
+  private eligibleCandidateCountCache: { readonly value: number; readonly expiresAt: number } | null = null;
+  private eligibleCandidateCountRequest: Promise<number> | null = null;
+
   constructor(private readonly pool: SqlPool) {}
+
+  private async eligibleCandidateCount(): Promise<number> {
+    if (this.eligibleCandidateCountCache !== null && this.eligibleCandidateCountCache.expiresAt > Date.now()) {
+      return this.eligibleCandidateCountCache.value;
+    }
+    if (this.eligibleCandidateCountRequest !== null) return this.eligibleCandidateCountRequest;
+    const request = queryPool<DatabaseRow>(this.pool,
+      `SELECT COUNT(*)::BIGINT AS candidate_count
+       FROM internal_products internal
+       WHERE ${exportEligibleInternalSql("internal")}`,
+    ).then((result) => Number(result.rows[0]?.candidate_count ?? 0));
+    this.eligibleCandidateCountRequest = request;
+    try {
+      const value = await request;
+      this.eligibleCandidateCountCache = { value, expiresAt: Date.now() + 30_000 };
+      return value;
+    } finally {
+      if (this.eligibleCandidateCountRequest === request) this.eligibleCandidateCountRequest = null;
+    }
+  }
 
   async list(query: ExportControlListQuery): Promise<ExportControlListResult> {
     const parameters: unknown[] = [];
@@ -288,28 +311,23 @@ export class PostgresExportControlRepository implements ExportControlRepository 
        ORDER BY review.checked_at DESC, review.id DESC`,
       parameters,
     );
+    const candidateCount = await this.eligibleCandidateCount();
     const summaryResult = await queryPool<DatabaseRow>(this.pool,
-      `WITH eligible AS MATERIALIZED (
-         SELECT id, content_hash
-         FROM internal_products internal
-         WHERE ${exportEligibleInternalSql("internal")}
-       ), states AS MATERIALIZED (
-         SELECT eligible.id AS internal_product_id,
+      `WITH states AS MATERIALIZED (
+         SELECT internal.id AS internal_product_id,
                 review.id AS review_id,
                 ${effectiveStatusSql} AS effective_status,
                 review.payload_hash,
                 review.target_id
-         FROM eligible
-         CROSS JOIN target_export_revisions revision
-         LEFT JOIN target_product_preflight_reviews review
-           ON review.target_id = revision.target_id
-          AND review.internal_product_id = eligible.id
-         JOIN internal_products internal ON internal.id = eligible.id
-         WHERE revision.target_id = $1
+         FROM target_product_preflight_reviews review
+         JOIN target_export_revisions revision ON revision.target_id = review.target_id
+         JOIN internal_products internal ON internal.id = review.internal_product_id
+         WHERE review.target_id = $1
+           AND ${exportEligibleInternalSql("internal")}
        )
-       SELECT COUNT(*)::BIGINT AS candidate_count,
-              COUNT(review_id)::BIGINT AS reviewed_count,
-              COUNT(*) FILTER (WHERE review_id IS NULL)::BIGINT AS unreviewed_count,
+       SELECT $2::BIGINT AS candidate_count,
+              COUNT(states.review_id)::BIGINT AS reviewed_count,
+              ($2::BIGINT - COUNT(states.review_id))::BIGINT AS unreviewed_count,
               COUNT(*) FILTER (WHERE effective_status = 'checking')::BIGINT AS checking_count,
               COUNT(*) FILTER (WHERE effective_status = 'ready')::BIGINT AS ready_count,
               COUNT(*) FILTER (
@@ -327,7 +345,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
               COUNT(*) FILTER (WHERE effective_status = 'stale')::BIGINT AS stale_count,
               COUNT(*) FILTER (WHERE effective_status = 'error')::BIGINT AS error_count
        FROM states`,
-      [query.targetId],
+      [query.targetId, candidateCount],
     );
     const hasMore = result.rows.length > query.limit;
     const rows = result.rows.slice(0, query.limit);
@@ -982,11 +1000,44 @@ export class PostgresExportControlRepository implements ExportControlRepository 
 
   async listCampaigns(targetId: EntityId, limit: number): Promise<readonly ExportCampaignRecord[]> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `${campaignProgressSql}
-       WHERE campaign.target_id = $1
-       GROUP BY campaign.id
-       ORDER BY campaign.created_at DESC, campaign.id DESC
-       LIMIT $2`,
+      `WITH selected AS MATERIALIZED (
+         SELECT *
+         FROM target_export_campaigns
+         WHERE target_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2
+       ), progress AS MATERIALIZED (
+         SELECT batch.campaign_id,
+                COUNT(item.id)::INT AS item_count,
+                COUNT(item.id) FILTER (WHERE job.status = 'pending')::INT AS pending_count,
+                COUNT(item.id) FILTER (WHERE job.status = 'retry')::INT AS retry_count,
+                COUNT(item.id) FILTER (WHERE job.status = 'running')::INT AS running_count,
+                COUNT(item.id) FILTER (WHERE job.status = 'completed')::INT AS completed_count,
+                COUNT(item.id) FILTER (WHERE job.status = 'failed')::INT AS failed_count
+         FROM target_export_batches batch
+         JOIN selected campaign ON campaign.id = batch.campaign_id
+         LEFT JOIN target_export_batch_items item ON item.batch_id = batch.id
+         LEFT JOIN jobs job ON job.id = item.job_id
+         GROUP BY batch.campaign_id
+       ), active_preflights AS MATERIALIZED (
+         SELECT COUNT(*)::INT AS count
+         FROM jobs preflight
+         WHERE preflight.job_type = 'preflight_product'
+           AND preflight.status IN ('pending', 'running', 'retry')
+           AND preflight.payload->>'targetId' = $1::TEXT
+       )
+       SELECT campaign.*,
+              COALESCE(progress.item_count, 0) AS item_count,
+              COALESCE(progress.pending_count, 0) AS pending_count,
+              COALESCE(progress.retry_count, 0) AS retry_count,
+              COALESCE(progress.running_count, 0) AS running_count,
+              COALESCE(progress.completed_count, 0) AS completed_count,
+              COALESCE(progress.failed_count, 0) AS failed_count,
+              active_preflights.count AS active_preflight_count
+       FROM selected campaign
+       LEFT JOIN progress ON progress.campaign_id = campaign.id
+       CROSS JOIN active_preflights
+       ORDER BY campaign.created_at DESC, campaign.id DESC`,
       [targetId, limit],
     );
     return result.rows.map(mapCampaign);
