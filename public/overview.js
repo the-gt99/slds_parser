@@ -85,6 +85,13 @@ function renderInventory(health) {
   badge("inventory-status", health.status === "ok" ? "Работает" : "Требует внимания", health.status === "ok" ? "status-completed" : "status-failed");
 }
 
+function renderExportState(target) {
+  badge("export-status", target.enabled ? "Автоэкспорт включён" : "Выгрузка выключена", target.enabled ? "status-running" : "status-retry");
+  byId("export-note").textContent = target.enabled
+    ? "Перед записью всё равно требуется проверка выбранной партии."
+    : "Запуск и продолжение массовых кампаний заблокированы. Доступны только просмотр и preflight.";
+}
+
 function renderExport(target, result) {
   const summary = result.summary || {};
   byId("export-ready").textContent = count(summary.readyCount);
@@ -93,10 +100,7 @@ function renderExport(target, result) {
     metric("перепроверить", summary.staleCount),
     metric("заблокировано", Number(summary.blockedCount || 0) + Number(summary.errorCount || 0), Number(summary.blockedCount || 0) + Number(summary.errorCount || 0) ? "danger-text" : ""),
   );
-  badge("export-status", target.enabled ? "Автоэкспорт включён" : "Выгрузка выключена", target.enabled ? "status-running" : "status-retry");
-  byId("export-note").textContent = target.enabled
-    ? "Перед записью всё равно требуется проверка выбранной партии."
-    : "Запуск и продолжение массовых кампаний заблокированы. Доступны только просмотр и preflight.";
+  renderExportState(target);
 }
 
 async function load() {
@@ -114,6 +118,7 @@ async function load() {
     api("/api/targets").then(async (targets) => {
       target = targets.items.find((item) => item.code === "slamdunk") || targets.items[0];
       if (!target) throw new Error("Target не настроен");
+      renderExportState(target);
       const exportControl = await api(`/api/export-control?targetId=${encodeURIComponent(target.id)}&limit=1`);
       renderExport(target, exportControl);
     }),
