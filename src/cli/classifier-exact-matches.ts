@@ -51,7 +51,7 @@ try {
     dictionaries,
     providers,
     "classifier-exact-match",
-    { [source.id]: processors.get(source.code).version },
+    { [source.id]: processors.get(source.code).classificationVersion },
   );
 
   let exactCount = 0;
