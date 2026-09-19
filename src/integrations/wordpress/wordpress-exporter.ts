@@ -952,9 +952,7 @@ async function buildWordPressPayload(
   }
   const outputVariants = context.liveVariants ?? context.product.variants;
   const soldOut = outputVariants.length === 0;
-  if (soldOut && context.existingExternalId === undefined) {
-    throw new IntegrationContractError("WordPress cannot create a new product without source variants");
-  }
+  const soldOutCreate = soldOut && context.existingExternalId === undefined;
   const sourceCode = context.source.code.trim().toLocaleLowerCase("en-US");
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(sourceCode)) throw new IntegrationContractError(`Source code cannot be used in WordPress identity: ${context.source.code}`);
   const externalKey = `${sourceCode}:${sourceExternalId}`;
@@ -1060,6 +1058,11 @@ async function buildWordPressPayload(
       taxonomies,
     },
     variations: { mode: "replace_active_set", missing_policy: "out_of_stock", items: variations },
+    ...(soldOutCreate ? { creation_policy: {
+      allow_empty_variations: true,
+      stock_status: "outofstock",
+      stock_quantity: 0,
+    } } : {}),
     ...(content.descriptionPolicy === undefined ? {} : { content_policy: { description: content.descriptionPolicy } }),
   };
   const idempotencyKey = `product-upsert:v2:${hashStableJson(base)}`;
@@ -1194,7 +1197,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.29.0";
+  readonly version = "1.30.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;

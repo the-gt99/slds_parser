@@ -1536,16 +1536,29 @@ describe("WordPressExporter", () => {
     await expect(buildWordPressUpsertPayload(base)).rejects.toThrow("WordPress export has no variants with mapped sizes");
   });
 
-  it("blocks products without images and new products without variants before any WordPress request", async () => {
+  it("blocks products without images before any WordPress request", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
     const base = context();
 
     await expect(exporter.export({ ...base, product: { ...base.product, images: [] } }))
       .rejects.toThrow("WordPress export requires at least one processed product image");
-    await expect(exporter.export({ ...base, product: { ...base.product, variants: [] } }))
-      .rejects.toThrow("WordPress cannot create a new product without source variants");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("creates an explicit zero-stock shell for a new product without source variants", async () => {
+    const base = context();
+    const payload = await buildWordPressUpsertPayload({
+      ...base,
+      product: { ...base.product, variants: [] },
+    });
+
+    expect(payload.variations).toEqual({ mode: "replace_active_set", missing_policy: "out_of_stock", items: [] });
+    expect(payload.creation_policy).toEqual({
+      allow_empty_variations: true,
+      stock_status: "outofstock",
+      stock_quantity: 0,
+    });
   });
 
   it("uses an empty active set to mark an existing product sold out", async () => {
