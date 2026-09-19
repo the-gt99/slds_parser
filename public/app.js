@@ -411,6 +411,10 @@ function queueItemButton(item) {
   const title = document.createElement("span");
   title.className = "queue-item-title";
   title.textContent = item.sourceValue;
+  const context = document.createElement("span");
+  context.className = "queue-item-context";
+  context.textContent = contextSummary(item.context);
+  context.title = context.textContent;
   const meta = document.createElement("span");
   meta.className = "queue-item-meta";
   const kind = document.createElement("span");
@@ -418,9 +422,23 @@ function queueItemButton(item) {
   const count = document.createElement("span");
   count.textContent = `${item.productCount} тов.`;
   meta.append(kind, count);
-  button.append(title, meta);
+  button.append(title, context, meta);
   button.addEventListener("click", () => selectQueueItem(item));
   return button;
+}
+
+function removeResolvedQueueItem(item) {
+  const index = state.queue.findIndex((entry) => entry.reviewGroupId === item.reviewGroupId);
+  if (index < 0) return;
+  state.queue.splice(index, 1);
+  state.queueTotal = Math.max(0, state.queueTotal - 1);
+  state.queueOffset = Math.max(0, state.queueOffset - 1);
+  state.queueHasMore = state.queueOffset < state.queueTotal;
+  byId("queue-list").querySelector(`[data-review-group-id="${CSS.escape(item.reviewGroupId)}"]`)?.remove();
+  byId("queue-count").textContent = state.queueTotal.toLocaleString("ru-RU");
+  byId("queue-nav-count").textContent = state.queueTotal.toLocaleString("ru-RU");
+  if (state.queue.length === 0) byId("queue-list").append(emptyText("В этой выборке ничего не ожидает решения."));
+  else renderQueueLoadState();
 }
 
 function appendQueueItems(items) {
@@ -757,6 +775,7 @@ async function confirmDecision(action = "confirm") {
     state.currentReferenceId = response.decision.referenceValueId;
     state.currentResolution = { kind: "mapping", id: response.decision.mappingId };
     state.resolved = true;
+    removeResolvedQueueItem(item);
     renderDetail();
     await loadProjections();
     if (action === "confirm" && !byId("projection-section").hidden) {
@@ -911,6 +930,7 @@ async function createTerm(event) {
     const response = await api(`/api/targets/${target.id}/dictionary/terms`, { method: "POST", body });
     state.currentReferenceId = response.result.decision.referenceValueId;
     state.resolved = true;
+    removeResolvedQueueItem(item);
     byId("create-term-dialog").close();
     renderDetail();
     showToast(`Запись «${response.result.dictionaryValue.name}» создана и связана.`);
