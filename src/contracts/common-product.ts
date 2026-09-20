@@ -18,7 +18,9 @@ export interface CommonProductDTO {
     readonly category: string | null;
     readonly color: string | null;
     readonly material: string | null;
+    readonly shoeHeight: string | null;
     readonly audience: string | null;
+    readonly activities: readonly string[];
     readonly ageGroups: readonly string[];
     readonly tags: readonly string[];
   };
@@ -50,6 +52,10 @@ export function toCommonProductDTO(
     .filter((value) => value.subjectKind === "product" && value.typeCode === "tag")
     .map((value) => optionalText(value.sourceValue))
     .filter((value): value is string => value !== null))];
+  const activities = [...new Set(product.referenceCandidates
+    .filter((value) => value.subjectKind === "product" && value.typeCode === "activity")
+    .map((value) => optionalText(value.sourceValue))
+    .filter((value): value is string => value !== null))];
 
   return {
     source: {
@@ -68,7 +74,9 @@ export function toCommonProductDTO(
       category: candidate("category"),
       color: candidate("color"),
       material: candidate("material"),
+      shoeHeight: candidate("shoe_height"),
       audience: optionalText(product.attributes.audience) ?? optionalText(product.attributes.gender),
+      activities,
       ageGroups: Array.isArray(product.attributes.ageGroups)
         ? product.attributes.ageGroups.filter((value): value is string => optionalText(value) !== null)
         : [],

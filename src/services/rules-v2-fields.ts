@@ -9,7 +9,7 @@ export const rulesV2TargetEntities: Readonly<Record<string, string>> = {
 /** Scalar paths of the public DTO; an unknown path must never behave like an absent value. */
 export const commonRulePaths = new Set([
   "source.code", "source.productId", "source.sourceKey", "source.externalId", "title", "description", "sku",
-  ...["brand", "model", "family", "category", "color", "material", "audience", "ageGroups", "tags"].map((key) => `characteristics.${key}`),
+  ...["brand", "model", "family", "category", "color", "material", "shoeHeight", "audience", "activities", "ageGroups", "tags"].map((key) => `characteristics.${key}`),
   ...["url", "alt", "position"].map((key) => `images.*.${key}`),
   ...["sourceVariantId", "sku", "size.value", "size.system", "price.amount", "price.currency", "availability", "quantity"].map((key) => `variants.*.${key}`),
 ]);

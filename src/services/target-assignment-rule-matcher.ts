@@ -59,6 +59,11 @@ export function targetAssignmentFieldValues(product: UniversalProductDTO, field:
     return product.classification?.resolved.filter((item) => item.typeCode === parts[1]).map((item) => item.referenceValueId) ?? [];
   }
   if (parts[0] === "product" && parts[1] === "attribute" && parts.length >= 3) {
+    if (field === "product.attribute.ageGroupsJoined") {
+      const groups = product.attributes.ageGroups;
+      return Array.isArray(groups) && groups.every((value) => typeof value === "string") && groups.length > 0
+        ? [groups.join("|")] : [];
+    }
     return scalar(nested(product.attributes, parts.slice(2)));
   }
   if (parts[0] === "product" && parts[1] === "metadata" && parts.length >= 3) {

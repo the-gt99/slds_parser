@@ -10,15 +10,11 @@ describe("Rules v2 direct DTO fields", () => {
     expect(directRulesV2Field("candidate.category.context.route")).toBe("product.metadata.route");
     expect(directRulesV2Field("candidate.merchandising_category.sourceValue")).toBe("product.attribute.categoryRaw");
   });
-  it("does not silently rewrite fields whose exact meaning is unavailable", () => {
-    expect(directRulesV2Field("candidate.activity.sourceValue")).toBeNull();
-    expect(directRulesV2Field("candidate.category.context.ageGroups")).toBeNull();
-    expect(directRulesV2Conditions({ actions: [{ kind: "resolve_reference", referenceType: "model", referenceValueId: "1",
-      referenceValueCode: "one", referenceValueName: "One", resolutionStatus: "confirmed" }], conditionGroups: [{ conditions: [
-      { field: "candidate.model.sourceValue", operator: "equals", values: ["Samba"] },
-    ] }, { conditions: [
-      { field: "candidate.model.context.ageGroups", operator: "equals", values: ["big_kids|little_kids"] },
-    ] }] })).toBeNull();
+  it("keeps explicit activity, shoe height and ordered age groups", () => {
+    expect(directRulesV2Field("candidate.activity.sourceValue")).toBe("common.characteristics.activities");
+    expect(directRulesV2Field("candidate.shoe_height.sourceValue")).toBe("common.characteristics.shoeHeight");
+    expect(directRulesV2Field("candidate.category.context.ageGroups")).toBe("product.attribute.ageGroupsJoined");
+    expect(directRulesV2Field("candidate.category.context.unknown")).toBeNull();
   });
   it("requires a source candidate when old rules only check its context", () => {
     expect(directRulesV2Conditions({ actions: [{ kind: "resolve_reference", referenceType: "model", referenceValueId: "1",

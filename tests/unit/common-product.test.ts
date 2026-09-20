@@ -22,7 +22,8 @@ describe("toCommonProductDTO", () => {
     expect(result).toMatchObject({
       source: { code: "goat", productId: "42", sourceKey: "shirt-42", externalId: null },
       sku: null,
-      characteristics: { brand: "Nike", category: "Tops", family: "Sportswear", audience: "women", ageGroups: ["adult"], tags: ["Running"] },
+      characteristics: { brand: "Nike", category: "Tops", family: "Sportswear", shoeHeight: null, audience: "women",
+        activities: [], ageGroups: ["adult"], tags: ["Running"] },
       images: [{ url: "https://cdn.example/shirt.webp", alt: "Shirt", position: 0 }],
       variants: [{ sourceVariantId: "v1", sku: null, size: { value: "M", system: "standard-clothing" }, price: null, availability: "unknown", quantity: null }],
     });

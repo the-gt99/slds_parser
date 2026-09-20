@@ -8,6 +8,8 @@ const sourceValueFields: Readonly<Record<string, string>> = {
   category: "common.characteristics.category",
   color: "common.characteristics.color",
   material: "common.characteristics.material",
+  activity: "common.characteristics.activities",
+  shoe_height: "common.characteristics.shoeHeight",
   tag: "common.characteristics.tags",
   designer: "product.fact.designer",
   merchandising_category: "product.attribute.categoryRaw",
@@ -20,6 +22,7 @@ const contextFields: Readonly<Record<string, string>> = {
   productType: "product.attribute.productType",
   productCategory: "product.attribute.productCategory",
   route: "product.metadata.route",
+  ageGroups: "product.attribute.ageGroupsJoined",
 };
 
 /** Returns null when the public DTO cannot express a migrated candidate condition exactly. */
