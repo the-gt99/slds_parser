@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UniversalProductDTO } from "../../src/contracts/index.js";
-import { directRulesV2Conditions, directRulesV2Field, matchesDirectRulesV2Conditions } from "../../src/services/rules-v2-direct-fields.js";
+import { DirectRulesV2Index, directRulesV2Conditions, directRulesV2Field, matchesDirectRulesV2Conditions } from "../../src/services/rules-v2-direct-fields.js";
 
 const product: UniversalProductDTO = { sourceProductId: "1", title: "Air Jordan", description: "", sku: "A",
   images: [], variants: [], attributes: {}, metadata: {}, referenceCandidates: [] };
@@ -38,5 +38,18 @@ describe("Rules v2 direct DTO fields", () => {
     expect(matchesDirectRulesV2Conditions(product, [{ conditions: [
       { field: "common.title", operator: "regex", values: ["(?<=Air )Jordan"] },
     ] }], read)).toBe(true);
+  });
+  it("indexes necessary exact groups without losing OR branches", () => {
+    const entries = [
+      { id: "one", groups: [{ conditions: [{ field: "common.title", operator: "equals" as const, values: ["Nike"] },
+        { field: "common.sku", operator: "equals" as const, values: ["X"] }] }] },
+      { id: "two", groups: [{ conditions: [{ field: "common.title", operator: "equals" as const, values: ["Adidas"] }] }] },
+      { id: "general", groups: [{ conditions: [{ field: "common.title", operator: "contains_phrase" as const, values: ["Air"] }] }] },
+    ];
+    const index = new DirectRulesV2Index(entries);
+    expect(index.select((field) => field === "common.sku" ? ["x"] : ["Puma"]).map((entry) => entry.id))
+      .toEqual(["one", "general"]);
+    expect(index.select((field) => field === "common.title" ? ["adidas"] : []).map((entry) => entry.id))
+      .toEqual(["two", "general"]);
   });
 });

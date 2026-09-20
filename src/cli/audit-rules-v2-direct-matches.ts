@@ -3,7 +3,7 @@ import { createPostgresPool } from "../infrastructure/db/index.js";
 import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-baseline.js";
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { ProductClassifier } from "../services/product-classifier.js";
-import { directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
+import { DirectRulesV2Index, directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
 import { rulesV2FieldReader } from "../services/rules-v2-snapshot.js";
 
 const limit = Number(process.env.RULES_V2_DIRECT_MATCH_LIMIT ?? "100");
@@ -27,9 +27,12 @@ try {
   const bySource = new Map<string, typeof sourceRules>();
   const byOrigin = new Map<string, string>();
   for (const entry of sourceRules) {
-    bySource.set(entry.rule.sourceId!, [...(bySource.get(entry.rule.sourceId!) ?? []), entry]);
+    const entries = bySource.get(entry.rule.sourceId!) ?? [];
+    entries.push(entry);
+    bySource.set(entry.rule.sourceId!, entries);
     byOrigin.set(`${entry.rule.originKind}:${entry.rule.originId ?? entry.rule.id}`, entry.rule.id);
   }
+  const indexes = new Map([...bySource].map(([sourceId, entries]) => [sourceId, new DirectRulesV2Index(entries)]));
   const rows = (await client.query<{ id: string; source_id: string; code: string; source_key: string;
     external_id: string | null; data: UniversalProductDTO }>(`SELECT product.id::TEXT, product.source_id::TEXT,
       source.code, product.source_key, product.external_id, internal.data FROM source_products product
@@ -47,7 +50,7 @@ try {
     const read = rulesV2FieldReader(row.data, { id: row.source_id, code: row.code, productId: row.id,
       sourceKey: row.source_key, externalId: row.external_id });
     const matching = new Set<string>();
-    for (const { rule, groups } of bySource.get(row.source_id) ?? []) {
+    for (const { rule, groups } of indexes.get(row.source_id)?.select(read) ?? []) {
       if (matchesDirectRulesV2Conditions(row.data, groups, read)) matching.add(rule.id);
     }
     const missed = [...winners].filter((id) => !matching.has(id));

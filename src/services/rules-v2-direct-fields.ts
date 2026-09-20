@@ -79,3 +79,37 @@ export function matchesDirectRulesV2Conditions(product: UniversalProductDTO, gro
     return matchesTargetAssignmentCondition(product, condition, fieldValues);
   }));
 }
+
+/** Preselects a necessary exact OR group; final condition matching remains authoritative. */
+export class DirectRulesV2Index<T extends { readonly groups: readonly RuleV2ConditionGroup[] }> {
+  private readonly exact = new Map<string, Map<string, Set<T>>>();
+  private readonly general: T[] = [];
+  private readonly order = new Map<T, number>();
+
+  constructor(entries: readonly T[]) {
+    entries.forEach((entry, index) => {
+      this.order.set(entry, index);
+      const group = entry.groups.find((item) => item.conditions.length > 0 && item.conditions.every((condition) =>
+        (condition.operator === "equals" || condition.operator === "one_of") && condition.values.length > 0));
+      if (group === undefined) { this.general.push(entry); return; }
+      for (const condition of group.conditions) {
+        const values = this.exact.get(condition.field) ?? new Map<string, Set<T>>();
+        for (const value of condition.values) {
+          const normalized = value.trim().normalize("NFKC").toLowerCase();
+          const bucket = values.get(normalized) ?? new Set<T>();
+          bucket.add(entry);
+          values.set(normalized, bucket);
+        }
+        this.exact.set(condition.field, values);
+      }
+    });
+  }
+
+  select(read: (field: string) => readonly string[]): readonly T[] {
+    const selected = new Set(this.general);
+    for (const [field, values] of this.exact) for (const actual of read(field)) {
+      for (const entry of values.get(actual.trim().normalize("NFKC").toLowerCase()) ?? []) selected.add(entry);
+    }
+    return [...selected].sort((left, right) => this.order.get(left)! - this.order.get(right)!);
+  }
+}
