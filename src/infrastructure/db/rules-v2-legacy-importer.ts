@@ -53,7 +53,7 @@ const contextGroupsSql = `COALESCE((
 
 const translatedRuleGroupsSql = `COALESCE((
   SELECT JSONB_AGG(JSONB_BUILD_OBJECT('conditions', JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT(
-    'field', 'candidate.' || type.code || '.' || condition.value->>'field',
+    'field', 'candidate.' || type.code || '.' || (condition.value->>'field'),
     'operator', condition.value->>'operator',
     'values', JSONB_BUILD_ARRAY(condition.value->>'value')
   ))) ORDER BY condition.ordinality)
@@ -196,7 +196,7 @@ const classificationProjectionsSql = upsert(`WITH mapping_projection AS (
 ), rule_projection AS (
   SELECT projection.*, rule.source_id, type.code AS type_code,
     ${translatedRuleGroupsSql} AS translated_groups,
-    'candidate.' || type.code || '.' || rule.conditions->0->>'field' AS selector_field,
+    'candidate.' || type.code || '.' || (rule.conditions->0->>'field') AS selector_field,
     rule.conditions->0->>'operator' AS selector_operator,
     ARRAY[LOWER(BTRIM(rule.conditions->0->>'value'))] AS selector_values,
     rule.priority AS source_priority,
