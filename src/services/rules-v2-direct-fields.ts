@@ -29,9 +29,9 @@ export function directRulesV2Field(field: string): string | null {
   return match[2] === "sourceValue" ? sourceValueFields[match[1]!] ?? null : contextFields[match[3]!] ?? null;
 }
 
-export function directRulesV2Conditions(groups: readonly RuleV2ConditionGroup[]): readonly RuleV2ConditionGroup[] | null {
+export function directRulesV2Conditions(rule: Pick<RuleV2Record, "conditionGroups" | "actions">): readonly RuleV2ConditionGroup[] | null {
   const translated: RuleV2ConditionGroup[] = [];
-  for (const group of groups) {
+  for (const group of rule.conditionGroups) {
     const conditions = [];
     for (const condition of group.conditions) {
       const field = directRulesV2Field(condition.field);
@@ -39,6 +39,14 @@ export function directRulesV2Conditions(groups: readonly RuleV2ConditionGroup[])
       conditions.push({ ...condition, field });
     }
     translated.push({ ...group, conditions });
+  }
+  const reference = rule.actions.find((action) => action.kind === "resolve_reference");
+  if (reference?.kind !== "resolve_reference") return null;
+  const sourceField = `candidate.${reference.referenceType}.sourceValue`;
+  if (!rule.conditionGroups.some((group) => group.conditions.some((condition) => condition.field === sourceField))) {
+    const direct = directRulesV2Field(sourceField);
+    if (direct === null) return null;
+    translated.push({ conditions: [{ field: direct, operator: "regex", values: [".+"] }] });
   }
   return translated;
 }

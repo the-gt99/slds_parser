@@ -16,7 +16,7 @@ try {
   const blocked = new Map<string, number>();
   let convertible = 0;
   for (const rule of sourceRules) {
-    if (directRulesV2Conditions(rule.conditionGroups) !== null) { convertible++; continue; }
+    if (directRulesV2Conditions(rule) !== null) { convertible++; continue; }
     for (const field of new Set(rule.conditionGroups.flatMap((group) => group.conditions.map((item) => item.field)))) {
       if (directRulesV2Field(field) === null) blocked.set(field, (blocked.get(field) ?? 0) + 1);
     }
@@ -30,6 +30,7 @@ try {
   const mismatches: { readonly sourceProductId: string; readonly field: string; readonly expected: readonly string[];
     readonly actual: readonly string[] }[] = [];
   let mismatchCount = 0;
+  let guardedAbsences = 0;
   const normalize = (values: readonly string[]) => [...new Set(values.map((value) => value.trim().normalize("NFKC").toLowerCase()))].sort();
   for (const row of rows) {
     const read = rulesV2FieldReader(row.data, { id: row.source_id, code: row.code, productId: row.id,
@@ -37,6 +38,11 @@ try {
     for (const field of fields) {
       const direct = directRulesV2Field(field);
       if (direct === null) continue;
+      const type = /^candidate\.([a-z][a-z0-9_]*)\./u.exec(field)?.[1];
+      if (type !== undefined && !row.data.referenceCandidates.some((candidate) => candidate.typeCode === type)) {
+        if (read(direct).length > 0) guardedAbsences++;
+        continue;
+      }
       const expected = normalize(read(field));
       const actual = normalize(read(direct));
       if (JSON.stringify(expected) === JSON.stringify(actual)) continue;
@@ -47,7 +53,7 @@ try {
   await client.query("COMMIT");
   console.info(JSON.stringify({ writes: false, rules: sourceRules.length, convertible, blocked: [...blocked].map(([field, count]) => ({ field, count })),
     checkedProducts: rows.length, comparedFields: [...fields].filter((field) => directRulesV2Field(field) !== null),
-    mismatchCount, mismatches }, null, 2));
+    guardedAbsences, mismatchCount, mismatches }, null, 2));
   if (mismatchCount > 0) process.exitCode = 1;
 } catch (error) {
   await client.query("ROLLBACK");

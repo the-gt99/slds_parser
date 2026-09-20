@@ -13,10 +13,18 @@ describe("Rules v2 direct DTO fields", () => {
   it("does not silently rewrite fields whose exact meaning is unavailable", () => {
     expect(directRulesV2Field("candidate.activity.sourceValue")).toBeNull();
     expect(directRulesV2Field("candidate.category.context.ageGroups")).toBeNull();
-    expect(directRulesV2Conditions([{ conditions: [
+    expect(directRulesV2Conditions({ actions: [{ kind: "resolve_reference", referenceType: "model", referenceValueId: "1",
+      referenceValueCode: "one", referenceValueName: "One", resolutionStatus: "confirmed" }], conditionGroups: [{ conditions: [
       { field: "candidate.model.sourceValue", operator: "equals", values: ["Samba"] },
     ] }, { conditions: [
       { field: "candidate.model.context.ageGroups", operator: "equals", values: ["big_kids|little_kids"] },
-    ] }])).toBeNull();
+    ] }] })).toBeNull();
+  });
+  it("requires a source candidate when old rules only check its context", () => {
+    expect(directRulesV2Conditions({ actions: [{ kind: "resolve_reference", referenceType: "model", referenceValueId: "1",
+      referenceValueCode: "one", referenceValueName: "One", resolutionStatus: "confirmed" }], conditionGroups: [{ conditions: [
+      { field: "candidate.model.context.brand", operator: "equals", values: ["Nike"] },
+    ] }] })).toEqual([{ conditions: [{ field: "common.characteristics.brand", operator: "equals", values: ["Nike"] }] },
+      { conditions: [{ field: "common.characteristics.model", operator: "regex", values: [".+"] }] }]);
   });
 });
