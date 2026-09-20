@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Классификатор SLDS Parser — полное руководство</title>
+  <style>
+    @page { size: A4; margin: 15mm 14mm 17mm; }
+    @page:first { margin: 0; }
+    * { box-sizing: border-box; }
+    html { font-family: "Segoe UI", Arial, sans-serif; color: #1f242b; font-size: 10.4pt; line-height: 1.48; }
+    body { margin: 0; }
+    h1, h2, h3, h4 { page-break-after: avoid; line-height: 1.18; color: #15191f; }
+    h1 { font-size: 29pt; margin: 0 0 8mm; }
+    h2 { font-size: 19pt; margin: 10mm 0 4mm; border-bottom: 2px solid #16755f; padding-bottom: 2mm; }
+    h3 { font-size: 14pt; margin: 7mm 0 2.5mm; }
+    h4 { font-size: 11.5pt; margin: 5mm 0 2mm; }
+    p { margin: 0 0 3mm; }
+    ul, ol { margin: 2mm 0 4mm 6mm; padding-left: 5mm; }
+    li { margin: 1.2mm 0; }
+    code { font-family: Consolas, "Courier New", monospace; background: #eef2f4; padding: .2mm 1mm; border-radius: 1mm; font-size: 9pt; }
+    .cover { width: 210mm; height: 297mm; padding: 28mm 24mm; background: linear-gradient(150deg,#10161c 0%,#18242a 62%,#126b58 100%); color: white; display: flex; flex-direction: column; justify-content: space-between; page-break-after: always; }
+    .cover h1 { color: white; font-size: 34pt; max-width: 150mm; }
+    .cover .kicker { text-transform: uppercase; letter-spacing: .18em; font-size: 9pt; color: #9ed8c9; font-weight: 700; }
+    .cover .lead { max-width: 145mm; font-size: 15pt; color: #e6efed; }
+    .cover .meta { color: #c0d3cf; font-size: 10pt; }
+    .brand-mark { width: 17mm; height: 17mm; border-radius: 4mm; background: white; color: #15191f; display: grid; place-items: center; font-size: 18pt; font-weight: 800; margin-bottom: 14mm; }
+    .toc { page-break-after: always; }
+    .toc ol { columns: 2; column-gap: 12mm; }
+    .toc li { break-inside: avoid; margin-bottom: 2mm; }
+    .page-break { page-break-before: always; }
+    .avoid { page-break-inside: avoid; }
+    .note, .warning, .success, .example { border-left: 4px solid #2b7e6b; padding: 3.5mm 4mm; margin: 4mm 0; background: #eef7f4; page-break-inside: avoid; }
+    .warning { border-color: #c66a19; background: #fff5e9; }
+    .danger { border-left: 4px solid #b33b3b; background: #fff0f0; padding: 3.5mm 4mm; margin: 4mm 0; page-break-inside: avoid; }
+    .success { border-color: #16824f; background: #edf9f2; }
+    .example { border-color: #5074a8; background: #f1f5fb; }
+    .label { font-weight: 700; display: block; margin-bottom: 1mm; }
+    table { width: 100%; border-collapse: collapse; margin: 3mm 0 6mm; page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    th, td { border: 1px solid #d7dde2; padding: 2.3mm 2.7mm; vertical-align: top; }
+    th { background: #edf3f1; text-align: left; font-weight: 700; }
+    .compact th, .compact td { padding: 1.7mm 2.2mm; font-size: 9.2pt; }
+    .flow { display: grid; grid-template-columns: 1fr 8mm 1fr 8mm 1fr; align-items: stretch; gap: 1.5mm; margin: 5mm 0; page-break-inside: avoid; }
+    .flow .box { border: 1px solid #b8c8c3; border-radius: 3mm; padding: 4mm; background: #f6faf9; }
+    .flow .arrow { display: grid; place-items: center; color: #16755f; font-size: 19pt; font-weight: 700; }
+    .decision-flow { border: 1px solid #cfd8d5; border-radius: 3mm; padding: 4mm; background: #fbfcfc; margin: 4mm 0; page-break-inside: avoid; }
+    .decision-flow .row { display: grid; grid-template-columns: 47mm 1fr; gap: 4mm; padding: 2.4mm 0; border-bottom: 1px dashed #d7dedc; }
+    .decision-flow .row:last-child { border-bottom: 0; }
+    .decision-flow strong { color: #126b58; }
+    figure { margin: 5mm 0 7mm; page-break-inside: avoid; }
+    figure img { display: block; max-width: 100%; max-height: 176mm; margin: 0 auto; border: 1px solid #cfd5d8; border-radius: 2mm; }
+    figure.tall img { max-height: 207mm; }
+    figcaption { margin-top: 2mm; font-size: 8.8pt; color: #5e6873; }
+    .caption-title { font-weight: 700; color: #303840; }
+    .steps { counter-reset: step; list-style: none; padding: 0; margin-left: 0; }
+    .steps > li { counter-increment: step; position: relative; padding-left: 11mm; margin: 3mm 0; min-height: 8mm; }
+    .steps > li::before { content: counter(step); position: absolute; left: 0; top: -.4mm; width: 7mm; height: 7mm; border-radius: 50%; display: grid; place-items: center; background: #16755f; color: white; font-weight: 700; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+    .small { font-size: 8.7pt; color: #5d6670; }
+    .checklist { list-style: none; padding-left: 0; margin-left: 0; }
+    .checklist li { padding-left: 7mm; position: relative; }
+    .checklist li::before { content: "□"; position: absolute; left: 0; font-size: 13pt; color: #16755f; top: -1mm; }
+    .footer-note { margin-top: 10mm; border-top: 1px solid #d8dcdf; padding-top: 3mm; font-size: 8.5pt; color: #66717a; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div>
+      <div class="brand-mark">S</div>
+      <div class="kicker">SLDS Parser · рабочая инструкция</div>
+    </div>
+    <div>
+      <h1>Классификатор:<br>как он устроен и как им пользоваться</h1>
+      <p class="lead">Точные связи, внутренние значения, правила распознавания, WordPress-назначения, конфликты и безопасный рабочий процесс — со снимками production-интерфейса и реальными примерами.</p>
+    </div>
+    <div class="meta">Состояние интерфейса и логики проверено 12 августа 2026 года<br>Production: 9a9f7857687f.vps.myjino.ru/classifier</div>
+  </section>
+
+  <section class="toc">
+    <h1>Содержание</h1>
+    <ol>
+      <li>Коротко: что делает классификатор</li>
+      <li>Словарь терминов</li>
+      <li>Откуда берутся значения</li>
+      <li>Точный порядок принятия решения</li>
+      <li>Вкладка «Требуют решения»</li>
+      <li>Кнопка «Создать правило из выбранного»</li>
+      <li>Вкладка «Внутренние значения»</li>
+      <li>Вкладка «Правила»</li>
+      <li>Условия, операторы, приоритет и конфликты</li>
+      <li>Предпросмотр правила</li>
+      <li>Вкладка «Точные совпадения»</li>
+      <li>Вкладка «WordPress»</li>
+      <li>Три разных вида WordPress-назначений</li>
+      <li>Практические сценарии</li>
+      <li>Безопасный рабочий алгоритм</li>
+      <li>Частые вопросы</li>
+    </ol>
+    <div class="note"><span class="label">Главная мысль</span>Классификатор не «угадывает товар целиком». Он независимо разбирает отдельные кандидаты: бренд, модель, категорию, цвет, материал, метку и т. д. Каждый кандидат должен получить единый внутренний смысл, а уже этот смысл связывается с конкретным WordPress.</div>
+  </section>
+
+  <h2>1. Что именно делает классификатор</h2>
+  <p>После сбора и обработки товара процессор формирует универсальный DTO. В нём есть обычные поля товара и массив <code>referenceCandidates</code> — значения, которые нужно привести к справочникам. Классификатор для каждого кандидата выбирает одно из четырёх состояний:</p>
+  <table class="compact">
+    <thead><tr><th>Состояние</th><th>Что означает</th><th>Что видно в интерфейсе</th></tr></thead>
+    <tbody>
+      <tr><td><code>resolved</code></td><td>Найдено внутреннее значение через точную связь или правило.</td><td>Кандидат исчезает из обычной очереди.</td></tr>
+      <tr><td><code>ignored</code></td><td>Для этой точной группы явно решено ничего не назначать.</td><td>Кандидат не требует решения и не проверяет правила.</td></tr>
+      <tr><td><code>unresolved</code></td><td>Нет точной связи и ни одно правило не подошло.</td><td>«Не сопоставлено».</td></tr>
+      <tr><td><code>ambiguous</code></td><td>Два одинаково сильных правила ведут к разным внутренним значениям.</td><td>«Конфликт правил».</td></tr>
+      <tr><td><code>waiting_apply</code></td><td>Решение уже записано, но затронутые товары ещё не пересчитаны.</td><td>«Ждёт пересчёта».</td></tr>
+    </tbody>
+  </table>
+
+  <div class="flow">
+    <div class="box"><strong>Источник</strong><br>GOAT отдаёт факты: brand, title, color, productType, technologies…</div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>Внутренний смысл</strong><br>Например, внутренний бренд <em>adidas</em> или модель <em>Nike Dunk</em>.</div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>Target</strong><br>Например, <code>pa_brand term #715</code> и дополнительный <code>product_tag term #539</code>.</div>
+  </div>
+
+  <div class="warning"><span class="label">Классификация не экспортирует товар</span>Сохранение точной связи, правила или назначения меняет локальную конфигурацию и ставит затронутые товары на пересчёт. WordPress-товары от этого не обновляются. Запись товара выполняется только отдельным <code>export_product</code> после preview и контроля экспорта.</div>
+
+  <h2>2. Словарь терминов</h2>
+  <table>
+    <thead><tr><th>Термин</th><th>Простое объяснение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Кандидат</strong></td><td>Один факт, который классификатор должен понять: например, <code>type=tag, sourceValue=Boost</code>.</td></tr>
+      <tr><td><strong>Исходное значение</strong></td><td>Текст от источника до сопоставления: <em>Boost</em>, <em>Tan</em>, <em>sneakers</em>.</td></tr>
+      <tr><td><strong>Тип</strong></td><td>Смысл значения: бренд, модель, категория, цвет, материал, метка и т. д.</td></tr>
+      <tr><td><strong>Область / scope</strong></td><td>Логическое место назначения: <code>product.brand</code>, <code>product.model</code>, <code>product.tag.technology</code>.</td></tr>
+      <tr><td><strong>Сущность / subjectKind</strong></td><td>К чему относится кандидат: ко всему товару (<code>product</code>) или к варианту (<code>variant</code>).</td></tr>
+      <tr><td><strong>Контекст</strong></td><td>Факты, которые входят в идентичность точной группы. Для модели это сейчас бренд и семейство; для категории — route, productType, productCategory, audience и ageGroups.</td></tr>
+      <tr><td><strong>Evidence</strong></td><td>Дополнительные доказательства для правил: title, brand, family, audience, route и другие верхнеуровневые факты. Evidence не входит в ключ точной связи.</td></tr>
+      <tr><td><strong>Внутреннее значение</strong></td><td>Единый смысл, независимый от источника и WordPress. Несколько source-формулировок могут указывать на одно внутреннее значение.</td></tr>
+      <tr><td><strong>Точная связь</strong></td><td>Решение для одной точной группы: источник + тип + scope + нормализованное значение + весь context.</td></tr>
+      <tr><td><strong>Правило распознавания</strong></td><td>Обобщённое условие, применяемое к любому кандидату этого типа от выбранного источника.</td></tr>
+      <tr><td><strong>Основное назначение</strong></td><td>Связь внутреннего значения с его штатным полем target, например бренд → <code>pa_brand</code>.</td></tr>
+      <tr><td><strong>Дополнительное назначение</strong></td><td>Ещё один WordPress-термин для того же внутреннего смысла, например бренд adidas дополнительно → брендовый <code>product_tag</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Откуда берутся значения GOAT</h2>
+  <p>Текущий GOAT-процессор выдаёт только факты, имеющие подтверждённый target-смысл. Это важно: очередь не является свалкой всех полей GOAT.</p>
+  <table class="compact">
+    <thead><tr><th>Тип</th><th>Исходное значение</th><th>Контекст / evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Бренд</td><td><code>brandName</code> или <code>brand</code></td><td>Контекст пустой; факты товара доступны в evidence.</td></tr>
+      <tr><td>Модель</td><td>Название товара без подтверждённой конечной расцветки</td><td>Context: brand + family. Evidence: полный title и другие факты.</td></tr>
+      <tr><td>Категория</td><td>productType, иначе productCategory, иначе route</td><td>Context: route, productCategory, productType, audience, ageGroups.</td></tr>
+      <tr><td>Маркетинговая категория</td><td>GOAT categoryRaw</td><td>Context: route, productCategory, productType, audience.</td></tr>
+      <tr><td>Цвет</td><td>color</td><td>Контекст пустой.</td></tr>
+      <tr><td>Материал</td><td>upperMaterial</td><td>Контекст пустой.</td></tr>
+      <tr><td>Метка</td><td>technologies, midsole и явные source tags</td><td>Разные scope для технологии и source tag.</td></tr>
+      <tr><td>Назначение</td><td>Только явные activity / activities / activitiesList</td><td>Context: productCategory + productType.</td></tr>
+      <tr><td>Высота обуви</td><td>low / mid / high от отдельной операции</td><td>Evidence содержит title и сведения модели распознавания.</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="label">Нормализация</span>Для точного сравнения текст обрезается по краям, приводится к Unicode NFKC и нижнему регистру. Поэтому <code> Boost </code> и <code>boost</code> считаются одним нормализованным значением. Контекст при этом должен совпасть целиком и точно.</div>
+
+  <h2>4. Точный порядок принятия решения</h2>
+  <div class="decision-flow">
+    <div class="row"><strong>Шаг 1. Точная связь</strong><span>Ищется запись по источнику, типу, scope, нормализованному sourceValue и полному contextKey.</span></div>
+    <div class="row"><strong>Если найдено confirmed</strong><span>Кандидат сразу получает внутреннее значение. Правила уже не рассматриваются.</span></div>
+    <div class="row"><strong>Если найдено ignored</strong><span>Кандидат сразу игнорируется. Правила тоже не рассматриваются.</span></div>
+    <div class="row"><strong>Шаг 2. Правила</strong><span>Если точной записи нет, проверяются все активные правила того же источника и типа.</span></div>
+    <div class="row"><strong>Шаг 3. Победитель</strong><span>Сначала выше priority, затем больше условий. Если лучшие правила равны по силе и ведут к разным результатам — ambiguous.</span></div>
+    <div class="row"><strong>Шаг 4. Очередь</strong><span>Если правило не найдено, кандидат становится unresolved и появляется в «Требуют решения».</span></div>
+  </div>
+  <div class="success"><span class="label">Практическое следствие</span>Точная связь — это исключение с абсолютным приоритетом. Ею можно исправить отдельную контекстную группу, не меняя общее правило. Но ошибочная точная связь также полностью блокирует правильное правило для этой группы.</div>
+
+  <h2 class="page-break">5. Вкладка «Требуют решения»</h2>
+  <figure>
+    <img src="assets/classifier-queue-selected-boost.png" alt="Очередь классификатора со значением Boost">
+    <figcaption><span class="caption-title">Снимок 1.</span> Значение Boost выбрано в очереди. Справа видны примеры товаров, поиск результата и две разные команды: создать правило или сохранить точную связь.</figcaption>
+  </figure>
+  <h3>Левая колонка</h3>
+  <ul>
+    <li><strong>Счётчик</strong> — количество групп, а не количество отдельных товаров.</li>
+    <li><strong>Поиск</strong> — серверный поиск по sourceValue.</li>
+    <li><strong>Все типы</strong> — ограничивает очередь брендом, моделью, цветом и т. д.</li>
+    <li><strong>Статус</strong>: «Не сопоставлено», «Есть конфликт», «Ждёт обработки».</li>
+    <li><strong>Число товаров</strong> показывает размер именно этой контекстной группы.</li>
+  </ul>
+  <h3>Карточка выбранного значения</h3>
+  <ul>
+    <li><strong>Где встретилось</strong> — до трёх реальных товаров. Ссылки ведут в карточки товара.</li>
+    <li><strong>Контекст</strong> под заголовком объясняет, почему одинаковый текст может быть разбит на несколько групп.</li>
+    <li><strong>Основное поле WordPress</strong> ищет термин сразу в target-справочнике.</li>
+    <li><strong>Внутренний справочник</strong> ищет уже созданное внутреннее значение без привязки к конкретному target.</li>
+  </ul>
+
+  <h3>Кнопки и их последствия</h3>
+  <table class="compact">
+    <thead><tr><th>Кнопка</th><th>Что делает</th><th>Что не делает</th></tr></thead>
+    <tbody>
+      <tr><td><strong>↻ Обновить очередь</strong></td><td>Перечитывает очередь и счётчики.</td><td>Не пересобирает товары и не синхронизирует WordPress.</td></tr>
+      <tr><td><strong>Игнорировать</strong></td><td>Создаёт точное решение <code>ignored</code> для выбранной группы и ставит товары на пересчёт.</td><td>Не является общим правилом для похожих значений.</td></tr>
+      <tr><td><strong>+ Создать или дополнить в WordPress</strong></td><td>Открывает форму создания поддерживаемого WordPress-термина и, после отдельного сохранения, связывает его с внутренним значением.</td><td>Не все типы разрешено создавать: цвета и сложные термины могут требовать метаданные.</td></tr>
+      <tr><td><strong>Проверить точное сопоставление</strong></td><td>Показывает число затронутых товаров. После проверки текст кнопки меняется на «Сохранить точное сопоставление».</td><td>Первое нажатие ничего не записывает.</td></tr>
+      <tr><td><strong>Создать правило из выбранного</strong></td><td>Открывает редактор правила, переносит выбранный результат и подставляет предложенные условия.</td><td>Не сохраняет правило автоматически и не проверяет бизнес-смысл выбранного target-термина.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><span class="label">Почему одно значение встречается в очереди несколько раз</span>Точная группа включает весь context. Например, один и тот же текст модели может идти с разными brand/family, а категория <em>sneakers</em> — с разной audience. Это намеренная защита от глобального неправильного сопоставления.</div>
+
+  <h2>6. Кнопка «Создать правило из выбранного» — подробно</h2>
+  <p>Слово «выбранного» относится к выбранному <strong>результату</strong> справа: термину WordPress либо внутреннему значению. Выбранное значение очереди слева задаёт исходную точку и примеры.</p>
+  <figure>
+    <img src="assets/classifier-rule-from-selected-button.png" alt="Выбран термин adidas PureBoost и видна кнопка создания правила">
+    <figcaption><span class="caption-title">Снимок 2.</span> Термин <em>adidas PureBoost</em> подсвечен зелёным. Кнопка правила оформлена как тихая вторичная команда и выглядит серой, но активна. Без выбранного результата она покажет подсказку «Сначала выберите результат…».</figcaption>
+  </figure>
+
+  <h3>Что происходит после нажатия</h3>
+  <ol class="steps">
+    <li>Открывается редактор. Никакой записи в БД ещё нет.</li>
+    <li>Результатом становится выбранное внутреннее значение. Если выбран WordPress-термин без внутреннего значения, при сохранении система создаст внутреннее значение и основную target-связь автоматически.</li>
+    <li>Имя правила строится как «Тип: исходное значение».</li>
+    <li>Приоритет по умолчанию — 100.</li>
+    <li>Условия предлагаются простым детерминированным алгоритмом, описанным ниже.</li>
+    <li>Сначала обязательно выполняется «Проверить». Только затем разблокируется «Сохранить правило».</li>
+  </ol>
+  <figure>
+    <img src="assets/classifier-rule-from-selected-dialog.png" alt="Диалог нового правила из Boost в adidas PureBoost">
+    <figcaption><span class="caption-title">Снимок 3.</span> Автоматический черновик для Boost. Результат — adidas PureBoost, единственное условие — <code>Исходное значение равно Boost</code>.</figcaption>
+  </figure>
+
+  <h3>Как генерируются предложенные условия</h3>
+  <table class="compact">
+    <thead><tr><th>Тип</th><th>Предложение</th><th>Что проверить вручную</th></tr></thead>
+    <tbody>
+      <tr><td>Категория</td><td><code>sourceValue = …</code> плюс существующие <code>productType</code>, <code>productCategory</code>, <code>audience</code> из context.</td><td>Не пропущен ли важный route или ageGroups; действительно ли все условия нужны.</td></tr>
+      <tr><td>Модель</td><td><code>context.brand = …</code> и <code>evidence.title contains sourceValue</code>, если данные есть.</td><td>Часто безопаснее заменить title на стабильное <code>context.family</code>; проверить разные расцветки и соседние модели.</td></tr>
+      <tr><td>Все остальные типы</td><td>Только <code>sourceValue = выбранный текст</code>.</td><td>Не слишком ли широко; совпадает ли семантика типа и выбранного WordPress-термина.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="danger"><span class="label">Пример Boost на снимке сохранять нельзя</span><code>Boost</code> — широкая технология/метка, а <em>adidas PureBoost</em> — конкретная линейка. Условие <code>sourceValue = Boost</code> охватывает 9 560 товаров разных моделей. Кнопка не понимает эту семантическую ошибку: она только перенесла выбранный результат и исходный текст. Правильное действие — найти или создать термин со смыслом технологии Boost либо оставить группу нерешённой. Добавление бренда adidas всё равно не превращает любую технологию Boost в модель PureBoost.</div>
+
+  <h2 class="page-break">7. Вкладка «Внутренние значения»</h2>
+  <p>Это лучший экран для ответа на вопрос «полностью ли настроен смысл». Он показывает всю цепочку: чем внутреннее значение распознаётся и куда оно выходит.</p>
+  <figure>
+    <img src="assets/classifier-internal-value-adidas.png" alt="Внутреннее значение adidas">
+    <figcaption><span class="caption-title">Снимок 4.</span> Внутренний бренд adidas: одна точная source-связь, основное назначение в <code>pa_brand</code>, дополнительное назначение в <code>product_tag</code>.</figcaption>
+  </figure>
+  <table class="compact">
+    <thead><tr><th>Элемент</th><th>Назначение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Счётчик товаров</strong></td><td>Сколько текущих активных наблюдений разрешено в это внутреннее значение.</td></tr>
+      <tr><td><strong>«точных»</strong></td><td>Сколько точных source mappings указывает сюда.</td></tr>
+      <tr><td><strong>«правил»</strong></td><td>Сколько правил распознавания выдаёт это значение.</td></tr>
+      <tr><td><strong>«назначений»</strong></td><td>Сколько активных выходов в target: основные и дополнительные.</td></tr>
+      <tr><td><strong>+ Правило распознавания</strong></td><td>Создаёт правило для выбранного внутреннего значения. Источник и условия задаются вручную.</td></tr>
+      <tr><td><strong>+ Дополнительное назначение</strong></td><td>Добавляет WordPress-термин для всех случаев, где распознано это внутреннее значение.</td></tr>
+      <tr><td><strong>Изменить</strong> у основного</td><td>Переназначает основную target-связь после preview.</td></tr>
+      <tr><td><strong>Отключить</strong> у дополнительного</td><td>Выключает дополнительную проекцию и пересчитывает затронутые товары.</td></tr>
+      <tr><td><strong>Точечные исключения</strong></td><td>Старые назначения, привязанные к конкретному mapping/rule, а не ко всему внутреннему значению. Их нельзя автоматически считать общими.</td></tr>
+    </tbody>
+  </table>
+  <div class="example"><span class="label">Почему внутренний слой полезен</span>GOAT может написать <em>adidas</em>, другой источник — <em>Adidas Originals</em>, а WordPress хранит <code>term #715</code>. Оба источника могут прийти к одному внутреннему бренду, а target-связь настраивается один раз.</div>
+
+  <h2>8. Вкладка «Правила»</h2>
+  <figure class="tall">
+    <img src="assets/classifier-rules-overview.png" alt="Список правил классификатора">
+    <figcaption><span class="caption-title">Снимок 5.</span> Каталог правил. В строке видны тип, условия, результат и число товаров. Кнопка статуса справа включает или отключает правило.</figcaption>
+  </figure>
+  <h3>Что можно сделать в списке</h3>
+  <ul>
+    <li><strong>+ Создать правило</strong> — начать с выбора источника и внутреннего результата.</li>
+    <li><strong>Поиск</strong> — по имени правила и связанным значениям.</li>
+    <li><strong>Тип значения</strong> — показать правила только выбранного типа.</li>
+    <li><strong>Статус</strong> — активные или отключённые.</li>
+    <li><strong>Клик по строке</strong> — открыть редактор существующего правила.</li>
+    <li><strong>Активно / Отключено</strong> — переключить правило. Изменение ставит затронутые товары на пересчёт.</li>
+  </ul>
+
+  <h3>Редактор правила</h3>
+  <figure>
+    <img src="assets/classifier-rule-editor-multiple-conditions.png" alt="Правило с тремя условиями">
+    <figcaption><span class="caption-title">Снимок 6.</span> Реальное правило категории: исходное значение sneakers И тип товара sneakers И аудитория infant.</figcaption>
+  </figure>
+  <table class="compact">
+    <thead><tr><th>Поле</th><th>Что означает</th></tr></thead>
+    <tbody>
+      <tr><td>Источник</td><td>Правила всегда принадлежат конкретному источнику. Текущие production-правила — GOAT.</td></tr>
+      <tr><td>Результат</td><td>Внутреннее значение, которое получат совпавшие кандидаты. При редактировании не меняется.</td></tr>
+      <tr><td>Название</td><td>Человеческое описание; на совпадение не влияет.</td></tr>
+      <tr><td>Приоритет</td><td>Первый и главный параметр силы правила. Диапазон — от −10 000 до 10 000.</td></tr>
+      <tr><td>+ Условие</td><td>Добавляет ещё одно обязательное условие. Между условиями всегда логическое <strong>И</strong>.</td></tr>
+      <tr><td>× у условия</td><td>Удаляет условие из черновика. Без условий правило недопустимо.</td></tr>
+      <tr><td>Проверить</td><td>Выполняет read-only preview по сохранённым наблюдениям.</td></tr>
+      <tr><td>Сохранить правило</td><td>Разблокируется только после успешной проверки текущего черновика.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>9. Поля условий</h2>
+  <table class="compact">
+    <thead><tr><th>Поле интерфейса</th><th>Техническое поле</th><th>Пример</th></tr></thead>
+    <tbody>
+      <tr><td>Исходное значение</td><td><code>sourceValue</code></td><td><code>Boost</code>, <code>sneakers</code></td></tr>
+      <tr><td>Область</td><td><code>scope</code></td><td><code>product.tag.technology</code></td></tr>
+      <tr><td>Сущность</td><td><code>subjectKind</code></td><td><code>product</code> или <code>variant</code></td></tr>
+      <tr><td>Бренд / семейство / аудитория…</td><td><code>context.brand</code>, <code>context.family</code>, <code>context.audience</code></td><td>Факты, которые процессор положил в контекст именно этого кандидата.</td></tr>
+      <tr><td>Название товара / данные товара…</td><td><code>evidence.title</code>, <code>evidence.brand</code> и т. п.</td><td>Дополнительные доказательства, не входящие в ключ точной связи.</td></tr>
+    </tbody>
+  </table>
+  <div class="warning"><span class="label">Поля динамические</span>Редактор показывает только поля, реально наблюдавшиеся для выбранного источника и типа в текущей версии процессора. Вложенные объекты и массивы как самостоятельные условия не поддерживаются; доступны только верхнеуровневые скалярные значения string/number/boolean.</div>
+
+  <h2>10. Операторы условий</h2>
+  <table>
+    <thead><tr><th>Оператор</th><th>Точная семантика</th><th>Пример</th><th>Риск</th></tr></thead>
+    <tbody>
+      <tr><td><strong>равно</strong></td><td>После trim + NFKC + lowercase строки должны быть полностью равны.</td><td><code>brand = Nike</code> совпадёт с <em>nike</em>.</td><td>Самый предсказуемый оператор.</td></tr>
+      <tr><td><strong>содержит</strong></td><td>Нормализованная фактическая строка содержит ожидаемую подстроку.</td><td>Title содержит <em>Air Max 1</em>.</td><td><em>Surge</em> совпадёт и с Surge Golf, и с Surge 4.</td></tr>
+      <tr><td><strong>все слова</strong></td><td>Каждый фрагмент, разделённый пробелами, должен встречаться как подстрока; порядок не важен.</td><td><code>air max</code> совпадёт с <em>Max Air</em>.</td><td>Это не строгая токенизация: короткие фрагменты могут совпасть внутри другого слова.</td></tr>
+      <tr><td><strong>regex</strong></td><td>JavaScript RegExp с флагами <code>i</code> и <code>u</code>; максимум 256 символов.</td><td><code>^Nike\s+.*\bDunk\b</code></td><td>Использовать только если equals/contains недостаточно; обязательно тестировать крайние случаи.</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="label">Все условия — И</span>Интерфейс не поддерживает OR внутри одного classifier-правила. Для двух альтернатив создаются два правила с тем же результатом либо используется аккуратный regex. Два правила обычно понятнее и безопаснее.</div>
+
+  <h2>11. Приоритет, специфичность и конфликт</h2>
+  <p>Сила правила вычисляется как пара <code>[priority, количество условий]</code>.</p>
+  <ol>
+    <li>Побеждает большее значение <strong>priority</strong>.</li>
+    <li>При одинаковом priority побеждает правило с <strong>большим числом условий</strong>.</li>
+    <li>Если лучшие правила имеют одинаковую силу и ведут к одному внутреннему значению, результат остаётся однозначным.</li>
+    <li>Если лучшие правила имеют одинаковую силу и ведут к разным значениям, кандидат становится <code>ambiguous</code>.</li>
+    <li>Любая точная связь всё равно сильнее любого правила.</li>
+  </ol>
+  <div class="two-col avoid">
+    <div class="example"><span class="label">Однозначно</span>Правило A: priority 100, 2 условия → Nike Dunk.<br>Правило B: priority 100, 1 условие → Nike Sportswear.<br>Победит A.</div>
+    <div class="warning"><span class="label">Конфликт</span>Правило A: priority 100, 2 условия → Nike Dunk.<br>Правило B: priority 100, 2 условия → Nike SB Dunk.<br>Итог: ambiguous, случайного выбора нет.</div>
+  </div>
+  <div class="warning"><span class="label">Не лечите конфликт случайным priority</span>Сначала определите бизнес-различие и добавьте содержательное условие: family, brand, audience, productType. Повышение числа только скрывает пересечение и усложняет сопровождение.</div>
+
+  <h2 class="page-break">12. Что показывает «Проверить»</h2>
+  <figure>
+    <img src="assets/classifier-rule-preview.png" alt="Предпросмотр правила с перекрытыми товарами">
+    <figcaption><span class="caption-title">Снимок 7.</span> Правило совпало с 10 779 товарами, но не изменит ни одного: все совпадения уже покрыты равноценным правилом с тем же результатом.</figcaption>
+  </figure>
+  <table class="compact">
+    <thead><tr><th>Показатель</th><th>Как читать</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Найдено товаров</strong></td><td>Сколько уникальных товаров удовлетворяют условиям независимо от того, победит ли правило.</td></tr>
+      <tr><td><strong>Будет изменено</strong></td><td>Сколько товаров реально получат новый результат либо изменят победителя.</td></tr>
+      <tr><td><strong>Конфликтов</strong></td><td>Сколько наблюдений станут ambiguous из-за равноценных правил с разными результатами.</td></tr>
+      <tr><td><strong>Перекрыто</strong></td><td>Совпало, но победит точная связь или более сильное/равноценное существующее правило.</td></tr>
+    </tbody>
+  </table>
+  <p>В примерах preview указывается причина: «новое правило будет применено», «покрыто точным сопоставлением», «более точное правило имеет приоритет», «равноценное правило ведёт к другому результату».</p>
+  <div class="success"><span class="label">Правило можно сохранять только после осмысленного preview</span>Большое «найдено» не означает, что всё хорошо. Смотрите «будет изменено», конфликты, перекрытия и реальные названия товаров. Ноль изменений обычно означает дубликат правила или полностью перекрытую область.</div>
+
+  <h2>13. Вкладка «Точные совпадения»</h2>
+  <p>Это отдельный инструмент массового создания <strong>точных связей</strong>, а не правил. Он сравнивает нормализованное исходное имя с актуальным именем target-термина.</p>
+  <figure>
+    <img src="assets/classifier-exact-matches.png" alt="Вкладка точных совпадений">
+    <figcaption><span class="caption-title">Снимок 8.</span> Сводка: готовые однозначные совпадения, дубликаты target и конфликты.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Можно сопоставить</strong> — найден ровно один target-термин и нет конфликта с существующим решением.</li>
+    <li><strong>Дубликаты target</strong> — несколько терминов имеют одно нормализованное имя. Автовыбор запрещён.</li>
+    <li><strong>Конфликты</strong> — точное имя противоречит уже сохранённому решению. Остаётся ручная проверка.</li>
+    <li><strong>Категории исключены</strong> из массового режима из-за иерархии.</li>
+    <li><strong>Применить выбранные / все точные</strong> записывает решения пакетами по 50, с аудитом и постановкой товаров на пересчёт.</li>
+    <li><strong>Массовая запись разрешена только при выключенном target</strong>. Это защита от параллельного экспорта во время изменения справочников.</li>
+  </ul>
+  <figure>
+    <img src="assets/classifier-exact-match-duplicates.png" alt="Дубликаты точных совпадений">
+    <figcaption><span class="caption-title">Снимок 9.</span> Реальные дубликаты WordPress: одинаковое имя, разные slug и term ID. Нужен ручной выбор после проверки содержимого WordPress.</figcaption>
+  </figure>
+  <div class="warning"><span class="label">Название совпало — смысл не обязательно совпал</span>Даже «готовые» точные совпадения нужно применять только к понятным типам. Одинаковая строка в разных таксономиях, иерархиях или бизнес-смыслах может быть ложным другом.</div>
+
+  <h2 class="page-break">14. Вкладка «WordPress»</h2>
+  <figure>
+    <img src="assets/classifier-wordpress-catalog.png" alt="WordPress-справочник в классификаторе">
+    <figcaption><span class="caption-title">Снимок 10.</span> Локальный снимок реальных WordPress-терминов: имя, taxonomy, slug, term ID и связанная посадочная метка.</figcaption>
+  </figure>
+  <table class="compact">
+    <thead><tr><th>Элемент</th><th>Назначение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Обновить справочники</strong></td><td>Читает актуальные справочники через target provider и обновляет локальный snapshot. Не создаёт товар.</td></tr>
+      <tr><td><strong>Раздел WordPress</strong></td><td>Бренды, модели, метки, размеры, высота, категории, цвета, материалы, сезоны, назначение.</td></tr>
+      <tr><td><strong>Поиск</strong></td><td>Ищет по локальному снимку выбранного раздела.</td></tr>
+      <tr><td><strong>Посадочная: tag #…</strong></td><td>Связанный WordPress product_tag, который может добавляться вместе с брендом/моделью как подтверждённая проекция.</td></tr>
+      <tr><td><strong>+ Правило назначения</strong></td><td>Создаёт target-specific правило, которое выполняется уже после классификации и раскладывает итоговый товар по WordPress.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>15. Три разных вида WordPress-логики</h2>
+  <table>
+    <thead><tr><th>Механизм</th><th>Когда работает</th><th>Пример</th><th>Где настраивается</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Основное назначение</strong></td><td>Для каждого resolved внутреннего значения при сборке target payload.</td><td>Внутренний adidas → <code>pa_brand term #715</code>.</td><td>«Внутренние значения» → Изменить основное.</td></tr>
+      <tr><td><strong>Дополнительная проекция</strong></td><td>Вместе с конкретным внутренним значением либо конкретным решением.</td><td>adidas дополнительно → <code>product_tag term #539</code>.</td><td>«Внутренние значения» → Дополнительное назначение.</td></tr>
+      <tr><td><strong>Правило назначения target</strong></td><td>После классификации, по полям итогового DTO и resolved values.</td><td>Если resolved category = X и audience = men, заменить <code>product_cat</code> на мужскую категорию.</td><td>«WordPress» → Правила назначений.</td></tr>
+    </tbody>
+  </table>
+  <h3>Чем target assignment rule отличается от classifier rule</h3>
+  <ul>
+    <li><strong>Classifier rule</strong> отвечает: «что означает исходное значение?» Результат — внутреннее значение.</li>
+    <li><strong>Target assignment rule</strong> отвечает: «куда положить уже понятный товар в этом target?» Результат — WordPress-термин в режиме add или replace.</li>
+    <li>Target-правила группируются по стабильному <code>groupCode</code>. В каждой группе побеждает одно совпавшее правило с максимальным priority.</li>
+    <li>Если в одной группе совпали два правила с одинаковым максимальным priority, экспортная логика считает конфигурацию ошибочной, а не выбирает случайно.</li>
+    <li>Условия target-правил поддерживают <code>equals</code> и <code>one_of</code> по resolved values, product attributes/metadata и source-neutral candidates.</li>
+  </ul>
+  <div class="danger"><span class="label">Режим replace требует особой осторожности</span>Он заменяет весь набор значений поля. Если брендовые и модельные product_tag не добавлены подтверждёнными проекциями, replace может удалить существующие теги. Поэтому полный WordPress diff перед экспортом обязателен.</div>
+
+  <h2 class="page-break">16. Практические сценарии</h2>
+  <h3>Сценарий A. Простая точная связь</h3>
+  <div class="example">
+    <span class="label">Условие</span>GOAT brand = <em>adidas</em>, context пустой, WordPress brand adidas однозначен.
+    <ol>
+      <li>Выбрать adidas в очереди.</li>
+      <li>Найти WordPress <code>pa_brand adidas</code>.</li>
+      <li>Нажать «Проверить точное сопоставление».</li>
+      <li>Прочитать количество затронутых товаров.</li>
+      <li>Нажать «Сохранить точное сопоставление».</li>
+      <li>Дождаться пересчёта и проверить цепочку во «Внутренних значениях».</li>
+    </ol>
+  </div>
+
+  <h3>Сценарий B. Модель Pegasus — нужна контекстная логика</h3>
+  <div class="example">
+    <span class="label">Проблема</span>Голое слово <em>Pegasus</em> слишком широкое, а полный title с расцветкой дробит одну модель на множество значений.
+    <p>Безопасная схема: <code>context.brand = Nike</code> И <code>context.family = Pegasus…</code> либо другое подтверждённое стабильное семейство. Проверить разные расцветки, мужские/женские версии и соседние семейства. Не использовать глобальное <code>title contains Pegasus</code> как единственное условие.</p>
+  </div>
+
+  <h3>Сценарий C. Детская категория</h3>
+  <div class="example">
+    <span class="label">Реальное правило</span><code>sourceValue = sneakers</code> И <code>context.productType = sneakers</code> И <code>context.audience = infant</code> → внутренняя категория «Кроссовки детские».
+    <p>Здесь дополнительные условия меняют бизнес-смысл, поэтому правило оправдано. Preview должен показать детские товары, отсутствие взрослых товаров и отсутствие конфликтов с youth/men/women.</p>
+  </div>
+
+  <h3>Сценарий D. Boost — не путать технологию и модель</h3>
+  <div class="example">
+    <span class="label">Неправильно</span><code>tag Boost</code> → модель/метка <em>adidas PureBoost</em>.
+    <p><strong>Правильно:</strong> определить, какой внутренний смысл представляет GOAT-кандидат <em>Boost</em>. Если это технология — связать с внутренней технологической меткой Boost и соответствующим WordPress product_tag. Если подходящего target-термина нет — создать корректный термин через разрешённый процесс или оставить нерешённым. Не сужать семантическую ошибку случайным условием.</p>
+  </div>
+
+  <h3>Сценарий E. Точечное исключение поверх правила</h3>
+  <div class="example">
+    <p>Общее правило верно для 99% товаров, но одна точная контекстная группа должна идти в другое значение. Сохраните точную связь для этой группы. Она победит правило без изменения общей логики. Обязательно убедитесь, что context выбранной группы не охватывает больше товаров, чем ожидается.</p>
+  </div>
+
+  <h2>17. Безопасный рабочий алгоритм</h2>
+  <ol class="steps">
+    <li><strong>Определите тип.</strong> Не связывайте метку с моделью, маркетинговую категорию с видом спорта или год коллекции с сезоном.</li>
+    <li><strong>Посмотрите все три примера</strong> и откройте карточки спорных товаров.</li>
+    <li><strong>Прочитайте context.</strong> Решите, нужна одна точная группа или обобщённое правило.</li>
+    <li><strong>Выберите правильный внутренний смысл.</strong> WordPress-термин — представление смысла, а не повод подогнать правило под похожее название.</li>
+    <li><strong>Для правила начните с equals.</strong> Добавляйте brand/family/audience/productType только когда они объясняют бизнес-различие.</li>
+    <li><strong>Нажмите «Проверить».</strong> Смотрите не только масштаб, но и «будет изменено», конфликты и перекрытия.</li>
+    <li><strong>Откройте примеры preview.</strong> Особенно первый, последний и визуально неожиданный.</li>
+    <li><strong>Сохраните решение.</strong> Дождитесь исчезновения статуса «Ждёт пересчёта».</li>
+    <li><strong>Проверьте внутреннюю цепочку.</strong> Основное и дополнительные WordPress-назначения должны быть полными.</li>
+    <li><strong>Перед экспортом откройте WordPress preview.</strong> Проверяйте полный diff, включая taxonomies и теги.</li>
+  </ol>
+
+  <div class="warning"><span class="label">Не использовать массово без бизнес-подтверждения</span>Материалы как обогащение, коллаборации с несколькими брендами, sold-out без offers и товары без изображений остаются отдельными бизнес-случаями. Классификация одного термина не снимает экспортные блокировки.</div>
+
+  <h2>18. Быстрый выбор: точная связь или правило?</h2>
+  <table class="compact">
+    <thead><tr><th>Вопрос</th><th>Если «да»</th><th>Если «нет»</th></tr></thead>
+    <tbody>
+      <tr><td>Решение верно только для текущего sourceValue + полного context?</td><td>Точная связь.</td><td>Проверить возможность правила.</td></tr>
+      <tr><td>Есть повторяемый смысл, выраженный стабильными полями?</td><td>Правило с этими полями.</td><td>Оставить точечное решение.</td></tr>
+      <tr><td>Нужно только добавить ещё один WordPress-термин ко всем случаям внутреннего значения?</td><td>Дополнительное назначение.</td><td>Не classifier rule.</td></tr>
+      <tr><td>Нужна условная раскладка только для WordPress после классификации?</td><td>Target assignment rule.</td><td>Основное/дополнительное назначение.</td></tr>
+      <tr><td>Есть сомнение в семантике?</td><td>Не сохранять; собрать примеры.</td><td>Продолжить с preview.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="page-break">19. Частые вопросы</h2>
+  <h3>Почему кнопка «Создать правило из выбранного» серая?</h3>
+  <p>Это стиль вторичной команды, а не надёжный признак disabled. Если результат не выбран, нажатие покажет подсказку. Если выбран WordPress-термин или внутреннее значение, откроется редактор.</p>
+
+  <h3>Она создаёт правило сразу?</h3>
+  <p>Нет. Она создаёт только черновик в диалоге. Затем нужны preview и отдельное сохранение.</p>
+
+  <h3>Она анализирует все товары и сама строит умное условие?</h3>
+  <p>Нет. Алгоритм небольшой и фиксированный: категории получают несколько полей context, модели — brand + title contains, остальные типы — sourceValue equals. Черновик обязан проверить человек.</p>
+
+  <h3>Что именно будет создано, если выбран термин WordPress?</h3>
+  <p>При сохранении нового правила система может атомарно создать внутреннее значение, основную связь этого значения с выбранным target-термином и само classifier-правило. Точная source mapping при этом не создаётся: распознавание идёт через правило.</p>
+
+  <h3>Почему preview показывает «найдено много», но «будет изменено 0»?</h3>
+  <p>Все совпадения уже покрыты точными связями либо существующими правилами той же или большей силы. Смотрите колонку «перекрыто» и текст причин.</p>
+
+  <h3>Что сильнее: точная связь или правило с priority 10 000?</h3>
+  <p>Точная связь. Priority сравнивается только между правилами.</p>
+
+  <h3>Два правила совпали. Как выбирается?</h3>
+  <p>Сначала priority, затем число условий. При полном равенстве разные результаты дают конфликт, одинаковый результат остаётся однозначным.</p>
+
+  <h3>Что делает «Игнорировать»?</h3>
+  <p>Создаёт точную ignored-запись для текущей группы. Поскольку точная запись проверяется первой, правила для этой группы не применятся.</p>
+
+  <h3>Изменение правила сразу меняет WordPress?</h3>
+  <p>Нет. Оно обновляет локальную конфигурацию, аудит и очередь пересчёта. Внешний write происходит только в отдельном экспорте.</p>
+
+  <h3>Почему одно и то же слово показывается несколькими строками?</h3>
+  <p>Различаются тип, scope или context. Например, одинаковый текст может быть технологией и source tag либо встречаться в разных товарных контекстах.</p>
+
+  <h3>Когда использовать regex?</h3>
+  <p>Только когда сочетание equals/contains и контекстных полей не описывает воспроизводимое правило. Regex сложнее проверять и сопровождать; длина ограничена 256 символами.</p>
+
+  <h2>20. Контрольный список перед сохранением правила</h2>
+  <ul class="checklist">
+    <li>Тип исходного кандидата и смысл результата совпадают.</li>
+    <li>Выбран правильный WordPress taxonomy/term ID, а не просто похожее название.</li>
+    <li>Каждое условие объясняет реальное бизнес-различие.</li>
+    <li>Нет лишнего <code>contains</code> по слишком короткому слову.</li>
+    <li>Проверены несколько разных товаров и расцветок.</li>
+    <li>«Будет изменено» соответствует ожиданию.</li>
+    <li>Конфликтов нет либо причина полностью понятна и исправлена.</li>
+    <li>Перекрытые наблюдения объяснимы существующими решениями.</li>
+    <li>Priority выбран относительно существующих правил, а не случайно.</li>
+    <li>После пересчёта проверена карточка товара и WordPress preview.</li>
+  </ul>
+
+  <div class="footer-note">Документ подготовлен по production-интерфейсу и актуальному коду проекта на 12.08.2026. Числа в очереди, наборы терминов и правила со временем меняются; логические принципы следует сверять с текущей версией кода и миграций.</div>
+</body>
+</html>

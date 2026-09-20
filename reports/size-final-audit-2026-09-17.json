@@ -1,0 +1,4906 @@
+[
+  {
+    "source_product_id": "887",
+    "title": "Nike Air Max '95 BP",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:01.943Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "26224",
+    "title": "Nike Huarache Drift PS 'Team Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:04.984Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "26275",
+    "title": "Nike Air Max Goadome PS 'Varsity Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:05.045Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "27849",
+    "title": "Nike Stefan Janoski Max PS 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:05.003Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "28282",
+    "title": "Nike Dynamo Free PS 'Indigo Force'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:06.149Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "28289",
+    "title": "Nike Air Max Tiny 90 PS 'Valentine's Day'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:07.307Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "32170",
+    "title": "Nike Downshifter 9 PS 'Obsidian Mist Glow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:07.288Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "33003",
+    "title": "Nike Air Max 90 PS 'White Wolf Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:07.147Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "41419",
+    "title": "Nike Air Max 90 Leather PS 'Chrome Yellow Black Crimson'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:08.555Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "42154",
+    "title": "Nike Mamba Rage GS 'Anthracite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:09.437Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "43826",
+    "title": "Nike LeBron Soldier 11 PS 'Cool Grey Platinum'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:09.921Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "47527",
+    "title": "Nike Phantom Vision Elite DF FG GS 'Volt'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:09.644Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "51515",
+    "title": "Nike Dunk Low PS 'Black Anthracite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:11.329Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "55933",
+    "title": "Nike Flex Plus PS 'Light Violet Crimson Bliss'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:11.646Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "56216",
+    "title": "Nike Air Max 270 Extreme PS 'Dark Smoke Grey Bright Crimson'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:12.424Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "57040",
+    "title": "Nike Air Max Bolt PS 'Triple Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:12.487Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "58392",
+    "title": "Nike Waffle One PS 'Coconut Milk Crimson Royal'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:13.396Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "58749",
+    "title": "Nike Waffle Trainer 2 PS 'Black Dark Beetroot'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:13.767Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "59884",
+    "title": "Nike Air Max SC PS 'White Lilac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:14.676Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "60619",
+    "title": "Nike Revolution 6 FlyEase PS 'Black Dark Smoke Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:14.714Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "62507",
+    "title": "Nike Crater Impact PS 'Canyon Purple Off Noir'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:16.148Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "63066",
+    "title": "Nike Waffle Trainer 2 PS 'Medium Blue University Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:16.146Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "63243",
+    "title": "Nike LeBron 13 PS 'Akronite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:16.668Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "63291",
+    "title": "Nike Crater Impact PS 'Armory Navy Marina'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:17.050Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "64888",
+    "title": "Nike Revolution 6 PS 'Mystic Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:18.155Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "65199",
+    "title": "Nike Air Zoom Huarache 2K5 TD 'Lakers'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:40:17.223Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "65625",
+    "title": "Nike Air Max 90 Toggle PS 'White Photo Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:18.500Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "66382",
+    "title": "Nike Downshifter 9 PS 'Deep Royal'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:18.954Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "71339",
+    "title": "Nike Air Max Motif PS 'White Elemental Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:19.177Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "71631",
+    "title": "Nike Air Zoom Arcadia 2 PS 'Bright Spruce Barely Volt'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:19.966Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "74045",
+    "title": "Nike Flex Advance PS 'White Coral Chalk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:20.495Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "74685",
+    "title": "Nike Omni Multi-Court PS 'White Sea Coral'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:21.100Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "75802",
+    "title": "Nike Air Max 270 PS 'Multi-Swoosh'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:21.213Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "76696",
+    "title": "Nike Air Max Plus PS 'Multi-Swoosh'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:22.225Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "76807",
+    "title": "Nike Air Max 1 PS 'Everything You Need'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:22.451Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "77912",
+    "title": "Nike Court Legacy PS 'Opti Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:22.980Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "77937",
+    "title": "Nike Air Max 90 PS 'Black Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:23.187Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "78074",
+    "title": "Nike Air Max Zero SE PS 'Prism Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:23.961Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "83377",
+    "title": "Nike Air Max 270 PS 'White Game Royal'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:24.281Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "86506",
+    "title": "Nike Air Max Zero Essential PS 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:24.848Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "86511",
+    "title": "Nike Air Max Zero Essential PS 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:25.213Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "86512",
+    "title": "Nike Air Max Zero Essential PS 'Triple Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:26.097Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "86516",
+    "title": "Nike Huarache Run PS 'Wolf Grey Hyper Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:26.154Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "87272",
+    "title": "Nike Star Runner 4 PS 'Ashen Slate Metallic Red Bronze'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:26.745Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "91379",
+    "title": "Nike Ja 2 PS 'Virtuoso'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:27.385Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "92122",
+    "title": "Nike Air Max 90 Leather PS 'Dark Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:27.952Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "93573",
+    "title": "Nike Force 1 Low PS 'White Midnight Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:28.295Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "96580",
+    "title": "Nike Flex Runner 4 PS 'Summit White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:28.530Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "100869",
+    "title": "adidas Selena Gomez Racer Shoes",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:30.447Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "108403",
+    "title": "Adidas EQT Support ADV K 'Core Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:30.757Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "110107",
+    "title": "Adidas RapidaBounce C 'Core Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:30.819Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "111451",
+    "title": "Adidas RunFalcon K 'Dark Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:30.830Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "112017",
+    "title": "adidas ZX Flux C 'Blue White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:30.828Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "112808",
+    "title": "adidas Yeezy Desert Boot Infant 'Oil'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:32.472Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "112810",
+    "title": "adidas Yeezy Desert Boot Infant 'Salt'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:32.748Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "112970",
+    "title": "Adidas Duramo 9 J Wide 'Core Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:32.630Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "112974",
+    "title": "Adidas FortaRun AC J 'Teck Ink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:32.750Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "114398",
+    "title": "Adidas AltaSport CF K 'Footweaar White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:34.352Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "114426",
+    "title": "Adidas FortaGym CF K 'Real Magenta'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:34.856Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "115666",
+    "title": "Adidas 4uture RNR EL K 'Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:34.852Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "116617",
+    "title": "Adidas Tensor Run J 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:34.852Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "117109",
+    "title": "Adidas FortaRun AC J 'Glory Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:36.019Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "117114",
+    "title": "Adidas Pro Next 2019 J 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:36.749Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "117127",
+    "title": "Adidas RapidaFlex Summer.Rdy EL J 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:37.432Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "117751",
+    "title": "Adidas Duramo SL Little Kids 'Triple Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:36.986Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "119308",
+    "title": "Marvel x adidas FortaRun J 'Spider-Man'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:38.413Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "120384",
+    "title": "adidas ActiveFlex Summer.Rdy J 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:38.998Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "120401",
+    "title": "Adidas Duramo 9 J 'Royal Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:39.306Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "120989",
+    "title": "Marvel x adidas FortaRun J 'Spider Man'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:39.405Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "121539",
+    "title": "Adidas Deep Threat J 'Scarlet'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:40.948Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "122505",
+    "title": "Adidas Copa Sense.1 FG J 'Black Gold Metallic'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:40.868Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "122819",
+    "title": "LEGO Ninjago x adidas FortaRun X J 'Kai'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:41.663Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "122822",
+    "title": "Adidas FortaRun J 'Vivid Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:41.667Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "124806",
+    "title": "Adidas ZX 2K Little Kid 'White Haze Coral'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:42.720Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "126284",
+    "title": "Adidas EQ21 Run Velcro J 'Bold Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:43.230Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "126408",
+    "title": "Adidas X Speedflow Messi.3 TF J 'Numbersup'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:43.779Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "126484",
+    "title": "Adidas Stan Smith Little Kid 'Grl Power'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:43.846Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "126967",
+    "title": "Adidas Predator Freak.3 IN J 'Demonscale - White Solar Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:44.651Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "127202",
+    "title": "Disney x adidas Grand Court J 'Olaf'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:45.586Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "128705",
+    "title": "LEGO x adidas Racer TR EL Little Kid 'Halo Blue Sub Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:45.612Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "129444",
+    "title": "Disney x adidas FortaRun J 'Mickey Mouse'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:45.808Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "129797",
+    "title": "Adidas RapidaZen J 'Black Vivid Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:47.449Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "129884",
+    "title": "Adidas Copa Sense.3 TF J 'White Hi-Res Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:47.905Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "131481",
+    "title": "Adidas X Speedportal.3 IN J 'Black Solar Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:47.781Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "131925",
+    "title": "Adidas X Speedportal Messi.3 IN J 'White Solar Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:48.595Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "131985",
+    "title": "LEGO x adidas Superstar 360 J 'Pantone'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:49.533Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "132521",
+    "title": "LEGO x adidas Racer TR Big Kid 'Off White Bliss Lilac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:50.131Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "134646",
+    "title": "Adidas Racer TR21 Big Kid 'Grey Red Speckled'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:50.259Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "135798",
+    "title": "Adidas Racer TR21 Little Kid 'Grey Blue Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:51.197Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "138821",
+    "title": "Adidas Lite Racer Adapt 5.0 J 'Dash Grey Bright Royal Camo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:51.799Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "141253",
+    "title": "Adidas EQ21 Run 2.0 EL K 'Camo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:52.392Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "141568",
+    "title": "Adidas X_PLR C 'Collegiate Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:52.455Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "142206",
+    "title": "Adidas Predator 24 Elite FG J 'Base Black Pack'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:53.839Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "143131",
+    "title": "Adidas adiFOM Adilette Slide C 'Solar Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:54.254Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "143445",
+    "title": "Disney x adidas Superstar C 'Mushu'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:54.475Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "145166",
+    "title": "Adidas Racer TR23 EL K 'Royal Blue Lucid Lime'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:40:54.477Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "145175",
+    "title": "Adidas X Speedportal.4 IN J 'Heatspawn Pack'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:00.392Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "146753",
+    "title": "Adidas Superstar Fashion C 'Clear Brown Linen Khaki'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:01.712Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "146886",
+    "title": "Adidas UltraDream DNA C 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:02.093Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "156296",
+    "title": "Magda Butrym Wmns Wedge Sandal Crochet 'Cream'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:14.967Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156297",
+    "title": "Magda Butrym Wmns Wedge Sandal 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:14.950Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156322",
+    "title": "Jacquemus Wmns Les Tennis Sneaker 'Ivory'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:14.964Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156323",
+    "title": "Jacquemus The Féfé 'Off White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:15.139Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156325",
+    "title": "Jacquemus Wmns The Féfé 'Light Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:16.947Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156326",
+    "title": "Jacquemus Wmns The Féfé 'Off White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:17.258Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156327",
+    "title": "Yeezy Season 2 Crepe Boot 'Taupe'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:16.921Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156331",
+    "title": "Yeezy Season 3 Military Boot 'Onyx Shade'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:17.250Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156332",
+    "title": "Yeezy Season 4 Crepe Boot 'Taupe'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:18.698Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156334",
+    "title": "Yeezy Season 4 Combat Boot 'Sand'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:18.815Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156335",
+    "title": "Yeezy Season 4 Crepe Boot 'Oil'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:19.294Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156348",
+    "title": "Yeezy Season 6 Nylon Slipper 'Oxblood'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:19.249Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156350",
+    "title": "Yeezy Season 6 Nylon Slipper 'Graphite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:20.647Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156360",
+    "title": "Yeezy Season 7 Nylon Slipper 'Graphite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:20.720Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156380",
+    "title": "Yeezy Season 5 Military Boot 'Graphite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:06.399Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156399",
+    "title": "Yeezy Wmns Season 7 Desert Boot 'House Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:21.307Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156400",
+    "title": "Yeezy Wmns Season 7 Desert Boot 'Oil'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:21.445Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156402",
+    "title": "Yeezy Chelsea Boot 'Graphite'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:22.869Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156580",
+    "title": "Melissa x Diesel Wmns Quantum Platform Sandal 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:22.894Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156594",
+    "title": "Courrèges Club 02 Sneaker 'Heritage White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:23.985Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156597",
+    "title": "Courrèges Bitume Canvas Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:23.840Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156598",
+    "title": "Courrèges Bitume Canvas Sneaker 'Heritage White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:25.106Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156601",
+    "title": "Courrèges Wmns Square Toe 80 Mesh Thigh Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:25.019Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156786",
+    "title": "Dolce & Gabbana Sorrento Kids 'Pink Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:25.797Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "156946",
+    "title": "Dolce & Gabbana Sorrento Kids 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:25.878Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157039",
+    "title": "Kiko Kostadinov Wmns Proxima Low Ballerina 'Oatmeal Pale Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:26.921Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157040",
+    "title": "Kiko Kostadinov Leather Sargo Shoe 'Charlock'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:27.158Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157042",
+    "title": "Kiko Kostadinov Wmns Ramberg Slip On 'Brown Monochrome'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:27.623Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157043",
+    "title": "Kiko Kostadinov Wmns Ramberg Slip On 'Sapphire'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:27.715Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157583",
+    "title": "Valentino Wmns Rockstud Bodytech Sneaker 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:11.139Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157702",
+    "title": "Coperni Wmns Branded Wedge Sandal 'Light Pink Satin'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:12.033Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "157711",
+    "title": "Coperni Wmns Zip Ankle Black Leather Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:28.847Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157712",
+    "title": "Coperni Wmns Studded Bridge Stretch Boot 'Black Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:28.950Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "157730",
+    "title": "Undercover Wmns Minimalist Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:29.397Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158155",
+    "title": "Prada America's Cup 'Bottle Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:13.535Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "158183",
+    "title": "Prada Wmns Monolith Chelsea Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:13.397Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158395",
+    "title": "Prada Point-Toe Canvas High 'Polka Dot - White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:13.955Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "158714",
+    "title": "Heron Preston Slider 'Logo Patch - Orange'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:29.476Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158715",
+    "title": "Heron Preston Slider 'Logo Patch - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:30.634Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158806",
+    "title": "JW Anderson Wmns Loafer Slide 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:15.549Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158849",
+    "title": "Kenzo Splash Slide 'Deep Orange'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:30.800Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158851",
+    "title": "Kenzo Pace Trainer 'White Medium Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:31.276Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158853",
+    "title": "Kenzo Striker Low Flat 'Khaki'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:31.519Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "158854",
+    "title": "Kenzo Striker Low Flat 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:32.617Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "160766",
+    "title": "New Balance x Miu Miu 530 SL 'Cinnamon'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:18.932Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "160784",
+    "title": "New Balance x Miu Miu 530 SL 'Bleached Ecru Shearling'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:17.598Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "160791",
+    "title": "New Balance x Miu Miu 530 SL 'Silver Metallic'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:17.550Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "164206",
+    "title": "Converse Chuck Taylor Classic Boot GS 'Storm Wind'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:18.661Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "165814",
+    "title": "Converse Chuck Taylor All Star Low GS 'Butterfly'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:19.954Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "168679",
+    "title": "Converse Chuck Taylor All Star Easy On High PS 'Velvet'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:20.534Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "171876",
+    "title": "Amiri Wmns MA-1 'White Green'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:41:22.167Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "171881",
+    "title": "Amiri Wmns Stars Court High 'White Black'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:41:22.171Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172042",
+    "title": "Amiri Wmns Stars Court Low 'Mohair Canvas - Blue'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:41:22.774Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172319",
+    "title": "AMBUSH Rubber Boot 'Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:23.154Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172436",
+    "title": "Rick Owens Wmns Mega Bozo Tractor Beetle 'Chalk White Blue Transparent'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:24.396Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172465",
+    "title": "Rick Owens DRKSHDW Phlegethon Low 'Black'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:41:24.563Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172472",
+    "title": "Rick Owens Wmns DRKSHDW Abstract High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:24.962Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172474",
+    "title": "Rick Owens Wmns DRKSHDW Double Bumper High 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:25.351Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172482",
+    "title": "Rick Owens DRKSHDW Abstract High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:26.591Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172512",
+    "title": "Rick Owens DRKSHDW Gethsemane Cotton Cargo High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:26.588Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172540",
+    "title": "Rick Owens Wmns DRKSHDW Gethsemane Abstract Stocking Boots 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:27.178Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172595",
+    "title": "Rick Owens DRKSHDW Fogachine Cotton Denim Low 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:27.175Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172701",
+    "title": "Rick Owens Wmns DRKSHDW Strobe Cotton Nylon Low 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:28.392Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172715",
+    "title": "Rick Owens Wmns DRKSHDW Strobe Cotton Denim High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:28.590Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172718",
+    "title": "Rick Owens DRKSHDW Strobe Cotton Nylon Abstract High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:29.020Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172736",
+    "title": "Rick Owens DRKSHDW Strobe Cotton Denim Hexa High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:28.865Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172758",
+    "title": "Rick Owens DRKSHDW Strobe Cotton Denim Hexa High 'Natural Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:30.252Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "172844",
+    "title": "Rick Owens Wmns EDFU High 'Natural Transparent'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:32.161Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172900",
+    "title": "Rick Owens Wmns EDFU Runaway Sneaker 'Moss'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:32.496Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172936",
+    "title": "Rick Owens DRKSHDW Luxor Low 'Black Pearl'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:32.159Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172937",
+    "title": "Rick Owens Wmns Luxor Vintage Low 'Dust Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:33.869Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172982",
+    "title": "Rick Owens DRKSHDW Luxor Low 'Oyster'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:34.248Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "172996",
+    "title": "Converse x Rick Owens DRKSHDW DBL DRKSTAR Chuck 70 Low 'Natural Ivory'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:34.238Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173015",
+    "title": "Rick Owens Wmns DRKSHDW Abstract Stockings Boot 'Mineral Pearl Degrade'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:34.423Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173070",
+    "title": "Rick Owens DRKSHDW Luxor Low 'Male Snaps - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:35.632Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173122",
+    "title": "Rick Owens Wmns Lido Low 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:37.189Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173211",
+    "title": "Rick Owens Babygeo Lido Vintage Sneaker Big Kid 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:36.664Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173216",
+    "title": "Rick Owens Wmns Pelliccia Vintage Low 'Dusty Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:36.672Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173225",
+    "title": "Rick Owens Lido Runway Mega Bumper High 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:37.632Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173259",
+    "title": "Rick Owens Wmns DRKSHDW Fogachine Abstract Low 'Natural Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:38.536Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173313",
+    "title": "Rick Owens Wmns Porterville Low 'Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:38.827Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173341",
+    "title": "Rick Owens Porterville Jumbo Laced Sneaker 'Forest Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:39.074Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173356",
+    "title": "Rick Owens Porterville DRKSHDW High 'Dark Dust'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:39.424Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173367",
+    "title": "Rick Owens Porterville Mega Geobasket High 'Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:40.519Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173369",
+    "title": "Rick Owens Porterville DRKSHDW Vintage Low 'Dark Dust'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:40.665Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173382",
+    "title": "Rick Owens Wmns Porterville Low 'Thulian'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:41.000Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "173430",
+    "title": "Rick Owens Wmns Lido DRKSHDW Low 'Dark Dust'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:41.371Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173433",
+    "title": "Rick Owens Geobasket High 'Pearl'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:42.992Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173471",
+    "title": "Rick Owens Lido DRKSHDW Jumbo Lace Puffer High 'Dark Pink Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:42.665Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173781",
+    "title": "Rick Owens Concordians DRKSHDW Sneaks Low 'Dirty Pearl Light Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:42.936Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173865",
+    "title": "Rick Owens Porterville Megalaced Geth Runner 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:32.713Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173866",
+    "title": "Rick Owens DRKSHDW Vegan Sneaks 'Black Pearl Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:44.398Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "173931",
+    "title": "Rick Owens Vintage Sneaker 'Black Milk'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:44.402Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174087",
+    "title": "Y/Project x Melissa Wmns Court Clog 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:33.211Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174129",
+    "title": "Jil Sander Wmns Ballerina 'Mahogany Silver",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:33.711Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174130",
+    "title": "Jil Sander Wmns Loafer 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:35.036Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174616",
+    "title": "Reebok x Vetements Metal Sock Runner Boot '10th Anniversary - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:46.226Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174630",
+    "title": "Vetements Logo Pool Slider 'Barcode - Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:35.072Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174825",
+    "title": "Dior B22 'Black Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:46.488Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174883",
+    "title": "Dior D-Wander Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:35.532Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "174961",
+    "title": "Dior B22 'Cream Lavender'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:47.692Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "175080",
+    "title": "Dior B22 'Light Blue Orange'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:48.577Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "175362",
+    "title": "Dior B27 Low Kids 'Dior Oblique - Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:48.749Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "175461",
+    "title": "Auralee Deck Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:36.503Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "175462",
+    "title": "Auralee Soft Leather Flip-Flop 'Green Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:37.570Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "175463",
+    "title": "Auralee Soft Leather Flip-Flop 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:37.534Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "180094",
+    "title": "New Balance 680v3 Little Kid 'Pink Galaxy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:50.657Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "182364",
+    "title": "New Balance 680v6 Kids Wide 'Black Pepper'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:51.177Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "183161",
+    "title": "New Balance 990v5 Little Kid 'Mambo Sauce'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:51.204Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "184431",
+    "title": "New Balance Playgruv Little Kid 'Camo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:51.294Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "185218",
+    "title": "New Balance 574 Little Kid 'Varsity Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:52.614Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "188045",
+    "title": "New Balance 57/40 Little Kid 'Castlerock Moonbeam'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:52.980Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "190144",
+    "title": "New Balance Fresh Foam Arishi v4 Bungee Lace Top Strap Little Kid 'Raspberry Tie-Dye'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:53.851Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "190680",
+    "title": "New Balance Dynasoft Reveal v4 BOA Little Kid Wide 'Light Raspberry'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:53.661Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "191965",
+    "title": "New Balance 574 Little Kid 'Crystal Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:54.795Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "195254",
+    "title": "New Balance 997R Little Kid 'Chrome Blue Linen'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:55.156Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "199061",
+    "title": "Chrome Hearts Hotel Slippers 'Black'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:41:55.099Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "199526",
+    "title": "Alexander McQueen Oversized Sneaker 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:56.216Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "199546",
+    "title": "Alexander McQueen Deck Plimsoll High 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:57.585Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "199653",
+    "title": "Alexander McQueen Tread Slick Boot 'Beige Leather'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:57.811Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "199732",
+    "title": "Alexander McQueen Oversized Sneaker 'White Shock Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:57.812Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "199892",
+    "title": "Alexander McQueen Oversized Sneaker 'White Silver Crystal'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:58.809Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200004",
+    "title": "Alexander McQueen Sprint Runner 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:41:59.611Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200151",
+    "title": "Alexander McQueen Oversized Sneaker 'Grey Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:00.232Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200180",
+    "title": "Alexander McQueen Wmns Oversized Hybrid Signature Slide 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:00.165Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200230",
+    "title": "Alexander McQueen Hybrid Slide 'Black Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:01.370Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200565",
+    "title": "Alexander McQueen Oversized Sneaker 'Gold Lacquered Moiré'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:01.765Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200713",
+    "title": "Cecilie Bahnsen Wmns Blaise Sneaker 'Light Grey Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:37.936Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200714",
+    "title": "Cecilie Bahnsen Wmns Cilla Sandal 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:38.999Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200715",
+    "title": "Cecilie Bahnsen Wmns Blaise Sneaker 'Olive'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:40.311Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200716",
+    "title": "Cecilie Bahnsen Wmns CBalina Sneaker 'Olive'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:40.372Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200812",
+    "title": "Maison Mihara Yasuhiro Hank OG Sole Nylon Puffer Low 'Blue'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:04.154Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "200972",
+    "title": "Maison Mihara Yasuhiro Peterson 23 OG Sole Studded Canvas Low 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:03.984Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201041",
+    "title": "Maison Mihara Yasuhiro Keith OG Sole Leather Low 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:05.300Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201072",
+    "title": "Maison Mihara Yasuhiro Peterson 23 OG Sole Sputtering Paint Canvas Low 'Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:05.375Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201145",
+    "title": "Spalwart x Comme des Garçons Wmns Marathon Trail Low 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:40.559Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201393",
+    "title": "Clarks x Martine Rose Wmns Concept Sandal 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:10.131Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "201394",
+    "title": "Clarks x Martine Rose Wmns Concept Sandal 'Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:11.270Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "201409",
+    "title": "Clarks x Martine Rose Concept Sandal 'Rose'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:11.270Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "201410",
+    "title": "Clarks x Martine Rose Wmns Concept Sandal 'Rose'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:11.270Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "201411",
+    "title": "Martine Rose Pool Slide 'High On Hope - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:13.212Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201412",
+    "title": "Martine Rose Pool Slide 'Local Hero - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:14.253Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201414",
+    "title": "Martine Rose Wmns Gathered Square Toe Mule 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:14.641Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201417",
+    "title": "Martine Rose Cowboy Boot 'Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:14.557Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201418",
+    "title": "Martine Rose O Ring Moto Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:16.587Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "201756",
+    "title": "Maison Margiela Wmns Tabi Canvas High 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:16.689Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "202291",
+    "title": "OAMC Aurora Runner 'Cold Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:16.679Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "204491",
+    "title": "Air Jordan 17+ OG GS 'Copper' 2002",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:16.685Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "204777",
+    "title": "Air Jordan 18 OG PS 'Black Sport Royal' 2003",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:18.753Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "204950",
+    "title": "Air Jordan 7 Retro PS 'Olympic' 2012",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:18.652Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "207650",
+    "title": "Air Jordan 8 Retro PS 'Laney'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:20.396Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "209206",
+    "title": "Air Jordan Flight Club 91 PS 'White Photo Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:20.475Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "210073",
+    "title": "Air Jordan 10 Retro BP 'I'm Back'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:20.799Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "211123",
+    "title": "Air Jordan Formula 23 PS 'Cool Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:20.813Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "213305",
+    "title": "Air Jordan True Flight GS 'Dark Concord'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:22.745Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "213875",
+    "title": "Air Jordan Jumpman Team 2 PS 'Smoke Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:22.769Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "215283",
+    "title": "Air Jordan Flight 45 High PS 'Vivid Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:22.934Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "215363",
+    "title": "Air Jordan Jumpman Pro PS 'Taxi'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:22.940Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "215380",
+    "title": "Air Jordan Sky Jordan 1 PS 'University Red Sport Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:24.590Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "215826",
+    "title": "Air Jordan Pro Strong PS 'Bred'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:24.620Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "220377",
+    "title": "Air Jordan Pro Strong PS 'Electro Purple'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:25.070Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "222990",
+    "title": "Raf Simons Orion 'Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:24.970Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223009",
+    "title": "Raf Simons Cylon 22 'Anthracite Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:26.546Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223014",
+    "title": "Raf Simons Cylon 22 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:26.619Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223027",
+    "title": "Raf Simons Orion 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:26.920Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223033",
+    "title": "Raf Simons Astra Slide 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:27.012Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223034",
+    "title": "Raf Simons Astra Slide 'Red Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:29.175Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223097",
+    "title": "Khaite Wmns Fallon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:41.853Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223100",
+    "title": "Khaite Wmns Nevada Stretch High Boot 'Black Natural Python'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:43.115Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223373",
+    "title": "Gucci Wmns Slide 'Fuchsia'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:55:18.846Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "223796",
+    "title": "Gucci Flashtrek Toddler 'Pink Metallic'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:30.513Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "223996",
+    "title": "Gucci Pursuit '72 Rubber Slide Kids 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:30.701Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "224002",
+    "title": "Gucci Rhyton Leather Sneaker Toddler 'Logo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:31.418Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "224008",
+    "title": "Gucci Ace Leather Kids 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:31.958Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "224075",
+    "title": "Gucci Ace Leather Kids 'White Green Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:32.818Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "224164",
+    "title": "Gucci G74 Kids 'Beige Orange'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:33.600Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "224271",
+    "title": "Gucci Tennis 1977 Kids 'GG Embroidered Logo - White Multi'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:34.166Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "224394",
+    "title": "Gucci Basket Kids 'Red Black Demetra'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:34.951Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "224813",
+    "title": "Gucci Slipper Kids 'GG Star Print'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:35.672Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "225039",
+    "title": "Gucci Slide Kids 'Interlocking G - Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:35.732Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "225486",
+    "title": "Mr. Porter x Balenciaga Wmns Triple S Trainer 'Neon Green' 2018",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:36.724Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "225681",
+    "title": "Balenciaga Wmns Triple S Sneaker 'Fluorescent Green'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:37.517Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "225989",
+    "title": "Balenciaga Track Sneaker 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:37.940Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "226001",
+    "title": "Balenciaga Tyrex Low 'Black Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:38.661Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "226042",
+    "title": "Balenciaga Tyrex Low 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:38.860Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "226270",
+    "title": "Balenciaga Speed Sneaker Kids 'Black Fluorescent Yellow'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:40.179Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "226323",
+    "title": "Balenciaga Tyrex Low 'Flourescent Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:40.095Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "226345",
+    "title": "Balenciaga Speed Lace-Up 'All Over Print - Black Yellow Fluo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:41.150Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "226612",
+    "title": "Kith x Balenciaga Runner 'White Burgundy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:41.519Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "226766",
+    "title": "Balenciaga Track LED Sneaker 'Grey Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:43.245Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "227317",
+    "title": "Balenciaga Triple S Sneaker Kids 'Light Blue'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:43.645Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "227384",
+    "title": "Balenciaga Speed Full Knit 'Taupe'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:45.116Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "227482",
+    "title": "Balenciaga Speed Mule 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:44.133Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "227522",
+    "title": "Balenciaga Track Sandal Kids 'Full Red'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:42:45.270Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "227523",
+    "title": "Balenciaga Triple S Sneaker Kids 'Purple'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:55:19.458Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "227539",
+    "title": "Balenciaga Cagole Sandal 'Black Palladium'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:43.003Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228022",
+    "title": "Calvin Klein 205W39NYC Carlos 10 'Grey Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:43.056Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228026",
+    "title": "Calvin Klein Wmns 205W39NYC Carla 10 'White Azure'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:44.429Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228044",
+    "title": "Phoebe Philo Wmns Gathered Flat 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:45.739Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228050",
+    "title": "Magliano Monster Flat 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:45.725Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228051",
+    "title": "Magliano Kart Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:45.710Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228052",
+    "title": "Magliano Teknival Monster Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:47.098Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "228288",
+    "title": "Paris Saint-Germain Wellies Kids 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:47.792Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229165",
+    "title": "Enfants Riches Déprimés Wmns Cowboy Boot 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:47.999Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229171",
+    "title": "Enfants Riches Déprimés Split Ends Cut Off Cowboy Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:48.208Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229175",
+    "title": "Enfants Riches Déprimés Enfants Riches Deprimes Wmns Catholic Tap School Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:49.213Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229177",
+    "title": "Enfants Riches Déprimés Enfants Riches Deprimes Catholic Tap School Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:49.670Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229368",
+    "title": "Our Legacy Camion Boot 'Deep Americano'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:49.950Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229369",
+    "title": "Our Legacy Cigarr Slipper 'Sombre Satin Bovine'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:50.495Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229370",
+    "title": "Our Legacy Klove Sneaker 'Silvergreen Chromatic'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:51.379Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229371",
+    "title": "Our Legacy Gabe Sneaker 'Woodland'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:51.391Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229372",
+    "title": "Our Legacy Daimono Boot 'Malleable Black Bull Hide'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:51.826Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229373",
+    "title": "Our Legacy Camion Boot 'Deep Olive Leather'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:52.572Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229397",
+    "title": "Casablanca Atlantis Sneaker 'White Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:42:53.542Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "229402",
+    "title": "Casablanca Pool Slide 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:53.413Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229404",
+    "title": "Casablanca Monogram Pool Slide 'White Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:53.300Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229405",
+    "title": "Casablanca Pool Slider 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:53.527Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229406",
+    "title": "Casablanca Pool Slider 'Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:54.436Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229442",
+    "title": "Dries Van Noten Wmns Lace Up Heel 'Dark Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:55.309Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229443",
+    "title": "Dries Van Noten Wmns Leather Buckle Boot 'Dark Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:55.666Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229445",
+    "title": "Dries Van Noten Wmns Capsule Shoe 'Dark Brown Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:56.124Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229451",
+    "title": "Dries Van Noten Wmns Capsule 'Dark Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:56.958Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229452",
+    "title": "Dries Van Noten Wmns Capsule 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:57.476Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229458",
+    "title": "Dries Van Noten Wmns Penny Loafer 'Emerald'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:57.674Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229459",
+    "title": "Dries Van Noten Wmns Satin Sneaker 'Fuschia'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:58.922Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229460",
+    "title": "Dries Van Noten Wmns Satin Sneaker 'Blush'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:58.936Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229461",
+    "title": "Dries Van Noten Wmns Capsule Shoe 'Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:59.862Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229462",
+    "title": "Dries Van Noten Wmns Leather Trimmed Sneaker 'Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:50:59.976Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229463",
+    "title": "Dries Van Noten Leather Snesker 'Steel'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:03.638Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229464",
+    "title": "Dries Van Noten Wmns Capsule Sneaker 'Beige'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:03.649Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229465",
+    "title": "Dries Van Noten Calf Leather Sneaker 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:03.660Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229466",
+    "title": "Dries Van Noten Wmns Leather Mule 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:03.640Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229467",
+    "title": "Dries Van Noten Wmns Leather Mule 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:05.907Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229468",
+    "title": "Dries Van Noten Wmns Capsule Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:05.918Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229469",
+    "title": "Dries Van Noten Wmns Leather Sandal 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:02.107Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229470",
+    "title": "Dries Van Noten Leather Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:05.681Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229471",
+    "title": "Dries Van Noten Wmns Suede Capsule Sneaker 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:05.769Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229472",
+    "title": "Dries Van Noten Leather Sneaker 'Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:07.560Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229473",
+    "title": "Dries Van Noten Leather Sneaker 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:08.357Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229474",
+    "title": "Dries Van Noten Leather Mule 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:08.360Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229475",
+    "title": "Dries Van Noten Wmns Leather Sneaker 'Brown Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:08.362Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229476",
+    "title": "Dries Van Noten Wmns Capsule Sneaker 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:09.749Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229477",
+    "title": "Dries Van Noten Leather Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:10.483Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229478",
+    "title": "Dries Van Noten Leather Sneaker 'Olive'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:10.540Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229479",
+    "title": "Dries Van Noten Leather Sneaker 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:10.585Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229480",
+    "title": "Dries Van Noten Lemaire Wmns Soft Runner Sneaker 'White'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "required_reference_missing",
+        "message": "Не заполнено обязательное поле WordPress «Модель».",
+        "referenceType": "model"
+      }
+    ],
+    "checked_at": "2026-09-16T21:43:05.169Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229481",
+    "title": "Dries Van Noten Leather Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:11.820Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229482",
+    "title": "Dries Van Noten Leather Boot 'Tan'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:13.079Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229483",
+    "title": "Dries Van Noten Wmns Calf Leather Sandal 'Burgundy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:06.310Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229485",
+    "title": "Dries Van Noten Wmns Lamb Leather Shoe 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:13.093Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229486",
+    "title": "Dries Van Noten Wmns Leather Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:13.098Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229487",
+    "title": "Dries Van Noten Wmns Leather Shoe 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:14.251Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229489",
+    "title": "Dries Van Noten Wmns Twill Microsand Cotton Shoe 'Bottle'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:15.690Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "229562",
+    "title": "Studio Nicholson Wmns Car Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:15.824Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "231532",
+    "title": "Puma Roma Basic Glitter Jr 'Rose Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:09.233Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "231626",
+    "title": "Sesame Street x Puma Basket CM Little Kids 'Cookie Monster'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:09.235Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "237363",
+    "title": "Rugrats x Puma Suede Little Kid 'Black Caribbean Sea'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:10.650Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "239653",
+    "title": "Scuderia Ferrari x Puma Roma Via Little Kid 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:10.680Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "241670",
+    "title": "Puma Soft Enzo NXT Little Kid 'Aubergine Team Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:12.437Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "242836",
+    "title": "Puma Caven Little Kid 'White Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:12.439Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "243042",
+    "title": "Paw Patrol x Puma Suede Little Kid 'Chase'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:13.594Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "245649",
+    "title": "Puma Rebound V6 Low Little Kid 'Black Dark Myrtle'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:14.604Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "246332",
+    "title": "Puma Cali Star Little Kid 'Metallic - Black Gold'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:14.619Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "250232",
+    "title": "Puma Carina Jr 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:14.601Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "251691",
+    "title": "Lanvin Wmns Curb Sneakers 'Ink Blue'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:43:16.168Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "251756",
+    "title": "Lanvin Arpège Embroidered Slides 'Sky Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:40.429Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "251929",
+    "title": "Lanvin Curb Sneakers 'Black Denim'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:16.776Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "252169",
+    "title": "MM6 Maison Margiela Padded Ankle Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:17.815Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "252202",
+    "title": "MM6 Maison Margiela Gambetta 'Tarmac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:15.672Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "252951",
+    "title": "Givenchy Logo Slide 'Black Iridescent'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:43:18.994Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "253621",
+    "title": "Off-White HG Runner Low 'Purple White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:19.851Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "253656",
+    "title": "Off-White ODSY-1000 'White Orange'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:19.770Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "253701",
+    "title": "Off-White Vulc Low 'Black Purple'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:20.121Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "253789",
+    "title": "Off-White Wmns Vulc Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:21.296Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "253915",
+    "title": "Off-White Industrial Flip Flops 'Logo Tape - Yellow' 2021",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:22.593Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254019",
+    "title": "Off-White Wmns Off-Court 3.0 High 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:21.880Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254116",
+    "title": "Off-White Vulc Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:22.232Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254240",
+    "title": "Off-White Out of Office Low 'Dark Blue White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:23.504Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254342",
+    "title": "Off-White Off-Court 3.0 High 'Aqua Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:24.052Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254366",
+    "title": "Off-White Wmns Off-Court 3.0 High 'White Silver Glitter'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:24.275Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254421",
+    "title": "Off-White Out of Office 'White Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:25.170Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254442",
+    "title": "Off-White Out of Office 'For Walking - Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:25.335Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254537",
+    "title": "Off-White Wmns Sponge Rubber Rain Boot 'For Rainy Days - Matte Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:26.597Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254644",
+    "title": "Off-White Out of Office 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:26.551Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254701",
+    "title": "Off-White Out of Office 'Black White' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:27.331Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254704",
+    "title": "Off-White Wmns Out of Office 'Beige'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:27.651Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254710",
+    "title": "Off-White Out of Office 'Grey White' 2022",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:28.609Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254711",
+    "title": "Off-White Out of Office 'Royal Blue White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:28.755Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254713",
+    "title": "Off-White Out of Office 'For Walking - White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:29.608Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254714",
+    "title": "Off-White Out of Office 'Triple White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:30.045Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254731",
+    "title": "Off-White Wmns Out of Office 'Black White' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:30.653Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254742",
+    "title": "Off-White Wmns Out of Office 'Pink White' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:30.791Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254747",
+    "title": "Off-White Out of Office 'Light Blue' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:31.609Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254751",
+    "title": "Off-White Out of Office Mid 'Blue White Clear Sole'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:32.418Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254753",
+    "title": "Off-White Off Flat Pool Sliders Kids 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:32.693Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "254763",
+    "title": "Off-White Out Of Office Mid 'Green Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:32.887Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254824",
+    "title": "Off-White Wmns Out of Office 'White Pink' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:33.946Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254841",
+    "title": "Off-White Out of Office Low 'Dark Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:34.646Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254849",
+    "title": "Off-White Out of Office 'White Black Gum'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:34.917Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254853",
+    "title": "Off-White Wmns Out of Office 'Light Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:34.954Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254865",
+    "title": "Off-White Out of Office Low 'Navy Blue Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:36.381Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254872",
+    "title": "Off-White Floating Arrow High 'White Gum'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:37.161Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254899",
+    "title": "Off-White Out of Office Mid 'White Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:37.187Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254901",
+    "title": "Off-White Off-Court 3.0 High 'Brown Angora'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:37.156Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254903",
+    "title": "Off-White Out of Office Low 'Green Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:38.691Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254910",
+    "title": "Off-White Off-Court 3.0 High 'White Red Gum'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:39.611Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254915",
+    "title": "Off-White New Low Vulcanized 'Black White' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:39.650Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254944",
+    "title": "Off-White Out Of Office 'White Navy Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:39.599Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254953",
+    "title": "Off-White Be Right Back 'Light Grey Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:41.669Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "254954",
+    "title": "Off-White Out of Office 'Dark Grey Black' 2024",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:42.119Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255010",
+    "title": "Off-White Vulc Sneaker Kids 'Black White' 2023",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:42.171Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255042",
+    "title": "Off-White Reboot 'For Rainy Days - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:42.728Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255043",
+    "title": "Off-White Logo Pool Sliders Kids 'Bright Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:43.908Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255048",
+    "title": "Off-White Off-Court 3.0 High 'White Orange' 2024",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:44.357Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255063",
+    "title": "Off-White Out of Office Slim 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:44.569Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255079",
+    "title": "Off-White Vulc Sneaker Kids 'Black Light Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:44.993Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255082",
+    "title": "Off-White Out of Office 'Cream White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:47.418Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255100",
+    "title": "Off-White Vulc Sneaker Kids 'White Red' 2022",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:47.379Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255126",
+    "title": "Off-White Wmns New Low Vulcanized 'Greyish Mint Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:47.390Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255134",
+    "title": "Off-White Out of Office Low 'Triple Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:47.747Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255153",
+    "title": "Off-White Out of Office 'White Beige'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:50.537Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255170",
+    "title": "Off-White Out Of Office 'For Walking - White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:50.673Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255172",
+    "title": "Off-White New Low Vulcanized 'White Black' 2024",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:50.798Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255176",
+    "title": "Off-White Out of Office 'Black White' 2025",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:50.820Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255178",
+    "title": "Off-White Out of Office Straps Kids 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:52.791Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255187",
+    "title": "Off-White Out of Office 'Chocolate Cream'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:53.311Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255198",
+    "title": "Off-White Be Right Back 'White Light Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:53.956Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255203",
+    "title": "Off-White Bookish Slider 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:53.368Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255208",
+    "title": "Off-White 3.0 Off Court Low 'White' 2025",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:55.940Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255220",
+    "title": "Off-White 3.0 Off Court Low 'White' 2024",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:55.931Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255222",
+    "title": "Off-White Out Of Office 'For Walking - Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:55.966Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255229",
+    "title": "Off-White Out of Office 'White Light Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:56.719Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255251",
+    "title": "Off-White Vulc Sneaker Kids 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:58.727Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255256",
+    "title": "Off-White Wmns Out of Office 'White Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:59.280Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "255289",
+    "title": "Off-White Out of Office 'White Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:58.855Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255294",
+    "title": "Off-White Vulc Undercut Sneaker 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:43:59.217Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255295",
+    "title": "Off-White Out of Office 'Blue Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:01.329Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255302",
+    "title": "Off-White New Slim Sneaker 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:40.935Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255304",
+    "title": "Off-White New Slim Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:42.100Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255306",
+    "title": "Off-White Be Right Back Arrow Slider 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:01.607Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255310",
+    "title": "Off-White Out Of Office 'Green Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:03.844Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255312",
+    "title": "Off-White Wmns Be Right Back 'White Soft Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:03.886Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255314",
+    "title": "Off-White Be Right Back 'Powder Blue Coral Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:03.961Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255322",
+    "title": "Off-White Out Of Office 'Blue Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:03.895Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255325",
+    "title": "Off-White Out Of Office 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:05.945Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255326",
+    "title": "Off-White Out Of Office Bubble Arrow 'White Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:06.376Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255327",
+    "title": "Off-White Out Of Office 'Black Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:06.514Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255328",
+    "title": "Off-White End Of Play Sneaker 'White Sand Beige'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:42.236Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255329",
+    "title": "Off-White Out Of Office Sneaker 'White Multi-Color'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:08.432Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255331",
+    "title": "Off-White Out Of Office 'White Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:09.206Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255332",
+    "title": "Off-White Be Right Back Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:09.410Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255333",
+    "title": "Off-White Vulcanized Low Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:09.233Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255334",
+    "title": "Off-White Vulcanized Low Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:10.730Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255335",
+    "title": "Off-White Vulcanized Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:11.453Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255336",
+    "title": "Off-White Out Of Office 'Khaki Dark Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:11.533Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255338",
+    "title": "Off-White Be Right Back 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:11.681Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255353",
+    "title": "Off-White Be Right Back 'Light Grey Caramel'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:12.961Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "255357",
+    "title": "Off-White Out Of Office 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:13.447Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "257904",
+    "title": "Concepts x Birkenstock Arizona Sandal 'Lime Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:13.747Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "257905",
+    "title": "Ader Error x Birkenstock Arizona Tech 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:13.720Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "257971",
+    "title": "Birkenstock Arizona Shearling Suede Leather Narrow 'Mink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:15.007Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "257999",
+    "title": "Birkenstock Boston Soft Footbed Narow 'Faded Purple'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:15.652Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "258137",
+    "title": "Birkenstock Boston Suede Kids 'Taupe'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:15.795Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258251",
+    "title": "Paloma Wool Wmns Roberta Shoe 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:17.007Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258252",
+    "title": "Paloma Wool Wmns Manuela Heel 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:17.639Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258253",
+    "title": "Paloma Wool Wmns Fernanda Loafer Shoes 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:17.694Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258255",
+    "title": "PDF Strada G Brushed Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:18.221Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258256",
+    "title": "PDF Strada Low Bandana Boot 'Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:19.171Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258257",
+    "title": "PDF Strada Low Bandana Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:19.583Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258258",
+    "title": "PDF Strada G Brushed Boot 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:19.608Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258259",
+    "title": "PDF Neve Nabuk Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:20.181Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258260",
+    "title": "ROA Sella Sneaker 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:21.807Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258261",
+    "title": "ROA Federa Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:21.179Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258262",
+    "title": "ROA Katharina 'Taupe Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:22.713Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258264",
+    "title": "ROA Sella Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:23.613Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258265",
+    "title": "ROA Hida Low Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:24.636Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258266",
+    "title": "ROA Fedaia Clog 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:24.530Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258267",
+    "title": "ROA Fedaia Suede Clog 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:25.473Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258268",
+    "title": "ROA Fedaia Clog 'Olive'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:26.358Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258269",
+    "title": "ROA Hida Low Sneaker 'Taupe'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:27.313Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258318",
+    "title": "Moon Boot Icon Nylon Boot 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:26.577Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258319",
+    "title": "Moon Boot Icon Low Nylon Boot 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:27.407Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258320",
+    "title": "Moon Boot Icon Nylon Boot 'Burgundy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:28.186Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258321",
+    "title": "Moon Boot Icon Low Nylon Boot 'Cream'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:28.267Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258322",
+    "title": "Moon Boot Icon Low Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:29.216Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258323",
+    "title": "Moon Boot Icon Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:29.117Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258326",
+    "title": "Moon Boot Evx Suede Mule 'Cognac Natural'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:29.785Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258327",
+    "title": "Moon Boot Luna Extra Suede Boot 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:30.124Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258328",
+    "title": "Moon Boot Evx Suede Shearling Boot 'Dark Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:30.779Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258329",
+    "title": "Moon Boot Icon Fleece Boot 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:31.036Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258332",
+    "title": "Moon Boot EVX Light Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:31.437Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258333",
+    "title": "Moon Boot EVX Mule Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:31.846Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258335",
+    "title": "Moon Boot Icon Boot 'Dark Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:32.586Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258336",
+    "title": "Moon Boot Icon Boot 'Elephant Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:32.795Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258337",
+    "title": "Moon Boot Moon EVX Pumps Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:33.382Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258347",
+    "title": "Moon Boot Icon Faux-Fur Low Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:33.620Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258351",
+    "title": "Moon Boot Icon Faux-Fur Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:34.310Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258355",
+    "title": "Moon Boot Icon Glance Boot 'Silver'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:34.519Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258357",
+    "title": "Moon Boot Icon Low Nylon Boot 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:35.089Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258358",
+    "title": "Moon Boot Icon Nylon Boot 'Rose'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:35.444Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258362",
+    "title": "Moon Boot Icon Nylon Boot 'Khaki'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:36.019Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258365",
+    "title": "Moon Boot Icon Nylon Boot 'Electric Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:36.493Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258369",
+    "title": "Moon Boot Icon Nylon Low Boot 'Pink White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:37.052Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258371",
+    "title": "Moon Boot Icon Low Nylon Boot 'Lilac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:37.356Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258373",
+    "title": "Moon Boot Icon Fleece Low Boot 'Camel'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:37.893Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258374",
+    "title": "Moon Boot Icon Low Rubber Boot 'Cream'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:38.286Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258375",
+    "title": "Moon Boot Icon Nylon Boot 'Glacier Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:38.774Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258378",
+    "title": "Moon Boot Icon Nylon Low Boot 'White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:39.230Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258380",
+    "title": "Moon Boot Icon Nylon Low Boot 'Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:39.627Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258382",
+    "title": "Moon Boot Icon Nylon Boot 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:40.219Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258383",
+    "title": "Moon Boot Icon Nylon Boot 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:40.556Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258394",
+    "title": "Moon Boot Icon Quilt Low Boot 'Sigma Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:40.904Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258398",
+    "title": "Moon Boot Icon Rubber Low Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:41.198Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258400",
+    "title": "Moon Boot Ltrack Low Nylon Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:41.959Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258404",
+    "title": "Moon Boot Luna Low Boot 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:42.227Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258405",
+    "title": "Moon Boot Luna Low Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:42.597Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258407",
+    "title": "Moon Boot Park Icon Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:43.012Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258408",
+    "title": "Moon Boot Park Icon Sneaker 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:43.677Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258413",
+    "title": "Moon Boot Park Slipper 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:44.096Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258414",
+    "title": "Moon Boot Teddy Slipper 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:44.294Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258415",
+    "title": "Moon Boot Ltrack Tina Boot 'Cognac'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:44.754Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258416",
+    "title": "Moon Boot Icon Slipper 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:45.431Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258417",
+    "title": "Moon Boot Teddy Slipper 'Sand'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:45.846Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258499",
+    "title": "Christopher Esber Wmns Jo Flip Flop 'Amber Clear'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:21.549Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258501",
+    "title": "Christopher Esber Wmns Mesh Water Flat 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:21.458Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258505",
+    "title": "Christopher Esber Wmns Doma Stoned Flat 'Natural'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:22.079Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258507",
+    "title": "Christopher Esber Wmns Minette Bezeled Flat 'Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:23.360Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "258607",
+    "title": "Protocol Index Distressed Shaft Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:23.571Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "261263",
+    "title": "Vans Authentic Kids '2-Tone Denim'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:48.395Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "263005",
+    "title": "Vans Sk8-Hi 'Primary Block'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:41.259Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "263146",
+    "title": "Vans Sk8-Hi Little Kids 'Garden Floral Print'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:49.494Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "263297",
+    "title": "Vans Chapman Lite Kids 'Black White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:50.026Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "264684",
+    "title": "Vans Atwood Distress Kids 'Dress Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:50.366Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "270320",
+    "title": "Kith x Vans OG Classic Slip-On LX Kids 'Vintage Roses'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:51.659Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "272692",
+    "title": "Vans Classic Slip-On Kids 'Mermaid'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:51.660Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "285047",
+    "title": "Asics Lazerbeam KC-MG PS 'Light Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:52.806Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "292530",
+    "title": "Saucony Wind 2.0 A/C Big Kid 'Navy Berry'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:52.833Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "292703",
+    "title": "Saucony Kinvara 14 Big Kid 'Grey Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:54.225Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "295859",
+    "title": "Fila Oakmont TR Kids 'Grey Black Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:54.015Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "310334",
+    "title": "Timberland Wmns Roll Top 'Wheat'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:44:54.060Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "311348",
+    "title": "Timberland Field Boot Mid Boot Youth 'Grey Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:55.103Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "314417",
+    "title": "Under Armour Micro G Fuel RN PS 'Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:56.836Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "319746",
+    "title": "Under Armour Rogue 3 AL PS 'Mod Grey Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:56.768Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "325337",
+    "title": "Common Projects Achilles Low 'Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:44:55.996Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "327082",
+    "title": "Christian Louboutin Yang Louis Calf Laminato Dino Spikes 'Latte Silver'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:44:57.607Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333230",
+    "title": "Moschino Wmns Pool Slides 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:23.368Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333267",
+    "title": "Moschino Wmns Logo Jacquard Mary Jane Pump 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:23.930Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333294",
+    "title": "Ferragamo Cosma High Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:25.897Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333309",
+    "title": "Ferragamo Wmns Groovy Dual Gancini Slide 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:25.919Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333314",
+    "title": "Ferragamo Wmns Groovy Dual Gancini Slide 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:25.768Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333365",
+    "title": "Ferragamo Wmns Gancini Logo Rain Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:25.854Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333384",
+    "title": "Ferragamo Giuone Slide Sandal 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:27.607Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "333390",
+    "title": "Ferragamo Wmns Ninette High Sock Sneaker 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:27.832Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335014",
+    "title": "Chanel Velvet Low Sneaker",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:01.867Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335114",
+    "title": "Chanel Sneaker 'White Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:02.770Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335121",
+    "title": "Chanel Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:02.984Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335144",
+    "title": "Chanel Lace Up Tie Flat Runner Trainers 'CC Logo - Blue Suede'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:27.894Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335145",
+    "title": "Chanel Nylon 'Grey Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:28.134Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335157",
+    "title": "Chanel Combat Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:29.428Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335167",
+    "title": "Chanel Sneaker 'Ivory'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:04.796Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335196",
+    "title": "Chanel Sneaker 'Brown White Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:05.612Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335200",
+    "title": "Chanel Sneaker 'Pink Cashmere'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:06.734Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335208",
+    "title": "Chanel Sneaker 'Allover CC - Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:06.732Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335284",
+    "title": "Golden Goose Superstar 'White Sea Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:08.687Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "335462",
+    "title": "Golden Goose Running Sole 'Navy'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:07.847Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "335508",
+    "title": "Golden Goose Purestar 'White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:11.771Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "335561",
+    "title": "Golden Goose Superstar 'White Grey'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:11.269Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "335597",
+    "title": "Golden Goose Superstar Kids 'Cherry Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:12.340Z",
+    "will_create": false
+  },
+  {
+    "source_product_id": "337641",
+    "title": "Veja V-10 'Extra White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:45:11.189Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "337653",
+    "title": "Rick Owens x Veja Performance Runner 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:29.541Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339024",
+    "title": "FiveFingers x Suicoke Nin-LO-Man 'Black'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:45:12.377Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339532",
+    "title": "Isabel Marant Wmns Duerto Boot 'Desert'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:29.700Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339533",
+    "title": "Isabel Marant Wmns Balskee Suede Sneaker 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:29.894Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339534",
+    "title": "Isabel Marant Wmns IM3 Sneaker 'Black Midnight'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:31.146Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339535",
+    "title": "Isabel Marant Wmns Edrik Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:31.299Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "339536",
+    "title": "Isabel Marant Wmns Duerto Boot 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:31.519Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "342196",
+    "title": "Fear of God Essentials Slide 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:31.675Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "342200",
+    "title": "Simone Rocha Wmns Platform Ghillie Brogue Sandal 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T21:51:32.913Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "364557",
+    "title": "Stussy Surplus Cargo Pant 'Olive'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:30.750Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "404600",
+    "title": "BAPE Online Exclusive Color Camo College Pullover Hoodie 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:30.654Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "406491",
+    "title": "BAPE Kids Colors College Long-Sleeve Tee 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:30.766Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "440472",
+    "title": "Ksubi Chitch Ether Trashed Jeans 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:33.178Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "448139",
+    "title": "Supreme x New Era Reverse Box Logo Hat 'Bright Yellow'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:33.039Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "452749",
+    "title": "Supreme Cargo Pant 'Brown'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:32.955Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "455126",
+    "title": "Supreme Frayed Patchwork Baggy Denim Short 'Washed Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:32.918Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "461436",
+    "title": "Supreme x Y’s Denim Utility Pant 'Washed Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:35.034Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "470601",
+    "title": "Aries No Problemo Socks 'Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:35.932Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "475644",
+    "title": "Versace Fleece Hoodie 'Cobalt'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:36.615Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "492912",
+    "title": "Gucci Jacquard Stripe Bermuda Shorts 'Red'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:36.633Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "503118",
+    "title": "PURPLE BRAND Carpenter Jeans 'Optic White'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:37.609Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "503243",
+    "title": "PURPLE BRAND Stained Cobalt Low Rise Slim Jeans 'Light Indigo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:37.760Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "503586",
+    "title": "PURPLE BRAND Full Side Zip Skinny Jeans 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:38.968Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "504011",
+    "title": "PURPLE BRAND Wash Blowout 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:38.950Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "504072",
+    "title": "PURPLE BRAND Beaded Monogram Shorts 'Black'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:40.424Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "504159",
+    "title": "PURPLE BRAND Lucca Destroyed 'Light Indigo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:40.424Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "510102",
+    "title": "Pleasures x Sonic Youth Washing Machine Denim Pants 'Pink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:41.470Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "515044",
+    "title": "Who Decides War Multi Pocket Skirt 'Green'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:41.393Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "522792",
+    "title": "Marni Pant 'Blue/Black'",
+    "status": "blocked",
+    "blockers": [
+      {
+        "code": "payload_contract",
+        "message": "WordPress export has no variants with mapped sizes"
+      }
+    ],
+    "checked_at": "2026-09-16T21:45:22.965Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "522824",
+    "title": "Marni Long-Sleeve Shirt 'Ink'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:42.817Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "528821",
+    "title": "Sp5der 5Star Vintage Jean 'Indigo'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:42.824Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "540712",
+    "title": "Vintage Levi's 501 Denim 'Blue'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:43.832Z",
+    "will_create": true
+  },
+  {
+    "source_product_id": "541904",
+    "title": "Denim Tears C.R.E.A.M. Pant 'Multicolor'",
+    "status": "ready",
+    "blockers": [],
+    "checked_at": "2026-09-16T22:02:43.741Z",
+    "will_create": true
+  }
+]

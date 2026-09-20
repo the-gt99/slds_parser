@@ -433,6 +433,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .queue-item:hover { background: var(--surface-soft); }
 .queue-item.active { border-color: #cfe5dc; background: var(--accent-soft); }
 .queue-item-title { overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.queue-item-context { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .queue-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 .queue-item-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

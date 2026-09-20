@@ -5,3 +5,7 @@ coverage/
 .runtime/
 *.log
 .DS_Store
+.playwright-mcp/
+tmp_context.txt
+__pycache__/
+*.pyc

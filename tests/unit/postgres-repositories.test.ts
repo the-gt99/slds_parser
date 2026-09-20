@@ -351,7 +351,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("types a numeric export-control search once as bigint", async () => {
-    const executor = new FakeExecutor([[], [{
+    const executor = new FakeExecutor([[], [{ candidate_count: "120" }], [{
       candidate_count: "120", reviewed_count: "100", unreviewed_count: "20",
       checking_count: "2", ready_count: "52", exportable_count: "51",
       blocked_count: "40", stale_count: "5", error_count: "1",
@@ -367,7 +367,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("returns exact export readiness counters independently of the current page filter", async () => {
-    const executor = new FakeExecutor([[], [{
+    const executor = new FakeExecutor([[], [{ candidate_count: "12917" }], [{
       candidate_count: "12917", reviewed_count: "296", unreviewed_count: "12621",
       checking_count: "0", ready_count: "52", exportable_count: "51",
       blocked_count: "46", stale_count: "198", error_count: "0",
@@ -379,9 +379,12 @@ describe("PostgreSQL repository mapping and SQL", () => {
       checkingCount: 0, readyCount: 52, exportableCount: 51,
       blockedCount: 46, staleCount: 198, errorCount: 0,
     });
-    expect(executor.calls[1]?.values).toEqual(["10"]);
+    expect(executor.calls[1]?.values).toEqual([]);
     expect(executor.calls[1]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
     expect(executor.calls[1]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
+    expect(executor.calls[2]?.values).toEqual(["10", 12917]);
+    expect(executor.calls[2]?.text).toContain("review_counts AS MATERIALIZED");
+    expect(executor.calls[2]?.text).toContain("GROUP BY effective_status");
   });
 
   it("selects only existing stale reviews for automatic preflight maintenance", async () => {
@@ -1265,10 +1268,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const executor = new FakeExecutor([
       [{ total: "1" }],
       [{ ...jobRow, source_product_id: "87549", duration_ms: 1000 }],
+      [{ job_type: "process_product", status: "pending", count: 2, last15m: 0, last1h: 0, last24h: 0, estimated_duration_ms: null },
+       { job_type: "process_product", status: "completed", count: 30 }],
+      [{ job_type: "process_product", last15m: 10, last1h: 20, last24h: 30, estimated_duration_ms: 12_500 }],
       [],
-      [],
-      [],
-      [{ job_type: "process_product", remaining: 2, last15m: 10, last1h: 20, last24h: 30, concurrency: 3, estimated_duration_ms: 12_500, eta_basis: "duration", eta_minutes: 1 }],
+      [{ process_concurrency: 3 }],
     ]);
 
     const result = await new PostgresProductAdminRepository(pool(executor)).listJobs({ search: "87549", limit: 50, offset: 0 });
@@ -1279,13 +1283,13 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("job.payload->>'sourceProductId' = $1::TEXT");
     expect(executor.calls[0]?.text).toContain("searched_internal.source_product_id = $1::BIGINT");
     expect(executor.calls[0]?.text).not.toContain("internal.source_product_id::TEXT = $1");
-    expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(job.payload->>'internalProductId', '')::BIGINT");
-    expect(executor.calls[5]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
-    expect(executor.calls[5]?.text).toContain("GROUP BY job_type");
-    expect(executor.calls[5]?.text).toContain("PERCENTILE_CONT(0.75)");
+    expect(executor.calls[1]?.text).toContain("internal.id = NULLIF(selected.payload->>'internalProductId', '')::BIGINT");
+    expect(executor.calls[2]?.text).toContain("GROUP BY job_type, status");
+    expect(executor.calls[3]?.text).toContain("finished_at >= NOW() - INTERVAL '24 hours'");
+    expect(executor.calls[3]?.text).toContain("PERCENTILE_CONT(0.75)");
+    expect(executor.calls[4]?.text).toContain("created_at >= NOW() - INTERVAL '7 days'");
     expect(executor.calls[5]?.text).toContain("applied_process_concurrency");
-    expect(executor.calls[5]?.text).toContain("remaining * estimated_duration_ms / (concurrency * 60000)");
-    expect(executor.calls[1]?.text).toContain("job.finished_at - job.started_at");
+    expect(executor.calls[1]?.text).toContain("selected.finished_at - selected.started_at");
     expect(result.summary.byJobType[0]).toEqual({
       jobType: "process_product",
       remaining: 2,

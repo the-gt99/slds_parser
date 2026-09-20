@@ -20,7 +20,7 @@ def arguments():
     parser = argparse.ArgumentParser(description="Upload a file list to content-addressed S3 keys with a resumable manifest.")
     parser.add_argument("--source-list", required=True)
     parser.add_argument("--manifest", required=True)
-    parser.add_argument("--category", required=True, choices=("products", "catalog", "banners", "content", "ui", "public"))
+    parser.add_argument("--category", required=True, choices=("products", "categories", "brands", "catalog", "banners", "content", "ui", "public"))
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--chunk-size", type=int, default=500)
     return parser.parse_args()
@@ -63,6 +63,9 @@ def digest_file(path):
 def prepare(path, category):
     stat = os.stat(path)
     digest = digest_file(path)
+    after = os.stat(path)
+    if (stat.st_size, stat.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise RuntimeError("source changed while hashing")
     extension = os.path.splitext(path)[1].lower()
     return {
         "path": path, "hash": digest, "key": f"{category}/{digest[:2]}/{digest[2:4]}/{digest}{extension}",
@@ -83,10 +86,13 @@ def upload(client, bucket, item):
         if str(error.response.get("Error", {}).get("Code", "")) not in ("404", "NoSuchKey", "NotFound"):
             raise
         with open(item["path"], "rb") as body:
-            client.put_object(Bucket=bucket, Key=item["key"], Body=body, ContentLength=item["size"], ContentType=item["mime"], Metadata={"sha256": item["hash"]})
+            client.put_object(Bucket=bucket, Key=item["key"], Body=body, ContentLength=item["size"], ContentType=item["mime"], CacheControl="public, max-age=31536000, immutable", Metadata={"sha256": item["hash"]})
     head = client.head_object(Bucket=bucket, Key=item["key"])
     if head.get("ContentLength") != item["size"]:
         raise RuntimeError("uploaded object size verification failed")
+    current = os.stat(item["path"])
+    if (current.st_size, current.st_mtime_ns) != (item["size"], item["mtime_ns"]):
+        raise RuntimeError("source changed while uploading")
     return item, action, str(head.get("ETag", "")).strip('"')
 
 
@@ -139,6 +145,13 @@ def main():
                 except Exception as error:
                     totals["errors"] += 1
                     print(f"prepare_error path={prepared[future]!r} error={type(error).__name__}:{error}", file=sys.stderr, flush=True)
+            for item in items:
+                existing = database.execute(
+                    "SELECT object_key FROM media_map INDEXED BY media_map_hash_idx WHERE content_hash=? AND size_bytes=? AND status='uploaded_verified' LIMIT 1",
+                    (item["hash"], item["size"]),
+                ).fetchone()
+                if existing:
+                    item["key"] = existing[0]
             uploaded = {pool.submit(upload, client, bucket, item): item for item in items}
             for future in as_completed(uploaded):
                 try:
