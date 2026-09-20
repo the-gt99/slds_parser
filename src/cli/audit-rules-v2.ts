@@ -17,8 +17,9 @@ try {
   const { classifications: legacy, targets: references } = await loadRulesV2AuditBaseline(client);
   const runtime = new RulesV2Runtime(client, () => 0);
   const snapshot = await runtime.snapshot();
-  const control = (await client.query<{ legacy_revision: string }>(
-    "SELECT legacy_revision::TEXT FROM rules_execution_control WHERE singleton")).rows[0];
+  const control = (await client.query<{ legacy_revision: string; data_revision: string }>(
+    `SELECT legacy_revision::TEXT, (revision - (SELECT COUNT(*) FROM rules_execution_history))::TEXT AS data_revision
+     FROM rules_execution_control WHERE singleton`)).rows[0];
   if (control === undefined) throw new Error("Rules execution control is missing");
   const total = Number((await client.query<{ count: string }>(`SELECT COUNT(*)::TEXT AS count
     FROM source_products product JOIN internal_products internal ON internal.source_product_id = product.id
@@ -70,7 +71,7 @@ try {
     console.info(JSON.stringify({ progress: checked, mismatches, lastId, queryMs: Math.round(queried - started), evaluateMs: Math.round(performance.now() - queried) }));
   }
   await client.query("COMMIT");
-  const report = { revision: snapshot.revision, legacyRevision: control.legacy_revision,
+  const report = { revision: snapshot.revision, legacyRevision: control.legacy_revision, dataRevision: control.data_revision,
     checked, total, complete: after === "0" && checked === total, mismatches, lastId, writes: false, examples };
   if (process.env.RULES_V2_AUDIT_REPORT) await writeFile(process.env.RULES_V2_AUDIT_REPORT, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
   console.info(JSON.stringify(report, null, 2));

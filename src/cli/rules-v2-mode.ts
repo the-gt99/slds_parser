@@ -10,8 +10,10 @@ const pool = createPostgresPool();
 const client = await pool.connect();
 try {
   await client.query("BEGIN");
-  const control = (await client.query<{ mode: "v1" | "v2"; revision: string; legacy_revision: string; freeze_legacy: boolean }>(
-    "SELECT mode, revision::TEXT, legacy_revision::TEXT, freeze_legacy FROM rules_execution_control WHERE singleton FOR UPDATE")).rows[0];
+  const control = (await client.query<{ mode: "v1" | "v2"; revision: string; legacy_revision: string; data_revision: string; freeze_legacy: boolean }>(
+    `SELECT mode, revision::TEXT, legacy_revision::TEXT,
+      (revision - (SELECT COUNT(*) FROM rules_execution_history))::TEXT AS data_revision, freeze_legacy
+     FROM rules_execution_control WHERE singleton FOR UPDATE`)).rows[0];
   if (control === undefined) throw new Error("Rules execution control is missing");
   if (action === "status") {
     await client.query("COMMIT");
@@ -35,14 +37,14 @@ try {
         const path = process.env.RULES_V2_AUDIT_REPORT;
         if (!path) throw new Error("RULES_V2_AUDIT_REPORT is required");
         const report = JSON.parse(await readFile(path, "utf8")) as {
-          revision?: string; legacyRevision?: string; checked?: number; total?: number;
+          revision?: string; legacyRevision?: string; dataRevision?: string; checked?: number; total?: number;
           complete?: boolean; mismatches?: number; writes?: boolean;
         };
         if (!report.complete || report.checked !== report.total || !report.total || report.mismatches !== 0 || report.writes !== false) {
           throw new Error("A complete zero-difference read-only catalogue audit is required");
         }
         const snapshot = await new RulesV2Runtime(client, () => 0).snapshot();
-        if (report.revision !== snapshot.revision || report.legacyRevision !== control.legacy_revision) {
+        if (!snapshot.revision || report.dataRevision !== control.data_revision || report.legacyRevision !== control.legacy_revision) {
           throw new Error("Rules changed since the catalogue audit; rerun it");
         }
       } else if (control.mode !== "v2") throw new Error("v1 is already active");

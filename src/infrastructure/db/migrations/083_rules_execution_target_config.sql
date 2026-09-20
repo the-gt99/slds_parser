@@ -1,0 +1,3 @@
+CREATE TRIGGER invalidate_rules_execution
+AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON targets
+FOR EACH STATEMENT EXECUTE FUNCTION invalidate_rules_execution();
