@@ -1,4 +1,6 @@
+import type { UniversalProductDTO } from "../contracts/index.js";
 import type { RuleV2Record } from "../repositories/index.js";
+import { matchesTargetAssignmentCondition } from "./target-assignment-rule-matcher.js";
 
 type RuleV2ConditionGroup = RuleV2Record["conditionGroups"][number];
 
@@ -52,4 +54,28 @@ export function directRulesV2Conditions(rule: Pick<RuleV2Record, "conditionGroup
     translated.push({ conditions: [{ field: direct, operator: "regex", values: [".+"] }] });
   }
   return translated;
+}
+
+/** Imported classifier operators are broader than the native assignment editor's operators. */
+export function matchesDirectRulesV2Conditions(product: UniversalProductDTO, groups: readonly RuleV2ConditionGroup[],
+  fieldValues: (field: string) => readonly string[]): boolean {
+  const normalized = (value: string) => value.trim().normalize("NFKC").toLowerCase();
+  return groups.every((group) => group.conditions.some((condition) => {
+    const operator = String(condition.operator);
+    if (operator === "contains" || operator === "all_words" || operator === "regex") {
+      const actual = fieldValues(condition.field);
+      if (condition.values.length === 0) return false;
+      if (operator === "contains") return actual.some((value) => condition.values.some((expected) =>
+        normalized(value).includes(normalized(expected))));
+      if (operator === "all_words") return actual.some((value) => condition.values.some((expected) => {
+        const words = normalized(expected).split(/\s+/u).filter(Boolean);
+        return words.length > 0 && words.every((word) => normalized(value).includes(word));
+      }));
+      return actual.some((value) => condition.values.some((expected) => {
+        if (expected.length > 256) throw new Error("Classification regex must contain no more than 256 characters");
+        return new RegExp(expected, "iu").test(value);
+      }));
+    }
+    return matchesTargetAssignmentCondition(product, condition, fieldValues);
+  }));
 }

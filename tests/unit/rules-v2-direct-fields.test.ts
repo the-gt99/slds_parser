@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { directRulesV2Conditions, directRulesV2Field } from "../../src/services/rules-v2-direct-fields.js";
+import type { UniversalProductDTO } from "../../src/contracts/index.js";
+import { directRulesV2Conditions, directRulesV2Field, matchesDirectRulesV2Conditions } from "../../src/services/rules-v2-direct-fields.js";
+
+const product: UniversalProductDTO = { sourceProductId: "1", title: "Air Jordan", description: "", sku: "A",
+  images: [], variants: [], attributes: {}, metadata: {}, referenceCandidates: [] };
 
 describe("Rules v2 direct DTO fields", () => {
   it("maps shared values and GOAT context without adding GOAT fields to the common DTO", () => {
@@ -22,5 +26,17 @@ describe("Rules v2 direct DTO fields", () => {
       { field: "candidate.model.context.brand", operator: "equals", values: ["Nike"] },
     ] }] })).toEqual([{ conditions: [{ field: "common.characteristics.brand", operator: "equals", values: ["Nike"] }] },
       { conditions: [{ field: "common.characteristics.model", operator: "regex", values: [".+"] }] }]);
+  });
+  it("retains imported contains, all_words and regex behavior", () => {
+    const read = (field: string) => field === "common.title" ? [product.title] : [];
+    expect(matchesDirectRulesV2Conditions(product, [{ conditions: [
+      { field: "common.title", operator: "contains" as never, values: ["ir Jor"] },
+    ] }], read)).toBe(true);
+    expect(matchesDirectRulesV2Conditions(product, [{ conditions: [
+      { field: "common.title", operator: "all_words" as never, values: ["Jordan Air"] },
+    ] }], read)).toBe(true);
+    expect(matchesDirectRulesV2Conditions(product, [{ conditions: [
+      { field: "common.title", operator: "regex", values: ["(?<=Air )Jordan"] },
+    ] }], read)).toBe(true);
   });
 });

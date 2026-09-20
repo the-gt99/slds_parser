@@ -3,9 +3,8 @@ import { createPostgresPool } from "../infrastructure/db/index.js";
 import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-baseline.js";
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { ProductClassifier } from "../services/product-classifier.js";
-import { directRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
+import { directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
 import { rulesV2FieldReader } from "../services/rules-v2-snapshot.js";
-import { matchesTargetAssignmentCondition } from "../services/target-assignment-rule-matcher.js";
 
 const limit = Number(process.env.RULES_V2_DIRECT_MATCH_LIMIT ?? "100");
 if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("Invalid direct match audit limit");
@@ -48,10 +47,8 @@ try {
     const read = rulesV2FieldReader(row.data, { id: row.source_id, code: row.code, productId: row.id,
       sourceKey: row.source_key, externalId: row.external_id });
     const matching = new Set<string>();
-    const fieldCache = new Map();
     for (const { rule, groups } of bySource.get(row.source_id) ?? []) {
-      if (groups.every((group) => group.conditions.some((condition) =>
-        matchesTargetAssignmentCondition(row.data, condition, read, fieldCache)))) matching.add(rule.id);
+      if (matchesDirectRulesV2Conditions(row.data, groups, read)) matching.add(rule.id);
     }
     const missed = [...winners].filter((id) => !matching.has(id));
     const extra = [...matching].filter((id) => !winners.has(id));
