@@ -138,6 +138,7 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
       try {
         const previous = (await client.query<DatabaseRow>("SELECT * FROM rules_v2 WHERE id = $1 FOR UPDATE", [id])).rows[0];
         if (previous === undefined) throw new EntityNotFoundError("Rule v2", id);
+        if (previous.origin_kind !== "native") throw new IntegrationContractError("Imported shadow copies are read-only; update the legacy source or create a native v2 rule");
         if (String(previous.revision) !== expectedRevision) throw new IntegrationContractError("Rule v2 was changed by another operator");
         const primary = selector(draft);
         const actions = await enrichedActions(client, draft);
