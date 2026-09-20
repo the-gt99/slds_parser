@@ -63,12 +63,12 @@ export class DirectRulesV2Selector {
       const matches = (this.conditional.get(key(source.id, candidate.typeCode))?.select(candidateRead) ?? [])
         .filter((entry) => matchesDirectRulesV2Conditions(product, entry.groups, candidateRead))
         .sort((left, right) => right.rule.priority - left.rule.priority
-          || right.groups.length - left.groups.length
+          || right.rule.conditionGroups.length - left.rule.conditionGroups.length
           || String(left.rule.originId ?? left.rule.id).localeCompare(String(right.rule.originId ?? right.rule.id)));
       const first = matches[0];
       if (first === undefined) return { candidateKey: candidate.key, status: "unresolved", sourceRuleId: null };
       const best = matches.filter((entry) => entry.rule.priority === first.rule.priority
-        && entry.groups.length === first.groups.length);
+        && entry.rule.conditionGroups.length === first.rule.conditionGroups.length);
       const references = new Set(best.flatMap((entry) => entry.rule.actions.flatMap((item) =>
         item.kind === "resolve_reference" ? [item.referenceValueId] : [])));
       if (references.size > 1) return { candidateKey: candidate.key, status: "ambiguous", sourceRuleId: null };

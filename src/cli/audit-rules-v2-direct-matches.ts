@@ -4,6 +4,7 @@ import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-ba
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { ProductClassifier } from "../services/product-classifier.js";
 import { DirectRulesV2Index, directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
+import { buildDirectTargetRulePlans } from "../services/rules-v2-direct-plan.js";
 import { DirectRulesV2Selector } from "../services/rules-v2-direct-selector.js";
 import { rulesV2FieldReader } from "../services/rules-v2-snapshot.js";
 
@@ -18,6 +19,14 @@ try {
   const snapshot = await runtime.snapshot();
   const classifier = new ProductClassifier(runtime.classificationRepository(baseline.classifications));
   const selector = new DirectRulesV2Selector(snapshot.records);
+  const plans = buildDirectTargetRulePlans(snapshot.records);
+  const plansBySourceRule = new Map<string, typeof plans[number][]>();
+  for (const plan of plans) {
+    const entries = plansBySourceRule.get(plan.sourceRuleId) ?? [];
+    entries.push(plan);
+    plansBySourceRule.set(plan.sourceRuleId, entries);
+  }
+  const targetIds = [...new Set(plans.map((plan) => plan.targetId))];
   const sourceRules = snapshot.records.flatMap((rule) => {
     if (rule.status !== "shadow" || rule.sourceId === null
       || (rule.originKind !== "exact_mapping" && rule.originKind !== "classification_rule")) return [];
@@ -47,6 +56,7 @@ try {
   let extraMatches = 0;
   let productsWithExtras = 0;
   let selectionMismatches = 0;
+  let termMismatches = 0;
   const examples: unknown[] = [];
   for (const row of rows) {
     const classified = await classifier.classify(row.source_id, row.data);
@@ -65,6 +75,38 @@ try {
     const different = selected.filter((item) => JSON.stringify({ status: item.status, sourceRuleId: item.sourceRuleId })
       !== JSON.stringify(expected.get(item.candidateKey)));
     selectionMismatches += different.length;
+    const termDifferences: unknown[] = [];
+    const resolutions = classified.product.classification.resolved.map((item) => ({
+      resolutionKind: item.resolutionKind, resolutionId: item.resolutionId, referenceId: item.referenceValueId,
+    }));
+    for (const targetId of targetIds) {
+      const direct = selected.flatMap((item) => item.status === "resolved" && item.sourceRuleId !== null
+        ? (plansBySourceRule.get(item.sourceRuleId) ?? []).filter((plan) => plan.targetId === targetId).flatMap((plan) => plan.actions)
+        : []);
+      const projectionKey = (kind: string, id: string, scope: string, dictionaryId: string, value: string) =>
+        `${kind}:${id}:${scope}:${dictionaryId}:${value}`;
+      const directProjections = [...new Set(direct.filter((action) => action.originKind !== "target_mapping")
+        .map((action) => projectionKey(action.originKind, action.originId, action.targetScope,
+          action.dictionaryValueId, action.externalValue)))].sort();
+      const currentProjections = [...new Set(snapshot.projections(targetId, resolutions).map((projection) =>
+        projectionKey("referenceValueId" in projection ? "reference_projection" : "classification_projection",
+          projection.id, projection.targetScope, projection.dictionaryValueId, projection.externalValue)))].sort();
+      if (JSON.stringify(directProjections) !== JSON.stringify(currentProjections)) termDifferences.push({ targetId,
+        section: "projections", direct: directProjections.slice(0, 15), current: currentProjections.slice(0, 15) });
+      for (const reference of classified.product.classification.resolved) {
+        const sourceRuleId = byOrigin.get(`${reference.resolutionKind === "mapping" ? "exact_mapping" : "classification_rule"}:${reference.resolutionId}`);
+        for (const plan of sourceRuleId === undefined ? [] : plansBySourceRule.get(sourceRuleId) ?? []) {
+          if (plan.targetId !== targetId) continue;
+          for (const action of plan.actions.filter((item) => item.originKind === "target_mapping")) {
+            const current = snapshot.mapping(targetId, reference.referenceValueId, action.targetScope);
+            if (current?.externalValue !== action.externalValue || current.externalLabel !== action.externalLabel) {
+              termDifferences.push({ targetId, section: "mapping", sourceRuleId, action, current });
+            }
+          }
+        }
+      }
+    }
+    termMismatches += termDifferences.length;
     const winners = new Set(classified.product.classification.resolved.map((item) => byOrigin.get(
       `${item.resolutionKind === "mapping" ? "exact_mapping" : "classification_rule"}:${item.resolutionId}`)).filter(
       (value): value is string => value !== undefined));
@@ -79,14 +121,16 @@ try {
     missedWinners += missed.length;
     extraMatches += extra.length;
     if (extra.length > 0) productsWithExtras++;
-    if ((missed.length > 0 || extra.length > 0 || different.length > 0) && examples.length < 20) examples.push({ productId: row.id,
+    if ((missed.length > 0 || extra.length > 0 || different.length > 0 || termDifferences.length > 0)
+      && examples.length < 20) examples.push({ productId: row.id,
       winnerCount: winners.size, matchedCount: matching.size, missed, extra: extra.slice(0, 20),
-      different: different.slice(0, 10).map((item) => ({ actual: item, expected: expected.get(item.candidateKey) })) });
+      different: different.slice(0, 10).map((item) => ({ actual: item, expected: expected.get(item.candidateKey) })),
+      termDifferences: termDifferences.slice(0, 10) });
   }
   await client.query("COMMIT");
   console.info(JSON.stringify({ writes: false, revision: snapshot.revision, sourceRules: sourceRules.length,
-    products: rows.length, missedWinners, extraMatches, productsWithExtras, selectionMismatches, examples }, null, 2));
-  if (missedWinners > 0 || selectionMismatches > 0) process.exitCode = 1;
+    products: rows.length, missedWinners, extraMatches, productsWithExtras, selectionMismatches, termMismatches, examples }, null, 2));
+  if (missedWinners > 0 || selectionMismatches > 0 || termMismatches > 0) process.exitCode = 1;
 } catch (error) {
   await client.query("ROLLBACK");
   throw error;

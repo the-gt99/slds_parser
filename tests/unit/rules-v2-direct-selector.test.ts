@@ -39,6 +39,15 @@ describe("direct source rule selection", () => {
     expect(new DirectRulesV2Selector([rule({}), conflicting]).select(source, product)[0]?.status).toBe("ambiguous");
   });
 
+  it("does not count the synthetic candidate-presence guard as specificity", () => {
+    const specific = rule({ id: "2", originId: "21", conditionGroups: [{ conditions: [
+      { field: "candidate.model.sourceValue", operator: "equals", values: ["Samba"] },
+    ] }, { conditions: [
+      { field: "candidate.model.context.family", operator: "equals", values: ["Samba"] },
+    ] }] });
+    expect(new DirectRulesV2Selector([rule({}), specific]).select(source, product)[0]?.sourceRuleId).toBe("2");
+  });
+
   it("never matches a rule when its source candidate is absent", () => {
     expect(new DirectRulesV2Selector([rule({})]).select(source, { ...product, referenceCandidates: [] })).toEqual([]);
   });
