@@ -1,10 +1,10 @@
+import { matchExistingWordPressVariations } from "../../src/integrations/wordpress/wordpress-variation-patch-builder.js";
+import { WordPressSizeConverter } from "../../src/integrations/wordpress/wordpress-size-converter.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ExportContext, JsonObject, UniversalProductDTO } from "../../src/contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../src/core/errors/index.js";
 import { hashStableJson } from "../../src/core/utils/index.js";
-import { WordPressSizeConverter } from "../../src/integrations/wordpress/wordpress-size-converter.js";
-import { matchExistingWordPressVariations } from "../../src/integrations/wordpress/wordpress-variation-patch-builder.js";
 import { buildWordPressUpsertPayload, previewWordPressUpsertPayload, previewWordPressVariationPatchItems, WordPressExporter, type WordPressSizeConverterLike } from "../../src/integrations/index.js";
 
 const product: UniversalProductDTO = {
@@ -74,6 +74,13 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("accepts reviewed existing translations when switching the required provider", async () => {
+    const requiredTranslation = { providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2", sourceLocale: "en", targetLocale: "ru" };
+    const acceptedTranslations = [{ providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" }];
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation }))).rejects.toThrow();
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation, acceptedTranslations }))).resolves.toBeDefined();
+    await expect(buildWordPressUpsertPayload(context({ requiredTranslation, acceptedTranslations: [{ ...acceptedTranslations[0], targetLocale: "de" }] }))).rejects.toThrow("locales");
+  });
   it("keeps reviewed native sizes separate in full export and inventory without leaking to other products", async () => {
     const base = context({ nativeSizeProfiles: [{ sourceProductIds: ["2"], sizeMappings: [
       { sourceValue: "40.5", system: "eu-numeric", audience: "men", taxonomy: "pa_razmer", termId: 9405 },
@@ -249,19 +256,6 @@ describe("WordPressExporter", () => {
       : { code: "size_table_not_found", message: "missing table" }), { status: failure === "conflict" ? 200 : 404 }));
     const converter = new WordPressSizeConverter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 1000, jobTimeoutMs: 1000, pollIntervalMs: 10 }, request);
     await expect(previewWordPressUpsertPayload(input, converter)).rejects.toThrow(failure === "conflict" ? "ambiguous" : "missing table");
-  });
-
-  it("accepts the explicitly allowed translator while retaining existing translations", async () => {
-    const requiredTranslation = { providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" };
-    const alternative = { ...requiredTranslation, providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2" };
-    const base = context({ requiredTranslation, acceptedTranslations: [alternative] });
-    await expect(buildWordPressUpsertPayload(base)).resolves.toBeDefined();
-    await expect(buildWordPressUpsertPayload({ ...base, product: { ...base.product,
-      translatedContent: { ...base.product.translatedContent!, ...alternative } } })).resolves.toBeDefined();
-    await expect(buildWordPressUpsertPayload({ ...base, product: { ...base.product,
-      translatedContent: { ...base.product.translatedContent!, ...alternative, providerVersion: "unknown" } } })).rejects.toThrow("deepl");
-    await expect(buildWordPressUpsertPayload(context({ requiredTranslation,
-      acceptedTranslations: [{ ...alternative, targetLocale: "de" }] }))).rejects.toThrow("required locales");
   });
 
   it("requires the configured current translation before building a full payload", async () => {
@@ -1542,16 +1536,29 @@ describe("WordPressExporter", () => {
     await expect(buildWordPressUpsertPayload(base)).rejects.toThrow("WordPress export has no variants with mapped sizes");
   });
 
-  it("blocks products without images and new products without variants before any WordPress request", async () => {
+  it("blocks products without images before any WordPress request", async () => {
     const fetchMock = vi.fn();
     const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5_000, jobTimeoutMs: 10_000, pollIntervalMs: 100 }, fetchMock);
     const base = context();
 
     await expect(exporter.export({ ...base, product: { ...base.product, images: [] } }))
       .rejects.toThrow("WordPress export requires at least one processed product image");
-    await expect(exporter.export({ ...base, product: { ...base.product, variants: [] } }))
-      .rejects.toThrow("WordPress cannot create a new product without source variants");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("creates an explicit zero-stock shell for a new product without source variants", async () => {
+    const base = context();
+    const payload = await buildWordPressUpsertPayload({
+      ...base,
+      product: { ...base.product, variants: [] },
+    });
+
+    expect(payload.variations).toEqual({ mode: "replace_active_set", missing_policy: "out_of_stock", items: [] });
+    expect(payload.creation_policy).toEqual({
+      allow_empty_variations: true,
+      stock_status: "outofstock",
+      stock_quantity: 0,
+    });
   });
 
   it("uses an empty active set to mark an existing product sold out", async () => {

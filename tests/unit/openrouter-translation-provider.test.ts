@@ -8,6 +8,19 @@ const success = () => new Response(JSON.stringify({ id: "request-1", choices: [{
 describe("OpenRouter translation", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("routes configured requests through a dedicated proxy without sending its credentials to the API", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const request = vi.fn().mockResolvedValue(success());
+    const provider = new OpenRouterTranslationProvider({ ...options, proxyUrl: "http://user:proxy-secret@localhost:8080" }, request);
+    await provider.translate("Leather", "en", "ru");
+    const init = request.mock.calls[0]![1];
+    expect(init.dispatcher).toBeDefined();
+    expect(JSON.stringify(init.headers)).not.toContain("proxy-secret");
+    expect(JSON.stringify(init.body)).not.toContain("proxy-secret");
+    await init.dispatcher.close();
+    expect(() => new OpenRouterTranslationProvider({ ...options, proxyUrl: "invalid-secret" })).toThrow("proxy URL is invalid");
+  });
+
   it("uses one explicit model, accounts for usage and keeps credentials out of logs", async () => {
     const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const request = vi.fn().mockResolvedValue(success());

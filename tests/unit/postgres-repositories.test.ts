@@ -496,6 +496,39 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.text).toContain("campaign.scan_before_internal_product_id, campaign.scan_complete");
   });
 
+  it("selects only absent footwear with images and variants for readiness preparation", async () => {
+    const executor = new FakeExecutor([
+      [],
+      [{
+        id: "90", target_id: "10", mode: "footwear_readiness", catalog_run_id: "4",
+        scan_before_internal_product_id: null, scan_complete: false, candidates_prepared: false,
+      }],
+      [],
+      [{ source_product_id: "21", internal_product_id: "31", scan_cursor_id: "21", refresh_wordpress: true }],
+      [],
+      [],
+    ]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await expect(repository.prepareCampaignPreflightCandidates({ campaignId: "90", limit: 100 }))
+      .resolves.toEqual([{ sourceProductId: "21", internalProductId: "31", refreshWordPress: true }]);
+
+    const preparationQuery = executor.calls[2]?.text ?? "";
+    const candidateQuery = executor.calls[3]?.text ?? "";
+    expect(preparationQuery).toContain("WITH absent AS MATERIALIZED");
+    expect(preparationQuery).toContain("source_product.discovery_metadata->>'route' = 'sneakers'");
+    expect(preparationQuery).toContain("target_export_campaign_preflight_items");
+    expect(preparationQuery).toContain("+ (SELECT COUNT(*) FROM inserted)");
+    expect(candidateQuery).toContain("source_product.id AS scan_cursor_id");
+    expect(candidateQuery).toContain("SELECT marked.*, selected.scan_cursor_id");
+    expect(candidateQuery).toContain("ORDER BY source_product.id DESC");
+    expect(preparationQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'images') > 0");
+    expect(preparationQuery).toContain("JSONB_ARRAY_LENGTH(internal.data->'variants') > 0");
+    expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'");
+    expect(candidateQuery).toContain("target_export_campaign_preflight_items campaign_candidate");
+    expect(executor.calls[3]?.values).toEqual(["10", null, 100, "4", "footwear_readiness", "90"]);
+  });
+
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {
     const executor = new FakeExecutor([
       [],

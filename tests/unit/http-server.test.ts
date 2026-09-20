@@ -569,6 +569,8 @@ describe("HTTP server", () => {
     const mutationHeaders = { cookie, "x-csrf-token": login.json().csrfToken };
 
     const page = await server.inject({ method: "GET", url: "/export-control" });
+    const overview = await server.inject({ method: "GET", url: "/overview" });
+    const overviewScript = await server.inject({ method: "GET", url: "/assets/overview.js" });
     const unauthorized = await server.inject({ method: "GET", url: "/api/export-control?targetId=10" });
     const list = await server.inject({ method: "GET", url: "/api/export-control?targetId=10&status=ready&risk=danger&change=taxonomy_removed%3Aproduct_tag&limit=50", headers: { cookie } });
     const forbidden = await server.inject({ method: "POST", url: "/api/export-control/preflights", headers: { cookie }, payload: { targetId: "10", sourceProductIds: ["3"] } });
@@ -579,6 +581,10 @@ describe("HTTP server", () => {
 
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("Проверка и управляемая выгрузка");
+    expect(overview.statusCode).toBe(200);
+    expect(overview.body).toContain("Четыре независимых процесса");
+    expect(overviewScript.statusCode).toBe(200);
+    expect(overviewScript.body).toContain("/api/inventory-health");
     expect(unauthorized.statusCode).toBe(401);
     expect(list.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);

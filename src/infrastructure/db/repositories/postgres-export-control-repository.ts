@@ -93,6 +93,8 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
     failedCount: Number(row.failed_count ?? 0),
     acknowledgedFailedCount: Number(row.acknowledged_failed_count ?? 0),
     activePreflightCount: Number(row.active_preflight_count ?? 0),
+    candidateCount: Number(row.candidate_count ?? 0),
+    scannedCount: Number(row.scanned_count ?? 0),
     scanBeforeInternalProductId: nullableText(row, "scan_before_internal_product_id"),
     scanComplete: row.scan_complete === true,
     lastError: nullableText(row, "last_error"),
@@ -996,7 +998,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                   campaign.mode, campaign.catalog_run_id,
                   campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
                   campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at,
-                  campaign.scan_before_internal_product_id, campaign.scan_complete`,
+                  campaign.scan_before_internal_product_id, campaign.scan_complete, campaign.scanned_count,
+                  campaign.candidates_prepared, campaign.candidate_count`,
         [input.targetId, input.actor, input.reason ?? null, input.mode, input.catalogRunId ?? null,
           input.preflightWindow, input.maxExports ?? null],
       );
@@ -1158,7 +1161,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
   }): Promise<readonly ExportControlPreflightCandidate[]> {
     return transaction(this.pool, async (client) => {
       const campaign = await client.query<DatabaseRow>(
-        `SELECT id, target_id, mode, catalog_run_id, scan_before_internal_product_id, scan_complete
+        `SELECT id, target_id, mode, catalog_run_id, scan_before_internal_product_id, scan_complete,
+                candidates_prepared
          FROM target_export_campaigns
          WHERE id = $1 AND status = 'running'
          FOR UPDATE`,
@@ -1167,9 +1171,71 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       const state = campaign.rows[0];
       if (state === undefined || state.scan_complete === true) return [];
       const targetId = text(state, "target_id");
+      const mode = text(state, "mode");
+      const readinessOnly = mode === "footwear_readiness";
+      if (readinessOnly && state.candidates_prepared !== true) {
+        await client.query(
+          `WITH absent AS MATERIALIZED (
+             SELECT source_product.id AS source_product_id, internal.id AS internal_product_id
+             FROM source_products source_product
+             JOIN internal_products internal ON internal.source_product_id = source_product.id
+             LEFT JOIN wordpress_catalog_run_items catalog_item
+               ON catalog_item.run_id = $2::BIGINT
+              AND catalog_item.internal_product_id = internal.id
+              AND catalog_item.match_status = 'matched'
+             WHERE source_product.discovery_metadata->>'route' = 'sneakers'
+               AND internal.status IN ('classified', 'classification_pending')
+               AND catalog_item.id IS NULL
+           ), inserted AS (
+             INSERT INTO target_export_campaign_preflight_items (
+               campaign_id, source_product_id, internal_product_id
+             )
+             SELECT $1, absent.source_product_id, absent.internal_product_id
+             FROM absent
+             JOIN internal_products internal ON internal.id = absent.internal_product_id
+             WHERE internal.data->'classification'->>'status' IN ('complete', 'partial')
+               AND JSONB_TYPEOF(internal.data->'images') = 'array'
+               AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
+               AND JSONB_TYPEOF(internal.data->'variants') = 'array'
+               AND JSONB_ARRAY_LENGTH(internal.data->'variants') > 0
+             ON CONFLICT DO NOTHING
+             RETURNING 1
+           )
+           UPDATE target_export_campaigns
+           SET candidates_prepared = TRUE,
+               candidate_count =
+                 (SELECT COUNT(*) FROM target_export_campaign_preflight_items WHERE campaign_id = $1)
+                 + (SELECT COUNT(*) FROM inserted),
+               updated_at = NOW()
+           WHERE id = $1`,
+          [input.campaignId, nullableText(state, "catalog_run_id")],
+        );
+      }
+      const scanCursorSql = readinessOnly ? "source_product.id" : "internal.id";
+      const candidateJoinSql = readinessOnly
+        ? `JOIN target_export_campaign_preflight_items campaign_candidate
+             ON campaign_candidate.campaign_id = $6::BIGINT
+            AND campaign_candidate.internal_product_id = internal.id`
+        : "";
+      const campaignScopeSql = readinessOnly
+        ? `AND $5::TEXT = 'footwear_readiness'
+             AND $4::BIGINT IS NOT NULL`
+        : `AND ($4::BIGINT IS NULL OR EXISTS (
+               SELECT 1
+               FROM wordpress_catalog_run_items catalog_item
+               WHERE catalog_item.run_id = $4::BIGINT
+                 AND catalog_item.internal_product_id = internal.id
+                 AND catalog_item.match_status = 'matched'
+             ))
+             AND ($5::TEXT <> 'new_products'
+               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
+             AND (review.id IS NULL OR review.status IN ('stale', 'error')
+               OR review.configuration_revision <> revision.revision
+               OR review.internal_content_hash <> internal.content_hash)`;
       const result = await client.query<DatabaseRow>(
         `WITH selected AS MATERIALIZED (
            SELECT internal.id AS internal_product_id, internal.source_product_id,
+                  ${scanCursorSql} AS scan_cursor_id,
                   internal.content_hash, source.code AS source_code,
                   source_product.external_id AS source_external_id,
                   COALESCE(NULLIF(internal.data->>'title', ''), source_product.source_key) AS title,
@@ -1183,23 +1249,13 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            FROM internal_products internal
            JOIN source_products source_product ON source_product.id = internal.source_product_id
            JOIN sources source ON source.id = source_product.source_id
+           ${candidateJoinSql}
            JOIN target_export_revisions revision ON revision.target_id = $1
            LEFT JOIN target_product_preflight_reviews review
              ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE ${exportEligibleInternalSql("internal")}
-             AND ($2::BIGINT IS NULL OR internal.id < $2::BIGINT)
-             AND ($4::BIGINT IS NULL OR EXISTS (
-               SELECT 1
-               FROM wordpress_catalog_run_items catalog_item
-               WHERE catalog_item.run_id = $4::BIGINT
-                 AND catalog_item.internal_product_id = internal.id
-                 AND catalog_item.match_status = 'matched'
-             ))
-             AND ($5::TEXT <> 'new_products'
-               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
-             AND (review.id IS NULL OR review.status IN ('stale', 'error')
-               OR review.configuration_revision <> revision.revision
-               OR review.internal_content_hash <> internal.content_hash)
+             AND ($2::BIGINT IS NULL OR ${scanCursorSql} < $2::BIGINT)
+             ${campaignScopeSql}
              AND NOT EXISTS (
                SELECT 1 FROM jobs job
                WHERE job.job_type = 'preflight_product'
@@ -1207,7 +1263,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND job.payload->>'targetId' = $1::TEXT
                  AND job.payload->>'sourceProductId' = internal.source_product_id::TEXT
              )
-           ORDER BY internal.id DESC
+           ORDER BY ${scanCursorSql} DESC
            LIMIT $3
            FOR UPDATE OF internal SKIP LOCKED
          ), marked AS (
@@ -1240,20 +1296,22 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                checked_at = NOW(), updated_at = NOW()
            RETURNING source_product_id, internal_product_id
          )
-         SELECT marked.*, NOT selected.use_cached_wordpress AS refresh_wordpress
+         SELECT marked.*, selected.scan_cursor_id,
+                NOT selected.use_cached_wordpress AS refresh_wordpress
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
         [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit,
-          nullableText(state, "catalog_run_id"), text(state, "mode")],
+          nullableText(state, "catalog_run_id"), mode, ...(readinessOnly ? [input.campaignId] : [])],
       );
       const last = result.rows.at(-1);
       await client.query(
         `UPDATE target_export_campaigns
          SET scan_before_internal_product_id = COALESCE($2, scan_before_internal_product_id),
              scan_complete = $3,
+             scanned_count = scanned_count + $4,
              updated_at = NOW()
          WHERE id = $1`,
-        [input.campaignId, last === undefined ? null : text(last, "internal_product_id"), last === undefined],
+        [input.campaignId, last === undefined ? null : text(last, "scan_cursor_id"), last === undefined, result.rows.length],
       );
       return result.rows.map((row) => ({
         sourceProductId: text(row, "source_product_id"),

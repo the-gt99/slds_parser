@@ -168,8 +168,11 @@ export class ExportControlService {
       && (!Number.isInteger(input.maxExports) || input.maxExports < 1 || input.maxExports > maximumCampaignExports)) {
       throw new IntegrationContractError(`Лимит выгрузки должен быть от 1 до ${maximumCampaignExports}`);
     }
-    if (mode === "full_existing" && input.catalogRunId === undefined) {
-      throw new IntegrationContractError("Для полной выгрузки нужно выбрать снимок каталога WordPress");
+    if ((mode === "full_existing" || mode === "footwear_readiness") && input.catalogRunId === undefined) {
+      throw new IntegrationContractError("Для выбранного режима нужно выбрать снимок каталога WordPress");
+    }
+    if (mode === "footwear_readiness" && input.maxExports !== undefined) {
+      throw new IntegrationContractError("Подготовка обуви всегда проверяет весь подходящий остаток без лимита выгрузки");
     }
     return this.repository.createCampaign({
       targetId: input.targetId,
@@ -193,6 +196,7 @@ export class ExportControlService {
   async tickCampaign(): Promise<boolean> {
     const campaign = await this.repository.getRunningCampaign();
     if (campaign === null) return false;
+    const readinessOnly = campaign.mode === "footwear_readiness";
     const exportActive = campaign.pendingCount + campaign.runningCount;
     const exportOutstanding = exportActive + campaign.retryCount;
     const exportQueueDepth = this.campaignExportConcurrency * campaignExportQueueDepthMultiplier;
@@ -207,7 +211,7 @@ export class ExportControlService {
     let queuedSourceRefreshes = 0;
     const remainingLimit = campaign.maxExports === null ? exportQueueDepth : campaign.maxExports - campaign.itemCount;
     const availableExportSlots = Math.max(0, Math.min(exportQueueDepth - exportOutstanding, remainingLimit));
-    if (availableExportSlots > 0 && !limitReached) {
+    if (!readinessOnly && availableExportSlots > 0 && !limitReached) {
       const operation = campaign.mode === "new_products" ? "create" : "update";
       const exportFilter = {
         status: "ready",
@@ -243,7 +247,7 @@ export class ExportControlService {
 
     const exportLimitReachedAfterQueue = campaign.maxExports !== null
       && campaign.itemCount + queuedExportCount >= campaign.maxExports;
-    if (!limitReached && !exportLimitReachedAfterQueue) {
+    if (!readinessOnly && !limitReached && !exportLimitReachedAfterQueue) {
       const bufferTarget = this.campaignExportConcurrency * sourceRefreshBufferPerExport;
       const buffered = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
       if (buffered < bufferTarget) {
@@ -301,6 +305,12 @@ export class ExportControlService {
       const sourceRefreshBuffer = await this.repository.countCampaignSourceRefreshBuffer(campaign.id);
       if (refreshedActive === 0 && sourceRefreshBuffer === 0) {
         const refreshedCampaign = await this.repository.getRunningCampaign();
+        if (readinessOnly) {
+          if (refreshedCampaign?.id === campaign.id && refreshedCampaign.scanComplete) {
+            await this.repository.setCampaignStatus({ campaignId: campaign.id, status: "completed" });
+          }
+          return queuedPreflights > 0;
+        }
         const operation = campaign.mode === "new_products" ? "create" : "update";
         const remainingFilter = {
           status: "ready",

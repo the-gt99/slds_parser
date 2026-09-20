@@ -1,4 +1,6 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
+import { rename, rm } from "node:fs/promises";
 import { posix } from "node:path";
 
 import type { ImageStore, StoredImageAsset } from "../../processing/media/index.js";
@@ -13,7 +15,7 @@ export interface S3ImageStoreOptions extends LocalImageStoreOptions {
 }
 
 export interface ObjectStorageClient {
-  send(command: PutObjectCommand): Promise<unknown>;
+  send(command: PutObjectCommand | GetObjectCommand): Promise<unknown>;
 }
 
 function objectKey(prefix: string | undefined, localPath: string): string {
@@ -43,6 +45,7 @@ export class S3ImageStore implements ImageStore {
     return {
       ...this.#local.fingerprint(),
       storage: "s3",
+      storageVersion: 2,
       endpoint: this.options.endpoint,
       region: this.options.region,
       bucket: this.options.bucket,
@@ -50,7 +53,35 @@ export class S3ImageStore implements ImageStore {
   }
 
   async read(localPath: string): Promise<Buffer> {
-    return await this.#local.read(localPath);
+    // A published asset lives in object storage; the local file is only a staging copy.
+    try {
+      return await this.#local.read(localPath);
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+    let result: GetObjectCommandOutput;
+    try {
+      result = await this.#client.send(new GetObjectCommand({
+        Bucket: this.options.bucket,
+        Key: objectKey(this.options.publicPathPrefix, localPath),
+      })) as GetObjectCommandOutput;
+    } catch (error) {
+      // The downloader already treats an absent stored copy as a source download.
+      if (error instanceof Error && error.name === "NoSuchKey") {
+        throw Object.assign(new Error("Stored image does not exist", { cause: error }), { code: "ENOENT" });
+      }
+      throw error;
+    }
+    if (result.Body === undefined) throw new Error("Stored image body is missing");
+    const binary = Buffer.from(await result.Body.transformToByteArray());
+    if (result.ContentLength !== undefined && binary.length !== result.ContentLength) {
+      throw new Error("Stored image is incomplete");
+    }
+    const expectedHash = /\.([a-f0-9]{64})\.webp$/u.exec(localPath)?.[1];
+    if (expectedHash !== undefined && createHash("sha256").update(binary).digest("hex") !== expectedHash) {
+      throw new Error("Stored image checksum does not match its path");
+    }
+    return binary;
   }
 
   async storeOriginal(
@@ -63,7 +94,16 @@ export class S3ImageStore implements ImageStore {
   }
 
   async convertToWebp(localPath: string): Promise<string> {
-    return await this.#local.convertToWebp(localPath);
+    if (/\.[a-f0-9]{64}\.webp$/u.test(localPath)) {
+      await this.read(localPath);
+      return localPath;
+    }
+    const converted = await this.#local.convertToWebp(localPath);
+    const binary = await this.#local.read(converted);
+    const hash = createHash("sha256").update(binary).digest("hex");
+    const immutablePath = converted.slice(0, -5) + `.${hash}.webp`;
+    await rename(this.#local.resolvePath(converted), this.#local.resolvePath(immutablePath));
+    return immutablePath;
   }
 
   publicUrl(localPath: string): string {
@@ -72,13 +112,20 @@ export class S3ImageStore implements ImageStore {
 
   async publish(localPath: string): Promise<string> {
     const body = await this.read(localPath);
+    const expectedHash = /\.([a-f0-9]{64})\.webp$/u.exec(localPath)?.[1];
+    if (expectedHash !== createHash("sha256").update(body).digest("hex")) {
+      throw new Error("Published image must use its content checksum in the path");
+    }
     await this.#client.send(new PutObjectCommand({
       Bucket: this.options.bucket,
       Key: objectKey(this.options.publicPathPrefix, localPath),
       Body: body,
       ContentLength: body.length,
       ContentType: "image/webp",
+      ContentMD5: createHash("md5").update(body).digest("base64"),
+      CacheControl: "public, max-age=31536000, immutable",
     }));
+    await rm(this.#local.resolvePath(localPath), { force: true });
     return this.publicUrl(localPath);
   }
 }

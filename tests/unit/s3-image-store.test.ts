@@ -1,5 +1,5 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { mkdtemp, rm } from "node:fs/promises";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,10 +11,18 @@ import { S3ImageStore, type ObjectStorageClient } from "../../src/infrastructure
 describe("S3 image store", () => {
   it("uploads the converted WebP under the public object key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "slds-s3-images-"));
-    const commands: PutObjectCommand[] = [];
+    const commands: (PutObjectCommand | GetObjectCommand)[] = [];
+    let stored: Buffer | undefined;
+    let failUpload = false;
     const client: ObjectStorageClient = {
       send: vi.fn(async (command) => {
         commands.push(command);
+        if (command instanceof GetObjectCommand && stored === undefined) throw Object.assign(new Error("Missing"), { name: "NoSuchKey" });
+        if (command instanceof GetObjectCommand) return {
+          Body: { transformToByteArray: async () => stored! }, ContentLength: stored!.length,
+        };
+        if (failUpload) throw new Error("Upload rejected");
+        stored = command.input.Body as Buffer;
         return {};
       }),
     };
@@ -31,6 +39,8 @@ describe("S3 image store", () => {
     }, client);
 
     try {
+      await expect(store.read("goat/item_2/missing.webp")).rejects.toMatchObject({ code: "ENOENT" });
+      commands.length = 0;
       const binary = await sharp({
         create: { width: 2, height: 3, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } },
       }).png().toBuffer();
@@ -38,15 +48,31 @@ describe("S3 image store", () => {
       const webpPath = await store.convertToWebp(original.localPath);
 
       await expect(store.publish(webpPath)).resolves.toBe(
-        "https://storage.yandexcloud.net/slamdunk/products/goat/item_2/01-main.webp",
+        `https://storage.yandexcloud.net/slamdunk/products/${webpPath}`,
       );
       expect(commands).toHaveLength(1);
       expect(commands[0]?.input).toMatchObject({
         Bucket: "slamdunk",
-        Key: "products/goat/item_2/01-main.webp",
+        Key: `products/${webpPath}`,
         ContentType: "image/webp",
+        CacheControl: "public, max-age=31536000, immutable",
       });
-      expect(commands[0]?.input.Body).toBeInstanceOf(Buffer);
+      expect((commands[0] as PutObjectCommand).input.Body).toBeInstanceOf(Buffer);
+      expect(webpPath).toMatch(/01-main\.[a-f0-9]{64}\.webp$/u);
+      await expect(access(join(directory, webpPath))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(store.read(webpPath)).resolves.toEqual(stored);
+      await expect(store.convertToWebp(webpPath)).resolves.toBe(webpPath);
+      await expect(store.publish(webpPath)).resolves.toContain(webpPath);
+
+      const next = await store.storeOriginal("goat", "2", 0, binary);
+      const nextWebp = await store.convertToWebp(next.localPath);
+      failUpload = true;
+      await expect(store.publish(nextWebp)).rejects.toThrow("Upload rejected");
+      await expect(access(join(directory, nextWebp))).resolves.toBeUndefined();
+      await expect(store.read("../outside.webp")).rejects.toThrow("leaves");
+      await rm(join(directory, nextWebp));
+      stored = Buffer.from("corrupted");
+      await expect(store.read(nextWebp)).rejects.toThrow("checksum");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

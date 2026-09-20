@@ -1,10 +1,10 @@
 const sections = [
+  ["/overview", "Обзор", ["/overview"]],
   ["/classifier", "Классификация", ["/classifier", "/classifier-config"]],
   ["/content-templates", "Шаблоны контента", ["/content-templates"]],
   ["/products", "Товары", ["/products"]],
   ["/export-control", "Контроль экспорта", ["/export-control"]],
   ["/wordpress-catalog", "Каталог WordPress", ["/wordpress-catalog"]],
-  ["/operations", "Операции", ["/operations"]],
   ["/runtime", "Парсер", ["/runtime"]],
   ["/jobs", "Очередь и ошибки", ["/jobs"]],
   ["/wordpress-snapshots", "Снимки WordPress", ["/wordpress-snapshots"]],

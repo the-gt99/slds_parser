@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>SLDS · Обзор процессов</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/admin-shell.js"></script>
+  <script type="module" src="/assets/overview.js"></script>
+</head>
+<body>
+<div id="login-view" class="login-shell" hidden>
+  <form id="login-form" class="login-card">
+    <div class="brand-mark">S</div>
+    <div><p class="eyebrow">SLDS Parser</p><h1>Обзор процессов</h1><p class="muted">Войдите в административный интерфейс.</p></div>
+    <label class="field"><span>Пользователь</span><input id="login-username" required autocomplete="username"></label>
+    <label class="field"><span>Пароль</span><input id="login-password" type="password" required autocomplete="current-password"></label>
+    <p id="login-error" class="form-error" hidden></p>
+    <button class="button primary wide" type="submit">Войти</button>
+  </form>
+</div>
+
+<div id="app-view" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="brand-line"><a class="brand-mark small brand-link" href="/overview">S</a><div><p class="eyebrow">SLDS Parser</p><h1>Обзор процессов</h1></div></div>
+    <div class="topbar-actions"><span id="operator-name" class="operator"></span><button id="refresh" class="icon-button" type="button" title="Обновить">↻</button><button id="logout-button" class="button quiet">Выйти</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Основные разделы"></nav>
+
+  <main class="overview-page">
+    <section class="overview-hero">
+      <div><p class="eyebrow">Production сейчас</p><h2>Четыре независимых процесса</h2><p class="muted">Каждый блок показывает текущее состояние своего контура. Числа можно открыть в профильном разделе.</p></div>
+      <div id="overview-health" class="overview-health">Блоки обновляются независимо…</div>
+    </section>
+
+    <div id="overview-error" class="inline-message error" hidden></div>
+    <section class="overview-grid" aria-live="polite">
+      <article class="process-card" data-process="inventory">
+        <div class="process-card-heading"><div><p class="eyebrow">1 · Цены и остатки</p><h2>Обновление WordPress</h2></div><span id="inventory-status" class="badge">—</span></div>
+        <strong id="inventory-products" class="process-main-number">—</strong>
+        <p class="muted">товаров в активном контуре</p>
+        <div id="inventory-metrics" class="process-metrics"></div>
+        <p id="inventory-note" class="process-note">Получаем состояние…</p>
+        <a class="button secondary" href="/wordpress-catalog">Открыть цены и остатки</a>
+      </article>
+
+      <article class="process-card" data-process="parsing">
+        <div class="process-card-heading"><div><p class="eyebrow">2 · Парсинг</p><h2>Сбор и обработка</h2></div><span id="worker-status" class="badge">—</span></div>
+        <div id="parsing-stages" class="process-stage-list"></div>
+        <p class="process-note">Discovery, получение карточек и обработка идут отдельными очередями и не блокируют друг друга.</p>
+        <a class="button secondary" href="/runtime">Открыть парсер</a>
+      </article>
+
+      <article class="process-card" data-process="classification">
+        <div class="process-card-heading"><div><p class="eyebrow">3 · Классификация</p><h2>Сопоставления</h2></div><span id="classification-status" class="badge">—</span></div>
+        <strong id="classification-total" class="process-main-number">—</strong>
+        <p class="muted">групп значений требуют решения во всём каталоге</p>
+        <div id="classification-metrics" class="process-metrics"></div>
+        <p class="process-note">Очередь содержит кроссовки, одежду и аксессуары. Для выгрузки сначала разбираем блокеры кроссовок.</p>
+        <div class="process-actions"><a class="button secondary" href="/classifier">Открыть сопоставления</a><a class="button quiet" href="/classifier?view=wordpress">Категории и метки</a></div>
+      </article>
+
+      <article class="process-card" data-process="export">
+        <div class="process-card-heading"><div><p class="eyebrow">4 · Выгрузка</p><h2>WordPress export</h2></div><span id="export-status" class="badge">—</span></div>
+        <strong id="export-ready" class="process-main-number">—</strong>
+        <p class="muted">товаров готовы по актуальному preflight</p>
+        <div id="export-metrics" class="process-metrics"></div>
+        <p id="export-note" class="process-note">Получаем состояние…</p>
+        <a class="button secondary" href="/export-control">Открыть контроль экспорта</a>
+      </article>
+    </section>
+
+    <section class="section overview-diagnostics">
+      <div><p class="eyebrow">Диагностика</p><h2>Когда нужен технический уровень</h2><p class="muted">Очередь показывает конкретные ошибки jobs, а операции — зарегистрированные этапы обработки. Для ежедневного контроля эти разделы не нужны.</p></div>
+      <div class="process-actions"><a class="button quiet" href="/jobs">Очередь и ошибки</a><a class="button quiet" href="/operations">Операции</a><a class="button quiet" href="/proxies">Прокси</a></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

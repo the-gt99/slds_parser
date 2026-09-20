@@ -1456,9 +1456,11 @@ function configure() {
   if (mode === "operations" || mode === "runtime") byId("filters").hidden = true;
   if (mode === "jobs") {
     byId("source-filter").querySelector("span").textContent = "Job type";
-    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Переклассификация", "reclassify_product"), new Option("Связи WordPress", "sync_target_classifications"), new Option("Применение связей WordPress", "apply_target_classification_suggestion"), new Option("Preflight WordPress", "preflight_product"), new Option("Экспорт", "export_product"));
+    byId("source").replaceChildren(new Option("Все", ""), new Option("Discovery", "discover_source"), new Option("Сбор", "collect_product"), new Option("Обработка", "process_product"), new Option("Повторный перевод", "retranslate_product"), new Option("Переклассификация", "reclassify_product"), new Option("Связи WordPress", "sync_target_classifications"), new Option("Применение связей WordPress", "apply_target_classification_suggestion"), new Option("Preflight WordPress", "preflight_product"), new Option("Экспорт", "export_product"));
     byId("stage-filter").querySelector("span").textContent = "Статус";
     byId("stage").replaceChildren(new Option("Все", ""), new Option("В очереди", "pending"), new Option("Выполняется", "running"), new Option("Повтор", "retry"), new Option("Ошибка", "failed"), new Option("Выполнено", "completed"));
+    if ([...byId("source").options].some((option) => option.value === initialParams.get("jobType"))) byId("source").value = initialParams.get("jobType");
+    if ([...byId("stage").options].some((option) => option.value === initialParams.get("status"))) byId("stage").value = initialParams.get("status");
     byId("classification-filter").hidden = true;
     byId("target-filter").hidden = true;
     byId("search").placeholder = "Job ID, sourceProductId или текст ошибки";

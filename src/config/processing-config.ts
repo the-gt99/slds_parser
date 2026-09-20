@@ -14,6 +14,7 @@ export interface ProcessingEnvironment {
   readonly PARSER_TRANSLATION_PROVIDER?: string;
   readonly PARSER_OPENROUTER_API_KEY?: string;
   readonly PARSER_OPENROUTER_MODEL?: string;
+  readonly PARSER_OPENROUTER_PROXY_URL?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
   readonly PARSER_DEEPL_API_URL?: string;
   readonly PARSER_TRANSLATION_SOURCE?: string;
@@ -148,7 +149,8 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
       : selectedTranslationProvider === "openrouter"
         ? { ...translationOptions, provider: "openrouter" as const,
           apiKey: openRouterApiKey,
-          model: environment.PARSER_OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v3.2" }
+          model: environment.PARSER_OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v3.2",
+          proxyUrl: environment.PARSER_OPENROUTER_PROXY_URL?.trim() || undefined }
         : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {
       apiUrl: shoeHeightApiUrl,
