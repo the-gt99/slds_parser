@@ -19,9 +19,14 @@ describe("RulesV2Service", () => {
     expect(preview).toHaveBeenCalledWith(expect.objectContaining({ targetId: "10", conditionGroups: draft.conditionGroups }));
   });
 
-  it("never accepts an authoritative status in the parallel contour", async () => {
+  it("rejects unsupported rule statuses", async () => {
     const service = new RulesV2Service({} as RulesV2Repository, {} as TargetAssignmentRuleRepository);
     await expect(service.create({ ...draft, status: "active" } as unknown as RuleV2Draft, "admin")).rejects.toThrow();
+  });
+  it("reports the selected engine in previews", async () => {
+    const service = new RulesV2Service({} as RulesV2Repository, {} as TargetAssignmentRuleRepository,
+      { preview: async () => ({ productCount: 1 }) }, async () => ({ mode: "v2" }));
+    await expect(service.preview(draft)).resolves.toEqual({ productCount: 1, mode: "active", writes: false });
   });
   it("rejects invalid equals and regex before persistence", async () => {
     const create = vi.fn();

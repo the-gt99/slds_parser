@@ -6,7 +6,7 @@ import { validateRulesV2Field } from "./rules-v2-fields.js";
 const supportedOperators = new Set(["equals", "one_of", "contains_phrase", "regex", "absent"]);
 
 function validate(draft: RuleV2Draft): void {
-  if (!(["draft", "shadow", "disabled"] as readonly string[]).includes(draft.status)) throw new IntegrationContractError("Rule v2 cannot be authoritative yet");
+  if (!(["draft", "shadow", "disabled"] as readonly string[]).includes(draft.status)) throw new IntegrationContractError("Unsupported rule status");
   if (draft.name.trim() === "") throw new IntegrationContractError("Rule name is required");
   if (!/^[a-z][a-z0-9_-]{0,63}$/u.test(draft.groupCode)) throw new IntegrationContractError("Group code has invalid format");
   if (!Number.isSafeInteger(draft.priority) || Math.abs(draft.priority) > 2147483647) throw new IntegrationContractError("Priority must fit an integer column");
@@ -80,10 +80,11 @@ export class RulesV2Service {
 
   async preview(draft: RuleV2Draft) {
     validate(draft);
-    if (this.evaluator !== undefined) return { ...await this.evaluator.preview(draft), mode: "shadow", writes: false };
+    const mode = (await this.executionState?.())?.mode === "v2" ? "active" : "shadow";
+    if (this.evaluator !== undefined) return { ...await this.evaluator.preview(draft), mode, writes: false };
     const result = await this.legacyPreview.preview({ sourceId: draft.sourceId, targetId: draft.targetId, name: draft.name, groupCode: draft.groupCode,
       priority: draft.priority, enabled: draft.status === "shadow", conditionGroups: draft.conditionGroups, actions: draft.actions });
-    return { ...result, mode: "shadow", writes: false };
+    return { ...result, mode, writes: false };
   }
 
   async create(draft: RuleV2Draft, actor: string) { validate(draft); return this.repository.create(draft, actor); }

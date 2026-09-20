@@ -69,7 +69,7 @@ function editImported(rule) {
   if (state.fixedDependency) { byId("multi-conditions").querySelectorAll("input, textarea, select, button").forEach((item) => { item.disabled = true; }); byId("rule-priority").disabled = true; }
   const parent = byId("multi-conditions").parentElement; parent.querySelectorAll(":scope > button").forEach((item) => { item.disabled = state.fixedDependency; });
   if (rule.originKind !== "target_assignment_rule") {
-    byId("multi-actions").querySelectorAll(".action-scope, .action-mode, button").forEach((item) => { item.disabled = true; });
+    byId("multi-actions").querySelectorAll(".action-scope, .action-mode, .action-primary-brand, button").forEach((item) => { item.disabled = true; });
     byId("multi-actions").parentElement.querySelectorAll(":scope > button").forEach((item) => { item.disabled = true; });
   }
 }

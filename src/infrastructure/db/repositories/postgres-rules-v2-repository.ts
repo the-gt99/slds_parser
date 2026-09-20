@@ -129,6 +129,9 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
           }
         } else {
           if (rule.targetId === null || draft.actions.some((action) => action.kind === "resolve_reference")) throw new IntegrationContractError("Invalid target actions");
+          if (rule.originKind !== "target_assignment_rule" && draft.actions.some((action) => action.kind !== "resolve_reference" && action.primarySourceBrand === true)) {
+            throw new IntegrationContractError("Primary source brand is only supported by assignment rules; create a native v2 rule");
+          }
           if (rule.originKind !== "target_assignment_rule" && draft.actions.length !== 1) throw new IntegrationContractError("A migrated target binding must keep one action; use a native rule for multiple actions");
           const direct = draft.actions as RuleV2Draft["actions"];
           if (rule.originKind !== "target_assignment_rule" && (direct[0]?.targetScope !== (rule.actions[0] as { targetScope: string }).targetScope
@@ -170,13 +173,7 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
       COUNT(*) FILTER (WHERE status = 'draft')::INTEGER AS draft,
       COUNT(*) FILTER (WHERE status = 'shadow')::INTEGER AS shadow,
       COUNT(*) FILTER (WHERE status = 'disabled')::INTEGER AS disabled,
-      (SELECT COUNT(*)::INTEGER FROM source_reference_mappings) AS exact_mappings,
-      (SELECT COUNT(*)::INTEGER FROM source_reference_rules WHERE enabled = TRUE) AS classification_rules,
-      (SELECT COUNT(*)::INTEGER FROM target_value_mappings WHERE active = TRUE) AS target_mappings,
-      ((SELECT COUNT(*) FROM target_classification_projections WHERE active = TRUE)
-        + (SELECT COUNT(*) FROM target_reference_projections WHERE active = TRUE))::INTEGER AS projections,
-      (SELECT COUNT(*)::INTEGER FROM target_assignment_rules WHERE enabled = TRUE) AS target_assignment_rules
-      , COALESCE((SELECT JSONB_OBJECT_AGG(origin_kind, amount) FROM (
+      COALESCE((SELECT JSONB_OBJECT_AGG(origin_kind, amount) FROM (
           SELECT origin_kind, COUNT(*)::INTEGER AS amount FROM rules_v2 GROUP BY origin_kind
         ) origin_counts), '{}'::JSONB) AS origins
       FROM rules_v2`);
@@ -184,11 +181,6 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
     return {
       catalog: { total: Number(row.total), exact: Number(row.exact_count), conditional: Number(row.total) - Number(row.exact_count) },
       native: { draft: Number(row.draft), shadow: Number(row.shadow), disabled: Number(row.disabled) },
-      legacy: {
-        exactMappings: Number(row.exact_mappings), classificationRules: Number(row.classification_rules),
-        targetMappings: Number(row.target_mappings), projections: Number(row.projections),
-        targetAssignmentRules: Number(row.target_assignment_rules),
-      },
       origins: row.origins as RuleV2Summary["origins"],
     };
   }

@@ -63,13 +63,6 @@ export interface RuleV2Draft {
 export interface RuleV2Summary {
   readonly catalog?: { readonly total: number; readonly exact: number; readonly conditional: number };
   readonly native: Record<RuleV2Status, number>;
-  readonly legacy: {
-    readonly exactMappings: number;
-    readonly classificationRules: number;
-    readonly targetMappings: number;
-    readonly projections: number;
-    readonly targetAssignmentRules: number;
-  };
   readonly origins: Readonly<Record<RuleV2OriginKind, number>>;
 }
 
