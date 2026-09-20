@@ -63,7 +63,7 @@ h3 { font-size: 17px; line-height: 1.3; }
 .schema-path, .schema-rule-path { color: #315e86; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
 .schema-example { display: inline-block; margin-top: 7px; padding: 3px 6px; border-radius: 5px; background: var(--surface-soft); }
 .rules-shadow-badge { flex: 0 0 auto; padding: 9px 12px; border-radius: 999px; background: var(--warning-soft); color: var(--warning); font-size: 12px; font-weight: 800; }
-.rules-summary { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 9px; margin-bottom: 16px; }
+.rules-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 16px; }
 .rule-summary-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .rule-summary-card strong, .rule-summary-card span { display: block; }
 .rule-summary-card strong { margin-bottom: 5px; font-size: 24px; font-variant-numeric: tabular-nums; }
@@ -94,14 +94,18 @@ h3 { font-size: 17px; line-height: 1.3; }
 .rule-editor-grid, .rule-condition-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 12px; }
 .rule-editor-grid { padding: 18px; }
 .rule-editor-grid label, .rule-condition-grid label { display: grid; align-content: start; gap: 6px; color: var(--muted); font-size: 12px; }
-.rule-editor-grid input, .rule-editor-grid select, .rule-condition-grid input, .rule-condition-grid select { min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.rule-editor-grid input, .rule-editor-grid select, .rule-condition-grid input, .rule-condition-grid select, .rule-condition-grid textarea { min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.condition-rows > .rule-condition-grid { margin: 12px 0; }
+.rule-condition-grid > div { min-width: 0; display: grid; gap: 8px; }
+.rule-condition-grid textarea { resize: vertical; font: inherit; width: 100%; box-sizing: border-box; }
+.rules-list-card form input { min-width: 0; flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
 .rule-condition-grid select[size] { min-height: 112px; }
 .rule-block { position: relative; margin: 0 18px 14px; padding: 20px 14px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
 .rule-block-label { position: absolute; top: -9px; left: 12px; padding: 2px 7px; border-radius: 5px; background: var(--accent); color: white; font-size: 10px; font-weight: 800; }
 .rule-editor-card .rule-preview { margin: 0 18px 14px; }
 .rule-editor-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 0 18px; }
 
-@media (max-width: 1050px) { .rules-summary { grid-template-columns: repeat(4, 1fr); } .rules-v2-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1050px) { .rules-summary { grid-template-columns: repeat(3, 1fr); } .rules-v2-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .schema-page, .rules-v2-page { width: min(100% - 20px, 1460px); } .schema-hero, .rules-v2-hero, .schema-toolbar { align-items: stretch; flex-direction: column; } .rules-summary, .rule-detail-meta { grid-template-columns: repeat(2, 1fr); } .rule-editor-grid, .rule-condition-grid { grid-template-columns: 1fr; } }
 
 .overview-page { width: min(1460px, calc(100% - 40px)); margin: 24px auto 60px; display: grid; gap: 18px; }

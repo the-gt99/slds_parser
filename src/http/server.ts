@@ -224,12 +224,13 @@ interface TargetAssignmentRuleBody {
   readonly reason?: unknown;
 }
 interface RuleV2Body extends TargetAssignmentRuleBody {
+  readonly previewRuleId?: unknown;
   readonly sourceId?: unknown;
   readonly targetId?: unknown;
   readonly status?: unknown;
 }
 interface RuleV2Params { readonly ruleId: string }
-interface RuleV2Query { readonly targetId?: string }
+interface RuleV2Query { readonly targetId?: string; readonly search?: string; readonly offset?: string }
 interface TargetAssignmentMatchSetBody {
   readonly code?: unknown;
   readonly name?: unknown;
@@ -714,6 +715,7 @@ function ruleV2Body(value: RuleV2Body | undefined): RuleV2Draft {
   if (value.status !== "draft" && value.status !== "shadow" && value.status !== "disabled") throw new HttpInputError("status must be draft, shadow or disabled");
   return {
     sourceId: entityId(value.sourceId, "sourceId"), targetId, name: base.name, groupCode: base.groupCode,
+    ...(value.previewRuleId === undefined ? {} : { previewRuleId: entityId(value.previewRuleId, "previewRuleId") }),
     priority: base.priority, status: value.status, conditionGroups: base.conditionGroups, actions: base.actions,
     ...(optionalString(value.reason) === undefined ? {} : { reason: optionalString(value.reason)! }),
   };
@@ -1826,7 +1828,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
 
   server.get<{ Querystring: RuleV2Query }>("/api/rules-v2", { preHandler: requireAdmin }, async (request) => {
     if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
-    return dependencies.rulesV2.overview(request.query.targetId === undefined ? undefined : entityId(request.query.targetId, "targetId"));
+    return dependencies.rulesV2.overview(request.query.targetId === undefined ? undefined : entityId(request.query.targetId, "targetId"),
+      { search: request.query.search ?? "", offset: Number(request.query.offset ?? 0) });
   });
 
   server.post<{ Body: RuleV2Body }>("/api/rules-v2/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
@@ -1842,6 +1845,12 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.put<{ Params: RuleV2Params; Body: RuleV2Body }>("/api/rules-v2/:ruleId", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
     if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
     return { rule: await dependencies.rulesV2.update(entityId(request.params.ruleId, "ruleId"), ruleV2Body(request.body), requiredString(request.body?.revision, "revision"), actor(request)) };
+  });
+
+  server.put<{ Params: RuleV2Params; Body: Record<string, unknown> }>("/api/rules-v2/:ruleId/imported", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return { rule: await dependencies.rulesV2.updateImported(entityId(request.params.ruleId, "ruleId"), request.body,
+      requiredString(request.body?.revision, "revision"), actor(request)) };
   });
 
   server.post<{ Params: TargetParams; Body: TargetAssignmentRuleBody }>(

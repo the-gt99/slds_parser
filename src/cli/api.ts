@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
+import { RulesV2PreviewService } from "../services/rules-v2-preview.js";
 
 import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../config/index.js";
 import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
@@ -122,7 +123,7 @@ async function main(): Promise<void> {
       : undefined;
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
-    const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), targetAssignmentRepository);
+    const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), targetAssignmentRepository, new RulesV2PreviewService(pool));
     server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
 
     for (const signal of signals) {

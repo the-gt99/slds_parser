@@ -40,6 +40,7 @@ export type { TargetAssignmentRuleRepository } from "./target-assignment-rule-re
 export type {
   RuleV2Action,
   RuleV2Draft,
+  RuleV2ImportedDraft,
   RuleV2OriginKind,
   RuleV2Record,
   RuleV2ReferenceAction,

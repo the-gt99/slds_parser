@@ -39,6 +39,9 @@ describe("RulesV2LegacyImporter", () => {
     expect(client.calls.filter((call) => call.text.startsWith("INSERT INTO rules_v2 "))).toHaveLength(6);
     expect(client.calls.at(-1)?.text).toBe("COMMIT");
     expect(client.calls.some((call) => call.text.includes("rules_v2_import_runs"))).toBe(true);
+    expect(client.calls.some((call) => call.text.includes("pg_advisory_xact_lock"))).toBe(true);
+    expect(client.calls.some((call) => call.text.includes("migrationSourceMissing"))).toBe(true);
+    expect(client.calls.filter((call) => call.text.startsWith("INSERT INTO rules_v2 ")).every((call) => call.text.includes("manualOverride"))).toBe(true);
     expect(client.released).toBe(true);
   });
 

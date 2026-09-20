@@ -21,10 +21,12 @@ const commonFields: readonly DataFieldDefinition[] = [
   { path: "sku", rulePath: "product.sku", name: "Артикул", type: "строка или null", description: "Артикул товара, если он есть." },
   { path: "characteristics.brand", rulePath: null, name: "Бренд", type: "строка или null", description: "Исходное название бренда, не термин WordPress." },
   { path: "characteristics.model", rulePath: null, name: "Модель", type: "строка или null", description: "Исходная модель, если её можно воспроизводимо выделить." },
-  { path: "characteristics.category", rulePath: null, name: "Категория", type: "строка или null", description: "Структурный тип товара источника, не категория WordPress." },
+  { path: "characteristics.family", rulePath: "product.attribute.family", name: "Семейство модели", type: "строка или null", description: "Линейка или семейство, сообщённое источником. Не заменяет конкретную модель и не выводится из названия.", example: "Air Max 1", source: "GOAT: product.silhouette", transform: "attributes.family → characteristics.family; отсутствует — null" },
+  { path: "characteristics.category", rulePath: null, name: "Тип / категория товара", type: "строка или null", description: "Структурный тип товара источника, не категория WordPress. Отдельное поле productType в общем DTO не дублируется.", source: "GOAT: product.productType → product.productCategory → route", transform: "Первое непустое значение → candidate.category → characteristics.category" },
   { path: "characteristics.color", rulePath: null, name: "Цвет", type: "строка или null", description: "Исходное название цвета." },
   { path: "characteristics.material", rulePath: null, name: "Материал", type: "строка или null", description: "Материал, сообщённый источником." },
   { path: "characteristics.audience", rulePath: null, name: "Аудитория", type: "строка или null", description: "Аудитория как факт товара, не WP-термин." },
+  { path: "characteristics.ageGroups", rulePath: "product.attribute.ageGroups", name: "Возрастные группы", type: "массив строк", description: "Явно указанные источником возрастные группы. Не вычисляются из audience или размера. Пустой массив означает отсутствие данных.", source: "GOAT: product.ageGroups", transform: "attributes.ageGroups → characteristics.ageGroups; исходные строковые значения без подмены" },
   { path: "characteristics.tags", rulePath: null, name: "Метки источника", type: "массив строк", description: "Исходные технологии и метки; WP-назначения отдельно." },
   { path: "images[]", rulePath: null, name: "Изображения", type: "массив", description: "URL, подпись и порядок без локальных путей и хешей." },
   { path: "variants[].sourceVariantId", rulePath: null, name: "Ключ варианта", type: "строка", description: "Стабильный ключ варианта у источника." },
@@ -84,7 +86,8 @@ const goatFields: readonly DataFieldDefinition[] = [
   { path: "product.story", rulePath: "product.attribute.story", name: "История", type: "строка", description: "Отдельный маркетинговый текст.", source: "product", transform: "attributes.story" },
   { path: "product.brandName | brand", rulePath: "product.attribute.brand", name: "Бренд", type: "строка", description: "brandName имеет приоритет над brand.", source: "product", transform: "candidate.brand → characteristics.brand" },
   { path: "product.name + color", rulePath: "candidate.model.sourceValue", name: "Модель", type: "строка", description: "Название без подтверждённого конечного colorway.", source: "product", transform: "candidate.model → characteristics.model" },
-  { path: "product.silhouette", rulePath: "product.attribute.family", name: "Силуэт", type: "строка", description: "Контекст модели.", source: "product", transform: "attributes.family" },
+  { path: "product.silhouette", rulePath: "product.attribute.family", name: "Силуэт", type: "строка", description: "Семейство модели; не конкретная модель.", source: "product", transform: "attributes.family → characteristics.family" },
+  { path: "product.ageGroups", rulePath: "product.attribute.ageGroups", name: "Возрастные группы", type: "массив строк", description: "Возрастные группы независимо от пола/аудитории.", source: "product", transform: "attributes.ageGroups → characteristics.ageGroups" },
   { path: "product.singleGender | gender", rulePath: "product.attribute.gender", name: "Пол / аудитория", type: "строка", description: "singleGender имеет приоритет.", source: "product", transform: "attributes.gender → characteristics.audience" },
   { path: "product.productType", rulePath: "product.attribute.productType", name: "Тип товара", type: "строка", description: "Первый приоритет структурной категории.", source: "product", transform: "category: productType → productCategory → route → characteristics.category" },
   { path: "product.productCategory", rulePath: "product.attribute.productCategory", name: "Категория", type: "строка", description: "Второй приоритет структурной категории.", source: "product" },
@@ -105,13 +108,19 @@ export class DataSchemaService {
   async catalog() {
     const sources = await this.sources.listEnabled();
     return {
-      version: "common-product-dto.v1",
+      version: "common-product-dto.v1.1",
       common: { name: "Общий DTO", description: "Компактный общий контракт товара. В карточке товара доступен как commonDto.", fields: commonFields },
       legacy: { name: "Служебные поля v1", description: "Действующие пути обработки и правил v2. Не входят в общий контракт; сохранены для совместимости.", fields: legacyRuleFields },
       donors: sources.map((source) => ({ id: source.id, code: source.code, name: source.name,
         description: source.code === "goat" ? "Поля parts product и offers и их преобразование в общий DTO." : "Схема донора ещё не описана.",
         fields: source.code === "goat" ? goatFields : [] })),
       ruleFields: legacyRuleFields.filter((field) => field.rulePath !== null).map(({ rulePath, name, type, description }) => ({ path: rulePath!, name, type, description })),
+      v2RuleFields: [
+        ...commonFields.filter((field) => !["images[]", "variants[].size", "variants[].price"].includes(field.path))
+          .map((field) => ({ path: `common.${field.path.replaceAll("[]", ".*")}`, name: `Общий DTO: ${field.name}`, type: field.type, description: field.description })),
+        ...legacyRuleFields.filter((field) => field.rulePath?.startsWith("product.attribute.") || field.rulePath?.startsWith("product.metadata.") || field.rulePath?.startsWith("product.fact."))
+          .map(({ rulePath, name, type, description }) => ({ path: rulePath!, name: `Данные донора: ${name}`, type, description })),
+      ],
     };
   }
 }

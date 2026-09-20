@@ -10,6 +10,11 @@ describe("DataSchemaService", () => {
     const paths = catalog.common.fields.map((field) => field.path);
 
     expect(paths).toContain("characteristics.category");
+    expect(paths).toContain("characteristics.family");
+    expect(paths).toContain("characteristics.ageGroups");
+    expect(paths).not.toContain("characteristics.productType");
+    expect(paths).not.toContain("characteristics.route");
+    expect(catalog.version).toBe("common-product-dto.v1.1");
     expect(paths).not.toContain("referenceCandidates.*.sourceValue");
     expect(paths).not.toContain("attributes.productType");
     expect(catalog.legacy.fields.map((field) => field.path)).toContain("referenceCandidates.*.sourceValue");

@@ -18,6 +18,8 @@
     "translation:enqueue": "node --env-file-if-exists=.env --import tsx src/cli/enqueue-retranslation.ts",
     "classifier:rebuild-review": "node --env-file-if-exists=.env --import tsx src/cli/rebuild-classification-review.ts",
     "rules-v2:import-legacy": "node --env-file-if-exists=.env --import tsx src/cli/import-rules-v2-legacy.ts",
+    "rules-v2:audit": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2.ts",
+    "rules-v2:audit-payload": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-payload.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
     "db:cleanup": "node --env-file-if-exists=.env --import tsx src/cli/cleanup-retention.ts",
     "goat:enqueue-discovery": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-discovery.ts",

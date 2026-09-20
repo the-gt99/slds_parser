@@ -1,6 +1,7 @@
 import type { RulesV2LegacyImportResult, RuleV2OriginKind } from "../../repositories/index.js";
 import type { SqlClient, SqlPool } from "./sql-executor.js";
 import type { DatabaseRow } from "./repositories/row-mappers.js";
+import { IntegrationContractError } from "../../core/errors/index.js";
 
 const columns = `(source_id, target_id, name, group_code, priority, status, condition_groups, actions,
   selector_field, selector_operator, selector_values_normalized, origin_kind, origin_id, origin_revision,
@@ -25,7 +26,7 @@ ON CONFLICT (origin_kind, origin_id) WHERE origin_id IS NOT NULL DO UPDATE SET
   origin_payload = EXCLUDED.origin_payload,
   revision = rules_v2.revision + 1,
   updated_at = NOW()
-WHERE ROW(
+WHERE rules_v2.origin_payload->>'manualOverride' IS DISTINCT FROM 'true' AND ROW(
   rules_v2.source_id, rules_v2.target_id, rules_v2.name, rules_v2.group_code, rules_v2.priority,
   rules_v2.status, rules_v2.condition_groups, rules_v2.actions, rules_v2.selector_field,
   rules_v2.selector_operator, rules_v2.selector_values_normalized, rules_v2.origin_revision,
@@ -388,7 +389,31 @@ export class RulesV2LegacyImporter {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(193700, 2)");
+      const unsupported = await client.query<DatabaseRow>(`SELECT id::TEXT FROM target_assignment_rules rule
+        WHERE rule.enabled = TRUE AND (
+          NOT EXISTS (SELECT 1 FROM target_assignment_rule_condition_groups groups WHERE groups.rule_id = rule.id)
+          OR NOT EXISTS (SELECT 1 FROM target_assignment_rule_actions actions WHERE actions.rule_id = rule.id)
+        ) LIMIT 1`);
+      if (unsupported.rows.length > 0) throw new IntegrationContractError(`Cannot import actionless or unconditional legacy assignment ${unsupported.rows[0]!.id}`);
       for (const statement of importStatements) await client.query(statement, [actor]);
+      await client.query(`WITH surviving AS (
+        SELECT 'exact_mapping'::TEXT AS kind, id FROM source_reference_mappings
+        UNION ALL SELECT 'classification_rule', id FROM source_reference_rules WHERE JSONB_ARRAY_LENGTH(conditions) > 0
+        UNION ALL SELECT 'target_mapping', id FROM target_value_mappings
+        UNION ALL SELECT 'classification_projection', id FROM target_classification_projections
+        UNION ALL SELECT 'reference_projection', id FROM target_reference_projections
+        UNION ALL SELECT 'target_assignment_rule', id FROM target_assignment_rules
+      ), changed AS (
+        UPDATE rules_v2 rule SET status = 'disabled', revision = revision + 1, updated_at = NOW(),
+          origin_payload = origin_payload || '{"migrationSourceMissing":true}'::JSONB
+        WHERE rule.origin_kind <> 'native' AND rule.status <> 'disabled'
+          AND rule.origin_payload->>'manualOverride' IS DISTINCT FROM 'true'
+          AND NOT EXISTS (SELECT 1 FROM surviving WHERE surviving.kind = rule.origin_kind AND surviving.id = rule.origin_id)
+        RETURNING rule.*
+      ) INSERT INTO rules_v2_history (rule_id, action, previous_value, new_value, actor, reason)
+        SELECT id, 'status', NULL, TO_JSONB(changed), $1, 'Исходная запись удалена; копия выключена при синхронизации'
+        FROM changed`, [actor]);
       const result = await importCounts(client);
       await client.query(
         "INSERT INTO rules_v2_import_runs (actor, counts) VALUES ($1, $2::JSONB)",

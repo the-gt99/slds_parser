@@ -14,10 +14,12 @@ export interface CommonProductDTO {
   readonly characteristics: {
     readonly brand: string | null;
     readonly model: string | null;
+    readonly family: string | null;
     readonly category: string | null;
     readonly color: string | null;
     readonly material: string | null;
     readonly audience: string | null;
+    readonly ageGroups: readonly string[];
     readonly tags: readonly string[];
   };
   readonly images: readonly { readonly url: string; readonly alt: string; readonly position: number }[];
@@ -62,10 +64,14 @@ export function toCommonProductDTO(
     characteristics: {
       brand: candidate("brand"),
       model: candidate("model"),
+      family: optionalText(product.attributes.family),
       category: candidate("category"),
       color: candidate("color"),
       material: candidate("material"),
       audience: optionalText(product.attributes.audience) ?? optionalText(product.attributes.gender),
+      ageGroups: Array.isArray(product.attributes.ageGroups)
+        ? product.attributes.ageGroups.filter((value): value is string => optionalText(value) !== null)
+        : [],
       tags,
     },
     images: product.images.map(({ url, alt, position }) => ({ url, alt, position })),

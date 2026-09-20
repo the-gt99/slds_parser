@@ -47,6 +47,7 @@ export interface RuleV2Record {
 }
 
 export interface RuleV2Draft {
+  readonly previewRuleId?: EntityId;
   readonly sourceId: EntityId;
   readonly targetId: EntityId;
   readonly name: string;
@@ -59,6 +60,7 @@ export interface RuleV2Draft {
 }
 
 export interface RuleV2Summary {
+  readonly catalog?: { readonly total: number; readonly exact: number; readonly conditional: number };
   readonly native: Record<RuleV2Status, number>;
   readonly legacy: {
     readonly exactMappings: number;
@@ -76,8 +78,17 @@ export interface RulesV2LegacyImportResult {
 }
 
 export interface RulesV2Repository {
-  list(targetId?: EntityId): Promise<readonly RuleV2Record[]>;
+  list(targetId?: EntityId, query?: { readonly search?: string; readonly offset?: number; readonly limit?: number }): Promise<readonly RuleV2Record[]>;
   summary(): Promise<RuleV2Summary>;
   create(draft: RuleV2Draft, actor: string): Promise<RuleV2Record>;
   update(id: EntityId, draft: RuleV2Draft, expectedRevision: string, actor: string): Promise<RuleV2Record>;
+  updateImported?(id: EntityId, draft: RuleV2ImportedDraft, expectedRevision: string, actor: string): Promise<RuleV2Record>;
+}
+
+export interface RuleV2ImportedDraft {
+  readonly name: string;
+  readonly priority: number;
+  readonly status: RuleV2Status;
+  readonly conditionGroups: RuleV2Record["conditionGroups"];
+  readonly actions: RuleV2Record["actions"];
 }

@@ -78,33 +78,47 @@ export function targetAssignmentFieldValues(product: UniversalProductDTO, field:
   throw new IntegrationContractError(`Unsupported target assignment field: ${field}`);
 }
 
-export function matchesTargetAssignmentCondition(product: UniversalProductDTO, condition: TargetAssignmentConditionRecord): boolean {
+const compiledConditions = new WeakMap<TargetAssignmentConditionRecord, {
+  readonly expected: ReadonlySet<string>;
+  readonly phrases: readonly string[];
+  readonly patterns: readonly RegExp[];
+}>();
+
+function compiledCondition(condition: TargetAssignmentConditionRecord) {
+  const cached = compiledConditions.get(condition);
+  if (cached !== undefined) return cached;
+  if (condition.values.length === 0 || condition.values.some((value) => value.trim() === "")) {
+    throw new IntegrationContractError(`Target assignment condition ${condition.field} requires non-empty values`);
+  }
+  if (condition.operator === "equals" && condition.values.length !== 1) throw new IntegrationContractError(`equals requires one value for ${condition.field}`);
+  const compiled = { expected: new Set(condition.values.map(normalize)),
+    phrases: condition.operator === "contains_phrase" ? condition.values.map(normalizePhrase) : [],
+    patterns: condition.operator === "regex" ? condition.values.map(compileTargetAssignmentRegex) : [] };
+  compiledConditions.set(condition, compiled);
+  return compiled;
+}
+
+export function matchesTargetAssignmentCondition(product: UniversalProductDTO, condition: TargetAssignmentConditionRecord,
+  fieldValues: (field: string) => readonly string[] = (field) => targetAssignmentFieldValues(product, field)): boolean {
   if (condition.operator === "absent") {
     if (condition.values.length > 0 || condition.matchSetId !== undefined) {
       throw new IntegrationContractError(`absent does not accept values for ${condition.field}`);
     }
-    return targetAssignmentFieldValues(product, condition.field).length === 0;
+    return fieldValues(condition.field).length === 0;
   }
-  if (condition.values.length === 0 || condition.values.some((value) => value.trim() === "")) {
-    throw new IntegrationContractError(`Target assignment condition ${condition.field} requires non-empty values`);
-  }
-  const actual = new Set(targetAssignmentFieldValues(product, condition.field).map(normalize));
-  const expected = condition.values.map(normalize);
-  if (condition.operator === "equals") {
-    if (expected.length !== 1) throw new IntegrationContractError(`equals requires one value for ${condition.field}`);
-    return actual.has(expected[0]!);
-  }
-  if (condition.operator === "one_of") return expected.some((value) => actual.has(value));
+  const compiled = compiledCondition(condition);
+  const actual = new Set(fieldValues(condition.field).map(normalize));
+  if (condition.operator === "equals" || condition.operator === "one_of") return [...actual].some((value) => compiled.expected.has(value));
   if (condition.operator === "contains_phrase") {
-    const phrases = condition.values.map(normalizePhrase);
-    return targetAssignmentFieldValues(product, condition.field).some((value) => {
+    const phrases = compiled.phrases;
+    return fieldValues(condition.field).some((value) => {
       const actualPhrase = ` ${normalizePhrase(value)} `;
       return phrases.some((phrase) => actualPhrase.includes(` ${phrase} `));
     });
   }
   if (condition.operator === "regex") {
-    const patterns = condition.values.map(compileTargetAssignmentRegex);
-    return targetAssignmentFieldValues(product, condition.field).some((value) => patterns.some((pattern) => pattern.test(value)));
+    const patterns = compiled.patterns;
+    return fieldValues(condition.field).some((value) => patterns.some((pattern) => pattern.test(value)));
   }
   throw new IntegrationContractError(`Unsupported target assignment operator: ${String(condition.operator)}`);
 }
@@ -112,9 +126,10 @@ export function matchesTargetAssignmentCondition(product: UniversalProductDTO, c
 export function resolveTargetAssignments(
   product: UniversalProductDTO,
   rules: readonly TargetAssignmentRuleRecord[],
+  fieldValues?: (field: string) => readonly string[],
 ): readonly TargetAssignmentDTO[] {
   const matching = rules.filter((rule) => rule.enabled && rule.conditionGroups.every((group) =>
-    group.conditions.some((condition) => matchesTargetAssignmentCondition(product, condition))));
+    group.conditions.some((condition) => matchesTargetAssignmentCondition(product, condition, fieldValues))));
   const groups = new Map<string, TargetAssignmentRuleRecord[]>();
   for (const rule of matching) groups.set(rule.groupCode, [...(groups.get(rule.groupCode) ?? []), rule]);
   const result: TargetAssignmentDTO[] = [];

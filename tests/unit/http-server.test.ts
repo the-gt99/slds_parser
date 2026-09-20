@@ -22,6 +22,18 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("protects imported v2 edits and forwards the expected revision", async () => {
+    const updateImported = vi.fn().mockResolvedValue({ id: "46", revision: "2" });
+    const server = createHttpServer({ ...dependencies({ query: vi.fn() }), rulesV2: { updateImported } as unknown as RulesV2Service });
+    const payload = { revision: "1", name: "Копия", priority: 100, status: "shadow", conditionGroups: [], actions: [] };
+    const unauthorized = await server.inject({ method: "PUT", url: "/api/rules-v2/46/imported", payload });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(updateImported).not.toHaveBeenCalled();
+    const response = await server.inject({ method: "PUT", url: "/api/rules-v2/46/imported", payload, headers: { authorization: `Bearer ${adminToken}` } });
+    expect(response.statusCode).toBe(200);
+    expect(updateImported).toHaveBeenCalledWith("46", payload, "1", expect.any(String));
+    await server.close();
+  });
   it("serves parser and proxy settings under the gear menu routes", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const server = createHttpServer(dependencies(database));
@@ -56,7 +68,7 @@ describe("HTTP server", () => {
     expect(rulesPage.statusCode).toBe(200);
     expect(schema.json()).toEqual({ version: "universal-product-dto.v1", donors: [] });
     expect(rules.json()).toEqual({ mode: "shadow", authoritative: false, items: [] });
-    expect(rulesV2.overview).toHaveBeenCalledWith("10");
+    expect(rulesV2.overview).toHaveBeenCalledWith("10", { search: "", offset: 0 });
     await server.close();
   });
 
