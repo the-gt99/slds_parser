@@ -97,7 +97,24 @@ export function matchExistingWordPressVariations(
     const key = `${taxonomy}:${termId}`;
     const matches = bySize.get(key) ?? [];
     if (matches.length === 0) {
-      ignored.push({ sourceVariantKey: String(item.source_variant_key ?? ""), size: key, reason: "Размера нет в WordPress; новый размер не создаётся" });
+      const inventory = record(item.inventory);
+      const price = record(item.price);
+      const variationKey = String(item.variation_key ?? "").trim();
+      const sourceVariantKey = String(item.source_variant_key ?? "").trim();
+      const canCreate = inventory.availability === "available"
+        && Object.keys(price).length > 0
+        && variationKey !== "";
+      if (!canCreate) {
+        ignored.push({ sourceVariantKey, size: key, reason: "Размера нет в WordPress; вариация создаётся только для доступного предложения с ценой" });
+        continue;
+      }
+      items.push({
+        variation_key: variationKey,
+        ...(sourceVariantKey === "" ? {} : { source_variant_key: sourceVariantKey }),
+        size: { taxonomy, term_id: termId },
+        price: price as JsonObject,
+        inventory: inventory as JsonObject,
+      });
       continue;
     }
     const variationId = positiveInteger(matches[0]!.variation_id)!;

@@ -36,19 +36,47 @@ describe("matchExistingWordPressVariations", () => {
     expect(matchExistingWordPressVariations(draft, snapshot).items.map((item) => item.variation_id)).toEqual([500, 502]);
     expect(matchExistingWordPressVariations({ ...draft, deactivateAll: true }, snapshot).items.map((item) => item.variation_id)).toEqual([500, 502]);
   });
-  it("updates only exact existing sizes and records absent sizes", () => {
+  it("updates exact existing sizes and creates an available absent size", () => {
     const result = matchExistingWordPressVariations({
       items: [
         { source_variant_key: "a", size: { taxonomy: "pa_razmer", term_id: 10 }, price: { source_currency: "USD", source_minor_amount: "10000" }, inventory: { availability: "available" } },
-        { source_variant_key: "b", size: { taxonomy: "pa_razmer", term_id: 11 }, price: { source_currency: "USD", source_minor_amount: "12000" }, inventory: { availability: "available" } },
+        { variation_key: "goat:product|pa_razmer:11", source_variant_key: "b", size: { taxonomy: "pa_razmer", term_id: 11 }, price: { source_currency: "USD", source_minor_amount: "12000" }, inventory: { availability: "available" } },
       ],
       sourceTargetSizes: ["pa_razmer:10", "pa_razmer:11"],
       knownTargetSizes: ["pa_razmer:10", "pa_razmer:11"],
       ignored: [],
       deactivateAll: false,
     }, { product: { variations: [{ variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 10 }] }] } });
-    expect(result.items).toEqual([expect.objectContaining({ variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 10 } })]);
-    expect(result.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "b", reason: expect.stringContaining("не создаётся") })]);
+    expect(result.items).toEqual([
+      expect.objectContaining({ variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 10 } }),
+      {
+        variation_key: "goat:product|pa_razmer:11",
+        source_variant_key: "b",
+        size: { taxonomy: "pa_razmer", term_id: 11 },
+        price: { source_currency: "USD", source_minor_amount: "12000" },
+        inventory: { availability: "available" },
+      },
+    ]);
+    expect(result.ignored).toEqual([]);
+  });
+
+  it("does not create an absent size without an available priced offer", () => {
+    const result = matchExistingWordPressVariations({
+      items: [{
+        variation_key: "goat:product|pa_razmer:11",
+        source_variant_key: "b",
+        size: { taxonomy: "pa_razmer", term_id: 11 },
+        price: null,
+        inventory: { availability: "unavailable", quantity: 0 },
+      }],
+      sourceTargetSizes: ["pa_razmer:11"],
+      knownTargetSizes: ["pa_razmer:11"],
+      ignored: [],
+      deactivateAll: false,
+    }, { product: { variations: [] } });
+
+    expect(result.items).toEqual([]);
+    expect(result.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "b", reason: expect.stringContaining("только для доступного") })]);
   });
 
   it("blocks duplicate existing variations for one size", () => {

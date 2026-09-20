@@ -384,14 +384,14 @@ export class WordPressVariationPatchRunner {
     const matched = matchExistingWordPressVariations(draft, candidate.item.payload);
     if (matched.items.length === 0 || matched.items.length > 100) {
       const error = matched.items.length === 0
-        ? "Нет безопасных существующих вариаций для обновления"
+        ? "Нет безопасных вариаций для обновления или создания"
         : "У товара больше 100 обновляемых вариаций; требуется отдельная партия";
       await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: matched.ignored, error });
       return null;
     }
     const basis = {
-      contract_version: "slds.wordpress.variation-patch.v2",
-      mode: "patch_existing_variations",
+      contract_version: "slds.wordpress.variation-patch.v3",
+      mode: "upsert_variations",
       identity: buildWordPressVariationPatchIdentity({
         targetId: candidate.item.wordpressProductId,
         sourceCode: candidate.source.code,
