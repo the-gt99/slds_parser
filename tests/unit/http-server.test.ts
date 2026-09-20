@@ -22,6 +22,25 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("serves parser and proxy settings under the gear menu routes", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const server = createHttpServer(dependencies(database));
+
+    const parser = await server.inject({ method: "GET", url: "/settings/parser" });
+    const proxies = await server.inject({ method: "GET", url: "/settings/proxies" });
+    const shell = await server.inject({ method: "GET", url: "/assets/admin-shell.js" });
+
+    expect(parser.statusCode).toBe(200);
+    expect(parser.body).toContain("/assets/admin-list.js");
+    expect(proxies.statusCode).toBe(200);
+    expect(proxies.body).toContain("/assets/proxies.js");
+    expect(shell.body).toContain("/settings/parser");
+    expect(shell.body).toContain("/settings/proxies");
+    expect(shell.body).not.toContain('["/runtime", "Парсер"');
+    expect(shell.body).not.toContain('["/proxies", "Прокси"');
+    await server.close();
+  });
+
   it("serves the DTO catalog and keeps Rules v2 in shadow mode", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const dataSchema = { catalog: vi.fn().mockResolvedValue({ version: "universal-product-dto.v1", donors: [] }) } as unknown as DataSchemaService;
@@ -358,7 +377,8 @@ describe("HTTP server", () => {
 
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("/assets/admin-shell.js");
-    expect(navigation.body).toContain('["/runtime", "Парсер"');
+    expect(navigation.body).toContain('["/settings/parser", "Настройки парсера"]');
+    expect(navigation.body).not.toContain('["/runtime", "Парсер"');
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);

@@ -3,7 +3,7 @@ const mode = location.pathname.includes("operations")
   ? "operations"
   : location.pathname.includes("wordpress-snapshots")
     ? "snapshots"
-    : location.pathname.includes("runtime")
+    : ["/runtime", "/settings/parser"].includes(location.pathname)
       ? "runtime"
       : location.pathname.includes("jobs")
         ? "jobs"
@@ -254,7 +254,7 @@ function renderJobs(data) {
     const executionSince = item.status === "running" ? (item.startedAt || item.lockedAt) : null;
     cell(tr, elapsedNode(item.durationMs, executionSince), "job-time-cell");
     cell(tr, item.attempts);
-    cell(tr, item.lockedBy ? link(item.lockedBy, "/runtime") : "-");
+    cell(tr, item.lockedBy ? link(item.lockedBy, "/settings/parser") : "-");
     const error = document.createElement("span");
     error.textContent = item.lastError || "-";
     if (item.payload) error.append(jsonMini("payload", item.payload));
@@ -1439,7 +1439,7 @@ function configure() {
   const titles = {
     products: "Товары",
     operations: "Реестр операций",
-    runtime: "Парсер",
+    runtime: "Настройки парсера",
     jobs: "Очередь и ошибки",
     snapshots: "Снимки WordPress",
     classifierConfig: "Настройки классификации",
