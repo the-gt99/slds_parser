@@ -67,7 +67,7 @@ const exactMappingsSql = upsert(`SELECT
   'Точное сопоставление: ' || type.name || ' · ' || mapping.source_value,
   'classification_exact',
   1000000,
-  'shadow',
+  CASE WHEN mapping.status = 'ignored' OR value.enabled THEN 'shadow' ELSE 'disabled' END,
   JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT('conditions', JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT(
     'field', 'candidate.' || type.code || '.sourceValue',
     'operator', 'equals',
@@ -103,7 +103,7 @@ LEFT JOIN reference_values value ON value.id = mapping.reference_value_id`);
 
 const classificationRulesSql = upsert(`WITH prepared AS (
   SELECT rule.*, type.code AS type_code, type.name AS type_name, value.code AS value_code,
-    value.name AS value_name, ${translatedRuleGroupsSql} AS translated_groups
+    value.name AS value_name, value.enabled AS value_enabled, ${translatedRuleGroupsSql} AS translated_groups
   FROM source_reference_rules rule
   JOIN reference_types type ON type.id = rule.reference_type_id
   JOIN reference_values value ON value.id = rule.reference_value_id
@@ -115,7 +115,7 @@ SELECT
   rule.name,
   'classification_rule',
   rule.priority,
-  CASE WHEN rule.enabled AND rule.deleted_at IS NULL THEN 'shadow' ELSE 'disabled' END,
+  CASE WHEN rule.enabled AND rule.deleted_at IS NULL AND rule.value_enabled THEN 'shadow' ELSE 'disabled' END,
   rule.translated_groups,
   JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT(
     'kind', 'resolve_reference',

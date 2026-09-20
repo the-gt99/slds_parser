@@ -60,4 +60,16 @@ describe("RulesExecution", () => {
     await execution.classifier.classify("1", product);
     expect(new Set(load.mock.contexts).size).toBe(4);
   });
+  it("validates v2 candidates against the v2 type snapshot instead of legacy types", async () => {
+    const { execution, switchMode, load } = setup();
+    load.mockResolvedValue(new RulesV2Snapshot("frozen", [], [{ code: "brand", cardinality: "single",
+      allowedSubjectKinds: ["product"], metadata: {} }]));
+    switchMode("v2", "2");
+    const run = await execution.classifier.classify("1", { ...product, referenceCandidates: [{
+      key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product",
+      sourceValue: "Adidas", context: {}, evidence: {},
+    }] });
+    expect(run.product.classification.execution?.mode).toBe("v2");
+    expect(run.product.classification.unresolved).toHaveLength(1);
+  });
 });

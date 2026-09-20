@@ -1,7 +1,7 @@
 import type { JsonObject, UniversalProductDTO } from "../contracts/index.js";
 import { toCommonProductDTO } from "../contracts/common-product.js";
 import { IntegrationContractError } from "../core/errors/index.js";
-import type { ClassificationLookupInput, ClassificationMappingMatchRecord, ClassificationRuleRecord,
+import type { ClassificationLookupInput, ClassificationMappingMatchRecord, ClassificationReferenceTypeRecord, ClassificationRuleRecord,
   RuleV2Record, RuleV2Action, TargetAssignmentRuleRecord, TargetValueMappingRecord,
   TargetClassificationProjectionRecord, TargetReferenceProjectionRecord } from "../repositories/index.js";
 import { resolveTargetAssignments, targetAssignmentFieldValues } from "./target-assignment-rule-matcher.js";
@@ -79,7 +79,8 @@ export class RulesV2Snapshot {
   private readonly assignments = new Map<string, TargetAssignmentRuleRecord[]>();
   private readonly native = new Map<string, AssignmentIndex>();
 
-  constructor(readonly revision: string, readonly records: readonly RuleV2Record[]) {
+  constructor(readonly revision: string, readonly records: readonly RuleV2Record[],
+    private readonly referenceTypes: readonly ClassificationReferenceTypeRecord[] = []) {
     const native = new Map<string, TargetAssignmentRuleRecord[]>();
     for (const rule of records) {
       if (rule.status !== "shadow") continue;
@@ -143,6 +144,10 @@ export class RulesV2Snapshot {
     }
     for (const [lookup, rules] of native) this.native.set(lookup, new AssignmentIndex(rules));
     for (const rules of this.assignments.values()) rules.sort((a, b) => a.groupCode.localeCompare(b.groupCode) || b.priority - a.priority || numericOrder(a, b));
+  }
+
+  listReferenceTypes(typeCodes: readonly string[]): readonly ClassificationReferenceTypeRecord[] {
+    return this.referenceTypes.filter((type) => typeCodes.includes(type.code));
   }
 
   decisions(sourceId: string, inputs: readonly ClassificationLookupInput[]): readonly ClassificationMappingMatchRecord[] {

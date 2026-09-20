@@ -1,6 +1,6 @@
 import type { UniversalProductDTO } from "../../contracts/index.js";
 import { IntegrationContractError } from "../../core/errors/index.js";
-import type { ClassificationRepository, ReferenceRepository, RuleV2Record } from "../../repositories/index.js";
+import type { ClassificationReferenceTypeRecord, ClassificationRepository, ReferenceRepository, RuleV2Record } from "../../repositories/index.js";
 import { RulesV2Snapshot } from "../../services/rules-v2-snapshot.js";
 import type { SupplementalTargetAssignmentResolver } from "../../services/target-reference-mapping-service.js";
 import type { SqlExecutor } from "./sql-executor.js";
@@ -44,12 +44,15 @@ export class RulesV2Runtime {
     const dictionary = await this.db.query<DatabaseRow>(`SELECT id::TEXT, target_id::TEXT, active, external_id, name, slug
       FROM target_dictionary_values WHERE id = ANY($1::BIGINT[])`, [dictionaryIds]);
     const values = new Map(dictionary.rows.map((row) => [String(row.id), row]));
-    const enabled = await this.db.query<DatabaseRow>("SELECT id::TEXT FROM reference_values WHERE enabled = TRUE");
-    const enabledReferences = new Set(enabled.rows.map((row) => String(row.id)));
+    const definitions = await this.db.query<DatabaseRow>(`SELECT code, cardinality, allowed_subject_kinds, metadata
+      FROM rules_v2_reference_types WHERE enabled = TRUE`);
+    const referenceTypes: ClassificationReferenceTypeRecord[] = definitions.rows.map((row) => ({
+      code: String(row.code), cardinality: String(row.cardinality) as ClassificationReferenceTypeRecord["cardinality"],
+      allowedSubjectKinds: row.allowed_subject_kinds as ClassificationReferenceTypeRecord["allowedSubjectKinds"],
+      metadata: row.metadata as ClassificationReferenceTypeRecord["metadata"],
+    }));
     const hydrated = records.flatMap((rule): RuleV2Record[] => {
       const reference = rule.actions.find((action) => action.kind === "resolve_reference");
-      if (reference?.kind === "resolve_reference" && reference.resolutionStatus !== "ignored"
-        && !enabledReferences.has(reference.referenceValueId ?? "")) return [];
       if (reference !== undefined || rule.originKind === "target_mapping") return [rule];
       let externalSlug: string | null = null;
       const actions = rule.actions.flatMap((action) => {
@@ -62,14 +65,14 @@ export class RulesV2Runtime {
       // Keep actionless assignments: matching them must report an error, just like the old engine.
       return [{ ...rule, actions, originPayload: { ...rule.originPayload, externalSlug } }];
     });
-    this.cached = new RulesV2Snapshot(revision, hydrated);
+    this.cached = new RulesV2Snapshot(revision, hydrated, referenceTypes);
     this.checkedAt = this.now();
     return this.cached;
   }
 
   classificationRepository(audit: ClassificationRepository): ClassificationRepository {
     return {
-      listReferenceTypes: (types) => audit.listReferenceTypes(types),
+      listReferenceTypes: async (types) => (await this.snapshot()).listReferenceTypes(types),
       saveProductResult: (input) => audit.saveProductResult(input),
       findSourceDecisions: async (sourceId, inputs) => (await this.snapshot()).decisions(sourceId, inputs),
       getActiveRuleSetRevision: async () => (await this.snapshot()).revision,

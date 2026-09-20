@@ -25,7 +25,7 @@ export class RulesExecution implements RulesOperationScope {
   constructor(private readonly pool: SqlPool & SqlExecutor, private readonly legacy: ClassificationRepository) {
     this.legacyClassifier = new ProductClassifier(legacy);
     const repository: ClassificationRepository = {
-      listReferenceTypes: (types) => legacy.listReferenceTypes(types),
+      listReferenceTypes: (types) => this.current().runtime!.classificationRepository(legacy).listReferenceTypes(types),
       saveProductResult: (input) => legacy.saveProductResult(input),
       findSourceDecisions: (source, inputs) => this.current().runtime!.classificationRepository(legacy).findSourceDecisions(source, inputs),
       getActiveRuleSetRevision: async () => this.current().revision,
