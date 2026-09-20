@@ -1,6 +1,6 @@
 import { statfs } from "node:fs/promises";
 
-import type { EntityId, JsonValue, ProductImageDTO, ProductVariantDTO } from "../contracts/index.js";
+import { toCommonProductDTO, type EntityId, type JsonValue, type ProductImageDTO, type ProductVariantDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetDictionaryProviderRegistry } from "../integrations/index.js";
 import type {
@@ -365,6 +365,7 @@ export class ProductAdminService {
         updatedAt: snapshot.sourceProduct.updatedAt,
       },
       product: internal === null ? null : publicProduct(internal),
+      commonDto: internal === null ? null : toCommonProductDTO(internal.data, snapshot.source, snapshot.sourceProduct),
       collection: {
         run: snapshot.lastCollectionRun === null ? null : {
           id: snapshot.lastCollectionRun.id,

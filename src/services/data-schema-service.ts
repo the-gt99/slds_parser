@@ -12,6 +12,31 @@ export interface DataFieldDefinition {
 }
 
 const commonFields: readonly DataFieldDefinition[] = [
+  { path: "source.code", rulePath: null, name: "Код донора", type: "строка", description: "Источник товара; его полные данные остаются в parts.", example: "goat" },
+  { path: "source.productId", rulePath: null, name: "ID в парсере", type: "строка", description: "Внутренний идентификатор записи товара." },
+  { path: "source.sourceKey", rulePath: null, name: "Ключ донора", type: "строка", description: "Стабильный ключ для поиска исходных данных." },
+  { path: "source.externalId", rulePath: null, name: "Внешний ID", type: "строка или null", description: "ID товара у донора, если он есть." },
+  { path: "title", rulePath: "product.title", name: "Название", type: "строка", description: "Исходное название товара." },
+  { path: "description", rulePath: "product.description", name: "Описание", type: "строка", description: "Исходное описание. Перевод хранится отдельно." },
+  { path: "sku", rulePath: "product.sku", name: "Артикул", type: "строка или null", description: "Артикул товара, если он есть." },
+  { path: "characteristics.brand", rulePath: null, name: "Бренд", type: "строка или null", description: "Исходное название бренда, не термин WordPress." },
+  { path: "characteristics.model", rulePath: null, name: "Модель", type: "строка или null", description: "Исходная модель, если её можно воспроизводимо выделить." },
+  { path: "characteristics.category", rulePath: null, name: "Категория", type: "строка или null", description: "Структурный тип товара источника, не категория WordPress." },
+  { path: "characteristics.color", rulePath: null, name: "Цвет", type: "строка или null", description: "Исходное название цвета." },
+  { path: "characteristics.material", rulePath: null, name: "Материал", type: "строка или null", description: "Материал, сообщённый источником." },
+  { path: "characteristics.audience", rulePath: null, name: "Аудитория", type: "строка или null", description: "Аудитория как факт товара, не WP-термин." },
+  { path: "characteristics.tags", rulePath: null, name: "Метки источника", type: "массив строк", description: "Исходные технологии и метки; WP-назначения отдельно." },
+  { path: "images[]", rulePath: null, name: "Изображения", type: "массив", description: "URL, подпись и порядок без локальных путей и хешей." },
+  { path: "variants[].sourceVariantId", rulePath: null, name: "Ключ варианта", type: "строка", description: "Стабильный ключ варианта у источника." },
+  { path: "variants[].sku", rulePath: null, name: "Артикул варианта", type: "строка или null", description: "Артикул варианта, если есть." },
+  { path: "variants[].size", rulePath: null, name: "Размер", type: "объект", description: "Исходное значение и система размера. Конвертация в WP позже." },
+  { path: "variants[].price", rulePath: null, name: "Цена", type: "объект или null", description: "Decimal-строка и валюта; null — цена неизвестна." },
+  { path: "variants[].availability", rulePath: null, name: "Наличие", type: "строка", description: "available, unavailable, preorder или unknown." },
+  { path: "variants[].quantity", rulePath: null, name: "Количество", type: "число или null", description: "Только подтверждённое количество; null не означает ноль." },
+];
+
+// Existing processing snapshots and rules v2 still address these v1 paths.
+const legacyRuleFields: readonly DataFieldDefinition[] = [
   { path: "title", rulePath: "product.title", name: "Название", type: "строка", description: "Итоговое название товара.", example: "Nike Air Max 1 '86 OG" },
   { path: "description", rulePath: "product.description", name: "Описание", type: "строка", description: "Исходное описание товара без подмены историей бренда." },
   { path: "sku", rulePath: "product.sku", name: "Артикул", type: "строка", description: "Артикул товара из источника." },
@@ -55,14 +80,20 @@ const commonFields: readonly DataFieldDefinition[] = [
 const goatFields: readonly DataFieldDefinition[] = [
   { path: "product.name", rulePath: "product.title", name: "Название", type: "строка", description: "Название GOAT.", source: "product", transform: "Копируется в title" },
   { path: "product.description", rulePath: "product.description", name: "Описание", type: "строка", description: "Описание GOAT.", source: "product", transform: "Копируется в description" },
+  { path: "product.sku", rulePath: "product.sku", name: "Артикул", type: "строка", description: "Пустое значение становится null в общем DTO.", source: "product", transform: "sku" },
   { path: "product.story", rulePath: "product.attribute.story", name: "История", type: "строка", description: "Отдельный маркетинговый текст.", source: "product", transform: "attributes.story" },
-  { path: "product.brandName | brand", rulePath: "product.attribute.brand", name: "Бренд", type: "строка", description: "brandName имеет приоритет над brand.", source: "product", transform: "attributes.brand и candidate.brand" },
+  { path: "product.brandName | brand", rulePath: "product.attribute.brand", name: "Бренд", type: "строка", description: "brandName имеет приоритет над brand.", source: "product", transform: "candidate.brand → characteristics.brand" },
+  { path: "product.name + color", rulePath: "candidate.model.sourceValue", name: "Модель", type: "строка", description: "Название без подтверждённого конечного colorway.", source: "product", transform: "candidate.model → characteristics.model" },
   { path: "product.silhouette", rulePath: "product.attribute.family", name: "Силуэт", type: "строка", description: "Контекст модели.", source: "product", transform: "attributes.family" },
-  { path: "product.singleGender | gender", rulePath: "product.attribute.gender", name: "Пол / аудитория", type: "строка", description: "singleGender имеет приоритет.", source: "product", transform: "attributes.gender" },
-  { path: "product.productType", rulePath: "product.attribute.productType", name: "Тип товара", type: "строка", description: "Первый приоритет структурной категории.", source: "product", transform: "category: productType → productCategory → route" },
+  { path: "product.singleGender | gender", rulePath: "product.attribute.gender", name: "Пол / аудитория", type: "строка", description: "singleGender имеет приоритет.", source: "product", transform: "attributes.gender → characteristics.audience" },
+  { path: "product.productType", rulePath: "product.attribute.productType", name: "Тип товара", type: "строка", description: "Первый приоритет структурной категории.", source: "product", transform: "category: productType → productCategory → route → characteristics.category" },
   { path: "product.productCategory", rulePath: "product.attribute.productCategory", name: "Категория", type: "строка", description: "Второй приоритет структурной категории.", source: "product" },
   { path: "product.taxonomyLevel1..4", rulePath: "product.attribute.taxonomy.taxonomyLevel1", name: "Таксономия", type: "строки", description: "До четырёх уровней дерева GOAT.", source: "product", transform: "attributes.taxonomy" },
-  { path: "product.technologies + midsole", rulePath: "candidate.tag.sourceValue", name: "Технологии", type: "массив", description: "midsole добавляется без дубля.", source: "product", transform: "tag candidates" },
+  { path: "product.color", rulePath: "product.attribute.color", name: "Цвет", type: "строка", description: "Исходное название цвета.", source: "product", transform: "candidate.color → characteristics.color" },
+  { path: "product.upperMaterial", rulePath: "product.attribute.upperMaterial", name: "Материал", type: "строка", description: "Материал верха.", source: "product", transform: "candidate.material → characteristics.material" },
+  { path: "product.technologies + midsole", rulePath: "candidate.tag.sourceValue", name: "Технологии", type: "массив", description: "midsole добавляется без дубля.", source: "product", transform: "tag candidates → characteristics.tags" },
+  { path: "product.tags", rulePath: "candidate.tag.sourceValue", name: "Метки", type: "массив", description: "Исходные метки без WP-назначений.", source: "product", transform: "tag candidates → characteristics.tags" },
+  { path: "product.images", rulePath: null, name: "Изображения", type: "массив", description: "URL и порядок изображений.", source: "product", transform: "images[]" },
   { path: "product.activity | activities | activitiesList", rulePath: "candidate.activity.sourceValue", name: "Вид спорта", type: "массив", description: "Объединяется с удалением дублей.", source: "product", transform: "activity candidates" },
   { path: "offers.offers[]", rulePath: null, name: "Предложения", type: "массив", description: "Источник размеров, цен и наличия.", source: "offers", transform: "variants[]; только new_no_defects" },
   { path: "offers.countryCode", rulePath: "product.metadata.countryCode", name: "Страна", type: "строка", description: "Страна предложений.", source: "offers", transform: "metadata.countryCode" },
@@ -74,12 +105,13 @@ export class DataSchemaService {
   async catalog() {
     const sources = await this.sources.listEnabled();
     return {
-      version: "universal-product-dto.v1",
-      common: { name: "Общий DTO", description: "Единая форма товара после SourceProcessor и до target exporter-а.", fields: commonFields },
+      version: "common-product-dto.v1",
+      common: { name: "Общий DTO", description: "Компактный общий контракт товара. В карточке товара доступен как commonDto.", fields: commonFields },
+      legacy: { name: "Служебные поля v1", description: "Действующие пути обработки и правил v2. Не входят в общий контракт; сохранены для совместимости.", fields: legacyRuleFields },
       donors: sources.map((source) => ({ id: source.id, code: source.code, name: source.name,
         description: source.code === "goat" ? "Поля parts product и offers и их преобразование в общий DTO." : "Схема донора ещё не описана.",
         fields: source.code === "goat" ? goatFields : [] })),
-      ruleFields: commonFields.filter((field) => field.rulePath !== null).map(({ rulePath, name, type, description }) => ({ path: rulePath!, name, type, description })),
+      ruleFields: legacyRuleFields.filter((field) => field.rulePath !== null).map(({ rulePath, name, type, description }) => ({ path: rulePath!, name, type, description })),
     };
   }
 }

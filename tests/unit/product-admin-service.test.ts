@@ -60,6 +60,10 @@ describe("ProductAdminService", () => {
     expect(result.targets[0]?.editUrl).toBe("https://shop.example/wp-admin/post.php?post=99&action=edit");
     expect(result.product?.images[0]).not.toHaveProperty("localPath");
     expect(result.product?.images[0]).not.toHaveProperty("webpLocalPath");
+    expect(result.commonDto).toMatchObject({ source: { code: "test", productId: "3", sourceKey: "source-3", externalId: "donor-3" }, title: "Test shoe", characteristics: { brand: null, tags: [] } });
+    expect(result.commonDto?.images[0]).toEqual({ url: "https://parser.example/images/3.webp", alt: "Test shoe", position: 0 });
+    expect(result.commonDto).not.toHaveProperty("referenceCandidates");
+    expect(result.commonDto).not.toHaveProperty("metadata");
     expect(result.processing.currentOutput?.title).toBe("Test shoe");
     expect(result.processing.currentOutput?.images[0]).not.toHaveProperty("localPath");
   });

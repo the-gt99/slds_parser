@@ -49,3 +49,4 @@ export type {
   UnresolvedReferenceDTO,
   UniversalProductDTO,
 } from "./products.js";
+export { toCommonProductDTO, type CommonProductDTO } from "./common-product.js";
