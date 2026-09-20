@@ -21,6 +21,7 @@
     "rules-v2:audit": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2.ts",
     "rules-v2:audit-payload": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-payload.ts",
     "rules-v2:mode": "node --env-file-if-exists=.env --import tsx src/cli/rules-v2-mode.ts",
+    "rules-v2:smoke-engine": "node --env-file-if-exists=.env --import tsx src/cli/smoke-rules-v2-engine.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
     "db:cleanup": "node --env-file-if-exists=.env --import tsx src/cli/cleanup-retention.ts",
     "goat:enqueue-discovery": "node --env-file-if-exists=.env --import tsx src/cli/goat-enqueue-discovery.ts",
