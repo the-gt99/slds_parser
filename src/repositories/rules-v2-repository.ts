@@ -6,6 +6,7 @@ export type RuleV2OriginKind = "native" | "exact_mapping" | "classification_rule
   | "classification_projection" | "reference_projection" | "target_assignment_rule";
 
 export interface RuleV2Action {
+  readonly primarySourceBrand?: boolean;
   readonly kind?: "assign_target_term";
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
@@ -55,7 +56,7 @@ export interface RuleV2Draft {
   readonly priority: number;
   readonly status: RuleV2Status;
   readonly conditionGroups: readonly TargetAssignmentConditionGroupRecord[];
-  readonly actions: readonly { readonly targetScope: string; readonly dictionaryValueId: EntityId; readonly mode: "add" | "replace" }[];
+  readonly actions: readonly { readonly targetScope: string; readonly dictionaryValueId: EntityId; readonly mode: "add" | "replace"; readonly primarySourceBrand?: boolean }[];
   readonly reason?: string;
 }
 

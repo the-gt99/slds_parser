@@ -15,6 +15,11 @@ export interface SupplementalTargetAssignmentResolver {
   ) => readonly TargetAssignmentDTO[] | Promise<readonly TargetAssignmentDTO[]>>;
 }
 
+export interface RulesOperationScope {
+  run<T>(callback: () => Promise<T>): Promise<T>;
+  prepareProduct(sourceId: EntityId, product: UniversalProductDTO): Promise<UniversalProductDTO>;
+}
+
 function mergeAssignments(
   primary: readonly TargetAssignmentDTO[],
   supplemental: readonly TargetAssignmentDTO[],
@@ -34,7 +39,14 @@ export class TargetReferenceMappingService {
   constructor(
     private readonly references: ReferenceRepository,
     private readonly supplementalAssignments?: SupplementalTargetAssignmentResolver,
+    private readonly execution?: RulesOperationScope,
   ) {}
+
+  runWithRules<T>(callback: () => Promise<T>): Promise<T> { return this.execution?.run(callback) ?? callback(); }
+
+  prepareProduct(sourceId: EntityId, product: UniversalProductDTO): Promise<UniversalProductDTO> {
+    return this.execution?.prepareProduct(sourceId, product) ?? Promise.resolve(product);
+  }
 
   async resolveTargetValue(
     targetId: EntityId,

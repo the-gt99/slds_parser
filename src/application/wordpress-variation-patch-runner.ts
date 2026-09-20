@@ -119,6 +119,10 @@ export class WordPressVariationPatchRunner {
   }
 
   async prepare(payload: PrepareWordPressVariationPatchesPayload): Promise<RunnerResult> {
+    return this.mappings.runWithRules(() => this.prepareUnderRules(payload));
+  }
+
+  private async prepareUnderRules(payload: PrepareWordPressVariationPatchesPayload): Promise<RunnerResult> {
     this.trimRunCaches(payload.runId);
     const run = await this.repository.getRun(payload.runId);
     if (run === null) throw new IntegrationContractError(`WordPress catalog run not found: ${payload.runId}`);
@@ -127,26 +131,28 @@ export class WordPressVariationPatchRunner {
       afterWordPressProductId: payload.afterCursor,
       throughWordPressProductId: payload.throughCursor,
     });
+    const cacheKey = payload.runId + ":" + (candidates[0] === undefined ? "" : await this.mappings.getTargetMappingRevision(candidates[0].target.id));
+    this.trimRunCaches(cacheKey);
     const activeTemplates = candidates.length === 0 ? [] : await this.contentTemplates.listActive(candidates[0]!.target.id);
     const templates = activeTemplates.map((template) => ({
       id: template.id, field: template.field, revision: template.revision, templateSource: template.templateSource,
       profileKey: template.profileKey, profileName: template.profileName, managementMode: template.managementMode,
       categoryTermIds: template.categoryTermIds, requiredContextPaths: template.requiredContextPaths,
     }));
-    let referenceCache = this.referenceCachesByRun.get(payload.runId);
+    let referenceCache = this.referenceCachesByRun.get(cacheKey);
     if (referenceCache === undefined) {
       referenceCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>();
-      this.referenceCachesByRun.set(payload.runId, referenceCache);
+      this.referenceCachesByRun.set(cacheKey, referenceCache);
     }
-    let projectionCache = this.projectionCachesByRun.get(payload.runId);
+    let projectionCache = this.projectionCachesByRun.get(cacheKey);
     if (projectionCache === undefined) {
       projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
-      this.projectionCachesByRun.set(payload.runId, projectionCache);
+      this.projectionCachesByRun.set(cacheKey, projectionCache);
     }
-    let assignmentResolver = this.assignmentResolversByRun.get(payload.runId);
+    let assignmentResolver = this.assignmentResolversByRun.get(cacheKey);
     if (assignmentResolver === undefined && candidates[0] !== undefined) {
       assignmentResolver = this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
-      this.assignmentResolversByRun.set(payload.runId, assignmentResolver);
+      this.assignmentResolversByRun.set(cacheKey, assignmentResolver);
     }
     const resolveAssignments = assignmentResolver === undefined
       ? async () => []
@@ -176,7 +182,7 @@ export class WordPressVariationPatchRunner {
         source: candidate.source,
         sourceProduct: candidate.sourceProduct,
         target: candidate.target,
-        product: candidate.product,
+        product: await this.mappings.prepareProduct(candidate.source.id, candidate.product),
         existingExternalId: candidate.item.wordpressProductId,
         existingTargetSnapshot: candidate.item.payload,
         references: {
@@ -253,6 +259,10 @@ export class WordPressVariationPatchRunner {
   }
 
   async preparePatch(payload: PrepareWordPressVariationPatchPayload): Promise<RunnerResult> {
+    return this.mappings.runWithRules(() => this.preparePatchUnderRules(payload));
+  }
+
+  private async preparePatchUnderRules(payload: PrepareWordPressVariationPatchPayload): Promise<RunnerResult> {
     const cursor = (BigInt(payload.wordpressProductId) - 1n).toString();
     const candidates = await this.repository.listVariationCandidates({
       runId: payload.runId,
@@ -334,21 +344,22 @@ export class WordPressVariationPatchRunner {
     liveVariants: readonly ProductVariantDTO[],
     targetSnapshotRefreshed = false,
   ): Promise<JsonObject | null> {
-    this.trimRunCaches(runId);
-    let referenceCache = this.referenceCachesByRun.get(runId);
+    const cacheKey = runId + ":" + await this.mappings.getTargetMappingRevision(candidate.target.id);
+    this.trimRunCaches(cacheKey);
+    let referenceCache = this.referenceCachesByRun.get(cacheKey);
     if (referenceCache === undefined) {
       referenceCache = new Map();
-      this.referenceCachesByRun.set(runId, referenceCache);
+      this.referenceCachesByRun.set(cacheKey, referenceCache);
     }
-    let projectionCache = this.projectionCachesByRun.get(runId);
+    let projectionCache = this.projectionCachesByRun.get(cacheKey);
     if (projectionCache === undefined) {
       projectionCache = new Map();
-      this.projectionCachesByRun.set(runId, projectionCache);
+      this.projectionCachesByRun.set(cacheKey, projectionCache);
     }
-    let assignmentResolver = this.assignmentResolversByRun.get(runId);
+    let assignmentResolver = this.assignmentResolversByRun.get(cacheKey);
     if (assignmentResolver === undefined) {
       assignmentResolver = this.mappings.createTargetAssignmentResolver(candidate.target.id);
-      this.assignmentResolversByRun.set(runId, assignmentResolver);
+      this.assignmentResolversByRun.set(cacheKey, assignmentResolver);
     }
     const resolveAssignments = await assignmentResolver;
     const resolveReference = (input: TargetReferenceResolutionInput) => {
@@ -371,7 +382,7 @@ export class WordPressVariationPatchRunner {
       source: candidate.source,
       sourceProduct: candidate.sourceProduct,
       target: candidate.target,
-      product: candidate.product,
+      product: await this.mappings.prepareProduct(candidate.source.id, candidate.product),
       liveVariants,
       existingExternalId: candidate.item.wordpressProductId,
       existingTargetSnapshot: candidate.item.payload,

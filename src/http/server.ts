@@ -716,7 +716,11 @@ function ruleV2Body(value: RuleV2Body | undefined): RuleV2Draft {
   return {
     sourceId: entityId(value.sourceId, "sourceId"), targetId, name: base.name, groupCode: base.groupCode,
     ...(value.previewRuleId === undefined ? {} : { previewRuleId: entityId(value.previewRuleId, "previewRuleId") }),
-    priority: base.priority, status: value.status, conditionGroups: base.conditionGroups, actions: base.actions,
+    priority: base.priority, status: value.status, conditionGroups: base.conditionGroups, actions: base.actions.map((action, index) => {
+      const raw = (value.actions as Record<string, unknown>[])[index]!;
+      if (raw.primarySourceBrand !== undefined && typeof raw.primarySourceBrand !== "boolean") throw new HttpInputError("primarySourceBrand must be boolean");
+      return { ...action, ...(raw.primarySourceBrand === true ? { primarySourceBrand: true } : {}) };
+    }),
     ...(optionalString(value.reason) === undefined ? {} : { reason: optionalString(value.reason)! }),
   };
 }

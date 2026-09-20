@@ -74,6 +74,43 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("lets a v2 replacement set a category directly when an old internal category cannot map", async () => {
+    const base = context();
+    const direct: ExportContext = {
+      ...base,
+      product: { ...base.product, classification: { ...base.product.classification!, execution: { mode: "v2", revision: "5" } } },
+      references: { ...base.references,
+        resolveReference: vi.fn(async ({ referenceType }) => {
+          if (referenceType === "brand") return { externalValue: "31", externalLabel: "Nike" };
+          throw new Error("Old category mapping is missing");
+        }),
+        resolveAssignments: vi.fn().mockResolvedValue([{ targetScope: "product.category", externalValue: "41", externalLabel: "Кроссовки", mode: "replace" }]),
+      },
+    };
+    const payload = await buildWordPressUpsertPayload(direct);
+    expect(((payload.product as JsonObject).taxonomies as JsonObject).product_cat).toEqual({ mode: "replace", term_ids: [41] });
+    await expect(buildWordPressUpsertPayload({ ...direct, references: { ...direct.references,
+      resolveAssignments: vi.fn().mockResolvedValue([{ targetScope: "product.category", externalValue: "41", externalLabel: "Кроссовки", mode: "add" }]),
+    } })).rejects.toThrow();
+  });
+
+  it("keeps the declared source brand for size conversion when v2 adds a collaboration brand", async () => {
+    const base = context();
+    const input: ExportContext = { ...base,
+      product: { ...base.product, classification: { ...base.product.classification!, execution: { mode: "v2", revision: "5" } },
+        variants: [{ ...base.product.variants[0]!, size: { sourceValue: "40", displayValue: "40", system: "eu-numeric", audience: "men" } }] },
+      references: { ...base.references, resolveAssignments: vi.fn().mockResolvedValue([
+        { targetScope: "product.brand", externalValue: "31", externalLabel: "Nike", mode: "add", primarySourceBrand: true },
+        { targetScope: "product.brand", externalValue: "99", externalLabel: "Other", mode: "add" },
+      ]) },
+    };
+    const converter = { supports: vi.fn(() => true), convert: vi.fn(async () =>
+      ({ sourceValue: "7", displayValue: "7", system: "us-numeric" as const, audience: "men" as const })) };
+    const payload = await buildWordPressUpsertPayload(input, converter);
+    expect(converter.convert).toHaveBeenCalledWith(expect.objectContaining({ brandTermId: 31 }));
+    expect((((payload.product as JsonObject).taxonomies as JsonObject).pa_brand as JsonObject).term_ids).toEqual([31, 99]);
+  });
+
   it("accepts reviewed existing translations when switching the required provider", async () => {
     const requiredTranslation = { providerCode: "openrouter", providerVersion: "1.0.0:deepseek/deepseek-v3.2", sourceLocale: "en", targetLocale: "ru" };
     const acceptedTranslations = [{ providerCode: "deepl", providerVersion: "1.0.0", sourceLocale: "en", targetLocale: "ru" }];

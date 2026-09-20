@@ -8,6 +8,7 @@ import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
 import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
+import { RulesExecution } from "./infrastructure/db/rules-execution.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
@@ -87,11 +88,13 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const exporters = new TargetExporterRegistry();
   const translationCache = new PostgresTranslationCacheRepository(pool);
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache);
-  const classifier = new ProductClassifier(repositories.classifications);
+  const rulesExecution = new RulesExecution(pool, repositories.classifications);
+  const classifier = rulesExecution.classifier;
   const targetDictionary = new PostgresTargetDictionaryRepository(pool);
   const targetMappings = new TargetReferenceMappingService(
-    repositories.references,
-    new WordPressTitleBrandAssignmentResolver(targetDictionary),
+    rulesExecution.references(repositories.references),
+    rulesExecution.supplemental(new WordPressTitleBrandAssignmentResolver(targetDictionary)),
+    rulesExecution,
   );
   const workerOptions = loadWorkerConfig(environment);
   const exportControl = new PostgresExportControlRepository(pool);

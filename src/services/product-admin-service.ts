@@ -168,7 +168,7 @@ export class ProductAdminService {
     private readonly providers: TargetDictionaryProviderRegistry,
     private readonly operations?: ProductOperationRegistry,
     private readonly jobs?: JobRepository,
-    private readonly classifier?: ProductClassifier,
+    private readonly classifier?: Pick<ProductClassifier, "classify" | "version">,
   ) {}
 
   listProducts(query: Parameters<NonNullable<ProductAdminRepository["listProducts"]>>[0]) {

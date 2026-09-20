@@ -14,6 +14,12 @@ export class RulesV2Runtime {
   private checkedAt = 0;
   constructor(private readonly db: SqlExecutor, private readonly now = Date.now) {}
 
+  static frozen(db: SqlExecutor, snapshot: RulesV2Snapshot): RulesV2Runtime {
+    const runtime = new RulesV2Runtime(db, () => 0);
+    runtime.cached = snapshot;
+    return runtime;
+  }
+
   async snapshot(): Promise<RulesV2Snapshot> {
     if (this.cached !== undefined && this.now() - this.checkedAt < 1000) return this.cached;
     if (this.loading !== undefined) return this.loading;

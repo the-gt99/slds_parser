@@ -98,27 +98,35 @@ function compiledCondition(condition: TargetAssignmentConditionRecord) {
   return compiled;
 }
 
+interface PreparedField { readonly raw: readonly string[]; readonly normalized: ReadonlySet<string>; readonly phrases: readonly string[] }
+
 export function matchesTargetAssignmentCondition(product: UniversalProductDTO, condition: TargetAssignmentConditionRecord,
-  fieldValues: (field: string) => readonly string[] = (field) => targetAssignmentFieldValues(product, field)): boolean {
+  fieldValues: (field: string) => readonly string[] = (field) => targetAssignmentFieldValues(product, field),
+  cache = new Map<string, PreparedField>()): boolean {
+  let field = cache.get(condition.field);
+  if (field === undefined) {
+    const raw = fieldValues(condition.field);
+    field = { raw, normalized: new Set(raw.map(normalize)), phrases: raw.map((value) => ` ${normalizePhrase(value)} `) };
+    cache.set(condition.field, field);
+  }
   if (condition.operator === "absent") {
     if (condition.values.length > 0 || condition.matchSetId !== undefined) {
       throw new IntegrationContractError(`absent does not accept values for ${condition.field}`);
     }
-    return fieldValues(condition.field).length === 0;
+    return field.raw.length === 0;
   }
   const compiled = compiledCondition(condition);
-  const actual = new Set(fieldValues(condition.field).map(normalize));
+  const actual = field.normalized;
   if (condition.operator === "equals" || condition.operator === "one_of") return [...actual].some((value) => compiled.expected.has(value));
   if (condition.operator === "contains_phrase") {
     const phrases = compiled.phrases;
-    return fieldValues(condition.field).some((value) => {
-      const actualPhrase = ` ${normalizePhrase(value)} `;
+    return field.phrases.some((actualPhrase) => {
       return phrases.some((phrase) => actualPhrase.includes(` ${phrase} `));
     });
   }
   if (condition.operator === "regex") {
     const patterns = compiled.patterns;
-    return fieldValues(condition.field).some((value) => patterns.some((pattern) => pattern.test(value)));
+    return field.raw.some((value) => patterns.some((pattern) => pattern.test(value)));
   }
   throw new IntegrationContractError(`Unsupported target assignment operator: ${String(condition.operator)}`);
 }
@@ -128,8 +136,9 @@ export function resolveTargetAssignments(
   rules: readonly TargetAssignmentRuleRecord[],
   fieldValues?: (field: string) => readonly string[],
 ): readonly TargetAssignmentDTO[] {
+  const fieldCache = new Map<string, PreparedField>();
   const matching = rules.filter((rule) => rule.enabled && rule.conditionGroups.every((group) =>
-    group.conditions.some((condition) => matchesTargetAssignmentCondition(product, condition, fieldValues))));
+    group.conditions.some((condition) => matchesTargetAssignmentCondition(product, condition, fieldValues, fieldCache))));
   const groups = new Map<string, TargetAssignmentRuleRecord[]>();
   for (const rule of matching) groups.set(rule.groupCode, [...(groups.get(rule.groupCode) ?? []), rule]);
   const result: TargetAssignmentDTO[] = [];
@@ -145,6 +154,7 @@ export function resolveTargetAssignments(
     }
     for (const action of winner.actions) {
       result.push({
+        ...(action.primarySourceBrand === true ? { primarySourceBrand: true } : {}),
         ruleId: winner.id,
         groupCode,
         targetScope: action.targetScope,

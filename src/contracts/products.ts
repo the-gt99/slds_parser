@@ -225,6 +225,7 @@ export interface IgnoredReferenceDTO {
 }
 
 export interface ProductClassificationDTO {
+  readonly execution?: { readonly mode: "v2"; readonly revision: string };
   readonly status: "complete" | "partial";
   readonly classifierVersion: string;
   readonly fingerprint: string;
@@ -304,6 +305,7 @@ export interface TargetReferenceProjectionDTO {
 }
 
 export interface TargetAssignmentDTO {
+  readonly primarySourceBrand?: boolean;
   readonly ruleId: EntityId;
   readonly groupCode: string;
   readonly targetScope: string;

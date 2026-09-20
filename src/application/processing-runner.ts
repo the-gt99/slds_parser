@@ -22,7 +22,7 @@ export class ProcessingRunner {
     private readonly unitOfWork: UnitOfWork,
     private readonly processors: SourceProcessorRegistry,
     private readonly operations: ProductOperationPipeline,
-    private readonly classifier: ProductClassifier,
+    private readonly classifier: Pick<ProductClassifier, "classify" | "version">,
   ) {}
 
   async processProduct(payload: ProcessProductPayload): Promise<RunnerResult> {
@@ -100,7 +100,7 @@ export class ProcessingRunner {
         if (attemptId !== null && operationsOutput !== null) {
           await repositories.productOperationHistory.completeAttempt(attemptId, operationsOutput, classificationRun.product, new Date().toISOString());
         }
-        if (data.classification.status === "complete" && existing?.contentHash !== contentHash) {
+        if ((data.classification.status === "complete" || data.classification.execution?.mode === "v2") && existing?.contentHash !== contentHash) {
           for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
             payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
         }
@@ -146,7 +146,7 @@ export class ProcessingRunner {
         fingerprint: data.classification.fingerprint,
         observations: classificationRun.observations,
       });
-      if (data.classification.status === "complete") {
+      if (data.classification.status === "complete" || data.classification.execution?.mode === "v2") {
         for (const target of targets) await repositories.jobs.enqueue({
           jobType: "export_product",
           payload: { internalProductId: internal.id, targetId: target.id, force: false },

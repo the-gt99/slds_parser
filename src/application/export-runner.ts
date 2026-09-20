@@ -28,6 +28,10 @@ export class ExportRunner {
   ) {}
 
   async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {
+    return this.mappings.runWithRules(() => this.exportUnderRules(payload));
+  }
+
+  private async exportUnderRules(payload: ExportProductPayload): Promise<RunnerResult> {
     const internal = await this.repositories.internalProducts.getById(payload.internalProductId);
     if (internal === null) throw new EntityNotFoundError("Internal product", payload.internalProductId);
     const sourceProduct = await this.repositories.sourceProducts.getById(internal.sourceProductId);
@@ -49,6 +53,8 @@ export class ExportRunner {
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
+      const preparedProduct = await this.mappings.prepareProduct(source.id, internal.data);
+      const preparedHash = preparedProduct === internal.data ? internal.contentHash : hashStableJson(preparedProduct as unknown as JsonValue);
       let liveVariants: readonly ProductVariantDTO[] | null;
       if (payload.sourceRefreshId !== undefined) {
         if (this.sourceRefreshes === undefined) throw new IntegrationContractError("Буфер source refresh не подключён");
@@ -65,8 +71,8 @@ export class ExportRunner {
           : null;
       }
       const exportedContentHash = liveVariants === null
-        ? internal.contentHash
-        : hashStableJson({ internalContentHash: internal.contentHash, liveVariants } as unknown as JsonValue);
+        ? preparedHash
+        : hashStableJson({ internalContentHash: preparedHash, liveVariants } as unknown as JsonValue);
       const exporter = this.exporters.get(target.exporterCode);
       const existing = await this.repositories.targets.findTargetProduct(target.id, internal.id);
       const approvedTargetSnapshot = payload.approval === undefined
@@ -100,7 +106,7 @@ export class ExportRunner {
         source: sourceDto,
         sourceProduct: sourceProductDto,
         target: targetDto,
-        product: internal.data,
+        product: preparedProduct,
         ...(liveVariants === null ? {} : { liveVariants }),
         references: {
           resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),

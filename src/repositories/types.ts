@@ -1278,6 +1278,7 @@ export interface TargetAssignmentConditionGroupRecord {
 }
 
 export interface TargetAssignmentActionRecord {
+  readonly primarySourceBrand?: boolean;
   readonly targetScope: string;
   readonly dictionaryValueId: EntityId;
   readonly externalValue: string;

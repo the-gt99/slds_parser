@@ -1,4 +1,5 @@
 import type { JsonValue, UniversalProductDTO } from "../contracts/index.js";
+import { writeFile } from "node:fs/promises";
 import { stableJsonStringify } from "../core/utils/index.js";
 import { createPostgresPool } from "../infrastructure/db/index.js";
 import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-baseline.js";
@@ -16,6 +17,12 @@ try {
   const { classifications: legacy, targets: references } = await loadRulesV2AuditBaseline(client);
   const runtime = new RulesV2Runtime(client, () => 0);
   const snapshot = await runtime.snapshot();
+  const control = (await client.query<{ legacy_revision: string }>(
+    "SELECT legacy_revision::TEXT FROM rules_execution_control WHERE singleton")).rows[0];
+  if (control === undefined) throw new Error("Rules execution control is missing");
+  const total = Number((await client.query<{ count: string }>(`SELECT COUNT(*)::TEXT AS count
+    FROM source_products product JOIN internal_products internal ON internal.source_product_id = product.id
+    WHERE internal.data ? 'referenceCandidates'`)).rows[0]?.count);
   const classifiers = [new ProductClassifier(legacy), new ProductClassifier(runtime.classificationRepository(legacy))];
   const targets = (await client.query<{ id: string }>("SELECT id::TEXT FROM targets ORDER BY id")).rows;
   const assignmentRules = new Map(await Promise.all(targets.map(async (target) => [target.id, await references.listTargetAssignmentRules(target.id)] as const)));
@@ -63,7 +70,10 @@ try {
     console.info(JSON.stringify({ progress: checked, mismatches, lastId, queryMs: Math.round(queried - started), evaluateMs: Math.round(performance.now() - queried) }));
   }
   await client.query("COMMIT");
-  console.info(JSON.stringify({ revision: snapshot.revision, checked, mismatches, lastId, writes: false, examples }, null, 2));
+  const report = { revision: snapshot.revision, legacyRevision: control.legacy_revision,
+    checked, total, complete: after === "0" && checked === total, mismatches, lastId, writes: false, examples };
+  if (process.env.RULES_V2_AUDIT_REPORT) await writeFile(process.env.RULES_V2_AUDIT_REPORT, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
+  console.info(JSON.stringify(report, null, 2));
   if (mismatches > 0 || checked === 0) process.exitCode = 1;
 } catch (error) {
   await client.query("ROLLBACK");

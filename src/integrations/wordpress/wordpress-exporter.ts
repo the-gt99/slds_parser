@@ -810,6 +810,9 @@ async function taxonomyPayload(
   readonly primaryBrandTermId: number | null;
 }> {
   if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
+  const assignments = await context.references.resolveAssignments(context.product);
+  const directV2 = context.product.classification.execution?.mode === "v2";
+  const replacements = new Set(directV2 ? assignments.filter((action) => action.mode === "replace").map((action) => action.targetScope) : []);
   const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
   const grouped = new Map<string, Set<number>>();
   const taxonomyOrigins: WordPressTaxonomyOrigin[] = [];
@@ -826,6 +829,10 @@ async function taxonomyPayload(
     if (reference.subjectKind !== "product") throw new IntegrationContractError(`WordPress does not support variant reference ${reference.candidateKey}`);
     const type = reference.typeCode as ReferenceType;
     const target = REFERENCE_TARGETS[type];
+    // A direct replacement is the complete decision for this field. Primary source brand
+    // remains independently resolved unless an explicit primary-brand action replaces it.
+    if (replacements.has(mappedTargetScope(context.target.config, target.scope)) && type !== "brand") continue;
+    if (type === "brand" && directV2 && assignments.some((action) => action.primarySourceBrand === true)) continue;
     const mapping = await context.references.resolveReference({
       referenceId: reference.referenceValueId,
       referenceType: type,
@@ -880,7 +887,6 @@ async function taxonomyPayload(
   if (modelTagLinks.size > 1) {
     throw new IntegrationContractError("WordPress model resolves to more than one landing tag");
   }
-  const assignments = await context.references.resolveAssignments(context.product);
   const replacementGroups = new Map<string, string>();
   const assignedModelTermIds = new Set<number>();
   const preparedAssignments: { readonly assignment: (typeof assignments)[number]; readonly taxonomy: string; readonly termId: number }[] = [];
@@ -922,7 +928,13 @@ async function taxonomyPayload(
   if (invalidSingleAssignments.length > 0) {
     throw new IntegrationContractError(`WordPress single-value assignments contain multiple terms: ${invalidSingleAssignments.join(", ")}`);
   }
-  const primaryBrandTerms = termsByType.get("brand") ?? new Set<number>();
+  const declaredPrimaryBrands = new Set(directV2 ? assignments.filter((assignment) => assignment.primarySourceBrand === true)
+    .map((assignment) => {
+      if (targetForScope(context.target.config, assignment.targetScope)?.taxonomy !== "pa_brand") throw new IntegrationContractError("Primary source brand action must assign a brand");
+      return positiveInteger(assignment.externalValue, "Primary source brand");
+    }) : []);
+  if (declaredPrimaryBrands.size > 1) throw new IntegrationContractError("Rules v2 select multiple primary source brands");
+  const primaryBrandTerms = declaredPrimaryBrands.size === 1 ? declaredPrimaryBrands : termsByType.get("brand") ?? new Set<number>();
   const missing = required.filter((type) => !presentTypes.has(type));
   if (!allowMissingRequired && missing.length > 0) {
     throw new IntegrationContractError(`Required WordPress references are missing: ${missing.join(", ")}`);
@@ -1197,7 +1209,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.30.0";
+  readonly version = "1.31.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;

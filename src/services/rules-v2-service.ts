@@ -20,11 +20,16 @@ function validate(draft: RuleV2Draft): void {
     if (condition.operator === "regex") condition.values.forEach(compileTargetAssignmentRegex);
   }
   if (draft.actions.length === 0) throw new IntegrationContractError("Rule v2 requires at least one action");
+  for (const action of draft.actions) if (action.primarySourceBrand !== undefined
+    && (typeof action.primarySourceBrand !== "boolean" || action.targetScope !== "product.brand")) {
+    throw new IntegrationContractError("Primary source brand can only be set on a brand action");
+  }
 }
 
 export class RulesV2Service {
   constructor(private readonly repository: RulesV2Repository, private readonly legacyPreview: TargetAssignmentRuleRepository,
-    private readonly evaluator?: { preview(draft: RuleV2Draft): Promise<object> }) {}
+    private readonly evaluator?: { preview(draft: RuleV2Draft): Promise<object> },
+    private readonly executionState?: () => Promise<{ mode: "v1" | "v2" }>) {}
 
   async updateImported(id: string, raw: unknown, revision: string, actor: string) {
     const object = (value: unknown): Record<string, unknown> => {
@@ -59,6 +64,7 @@ export class RulesV2Service {
           || (action.resolutionStatus === "confirmed" && !/^\d+$/u.test(String(action.referenceValueId)))) throw new IntegrationContractError("Invalid reference action");
       } else if ((action.kind !== undefined && action.kind !== "assign_target_term") || typeof action.targetScope !== "string"
         || !/^\d+$/u.test(String(action.dictionaryValueId)) || !["add", "replace"].includes(String(action.mode))) throw new IntegrationContractError("Invalid target action");
+      if (action.primarySourceBrand !== undefined && (typeof action.primarySourceBrand !== "boolean" || action.targetScope !== "product.brand")) throw new IntegrationContractError("Invalid primary source brand action");
     }
     if (this.repository.updateImported === undefined) throw new IntegrationContractError("Imported rule editing is unavailable");
     return this.repository.updateImported(id, draft as unknown as RuleV2ImportedDraft, revision, actor);
@@ -68,7 +74,8 @@ export class RulesV2Service {
     const offset = query.offset ?? 0;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new IntegrationContractError("Invalid rules page offset");
     const [summary, items] = await Promise.all([this.repository.summary(), this.repository.list(targetId, { ...query, offset, limit: 101 })]);
-    return { mode: "shadow", authoritative: false, summary, items: items.slice(0, 100), page: { offset, limit: 100, hasMore: items.length > 100 } };
+    const active = (await this.executionState?.())?.mode === "v2";
+    return { mode: active ? "active" : "shadow", authoritative: active, summary, items: items.slice(0, 100), page: { offset, limit: 100, hasMore: items.length > 100 } };
   }
 
   async preview(draft: RuleV2Draft) {

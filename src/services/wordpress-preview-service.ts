@@ -321,6 +321,12 @@ export class WordPressPreviewService {
     readonly saveExportControl?: boolean;
     readonly refreshWordPress?: boolean;
   } = {}) {
+    return this.mappings.runWithRules(() => this.previewUnderRules(sourceProductId, targetId, templateOverrides, options));
+  }
+
+  private async previewUnderRules(sourceProductId: EntityId, targetId: EntityId, templateOverrides: readonly TargetContentTemplateDTO[], options: {
+    readonly saveExportControl?: boolean; readonly refreshWordPress?: boolean;
+  }) {
     const refreshWordPress = options.refreshWordPress !== false;
     const configurationRevision = this.exportControl === undefined || options.saveExportControl !== true
       ? null
@@ -367,6 +373,7 @@ export class WordPressPreviewService {
       };
     }
     const targetProduct = await this.repositories.targets.findTargetProduct(target.id, internal.id);
+    const preparedProduct = await this.mappings.prepareProduct(source.id, internal.data);
     const cachedPreflight = refreshWordPress || this.exportControl === undefined
       ? null
       : await this.exportControl.getCachedPreflight(target.id, internal.id);
@@ -453,7 +460,7 @@ export class WordPressPreviewService {
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     const existingExternalId = targetProduct?.externalId ?? snapshot?.externalId;
     let context = {
-      source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: internal.data,
+      source: sourceDto, sourceProduct: sourceProductDto, target: targetDto, product: preparedProduct,
       references: {
         resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),
         resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),

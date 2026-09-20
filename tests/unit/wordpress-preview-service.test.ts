@@ -139,6 +139,8 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
   const exporters = new TargetExporterRegistry();
   exporters.register(exporter);
   const mappings = {
+    runWithRules: <T>(callback: () => Promise<T>) => callback(),
+    prepareProduct: async (_source: string, product: unknown) => product,
     getTargetMappingRevision: vi.fn().mockResolvedValue("7"),
     resolveTargetValue: vi.fn().mockResolvedValue("31"),
     resolveTargetMapping: vi.fn().mockResolvedValue({ externalValue: "31", externalLabel: "Nike" }),
