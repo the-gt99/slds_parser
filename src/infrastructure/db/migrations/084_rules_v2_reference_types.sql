@@ -21,7 +21,8 @@ BEGIN
       AND rule.actions->0->>'resolutionStatus' <> 'ignored'
       AND NOT EXISTS (
         SELECT 1 FROM reference_values value
-        WHERE value.id::TEXT = rule.actions->0->>'referenceValueId' AND value.enabled = TRUE
+        WHERE value.id = CASE WHEN rule.actions->0->>'referenceValueId' ~ '^[0-9]+$'
+          THEN (rule.actions->0->>'referenceValueId')::BIGINT ELSE NULL END AND value.enabled = TRUE
       )
   ) THEN
     UPDATE rules_v2 rule SET status = 'disabled', revision = rule.revision + 1, updated_at = NOW()
@@ -30,7 +31,8 @@ BEGIN
       AND rule.actions->0->>'resolutionStatus' <> 'ignored'
       AND NOT EXISTS (
         SELECT 1 FROM reference_values value
-        WHERE value.id::TEXT = rule.actions->0->>'referenceValueId' AND value.enabled = TRUE
+        WHERE value.id = CASE WHEN rule.actions->0->>'referenceValueId' ~ '^[0-9]+$'
+          THEN (rule.actions->0->>'referenceValueId')::BIGINT ELSE NULL END AND value.enabled = TRUE
       );
   END IF;
 END;
