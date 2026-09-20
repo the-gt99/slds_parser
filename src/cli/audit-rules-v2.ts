@@ -21,9 +21,6 @@ try {
     `SELECT legacy_revision::TEXT, (revision - (SELECT COUNT(*) FROM rules_execution_history))::TEXT AS data_revision
      FROM rules_execution_control WHERE singleton`)).rows[0];
   if (control === undefined) throw new Error("Rules execution control is missing");
-  const total = Number((await client.query<{ count: string }>(`SELECT COUNT(*)::TEXT AS count
-    FROM source_products product JOIN internal_products internal ON internal.source_product_id = product.id
-    WHERE internal.data ? 'referenceCandidates'`)).rows[0]?.count);
   const classifiers = [new ProductClassifier(legacy), new ProductClassifier(runtime.classificationRepository(legacy))];
   const targets = (await client.query<{ id: string }>("SELECT id::TEXT FROM targets ORDER BY id")).rows;
   const assignmentRules = new Map(await Promise.all(targets.map(async (target) => [target.id, await references.listTargetAssignmentRules(target.id)] as const)));
@@ -31,6 +28,7 @@ try {
   let checked = 0;
   let mismatches = 0;
   let lastId = after;
+  let reachedEnd = false;
   async function compare(id: string, section: string, left: unknown, right: unknown) {
     if (stableJsonStringify(left as JsonValue) === stableJsonStringify(right as JsonValue)) return;
     mismatches++;
@@ -45,7 +43,7 @@ try {
       WHERE product.id > $1 AND internal.source_product_id > $1
         AND internal.data ? 'referenceCandidates' ORDER BY product.id LIMIT $2`,
     [lastId, Math.min(200, limit - checked)])).rows;
-    if (rows.length === 0) break;
+    if (rows.length === 0) { reachedEnd = true; break; }
     const queried = performance.now();
     for (const row of rows) {
       const old = await classifiers[0]!.classify(row.source_id, row.data);
@@ -71,8 +69,9 @@ try {
     console.info(JSON.stringify({ progress: checked, mismatches, lastId, queryMs: Math.round(queried - started), evaluateMs: Math.round(performance.now() - queried) }));
   }
   await client.query("COMMIT");
+  const complete = after === "0" && reachedEnd;
   const report = { revision: snapshot.revision, legacyRevision: control.legacy_revision, dataRevision: control.data_revision,
-    checked, total, complete: after === "0" && checked === total, mismatches, lastId, writes: false, examples };
+    checked, total: complete ? checked : null, complete, mismatches, lastId, writes: false, examples };
   if (process.env.RULES_V2_AUDIT_REPORT) await writeFile(process.env.RULES_V2_AUDIT_REPORT, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
   console.info(JSON.stringify(report, null, 2));
   if (mismatches > 0 || checked === 0) process.exitCode = 1;
