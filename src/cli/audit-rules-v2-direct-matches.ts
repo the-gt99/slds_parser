@@ -4,6 +4,7 @@ import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-ba
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { ProductClassifier } from "../services/product-classifier.js";
 import { DirectRulesV2Index, directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
+import { DirectRulesV2Selector } from "../services/rules-v2-direct-selector.js";
 import { rulesV2FieldReader } from "../services/rules-v2-snapshot.js";
 
 const limit = Number(process.env.RULES_V2_DIRECT_MATCH_LIMIT ?? "100");
@@ -16,6 +17,7 @@ try {
   const runtime = new RulesV2Runtime(client, () => 0);
   const snapshot = await runtime.snapshot();
   const classifier = new ProductClassifier(runtime.classificationRepository(baseline.classifications));
+  const selector = new DirectRulesV2Selector(snapshot.records);
   const sourceRules = snapshot.records.flatMap((rule) => {
     if (rule.status !== "shadow" || rule.sourceId === null
       || (rule.originKind !== "exact_mapping" && rule.originKind !== "classification_rule")) return [];
@@ -26,11 +28,14 @@ try {
   });
   const bySource = new Map<string, typeof sourceRules>();
   const byOrigin = new Map<string, string>();
+  for (const rule of snapshot.records) if (rule.originId !== null
+    && (rule.originKind === "exact_mapping" || rule.originKind === "classification_rule")) {
+    byOrigin.set(`${rule.originKind}:${rule.originId}`, rule.id);
+  }
   for (const entry of sourceRules) {
     const entries = bySource.get(entry.rule.sourceId!) ?? [];
     entries.push(entry);
     bySource.set(entry.rule.sourceId!, entries);
-    byOrigin.set(`${entry.rule.originKind}:${entry.rule.originId ?? entry.rule.id}`, entry.rule.id);
   }
   const indexes = new Map([...bySource].map(([sourceId, entries]) => [sourceId, new DirectRulesV2Index(entries)]));
   const rows = (await client.query<{ id: string; source_id: string; code: string; source_key: string;
@@ -41,9 +46,25 @@ try {
   let missedWinners = 0;
   let extraMatches = 0;
   let productsWithExtras = 0;
+  let selectionMismatches = 0;
   const examples: unknown[] = [];
   for (const row of rows) {
     const classified = await classifier.classify(row.source_id, row.data);
+    const expected = new Map<string, { status: string; sourceRuleId: string | null }>();
+    for (const item of classified.product.classification.resolved) expected.set(item.candidateKey, {
+      status: "resolved", sourceRuleId: byOrigin.get(`${item.resolutionKind === "mapping" ? "exact_mapping" : "classification_rule"}:${item.resolutionId}`) ?? null,
+    });
+    for (const item of classified.product.classification.ignored) expected.set(item.candidateKey, {
+      status: "ignored", sourceRuleId: byOrigin.get(`exact_mapping:${item.mappingId}`) ?? null,
+    });
+    for (const item of classified.product.classification.unresolved) expected.set(item.candidateKey, {
+      status: item.reason === "rule_ambiguous" ? "ambiguous" : "unresolved", sourceRuleId: null,
+    });
+    const selected = selector.select({ id: row.source_id, code: row.code, productId: row.id,
+      sourceKey: row.source_key, externalId: row.external_id }, row.data);
+    const different = selected.filter((item) => JSON.stringify({ status: item.status, sourceRuleId: item.sourceRuleId })
+      !== JSON.stringify(expected.get(item.candidateKey)));
+    selectionMismatches += different.length;
     const winners = new Set(classified.product.classification.resolved.map((item) => byOrigin.get(
       `${item.resolutionKind === "mapping" ? "exact_mapping" : "classification_rule"}:${item.resolutionId}`)).filter(
       (value): value is string => value !== undefined));
@@ -58,13 +79,14 @@ try {
     missedWinners += missed.length;
     extraMatches += extra.length;
     if (extra.length > 0) productsWithExtras++;
-    if ((missed.length > 0 || extra.length > 0) && examples.length < 20) examples.push({ productId: row.id,
-      winnerCount: winners.size, matchedCount: matching.size, missed, extra: extra.slice(0, 20) });
+    if ((missed.length > 0 || extra.length > 0 || different.length > 0) && examples.length < 20) examples.push({ productId: row.id,
+      winnerCount: winners.size, matchedCount: matching.size, missed, extra: extra.slice(0, 20),
+      different: different.slice(0, 10).map((item) => ({ actual: item, expected: expected.get(item.candidateKey) })) });
   }
   await client.query("COMMIT");
   console.info(JSON.stringify({ writes: false, revision: snapshot.revision, sourceRules: sourceRules.length,
-    products: rows.length, missedWinners, extraMatches, productsWithExtras, examples }, null, 2));
-  if (missedWinners > 0) process.exitCode = 1;
+    products: rows.length, missedWinners, extraMatches, productsWithExtras, selectionMismatches, examples }, null, 2));
+  if (missedWinners > 0 || selectionMismatches > 0) process.exitCode = 1;
 } catch (error) {
   await client.query("ROLLBACK");
   throw error;
