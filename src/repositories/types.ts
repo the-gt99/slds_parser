@@ -1302,6 +1302,8 @@ export interface TargetAssignmentRuleRecord {
 }
 
 export interface TargetAssignmentRuleDraft {
+  /** Optional source boundary used by the parallel Rules v2 preview. */
+  readonly sourceId?: EntityId;
   readonly targetId: EntityId;
   readonly name: string;
   readonly groupCode: string;

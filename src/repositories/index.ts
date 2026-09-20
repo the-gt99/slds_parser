@@ -38,6 +38,15 @@ export type { TargetContentTemplateRepository } from "./target-content-template-
 export type { TargetDictionaryRepository } from "./target-dictionary-repository.js";
 export type { TargetAssignmentRuleRepository } from "./target-assignment-rule-repository.js";
 export type {
+  RuleV2Action,
+  RuleV2Draft,
+  RuleV2OriginKind,
+  RuleV2Record,
+  RuleV2Status,
+  RuleV2Summary,
+  RulesV2Repository,
+} from "./rules-v2-repository.js";
+export type {
   TargetClassificationImportProductInput,
   TargetClassificationImportRepository,
   TargetClassificationSuggestion,

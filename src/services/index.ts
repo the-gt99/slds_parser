@@ -3,6 +3,8 @@ export { ProxyAdminService, publicProxy, validateProxyHost, type ProxyCommand, t
 export { TargetReferenceMappingService } from "./target-reference-mapping-service.js";
 export { matchesTargetAssignmentCondition, resolveTargetAssignments, targetAssignmentFieldValues } from "./target-assignment-rule-matcher.js";
 export { TargetAssignmentAdminService } from "./target-assignment-admin-service.js";
+export { DataSchemaService, type DataFieldDefinition } from "./data-schema-service.js";
+export { RulesV2Service } from "./rules-v2-service.js";
 export {
   ClassifierAdminService,
   type ClassificationDecisionCommand,

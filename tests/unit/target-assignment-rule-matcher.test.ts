@@ -98,6 +98,17 @@ describe("target assignment rules", () => {
     expect(product.referenceCandidates.some((candidate) => candidate.sourceValue === "Wilson Smith")).toBe(false);
   });
 
+  it("reads nested common DTO fields and scalar arrays", () => {
+    const nestedProduct: UniversalProductDTO = {
+      ...product,
+      attributes: { ...product.attributes, taxonomy: { taxonomyLevel4: "Shirts and Tops" }, ageGroups: ["adult", "teen"] },
+    };
+    expect(resolveTargetAssignments(nestedProduct, [rule("taxonomy", 100, [
+      { field: "product.attribute.taxonomy.taxonomyLevel4", operator: "equals", values: ["shirts and tops"] },
+      { field: "product.attribute.ageGroups", operator: "one_of", values: ["teen"] },
+    ], "715")])).toHaveLength(1);
+  });
+
   it("matches a safe regular expression against the product title or description", () => {
     const runningProduct: UniversalProductDTO = {
       ...product,

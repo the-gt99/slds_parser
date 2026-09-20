@@ -33,6 +33,7 @@ export {
   PostgresTargetContentTemplateRepository,
   PostgresTargetDictionaryRepository,
   PostgresTargetAssignmentRuleRepository,
+  PostgresRulesV2Repository,
   PostgresTargetClassificationImportRepository,
   PostgresWordPressCatalogRepository,
 } from "./repositories/index.js";

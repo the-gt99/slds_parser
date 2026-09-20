@@ -19,6 +19,8 @@ const assets = new Map([
   ["/assets/export-control.js", { file: "export-control.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/wordpress-catalog.js", { file: "wordpress-catalog.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/wordpress-catalog-model.js", { file: "wordpress-catalog-model.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/data-schema.js", { file: "data-schema.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/rules-v2.js", { file: "rules-v2.js", type: "text/javascript; charset=utf-8" }],
   ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/overview", { file: "overview.html", type: "text/html; charset=utf-8" }],
   ["/classifier-config", { file: "index.html", type: "text/html; charset=utf-8" }],
@@ -30,6 +32,8 @@ const assets = new Map([
   ["/content-templates", { file: "content-templates.html", type: "text/html; charset=utf-8" }],
   ["/export-control", { file: "export-control.html", type: "text/html; charset=utf-8" }],
   ["/wordpress-catalog", { file: "wordpress-catalog.html", type: "text/html; charset=utf-8" }],
+  ["/data-schema", { file: "data-schema.html", type: "text/html; charset=utf-8" }],
+  ["/rules-v2", { file: "rules-v2.html", type: "text/html; charset=utf-8" }],
 ] as const);
 
 function securityHeaders(reply: FastifyReply): FastifyReply {

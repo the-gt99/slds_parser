@@ -1,6 +1,8 @@
 const sections = [
   ["/overview", "Обзор", ["/overview"]],
   ["/classifier", "Классификация", ["/classifier", "/classifier-config"]],
+  ["/data-schema", "Схема данных", ["/data-schema"]],
+  ["/rules-v2", "Правила v2", ["/rules-v2"]],
   ["/content-templates", "Шаблоны контента", ["/content-templates"]],
   ["/products", "Товары", ["/products"]],
   ["/export-control", "Контроль экспорта", ["/export-control"]],

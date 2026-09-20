@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
-import type { ClassifierAdminService, ContentTemplateAdminService, ExportControlService, ProductAdminService, ProxyAdminService, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService, WordPressCatalogService } from "../../src/services/index.js";
+import type { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService, WordPressCatalogService } from "../../src/services/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -22,6 +22,25 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("serves the DTO catalog and keeps Rules v2 in shadow mode", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const dataSchema = { catalog: vi.fn().mockResolvedValue({ version: "universal-product-dto.v1", donors: [] }) } as unknown as DataSchemaService;
+    const rulesV2 = { overview: vi.fn().mockResolvedValue({ mode: "shadow", authoritative: false, items: [] }) } as unknown as RulesV2Service;
+    const server = createHttpServer({ ...dependencies(database), dataSchema, rulesV2 });
+
+    const schemaPage = await server.inject({ method: "GET", url: "/data-schema" });
+    const rulesPage = await server.inject({ method: "GET", url: "/rules-v2" });
+    const schema = await server.inject({ method: "GET", url: "/api/data-schema", headers: { authorization: `Bearer ${adminToken}` } });
+    const rules = await server.inject({ method: "GET", url: "/api/rules-v2?targetId=10", headers: { authorization: `Bearer ${adminToken}` } });
+
+    expect(schemaPage.statusCode).toBe(200);
+    expect(rulesPage.statusCode).toBe(200);
+    expect(schema.json()).toEqual({ version: "universal-product-dto.v1", donors: [] });
+    expect(rules.json()).toEqual({ mode: "shadow", authoritative: false, items: [] });
+    expect(rulesV2.overview).toHaveBeenCalledWith("10");
+    await server.close();
+  });
+
   it("queues all safe WordPress suggestions in one short request", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const targetClassificationImport = {

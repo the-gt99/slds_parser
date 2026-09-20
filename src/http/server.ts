@@ -14,6 +14,7 @@ import type {
   JobType,
   ProductBatchAction,
   ProductBatchFilter,
+  RuleV2Draft,
   TargetAssignmentRuleDraft,
 } from "../repositories/index.js";
 import type {
@@ -26,6 +27,8 @@ import type {
   ProductAdminService,
   ProxyAdminService,
   RuntimeAdminService,
+  DataSchemaService,
+  RulesV2Service,
   TargetDictionaryService,
   TargetAssignmentAdminService,
   TargetClassificationImportService,
@@ -54,6 +57,8 @@ export interface HttpServerDependencies {
   readonly targetAssignments?: TargetAssignmentAdminService;
   readonly targetClassificationImport?: TargetClassificationImportService;
   readonly wordpressCatalog?: WordPressCatalogService;
+  readonly dataSchema?: DataSchemaService;
+  readonly rulesV2?: RulesV2Service;
 }
 
 interface QueueQuery {
@@ -218,6 +223,13 @@ interface TargetAssignmentRuleBody {
   readonly revision?: unknown;
   readonly reason?: unknown;
 }
+interface RuleV2Body extends TargetAssignmentRuleBody {
+  readonly sourceId?: unknown;
+  readonly targetId?: unknown;
+  readonly status?: unknown;
+}
+interface RuleV2Params { readonly ruleId: string }
+interface RuleV2Query { readonly targetId?: string }
 interface TargetAssignmentMatchSetBody {
   readonly code?: unknown;
   readonly name?: unknown;
@@ -692,6 +704,18 @@ function targetAssignmentRuleBody(targetId: string, value: TargetAssignmentRuleB
       if (action.mode !== "add" && action.mode !== "replace") throw new HttpInputError(`actions[${index}].mode is invalid`);
       return { targetScope: requiredString(action.targetScope, `actions[${index}].targetScope`), dictionaryValueId: entityId(action.dictionaryValueId, `actions[${index}].dictionaryValueId`), mode: action.mode as "add" | "replace" };
     }),
+  };
+}
+
+function ruleV2Body(value: RuleV2Body | undefined): RuleV2Draft {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  const targetId = entityId(value.targetId, "targetId");
+  const base = targetAssignmentRuleBody(targetId, value);
+  if (value.status !== "draft" && value.status !== "shadow" && value.status !== "disabled") throw new HttpInputError("status must be draft, shadow or disabled");
+  return {
+    sourceId: entityId(value.sourceId, "sourceId"), targetId, name: base.name, groupCode: base.groupCode,
+    priority: base.priority, status: value.status, conditionGroups: base.conditionGroups, actions: base.actions,
+    ...(optionalString(value.reason) === undefined ? {} : { reason: optionalString(value.reason)! }),
   };
 }
 
@@ -1794,6 +1818,31 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get<{ Params: TargetParams }>("/api/targets/:targetId/assignment-rules", { preHandler: requireAdmin }, async (request) => ({
     items: await dependencies.targetAssignments?.list(entityId(request.params.targetId, "targetId")) ?? [],
   }));
+
+  server.get("/api/data-schema", { preHandler: requireAdmin }, async () => {
+    if (dependencies.dataSchema === undefined) throw new HttpInputError("Data schema is not configured");
+    return dependencies.dataSchema.catalog();
+  });
+
+  server.get<{ Querystring: RuleV2Query }>("/api/rules-v2", { preHandler: requireAdmin }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return dependencies.rulesV2.overview(request.query.targetId === undefined ? undefined : entityId(request.query.targetId, "targetId"));
+  });
+
+  server.post<{ Body: RuleV2Body }>("/api/rules-v2/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return { preview: await dependencies.rulesV2.preview(ruleV2Body(request.body)) };
+  });
+
+  server.post<{ Body: RuleV2Body }>("/api/rules-v2", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return reply.code(201).send({ rule: await dependencies.rulesV2.create(ruleV2Body(request.body), actor(request)) });
+  });
+
+  server.put<{ Params: RuleV2Params; Body: RuleV2Body }>("/api/rules-v2/:ruleId", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return { rule: await dependencies.rulesV2.update(entityId(request.params.ruleId, "ruleId"), ruleV2Body(request.body), requiredString(request.body?.revision, "revision"), actor(request)) };
+  });
 
   server.post<{ Params: TargetParams; Body: TargetAssignmentRuleBody }>(
     "/api/targets/:targetId/assignment-rules/preview",

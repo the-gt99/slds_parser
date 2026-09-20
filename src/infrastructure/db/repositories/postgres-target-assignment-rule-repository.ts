@@ -125,19 +125,35 @@ function conditionProductIdsSql(
 ): string {
   const parts = condition.field.split(".");
   if (condition.operator === "absent") {
-    if (parts[0] !== "resolved" || parts.length !== 2) throw new Error(`Unsupported absent target assignment field: ${condition.field}`);
-    const typeCode = parameter(parts[1]);
-    return `SELECT internal.source_product_id
-      FROM internal_products internal
-      WHERE internal.status = 'classified'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM source_product_classification_links link
-          JOIN classification_candidates candidate ON candidate.id = link.candidate_id
-          JOIN reference_types type ON type.id = candidate.reference_type_id
-          WHERE link.source_product_id = internal.source_product_id
-            AND link.active = TRUE AND link.status = 'resolved' AND type.code = ${typeCode}
+    if (parts[0] === "resolved" && parts.length === 2) {
+      const typeCode = parameter(parts[1]);
+      return `SELECT internal.source_product_id
+        FROM internal_products internal
+        WHERE internal.status = 'classified'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM source_product_classification_links link
+            JOIN classification_candidates candidate ON candidate.id = link.candidate_id
+            JOIN reference_types type ON type.id = candidate.reference_type_id
+            WHERE link.source_product_id = internal.source_product_id
+              AND link.active = TRUE AND link.status = 'resolved' AND type.code = ${typeCode}
+          )`;
+    }
+    const productPath = parts[0] === "product" && parts.length >= 2
+      ? parts[1] === "attribute" && parts.length >= 3 ? ["attributes", ...parts.slice(2)]
+        : parts[1] === "metadata" && parts.length >= 3 ? ["metadata", ...parts.slice(2)]
+          : parts[1] === "fact" && parts.length >= 3 ? ["sourceFacts", ...parts.slice(2)]
+            : [parts[1]!]
+      : null;
+    if (productPath !== null) {
+      const path = productPath.map((part) => `${parameter(part)}::TEXT`).join(", ");
+      return `SELECT internal.source_product_id FROM internal_products internal
+        WHERE internal.status = 'classified' AND (
+          internal.data#>ARRAY[${path}] IS NULL
+          OR internal.data#>ARRAY[${path}] IN ('null'::JSONB, '""'::JSONB, '[]'::JSONB)
         )`;
+    }
+    throw new Error(`Unsupported absent target assignment field: ${condition.field}`);
   }
   const normalizedValues = values.map((value) => normalize(value));
   const expected = parameter(condition.operator === "contains_phrase"
@@ -192,13 +208,23 @@ function conditionProductIdsSql(
       WHERE link.active = TRUE AND type.code = ${typeCode}
         AND ${comparison(valuePath, parts[2] === "sourceValue" ? "candidate.phrase_search_value" : undefined)}`;
   }
-  if (parts[0] === "product" && parts.length === 3 && ["attribute", "metadata", "fact"].includes(parts[1]!)) {
+  if (parts[0] === "product" && parts.length >= 3 && ["attribute", "metadata", "fact"].includes(parts[1]!)) {
     const section = parts[1] === "attribute" ? "attributes" : parts[1] === "metadata" ? "metadata" : "sourceFacts";
-    return `SELECT internal.source_product_id FROM internal_products internal
-      WHERE internal.status = 'classified'
-        AND ${comparison(`internal.data#>>ARRAY[${parameter(section)}::TEXT, ${parameter(parts[2])}::TEXT]`)}`;
+    const pathParameters = [section, ...parts.slice(2)].map((part) => parameter(part));
+    if (parts.length === 3 && parts[2] !== "ageGroups") {
+      return `SELECT internal.source_product_id FROM internal_products internal
+        WHERE internal.status = 'classified'
+          AND ${comparison(`internal.data#>>ARRAY[${pathParameters.map((item) => `${item}::TEXT`).join(", ")}]`)}`;
+    }
+    const jsonPath = `internal.data#>ARRAY[${pathParameters.map((item) => `${item}::TEXT`).join(", ")}]`;
+    return `SELECT DISTINCT internal.source_product_id FROM internal_products internal
+      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(CASE
+        WHEN JSONB_TYPEOF(${jsonPath}) = 'array' THEN ${jsonPath}
+        WHEN ${jsonPath} IS NULL OR ${jsonPath} = 'null'::JSONB THEN '[]'::JSONB
+        ELSE JSONB_BUILD_ARRAY(${jsonPath}) END) field_value(value)
+      WHERE internal.status = 'classified' AND ${comparison("field_value.value")}`;
   }
-  if (parts[0] === "product" && parts.length === 2 && ["title", "description"].includes(parts[1]!)) {
+  if (parts[0] === "product" && parts.length === 2 && ["title", "description", "sku"].includes(parts[1]!)) {
     return `SELECT internal.source_product_id FROM internal_products internal
       WHERE internal.status = 'classified'
         AND ${comparison(`internal.data->>${parameter(parts[1])}`)}`;
@@ -217,6 +243,8 @@ async function matchedProductsQuery(client: SqlClient, draft: TargetAssignmentRu
     }
     groups.push(alternatives.map((sql) => `(${sql})`).join("\nUNION\n"));
   }
+  const sourceJoin = draft.sourceId === undefined ? "" : "JOIN source_products source_product ON source_product.id = internal.source_product_id";
+  const sourceFilter = draft.sourceId === undefined ? "" : ` AND source_product.source_id = ${parameter(draft.sourceId)}`;
   return {
     parameters,
     sql: `WITH matched_ids AS MATERIALIZED (
@@ -225,7 +253,8 @@ async function matchedProductsQuery(client: SqlClient, draft: TargetAssignmentRu
   SELECT internal.source_product_id, COALESCE(internal.data->>'title', '') AS title, COALESCE(internal.data->>'sku', '') AS sku
   FROM matched_ids
   JOIN internal_products internal ON internal.source_product_id = matched_ids.source_product_id
-  WHERE internal.status = 'classified'
+  ${sourceJoin}
+  WHERE internal.status = 'classified'${sourceFilter}
 )
 SELECT (SELECT COUNT(*)::INTEGER FROM matched) AS product_count,
   COALESCE((SELECT JSONB_AGG(TO_JSONB(example) ORDER BY example."sourceProductId"::BIGINT) FROM (

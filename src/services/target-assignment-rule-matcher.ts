@@ -12,7 +12,17 @@ function normalizePhrase(value: string): string {
 }
 
 function scalar(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(scalar);
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [String(value)] : [];
+}
+
+function nested(value: unknown, path: readonly string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
 }
 
 const assignmentRegexCache = new Map<string, RegExp>();
@@ -44,17 +54,18 @@ export function targetAssignmentFieldValues(product: UniversalProductDTO, field:
   const parts = field.split(".");
   if (field === "product.title") return [product.title];
   if (field === "product.description") return [product.description];
+  if (field === "product.sku") return [product.sku];
   if (parts[0] === "resolved" && parts.length === 2) {
     return product.classification?.resolved.filter((item) => item.typeCode === parts[1]).map((item) => item.referenceValueId) ?? [];
   }
-  if (parts[0] === "product" && parts[1] === "attribute" && parts.length === 3) {
-    return scalar(product.attributes[parts[2]!]);
+  if (parts[0] === "product" && parts[1] === "attribute" && parts.length >= 3) {
+    return scalar(nested(product.attributes, parts.slice(2)));
   }
-  if (parts[0] === "product" && parts[1] === "metadata" && parts.length === 3) {
-    return scalar(product.metadata[parts[2]!]);
+  if (parts[0] === "product" && parts[1] === "metadata" && parts.length >= 3) {
+    return scalar(nested(product.metadata, parts.slice(2)));
   }
-  if (parts[0] === "product" && parts[1] === "fact" && parts.length === 3) {
-    return scalar(product.sourceFacts?.[parts[2]!]);
+  if (parts[0] === "product" && parts[1] === "fact" && parts.length >= 3) {
+    return scalar(nested(product.sourceFacts, parts.slice(2)));
   }
   if (parts[0] !== "candidate" || parts.length < 3) {
     throw new IntegrationContractError(`Unsupported target assignment field: ${field}`);
