@@ -42,8 +42,11 @@ export type {
   RuleV2Draft,
   RuleV2OriginKind,
   RuleV2Record,
+  RuleV2ReferenceAction,
+  RuleV2StoredAction,
   RuleV2Status,
   RuleV2Summary,
+  RulesV2LegacyImportResult,
   RulesV2Repository,
 } from "./rules-v2-repository.js";
 export type {

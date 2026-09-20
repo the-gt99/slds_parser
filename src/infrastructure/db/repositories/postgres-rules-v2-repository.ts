@@ -23,20 +23,23 @@ function selector(draft: RuleV2Draft) {
 
 function mapRule(row: DatabaseRow): RuleV2Record {
   return {
-    id: String(row.id), sourceId: String(row.source_id), sourceCode: String(row.source_code),
-    targetId: String(row.target_id), targetCode: String(row.target_code), name: String(row.name),
+    id: String(row.id), sourceId: row.source_id === null ? null : String(row.source_id),
+    sourceCode: row.source_code === null ? null : String(row.source_code),
+    targetId: row.target_id === null ? null : String(row.target_id),
+    targetCode: row.target_code === null ? null : String(row.target_code), name: String(row.name),
     groupCode: String(row.group_code), priority: Number(row.priority), status: row.status as RuleV2Record["status"],
     conditionGroups: row.condition_groups as RuleV2Record["conditionGroups"],
     actions: row.actions as RuleV2Record["actions"], originKind: row.origin_kind as RuleV2Record["originKind"],
     originId: row.origin_id === null ? null : String(row.origin_id), revision: String(row.revision),
+    originRevision: String(row.origin_revision), originPayload: row.origin_payload as RuleV2Record["originPayload"],
     createdAt: timestamp(row.created_at), updatedAt: timestamp(row.updated_at),
   };
 }
 
 const selectedSql = `SELECT rule.*, source.code AS source_code, target.code AS target_code
   FROM rules_v2 rule
-  JOIN sources source ON source.id = rule.source_id
-  JOIN targets target ON target.id = rule.target_id`;
+  LEFT JOIN sources source ON source.id = rule.source_id
+  LEFT JOIN targets target ON target.id = rule.target_id`;
 
 async function withClient<Result>(pool: SqlPool, callback: (client: SqlClient) => Promise<Result>): Promise<Result> {
   const client = await pool.connect();
@@ -71,7 +74,7 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
 
   async list(targetId?: string): Promise<readonly RuleV2Record[]> {
     const result = await this.pool.query<DatabaseRow>(
-      `${selectedSql} WHERE ($1::BIGINT IS NULL OR rule.target_id = $1)
+      `${selectedSql} WHERE ($1::BIGINT IS NULL OR rule.target_id = $1 OR rule.target_id IS NULL)
        ORDER BY rule.priority DESC, rule.id DESC LIMIT 500`,
       [targetId ?? null],
     );
@@ -89,6 +92,9 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
       ((SELECT COUNT(*) FROM target_classification_projections WHERE active = TRUE)
         + (SELECT COUNT(*) FROM target_reference_projections WHERE active = TRUE))::INTEGER AS projections,
       (SELECT COUNT(*)::INTEGER FROM target_assignment_rules WHERE enabled = TRUE) AS target_assignment_rules
+      , COALESCE((SELECT JSONB_OBJECT_AGG(origin_kind, amount) FROM (
+          SELECT origin_kind, COUNT(*)::INTEGER AS amount FROM rules_v2 GROUP BY origin_kind
+        ) origin_counts), '{}'::JSONB) AS origins
       FROM rules_v2`);
     const row = result.rows[0]!;
     return {
@@ -98,6 +104,7 @@ export class PostgresRulesV2Repository implements RulesV2Repository {
         targetMappings: Number(row.target_mappings), projections: Number(row.projections),
         targetAssignmentRules: Number(row.target_assignment_rules),
       },
+      origins: row.origins as RuleV2Summary["origins"],
     };
   }
 

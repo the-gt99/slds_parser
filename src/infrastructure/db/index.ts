@@ -7,6 +7,7 @@ export {
   type DatabaseRetentionResult,
 } from "./database-retention.js";
 export type { PoolEnvironment } from "./pool.js";
+export { RulesV2LegacyImporter } from "./rules-v2-legacy-importer.js";
 export type {
   SqlClient,
   SqlExecutor,
