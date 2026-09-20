@@ -48,7 +48,9 @@ try {
     const existingExternalId = targetProduct?.externalId ?? saved?.externalId;
     const outcomes: { payload?: JsonValue; error?: string }[] = [];
     for (let index = 0; index < 2; index++) {
-      const product = (await classifiers[index]!.classify(source.id, internal.data)).product;
+      const classified = (await classifiers[index]!.classify(source.id, internal.data)).product;
+      const product = index === 0 ? classified : { ...classified, classification: { ...classified.classification,
+        execution: { mode: "v2" as const, revision: snapshot.revision } } };
       const mapping = mappings[index]!;
       const context: ExportContext = {
         source: { id: source.id, code: source.code, config: source.config },
