@@ -21,6 +21,15 @@ async function setup(
 }
 
 describe("ExportRunner", () => {
+  it("passes direct v2 resolution to the exporter", async () => {
+    const implementation = vi.fn(async (context: Parameters<TargetExporter["export"]>[0]) => {
+      expect(await context.references.resolveDirect?.(context.product)).toBeNull();
+      return { externalId: "ext-1", operation: "created" as const, metadata: {} };
+    });
+    const value = await setup("1", implementation);
+    await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false });
+    expect(implementation).toHaveBeenCalledOnce();
+  });
   it("selects exporter and saves success", async () => { const value = await setup(); await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false }); expect(value.implementation).toHaveBeenCalledOnce(); expect([...value.store.targetProducts.values()][0]).toMatchObject({ externalId: "ext-1", status: "synced", lastExportedHash: "content" }); });
   it("skips the same fingerprint after checking live data again", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); await value.runner.exportProduct(payload); expect(value.sourceRefresher.refresh).toHaveBeenCalledTimes(2); expect(value.implementation).toHaveBeenCalledOnce(); });
   it("does not skip a manually approved export when the local fingerprint is unchanged", async () => {

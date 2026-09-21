@@ -150,6 +150,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
       provenance: { kind: "related_target_term", relationCode: "landing", sourceTypeCode: "brand", sourceLabel: "Onitsuka Tiger" },
     }] : []),
     resolveTargetAssignments: vi.fn().mockResolvedValue([]),
+    resolveDirectTarget: vi.fn().mockResolvedValue(null),
   };
   const dictionaryValues = [
     ...(options.landingProjection ? [{
@@ -205,12 +206,21 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     service: new WordPressPreviewService(repositories as never, exporters, mappings as never, dictionaries as never, snapshotReader, exportControl as never),
     request,
     repositories,
+    mappings,
     snapshotReader,
     exportControl,
   };
 }
 
 describe("WordPressPreviewService", () => {
+  it("passes the product and source identity to the direct v2 resolver", async () => {
+    const { service, mappings } = setup(321, "source_identity");
+    await service.preview("2", "10");
+    expect(mappings.resolveDirectTarget).toHaveBeenCalledWith("10",
+      expect.objectContaining({ id: "1", code: "goat" }),
+      expect.objectContaining({ id: "2", externalId: "100" }),
+      expect.objectContaining({ sourceProductId: "2" }));
+  });
   it("builds a read-only preview for an existing WordPress product", async () => {
     const { service, request } = setup(321, "source_identity");
     const result = await service.preview("2", "10");
