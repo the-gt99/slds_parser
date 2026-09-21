@@ -546,8 +546,7 @@ async function resolveVariationSet(
   };
 }
 
-function classifiedValues(product: UniversalProductDTO, typeCode: string): readonly string[] {
-  const resolved = new Set(product.classification?.resolved.filter((item) => item.typeCode === typeCode).map((item) => item.candidateKey) ?? []);
+function classifiedValues(product: UniversalProductDTO, typeCode: string, resolved: ReadonlySet<string>): readonly string[] {
   return [...new Set(product.referenceCandidates
     .filter((candidate) => candidate.typeCode === typeCode && resolved.has(candidate.key))
     .map((candidate) => candidate.sourceValue.trim())
@@ -564,6 +563,7 @@ function wordpressContentContext(
   effectiveTitle: string,
   variations: readonly { readonly size: ProductSizeDTO; readonly availability: ProductVariantDTO["inventory"]["availability"] }[],
   modelTagLink: { readonly name: string; readonly url: string } | null,
+  resolvedCandidateKeys: ReadonlySet<string>,
 ): JsonObject {
   const translated = product.translatedContent;
   const translatedStory = translated?.story?.trim() ?? "";
@@ -589,12 +589,12 @@ function wordpressContentContext(
       release_date: releaseDate(text(product.attributes.releaseDate)),
     },
     classification: {
-      brands: classifiedValues(product, "brand"),
-      models: classifiedValues(product, "model"),
-      categories: classifiedValues(product, "category"),
-      tags: classifiedValues(product, "tag"),
-      colors: classifiedValues(product, "color"),
-      materials: classifiedValues(product, "material"),
+      brands: classifiedValues(product, "brand", resolvedCandidateKeys),
+      models: classifiedValues(product, "model", resolvedCandidateKeys),
+      categories: classifiedValues(product, "category", resolvedCandidateKeys),
+      tags: classifiedValues(product, "tag", resolvedCandidateKeys),
+      colors: classifiedValues(product, "color", resolvedCandidateKeys),
+      materials: classifiedValues(product, "material", resolvedCandidateKeys),
     },
     links: {
       model_tag_name: modelTagLink?.name ?? "",
@@ -808,6 +808,7 @@ async function taxonomyPayload(
   readonly assignedModelTermIds: ReadonlySet<number>;
   readonly modelWasReplacedByAssignment: boolean;
   readonly primaryBrandTermId: number | null;
+  readonly resolvedCandidateKeys: ReadonlySet<string>;
 }> {
   const direct = await context.references.resolveDirect?.(context.product) ?? null;
   if (context.product.classification === undefined && direct === null) {
@@ -820,6 +821,9 @@ async function taxonomyPayload(
     ? context.product.classification!.unresolved.map((reference) => reference.candidateKey)
     : direct.selections.filter((item) => item.status === "unresolved" || item.status === "ambiguous")
       .map((item) => item.candidateKey));
+  const resolvedCandidateKeys = new Set(direct === null
+    ? context.product.classification!.resolved.map((item) => item.candidateKey)
+    : direct.selections.filter((item) => item.status === "resolved").map((item) => item.candidateKey));
   const grouped = new Map<string, Set<number>>();
   const taxonomyOrigins: WordPressTaxonomyOrigin[] = [];
   for (const candidate of context.product.referenceCandidates) {
@@ -992,6 +996,7 @@ async function taxonomyPayload(
     assignedModelTermIds,
     modelWasReplacedByAssignment: replacementGroups.has("pa_model"),
     primaryBrandTermId: primaryBrandTerms.size === 1 ? [...primaryBrandTerms][0]! : null,
+    resolvedCandidateKeys,
   };
 }
 
@@ -1026,6 +1031,7 @@ async function buildWordPressPayload(
     assignedModelTermIds,
     modelWasReplacedByAssignment,
     primaryBrandTermId,
+    resolvedCandidateKeys,
   } = taxonomyResult;
   const taxonomies = mergePreservedTaxonomyTerms(
     context,
@@ -1087,7 +1093,7 @@ async function buildWordPressPayload(
       ignoreMissingSizeMappings,
     );
   const contentVariations = contentResolution.resolved;
-  const contentContext = wordpressContentContext(context.product, title, contentVariations, modelTagLink);
+  const contentContext = wordpressContentContext(context.product, title, contentVariations, modelTagLink, resolvedCandidateKeys);
   const contentTemplates = context.contentTemplates ?? [];
   const content = renderWordPressContentFields(contentContext, contentTemplates, taxonomyTermIds(taxonomies, "product_cat"));
   const managedFields = ["title"];

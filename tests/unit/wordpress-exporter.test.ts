@@ -75,17 +75,21 @@ function context(config: JsonObject = {}): ExportContext {
 
 describe("WordPressExporter", () => {
   it("builds the same payload from direct DTO-to-WordPress terms without reference lookups", async () => {
-    const base = context();
-    const previous = await buildWordPressUpsertPayload(base);
-    const direct: ExportContext = { ...base, product: { ...base.product,
+    const initial = context();
+    const base: ExportContext = { ...initial, product: { ...initial.product,
       referenceCandidates: [
         { key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product",
           sourceValue: "Nike", context: {}, evidence: {} },
         { key: "product:category", typeCode: "category", scope: "product.category", subjectKind: "product",
           sourceValue: "sneakers", context: {}, evidence: {} },
       ],
-      classification: { ...base.product.classification!, execution: { mode: "v2", revision: "5" } },
-    }, references: { ...base.references,
+    }, contentTemplates: [{ id: "300", field: "description", revision: 1,
+      templateSource: "<p>{{ classification.brands | first }}</p>", profileKey: "default", profileName: "Основной",
+      managementMode: "manage", categoryTermIds: [], requiredContextPaths: [] }] };
+    const previous = await buildWordPressUpsertPayload(base);
+    const { classification: _classification, ...unclassified } = base.product;
+    const direct: ExportContext = { ...base, product: unclassified,
+      references: { ...base.references,
       resolveReference: vi.fn().mockRejectedValue(new Error("Internal reference lookup must not run")),
       resolveProjections: vi.fn().mockRejectedValue(new Error("Internal projection lookup must not run")),
       resolveDirect: vi.fn().mockResolvedValue({ selections: [

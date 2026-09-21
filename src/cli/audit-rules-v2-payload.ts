@@ -31,6 +31,7 @@ try {
   const target = await repositories.targets.getById(targetId);
   if (target === null) throw new Error("Target is missing");
   const direct = new DirectRulesV2Assignments(snapshot.records, targetId);
+  const titleBrandAssignments = await supplemental.createTargetAssignmentResolver(targetId);
   const contentTemplates = await repositories.contentTemplates.listActive(targetId);
   const exporter = new WordPressExporter(config);
   let payloads = 0;
@@ -50,10 +51,14 @@ try {
     const targetProduct = await repositories.targets.findTargetProduct(targetId, internal.id);
     const existingExternalId = targetProduct?.externalId ?? saved?.externalId;
     const outcomes: { payload?: JsonValue; error?: string }[] = [];
+    const { classification: _savedClassification, ...unclassified } = internal.data;
+    const directSource = { id: source.id, code: source.code, productId: id,
+      sourceKey: sourceProduct.sourceKey, externalId: sourceProduct.externalId };
     for (let index = 0; index < 3; index++) {
       const classified = (await classifiers[index === 0 ? 0 : 1]!.classify(source.id, internal.data)).product;
-      const product = index === 0 ? classified : { ...classified, classification: { ...classified.classification,
-        execution: { mode: "v2" as const, revision: snapshot.revision } } };
+      const product = index === 0 ? classified : index === 1 ? { ...classified, classification: { ...classified.classification,
+        execution: { mode: "v2" as const, revision: snapshot.revision } } }
+        : unclassified;
       const mapping = mappings[index === 0 ? 0 : 1]!;
       const context: ExportContext = {
         source: { id: source.id, code: source.code, config: source.config },
@@ -66,11 +71,10 @@ try {
         ...(saved === null ? {} : { existingTargetSnapshot: saved.payload }),
         references: { resolveReference: (input) => mapping.resolveTargetMapping(targetId, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => mapping.resolveTargetProjections(targetId, inputs),
-          resolveAssignments: (dto) => mapping.resolveTargetAssignments(targetId, dto),
-          ...(index !== 2 ? {} : { resolveDirect: async (dto) => direct.resolveTerms(dto, {
-            id: source.id, code: source.code, productId: id, sourceKey: sourceProduct.sourceKey,
-            externalId: sourceProduct.externalId,
-          }) }) },
+          resolveAssignments: index !== 2 ? (dto) => mapping.resolveTargetAssignments(targetId, dto)
+            : async (dto) => [...new Map([...(await titleBrandAssignments(dto)), ...direct.resolve(dto, directSource)]
+              .map((assignment) => [`${assignment.targetScope}\u0000${assignment.externalValue}\u0000${assignment.mode}`, assignment])).values()],
+          ...(index !== 2 ? {} : { resolveDirect: async (dto) => direct.resolveTerms(dto, directSource) }) },
       };
       try { outcomes.push({ payload: await exporter.buildPayload(context) }); }
       catch (error) { outcomes.push({ error: error instanceof Error ? error.message : String(error) }); }
