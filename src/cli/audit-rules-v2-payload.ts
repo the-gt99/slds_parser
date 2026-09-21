@@ -15,8 +15,10 @@ const config = loadWordPressTargetConfig();
 if (config === null) throw new Error("WordPress configuration is required");
 const pool = createPostgresPool();
 const client = await pool.connect();
+let transactionOpen = false;
 try {
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  transactionOpen = true;
   const repositories = createPostgresRepositories(client);
   const baseline = await loadRulesV2AuditBaseline(client);
   const runtime = new RulesV2Runtime(client, () => 0);
@@ -34,6 +36,8 @@ try {
   const titleBrandAssignments = await supplemental.createTargetAssignmentResolver(targetId);
   const contentTemplates = await repositories.contentTemplates.listActive(targetId);
   const exporter = new WordPressExporter(config);
+  await client.query("COMMIT");
+  transactionOpen = false;
   let payloads = 0;
   let preflightPassed = 0;
   let preflightBlocked = 0;
@@ -98,9 +102,14 @@ try {
       }
     } else results.push({ id, equal, directEqual, outcomes });
   }
-  await client.query("COMMIT");
-  console.info(JSON.stringify({ revision: snapshot.revision, checked: ids.length, payloads, mismatches, directMismatches,
+  const ruleStamp = (await client.query<{ revision: string }>(`SELECT
+    COALESCE(SUM(revision), 0)::TEXT || ':' || COUNT(*)::TEXT || ':' || COALESCE(MAX(updated_at)::TEXT, '') AS revision
+    FROM rules_v2`)).rows[0]!.revision;
+  const dictionaryStamp = (await client.query<{ revision: string }>(
+    "SELECT COALESCE(SUM(revision), 0)::TEXT AS revision FROM target_export_revisions")).rows[0]!.revision;
+  const revisionChanged = `${ruleStamp}:${dictionaryStamp}` !== snapshot.revision;
+  console.info(JSON.stringify({ revision: snapshot.revision, revisionChanged, checked: ids.length, payloads, mismatches, directMismatches,
     preflightPassed, preflightBlocked, writes: false, results }, null, 2));
-  if (mismatches > 0 || directMismatches > 0 || payloads === 0 || preflightBlocked > 0) process.exitCode = 1;
-} catch (error) { await client.query("ROLLBACK"); throw error; }
+  if (mismatches > 0 || directMismatches > 0 || payloads === 0 || preflightBlocked > 0 || revisionChanged) process.exitCode = 1;
+} catch (error) { if (transactionOpen) await client.query("ROLLBACK"); throw error; }
 finally { client.release(); await pool.end(); }
