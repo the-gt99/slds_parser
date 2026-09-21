@@ -22,6 +22,7 @@
     "rules-v2:audit-fields": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-direct-fields.ts",
     "rules-v2:audit-direct-plan": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-direct-plan.ts",
     "rules-v2:audit-direct-matches": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-direct-matches.ts",
+    "rules-v2:audit-dependencies": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-dependencies.ts",
     "rules-v2:audit-payload": "node --env-file-if-exists=.env --import tsx src/cli/audit-rules-v2-payload.ts",
     "rules-v2:mode": "node --env-file-if-exists=.env --import tsx src/cli/rules-v2-mode.ts",
     "rules-v2:smoke-engine": "node --env-file-if-exists=.env --import tsx src/cli/smoke-rules-v2-engine.ts",
