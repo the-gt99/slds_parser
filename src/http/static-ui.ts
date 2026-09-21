@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 const assets = new Map([
-  ["/", { file: "index.html", type: "text/html; charset=utf-8" }],
+  ["/", { file: "overview.html", type: "text/html; charset=utf-8" }],
   ["/classifier", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/assets/app.css", { file: "app.css", type: "text/css; charset=utf-8" }],
   ["/assets/admin-shell.js", { file: "admin-shell.js", type: "text/javascript; charset=utf-8" }],

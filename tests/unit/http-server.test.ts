@@ -297,7 +297,7 @@ describe("HTTP server", () => {
     await server.close();
   });
 
-  it("serves the classifier interface", async () => {
+  it("serves the overview interface at the root", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const server = createHttpServer(dependencies(database));
 
@@ -305,7 +305,7 @@ describe("HTTP server", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
-    expect(response.body).toContain("SLDS · Классификация");
+    expect(response.body).toContain("SLDS · Обзор процессов");
     await server.close();
   });
 

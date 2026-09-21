@@ -363,7 +363,9 @@ function renderClassifications(item) {
       for (const output of activeOutputs) {
         const chip = document.createElement("a");
         chip.className = `classification-output ${output.kind}`;
-        chip.href = `/classifier?${new URLSearchParams({ view: "references", referenceId: value.resolvedReferenceValueId || "", search: value.resolvedReferenceName || value.sourceValue })}`;
+        chip.href = item.classification.mode === "v2"
+          ? `/rules-v2?${new URLSearchParams({ search: value.sourceRuleId || value.resolvedReferenceName || value.sourceValue })}`
+          : `/classifier?${new URLSearchParams({ view: "references", referenceId: value.resolvedReferenceValueId || "", search: value.resolvedReferenceName || value.sourceValue })}`;
         chip.textContent = `${output.kind === "projection" ? "+ " : ""}${output.targetLabel} · ${output.targetTaxonomy || output.targetScope}`;
         outputs.append(chip);
       }

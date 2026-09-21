@@ -111,9 +111,10 @@ async function load() {
   const tasks = [
     api("/api/runtime").then((value) => { runtime = value; renderRuntime(value); }),
     api("/api/inventory-health", { allowErrorBody: true }).then((value) => { inventory = value; renderInventory(value); }),
-    api("/api/classifier/queue?limit=1").then((value) => {
-      byId("classification-total").textContent = count(value.total);
-      badge("classification-status", Number(value.total || 0) > 0 ? "Есть блокеры" : "Готово", Number(value.total || 0) > 0 ? "status-retry" : "status-completed");
+    api("/api/rules-v2?offset=0").then((value) => {
+      const total = value.summary?.catalog?.total || 0;
+      byId("classification-total").textContent = count(total);
+      badge("classification-status", value.authoritative ? "Основной режим" : "Теневой режим", value.authoritative ? "status-completed" : "status-retry");
     }),
     api("/api/targets").then(async (targets) => {
       target = targets.items.find((item) => item.code === "slamdunk") || targets.items[0];
