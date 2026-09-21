@@ -96,9 +96,12 @@ export class RulesExecution implements RulesOperationScope {
   }
 
   async prepareProduct(sourceId: string, product: UniversalProductDTO): Promise<UniversalProductDTO> {
-    return this.run(async () => this.current().mode === "v1"
-      ? (product.classification?.execution?.mode === "v2" ? (await this.legacyClassifier.classify(sourceId, product)).product : product)
-      : (await this.classifier.classify(sourceId, product)).product);
+    return this.run(async () => {
+      if (this.current().mode === "v1") return product.classification?.execution?.mode === "v2"
+        ? (await this.legacyClassifier.classify(sourceId, product)).product : product;
+      const { classification: _classification, ...unclassified } = product;
+      return unclassified;
+    });
   }
 
   private directSource(source: SourceDTO, sourceProduct: SourceProductDTO): RulesV2ProductSource {

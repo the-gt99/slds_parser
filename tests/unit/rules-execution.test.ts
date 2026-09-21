@@ -47,20 +47,21 @@ describe("RulesExecution", () => {
     expect(await execution.references(references).getTargetMappingRevision("10")).toBe("17");
     switchMode("v2", "2");
     const next = await execution.prepareProduct("1", old.product);
-    expect(next.classification?.execution).toEqual({ mode: "v2", revision: "2" });
+    expect(next.classification).toBeUndefined();
     expect(await execution.references(references).getTargetMappingRevision("10")).toBe("19");
+    const storedV2 = (await execution.classifier.classify("1", old.product)).product;
     switchMode("v1", "3");
-    expect(await execution.prepareProduct("1", next)).toEqual(old.product);
+    expect(await execution.prepareProduct("1", storedV2)).toEqual(old.product);
   });
   it("pins a snapshot through concurrent mode changes and refreshes on the next operation", async () => {
     const { execution, switchMode, load } = setup();
     switchMode("v2", "2");
     await execution.run(async () => {
-      expect((await execution.prepareProduct("1", product)).classification?.execution?.revision).toBe("2");
+      expect((await execution.prepareProduct("1", product)).classification).toBeUndefined();
       switchMode("v1", "3");
-      expect((await execution.prepareProduct("1", product)).classification?.execution?.revision).toBe("2");
+      expect((await execution.prepareProduct("1", product)).classification).toBeUndefined();
     });
-    expect(new Set(load.mock.contexts).size).toBe(2);
+    expect(new Set(load.mock.contexts).size).toBe(1);
     expect((await execution.classifier.classify("1", product)).product.classification.execution).toBeUndefined();
   });
   it("reuses compiled snapshots and rejects missing control instead of falling back", async () => {
