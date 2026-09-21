@@ -2,6 +2,7 @@ import { IntegrationContractError } from "../core/errors/index.js";
 import type { RuleV2Draft, RuleV2ImportedDraft, RulesV2Repository } from "../repositories/index.js";
 import { compileTargetAssignmentRegex } from "./target-assignment-rule-matcher.js";
 import { validateRulesV2Field } from "./rules-v2-fields.js";
+import type { RulesV2WorkbenchQuery } from "./rules-v2-preview.js";
 
 const supportedOperators = new Set(["equals", "one_of", "contains_phrase", "regex", "absent"]);
 
@@ -28,7 +29,10 @@ function validate(draft: RuleV2Draft): void {
 
 export class RulesV2Service {
   constructor(private readonly repository: RulesV2Repository,
-    private readonly evaluator: { preview(draft: RuleV2Draft): Promise<object> },
+    private readonly evaluator: {
+      preview(draft: RuleV2Draft): Promise<object>;
+      workbench?(query: RulesV2WorkbenchQuery): Promise<object>;
+    },
     private readonly executionState?: () => Promise<{ mode: "v1" | "v2" }>) {}
 
   async updateImported(id: string, raw: unknown, revision: string, actor: string) {
@@ -82,6 +86,11 @@ export class RulesV2Service {
     validate(draft);
     const mode = (await this.executionState?.())?.mode === "v2" ? "active" : "shadow";
     return { ...await this.evaluator.preview(draft), mode, writes: false };
+  }
+
+  async workbench(query: RulesV2WorkbenchQuery) {
+    if (this.evaluator.workbench === undefined) throw new IntegrationContractError("Rules v2 workbench is unavailable");
+    return this.evaluator.workbench(query);
   }
 
   async create(draft: RuleV2Draft, actor: string) { validate(draft); return this.repository.create(draft, actor); }

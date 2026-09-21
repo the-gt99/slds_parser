@@ -40,7 +40,7 @@ describe("target assignment rules", () => {
   it("rejects equally prioritized matches in one exclusive group", () => {
     const conditions = [{ field: "candidate.category.sourceValue", operator: "equals" as const, values: ["sandals"] }];
     expect(() => resolveTargetAssignments(product, [rule("a", 100, conditions, "1"), rule("b", 100, conditions, "2")]))
-      .toThrow("equally prioritized");
+      .toThrow("equally prioritized matching rules: a (#a), b (#b)");
   });
 
   it("matches an exact source model even before the model is resolved", () => {

@@ -151,7 +151,10 @@ export function resolveTargetAssignments(
     const highest = Math.max(...groupRules.map((rule) => rule.priority));
     const winners = groupRules.filter((rule) => rule.priority === highest);
     if (winners.length !== 1) {
-      throw new IntegrationContractError(`Target assignment group ${groupCode} has ${winners.length} equally prioritized matching rules`);
+      const ruleDetails = winners.map((rule) => `${rule.name} (#${rule.id})`).join(", ");
+      throw new IntegrationContractError(
+        `Target assignment group ${groupCode} has ${winners.length} equally prioritized matching rules: ${ruleDetails}`,
+      );
     }
     const winner = winners[0]!;
     if (winner.actions.length === 0) {

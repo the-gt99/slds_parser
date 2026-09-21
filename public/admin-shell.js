@@ -1,7 +1,7 @@
 const sections = [
   ["/overview", "Обзор", ["/overview"]],
   ["/data-schema", "Схема данных", ["/data-schema"]],
-  ["/rules-v2", "Правила", ["/rules-v2"]],
+  ["/rules-v2", "Готовность и правила", ["/rules-v2"]],
   ["/content-templates", "Шаблоны контента", ["/content-templates"]],
   ["/products", "Товары", ["/products"]],
   ["/export-control", "Контроль экспорта", ["/export-control"]],

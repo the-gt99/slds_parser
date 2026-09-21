@@ -72,6 +72,20 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("serves the resulting DTO workbench as a read-only endpoint", async () => {
+    const workbench = vi.fn().mockResolvedValue({ mode: "resulting_target_dto", items: [] });
+    const server = createHttpServer({ ...dependencies({ query: vi.fn() }), rulesV2: { workbench } as unknown as RulesV2Service });
+
+    const response = await server.inject({ method: "GET",
+      url: "/api/rules-v2/workbench?sourceId=1&targetId=10&status=incomplete&limit=40&offset=0",
+      headers: { authorization: `Bearer ${adminToken}` } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ mode: "resulting_target_dto", items: [] });
+    expect(workbench).toHaveBeenCalledWith({ sourceId: "1", targetId: "10", search: "", status: "incomplete", limit: 40, offset: 0 });
+    await server.close();
+  });
+
   it("queues all safe WordPress suggestions in one short request", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const targetClassificationImport = {

@@ -155,6 +155,14 @@ interface RuntimeSettingsBody {
   readonly restart?: unknown;
 }
 interface PreviewQuery { readonly targetId?: string }
+interface RuleV2WorkbenchQuery {
+  readonly sourceId?: string;
+  readonly targetId?: string;
+  readonly search?: string;
+  readonly status?: string;
+  readonly limit?: string;
+  readonly offset?: string;
+}
 interface ExportControlQuery {
   readonly targetId?: string;
   readonly status?: string;
@@ -1834,6 +1842,20 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
     return dependencies.rulesV2.overview(request.query.targetId === undefined ? undefined : entityId(request.query.targetId, "targetId"),
       { search: request.query.search ?? "", offset: Number(request.query.offset ?? 0) });
+  });
+
+  server.get<{ Querystring: RuleV2WorkbenchQuery }>("/api/rules-v2/workbench", { preHandler: requireAdmin }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    const status = optionalString(request.query.status) ?? "incomplete";
+    if (!["incomplete", "conflict", "ready", "all"].includes(status)) throw new HttpInputError("Unsupported workbench status");
+    return dependencies.rulesV2.workbench({
+      sourceId: entityId(request.query.sourceId, "sourceId"),
+      targetId: entityId(request.query.targetId, "targetId"),
+      search: request.query.search ?? "",
+      status: status as "incomplete" | "conflict" | "ready" | "all",
+      limit: positiveInteger(request.query.limit, 40, 100),
+      offset: positiveInteger(request.query.offset, 0, 1_000_000),
+    });
   });
 
   server.post<{ Body: RuleV2Body }>("/api/rules-v2/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
