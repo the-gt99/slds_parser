@@ -27,7 +27,7 @@ describe("direct target rule plans", () => {
       originPayload: { referenceValueId: "11" }, actions: [assignment] });
     const result = buildDirectTargetRulePlans([source, mapping, projection, other]);
     expect(result).toHaveLength(1);
-    expect(result[0]?.conditions[0]?.conditions[0]?.field).toBe("common.characteristics.brand");
+    expect(result[0]?.conditions[0]?.conditions[0]?.field).toBe("candidate.brand.sourceValue");
     expect(result[0]?.actions.map((action) => [action.originKind, action.originId, action.targetScope])).toEqual([
       ["target_mapping", "21", "product.brand"], ["reference_projection", "22", "product.tag"],
     ]);

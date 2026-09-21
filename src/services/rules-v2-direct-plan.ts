@@ -1,5 +1,5 @@
 import type { RuleV2Action, RuleV2Record } from "../repositories/index.js";
-import { directRulesV2Conditions } from "./rules-v2-direct-fields.js";
+import { directCandidateConditions } from "./rules-v2-direct-candidate.js";
 
 export interface DirectTargetRulePlan {
   readonly sourceRuleId: string;
@@ -51,8 +51,7 @@ export function buildDirectTargetRulePlans(records: readonly RuleV2Record[]): re
       || rule.sourceId === null) continue;
     const reference = rule.actions.find((action) => action.kind === "resolve_reference");
     if (reference?.kind !== "resolve_reference" || reference.resolutionStatus === "ignored" || reference.referenceValueId === null) continue;
-    const conditions = directRulesV2Conditions(rule);
-    if (conditions === null) continue;
+    const conditions = directCandidateConditions(rule);
     const bindings = [...(byReference.get(reference.referenceValueId) ?? []),
       ...(byResolution.get(`${rule.originKind}:${rule.originId ?? rule.id}`) ?? [])];
     const byTarget = new Map<string, Binding[]>();

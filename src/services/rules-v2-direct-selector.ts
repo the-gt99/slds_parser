@@ -1,13 +1,13 @@
 import type { ReferenceCandidateDTO, UniversalProductDTO } from "../contracts/index.js";
 import { stableJsonStringify } from "../core/utils/index.js";
 import type { RuleV2Record } from "../repositories/index.js";
-import { DirectRulesV2Index, directRulesV2Conditions, directRulesV2Field,
-  matchesDirectRulesV2Conditions } from "./rules-v2-direct-fields.js";
-import { rulesV2FieldReader, type RulesV2ProductSource } from "./rules-v2-snapshot.js";
+import { directCandidateConditions, directCandidateField } from "./rules-v2-direct-candidate.js";
+import { DirectRulesV2Index, matchesDirectRulesV2Conditions } from "./rules-v2-direct-fields.js";
+import type { RulesV2ProductSource } from "./rules-v2-snapshot.js";
 
 interface PreparedRule {
   readonly rule: RuleV2Record;
-  readonly groups: NonNullable<ReturnType<typeof directRulesV2Conditions>>;
+  readonly groups: RuleV2Record["conditionGroups"];
 }
 
 export interface DirectSourceSelection {
@@ -36,8 +36,7 @@ export class DirectRulesV2Selector {
         if (this.exact.has(lookup)) throw new Error(`Duplicate direct exact decision: ${rule.id}`);
         this.exact.set(lookup, rule);
       } else if (rule.originKind === "classification_rule") {
-        const groups = directRulesV2Conditions(rule);
-        if (groups === null) throw new Error(`Unsupported direct conditions: ${rule.id}`);
+        const groups = directCandidateConditions(rule);
         const lookup = key(rule.sourceId, action.referenceType);
         const entries = conditional.get(lookup) ?? [];
         entries.push({ rule, groups });
@@ -48,7 +47,6 @@ export class DirectRulesV2Selector {
   }
 
   select(source: RulesV2ProductSource, product: UniversalProductDTO): readonly DirectSourceSelection[] {
-    const read = rulesV2FieldReader(product, source);
     return product.referenceCandidates.map((candidate): DirectSourceSelection => {
       const exact = this.exact.get(key(source.id, candidate.typeCode, candidate.scope,
         normalized(candidate.sourceValue), stableJsonStringify(candidate.context)));
@@ -57,9 +55,7 @@ export class DirectRulesV2Selector {
         return { candidateKey: candidate.key, status: action?.kind === "resolve_reference" && action.resolutionStatus === "ignored"
           ? "ignored" : "resolved", sourceRuleId: exact.id };
       }
-      const sourceValueField = directRulesV2Field(`candidate.${candidate.typeCode}.sourceValue`);
-      const candidateRead = (field: string): readonly string[] =>
-        field === sourceValueField ? [candidate.sourceValue] : read(field);
+      const candidateRead = (field: string): readonly string[] => directCandidateField(candidate, field);
       const matches = (this.conditional.get(key(source.id, candidate.typeCode))?.select(candidateRead) ?? [])
         .filter((entry) => matchesDirectRulesV2Conditions(product, entry.groups, candidateRead))
         .sort((left, right) => right.rule.priority - left.rule.priority

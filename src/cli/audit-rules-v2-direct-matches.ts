@@ -3,10 +3,10 @@ import { createPostgresPool } from "../infrastructure/db/index.js";
 import { loadRulesV2AuditBaseline } from "../infrastructure/db/rules-v2-audit-baseline.js";
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { ProductClassifier } from "../services/product-classifier.js";
-import { DirectRulesV2Index, directRulesV2Conditions, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
+import { directCandidateConditions, directCandidateField } from "../services/rules-v2-direct-candidate.js";
+import { DirectRulesV2Index, matchesDirectRulesV2Conditions } from "../services/rules-v2-direct-fields.js";
 import { buildDirectTargetRulePlans } from "../services/rules-v2-direct-plan.js";
 import { DirectRulesV2Selector } from "../services/rules-v2-direct-selector.js";
-import { rulesV2FieldReader } from "../services/rules-v2-snapshot.js";
 
 const limit = Number(process.env.RULES_V2_DIRECT_MATCH_LIMIT ?? "100");
 if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("Invalid direct match audit limit");
@@ -32,8 +32,7 @@ try {
       || (rule.originKind !== "exact_mapping" && rule.originKind !== "classification_rule")) return [];
     const action = rule.actions.find((item) => item.kind === "resolve_reference");
     if (action?.kind !== "resolve_reference" || action.resolutionStatus !== "confirmed") return [];
-    const groups = directRulesV2Conditions(rule);
-    return groups === null ? [] : [{ rule, groups }];
+    return [{ rule, groups: directCandidateConditions(rule), referenceType: action.referenceType }];
   });
   const bySource = new Map<string, typeof sourceRules>();
   const byOrigin = new Map<string, string>();
@@ -42,9 +41,10 @@ try {
     byOrigin.set(`${rule.originKind}:${rule.originId}`, rule.id);
   }
   for (const entry of sourceRules) {
-    const entries = bySource.get(entry.rule.sourceId!) ?? [];
+    const lookup = JSON.stringify([entry.rule.sourceId, entry.referenceType]);
+    const entries = bySource.get(lookup) ?? [];
     entries.push(entry);
-    bySource.set(entry.rule.sourceId!, entries);
+    bySource.set(lookup, entries);
   }
   const indexes = new Map([...bySource].map(([sourceId, entries]) => [sourceId, new DirectRulesV2Index(entries)]));
   const rows = (await client.query<{ id: string; source_id: string; code: string; source_key: string;
@@ -110,11 +110,12 @@ try {
     const winners = new Set(classified.product.classification.resolved.map((item) => byOrigin.get(
       `${item.resolutionKind === "mapping" ? "exact_mapping" : "classification_rule"}:${item.resolutionId}`)).filter(
       (value): value is string => value !== undefined));
-    const read = rulesV2FieldReader(row.data, { id: row.source_id, code: row.code, productId: row.id,
-      sourceKey: row.source_key, externalId: row.external_id });
     const matching = new Set<string>();
-    for (const { rule, groups } of indexes.get(row.source_id)?.select(read) ?? []) {
-      if (matchesDirectRulesV2Conditions(row.data, groups, read)) matching.add(rule.id);
+    for (const candidate of row.data.referenceCandidates) {
+      const read = (field: string) => directCandidateField(candidate, field);
+      for (const { rule, groups } of indexes.get(JSON.stringify([row.source_id, candidate.typeCode]))?.select(read) ?? []) {
+        if (matchesDirectRulesV2Conditions(row.data, groups, read)) matching.add(rule.id);
+      }
     }
     const missed = [...winners].filter((id) => !matching.has(id));
     const extra = [...matching].filter((id) => !winners.has(id));

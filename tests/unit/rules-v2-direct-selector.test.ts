@@ -51,4 +51,20 @@ describe("direct source rule selection", () => {
   it("never matches a rule when its source candidate is absent", () => {
     expect(new DirectRulesV2Selector([rule({})]).select(source, { ...product, referenceCandidates: [] })).toEqual([]);
   });
+
+  it("matches each candidate against its own context and evidence", () => {
+    const candidates = [
+      { ...product.referenceCandidates[0]!, key: "model:nike", sourceValue: "Pegasus", context: { brand: "Nike" }, evidence: { year: 2024 } },
+      { ...product.referenceCandidates[0]!, key: "model:adidas", sourceValue: "Samba", context: { brand: "Adidas" }, evidence: { year: 2025 } },
+    ];
+    const matching = rule({ conditionGroups: [{ conditions: [
+      { field: "candidate.model.context.brand", operator: "equals", values: ["Nike"] },
+    ] }, { conditions: [
+      { field: "candidate.model.evidence.year", operator: "equals", values: ["2024"] },
+    ] }] });
+    expect(new DirectRulesV2Selector([matching]).select(source, { ...product, referenceCandidates: candidates })).toEqual([
+      { candidateKey: "model:nike", status: "resolved", sourceRuleId: "1" },
+      { candidateKey: "model:adidas", status: "unresolved", sourceRuleId: null },
+    ]);
+  });
 });
