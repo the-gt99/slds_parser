@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { UniversalProductDTO } from "../../contracts/index.js";
+import type { DirectTargetDecisionDTO, SourceDTO, SourceProductDTO, UniversalProductDTO } from "../../contracts/index.js";
 import type { ClassificationRepository, ReferenceRepository } from "../../repositories/index.js";
 import { ProductClassifier } from "../../services/product-classifier.js";
+import { DirectRulesV2Assignments } from "../../services/rules-v2-direct-assignments.js";
+import type { RulesV2Snapshot } from "../../services/rules-v2-snapshot.js";
 import type { RulesOperationScope, SupplementalTargetAssignmentResolver } from "../../services/target-reference-mapping-service.js";
 import { RulesV2Runtime } from "./rules-v2-runtime.js";
 import type { SqlExecutor, SqlPool } from "./sql-executor.js";
@@ -20,6 +22,7 @@ export class RulesExecution implements RulesOperationScope {
   private loading: Promise<ExecutionSnapshot> | undefined;
   private readonly legacyClassifier: ProductClassifier;
   private readonly v2Classifier: ProductClassifier;
+  private readonly directTargets = new WeakMap<RulesV2Snapshot, Map<string, DirectRulesV2Assignments>>();
   readonly classifier: Pick<ProductClassifier, "classify" | "version">;
 
   constructor(private readonly pool: SqlPool & SqlExecutor, private readonly legacy: ClassificationRepository) {
@@ -93,6 +96,24 @@ export class RulesExecution implements RulesOperationScope {
     return this.run(async () => this.current().mode === "v1"
       ? (product.classification?.execution?.mode === "v2" ? (await this.legacyClassifier.classify(sourceId, product)).product : product)
       : (await this.classifier.classify(sourceId, product)).product);
+  }
+
+  async resolveDirectTarget(targetId: string, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null> {
+    return this.run(async () => {
+      const current = this.current();
+      if (current.mode !== "v2") return null;
+      const snapshot = await current.runtime!.snapshot();
+      const targets = this.directTargets.get(snapshot) ?? new Map<string, DirectRulesV2Assignments>();
+      this.directTargets.set(snapshot, targets);
+      let engine = targets.get(targetId);
+      if (engine === undefined) {
+        engine = new DirectRulesV2Assignments(snapshot.records, targetId);
+        targets.set(targetId, engine);
+      }
+      return engine.resolveTerms(product, { id: source.id, code: source.code, productId: sourceProduct.id,
+        sourceKey: sourceProduct.sourceKey, externalId: sourceProduct.externalId ?? null });
+    });
   }
 
   references(legacy: ReferenceRepository): ReferenceRepository {

@@ -314,6 +314,26 @@ export interface TargetAssignmentDTO {
   readonly mode: "add" | "replace";
 }
 
+/** Final target terms selected by DTO rules; no internal reference value is required. */
+export interface DirectTargetDecisionDTO {
+  readonly selections: readonly {
+    readonly candidateKey: string;
+    readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
+    readonly sourceRuleId: EntityId | null;
+  }[];
+  readonly terms: readonly {
+    readonly candidateKey: string;
+    readonly referenceType: string;
+    readonly originKind: "target_mapping" | "reference_projection" | "classification_projection";
+    readonly originId: EntityId;
+    readonly targetScope: string;
+    readonly externalValue: string;
+    readonly externalLabel: string;
+    readonly externalSlug: string | null;
+    readonly metadata: Readonly<Record<string, unknown>>;
+  }[];
+}
+
 export interface TargetReferenceResolver {
   resolveReference(
     input: TargetReferenceResolutionInput,
@@ -322,6 +342,7 @@ export interface TargetReferenceResolver {
     inputs: readonly TargetProjectionResolutionInput[],
   ): Promise<readonly TargetReferenceProjectionDTO[]>;
   resolveAssignments(product: UniversalProductDTO): Promise<readonly TargetAssignmentDTO[]>;
+  resolveDirect?(product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null>;
 }
 
 export interface ExportContext {

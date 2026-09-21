@@ -45,6 +45,7 @@ export type {
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,
   TargetAssignmentDTO,
+  DirectTargetDecisionDTO,
   TargetReferenceResolver,
   UnresolvedReferenceDTO,
   UniversalProductDTO,

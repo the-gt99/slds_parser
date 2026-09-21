@@ -1,5 +1,8 @@
 import type {
+  DirectTargetDecisionDTO,
   EntityId,
+  SourceDTO,
+  SourceProductDTO,
   TargetAssignmentDTO,
   TargetProjectionResolutionInput,
   TargetReferenceProjectionDTO,
@@ -18,6 +21,8 @@ export interface SupplementalTargetAssignmentResolver {
 export interface RulesOperationScope {
   run<T>(callback: () => Promise<T>): Promise<T>;
   prepareProduct(sourceId: EntityId, product: UniversalProductDTO): Promise<UniversalProductDTO>;
+  resolveDirectTarget?(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null>;
 }
 
 function mergeAssignments(
@@ -46,6 +51,11 @@ export class TargetReferenceMappingService {
 
   prepareProduct(sourceId: EntityId, product: UniversalProductDTO): Promise<UniversalProductDTO> {
     return this.execution?.prepareProduct(sourceId, product) ?? Promise.resolve(product);
+  }
+
+  resolveDirectTarget(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null> {
+    return this.execution?.resolveDirectTarget?.(targetId, source, sourceProduct, product) ?? Promise.resolve(null);
   }
 
   async resolveTargetValue(

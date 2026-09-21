@@ -29,6 +29,9 @@ describe("direct dependent assignments", () => {
       ] }], actions: [{ targetScope: "product.brand", dictionaryValueId: "70", externalValue: "70",
         externalLabel: "Extra brand", mode: "add" }] });
     const engine = new DirectRulesV2Assignments([rule({}), mapping, assignment], "5");
+    expect(engine.resolveTerms(product, source)).toMatchObject({ selections: [{ status: "resolved", sourceRuleId: "1" }],
+      terms: [{ candidateKey: "product:model", referenceType: "model", originKind: "target_mapping",
+        externalValue: "50" }] });
     expect(engine.resolve(product, source)).toMatchObject([{ ruleId: "22", targetScope: "product.brand",
       externalValue: "70" }]);
     expect(engine.resolve({ ...product, referenceCandidates: [] }, source)).toEqual([]);

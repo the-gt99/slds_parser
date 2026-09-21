@@ -809,11 +809,17 @@ async function taxonomyPayload(
   readonly modelWasReplacedByAssignment: boolean;
   readonly primaryBrandTermId: number | null;
 }> {
-  if (context.product.classification === undefined) throw new IntegrationContractError("Product classification is required before WordPress export");
+  const direct = await context.references.resolveDirect?.(context.product) ?? null;
+  if (context.product.classification === undefined && direct === null) {
+    throw new IntegrationContractError("Product classification is required before WordPress export");
+  }
   const assignments = await context.references.resolveAssignments(context.product);
-  const directV2 = context.product.classification.execution?.mode === "v2";
+  const directV2 = direct !== null || context.product.classification?.execution?.mode === "v2";
   const replacements = new Set(directV2 ? assignments.filter((action) => action.mode === "replace").map((action) => action.targetScope) : []);
-  const unresolvedKeys = new Set(context.product.classification.unresolved.map((reference) => reference.candidateKey));
+  const unresolvedKeys = new Set(direct === null
+    ? context.product.classification!.unresolved.map((reference) => reference.candidateKey)
+    : direct.selections.filter((item) => item.status === "unresolved" || item.status === "ambiguous")
+      .map((item) => item.candidateKey));
   const grouped = new Map<string, Set<number>>();
   const taxonomyOrigins: WordPressTaxonomyOrigin[] = [];
   for (const candidate of context.product.referenceCandidates) {
@@ -824,13 +830,22 @@ async function taxonomyPayload(
   const presentTypes = new Set<ReferenceType>();
   const termsByType = new Map<ReferenceType, Set<number>>();
   const modelTermLabels = new Map<number, string>();
-  for (const reference of context.product.classification.resolved) {
+  const mapped: { readonly candidateKey: string; readonly type: ReferenceType; readonly targetScope: string;
+    readonly externalValue: string; readonly externalLabel: string; readonly origin: string }[] = [];
+  if (direct !== null) {
+    for (const term of direct.terms) {
+      if (term.originKind !== "target_mapping" || !(term.referenceType in REFERENCE_TARGETS)) continue;
+      const candidate = context.product.referenceCandidates.find((item) => item.key === term.candidateKey);
+      if (candidate?.subjectKind !== "product") throw new IntegrationContractError(`WordPress does not support variant reference ${term.candidateKey}`);
+      mapped.push({ candidateKey: term.candidateKey, type: term.referenceType as ReferenceType,
+        targetScope: term.targetScope, externalValue: term.externalValue, externalLabel: term.externalLabel,
+        origin: term.originId });
+    }
+  } else for (const reference of context.product.classification!.resolved) {
     if (!(reference.typeCode in REFERENCE_TARGETS)) continue;
     if (reference.subjectKind !== "product") throw new IntegrationContractError(`WordPress does not support variant reference ${reference.candidateKey}`);
     const type = reference.typeCode as ReferenceType;
     const target = REFERENCE_TARGETS[type];
-    // A direct replacement is the complete decision for this field. Primary source brand
-    // remains independently resolved unless an explicit primary-brand action replaces it.
     if (replacements.has(mappedTargetScope(context.target.config, target.scope)) && type !== "brand") continue;
     if (type === "brand" && directV2 && assignments.some((action) => action.primarySourceBrand === true)) continue;
     const mapping = await context.references.resolveReference({
@@ -838,7 +853,20 @@ async function taxonomyPayload(
       referenceType: type,
       targetScope: mappedTargetScope(context.target.config, target.scope),
     });
-    const termId = positiveInteger(mapping.externalValue, `WordPress mapping ${type}/${reference.referenceValueId}`);
+    mapped.push({ candidateKey: reference.candidateKey, type,
+      targetScope: mappedTargetScope(context.target.config, target.scope), externalValue: mapping.externalValue,
+      externalLabel: mapping.externalLabel, origin: reference.referenceValueId });
+  }
+  for (const mapping of mapped) {
+    const type = mapping.type;
+    const target = REFERENCE_TARGETS[type];
+    const expectedScope = mappedTargetScope(context.target.config, target.scope);
+    if (mapping.targetScope !== expectedScope) throw new IntegrationContractError(`WordPress mapping ${type} has unexpected target scope: ${mapping.targetScope}`);
+    // A direct replacement is the complete decision for this field. Primary source brand
+    // remains independently resolved unless an explicit primary-brand action replaces it.
+    if (replacements.has(expectedScope) && type !== "brand") continue;
+    if (type === "brand" && directV2 && assignments.some((action) => action.primarySourceBrand === true)) continue;
+    const termId = positiveInteger(mapping.externalValue, `WordPress mapping ${type}/${mapping.origin}`);
     if (type === "model") modelTermLabels.set(termId, mapping.externalLabel);
     const values = grouped.get(target.taxonomy) ?? new Set<number>();
     values.add(termId);
@@ -848,13 +876,29 @@ async function taxonomyPayload(
     termsByType.set(type, typeTerms);
     presentTypes.add(type);
   }
-  const projections = await context.references.resolveProjections(
-    context.product.classification.resolved.map((reference) => ({
+  const projections = direct === null ? await context.references.resolveProjections(
+    context.product.classification!.resolved.map((reference) => ({
       resolutionKind: reference.resolutionKind,
       resolutionId: reference.resolutionId,
       referenceId: reference.referenceValueId,
     })),
-  );
+  ) : direct.terms.filter((term) => term.originKind !== "target_mapping")
+    .sort((left, right) => (left.originKind === "classification_projection" ? 0 : 1)
+      - (right.originKind === "classification_projection" ? 0 : 1)
+      || Number(left.originId) - Number(right.originId))
+    .map((term) => {
+      const metadata = term.metadata;
+      const managedRelation = metadata.managedBy === "target_term_relation"
+        && typeof metadata.relationCode === "string"
+        && typeof metadata.sourceTypeCode === "string"
+        && typeof metadata.sourceLabel === "string";
+      return { resolutionKind: term.originKind, resolutionId: term.originId,
+        targetScope: term.targetScope, externalValue: term.externalValue,
+        externalLabel: term.externalLabel, externalSlug: term.externalSlug,
+        ...(managedRelation ? { provenance: { kind: "related_target_term" as const,
+          relationCode: metadata.relationCode as string, sourceTypeCode: metadata.sourceTypeCode as string,
+          sourceLabel: metadata.sourceLabel as string } } : {}) };
+    });
   const modelTagLinks = new Map<string, { readonly name: string; readonly url: string }>();
   for (const projection of projections) {
     const target = targetForScope(context.target.config, projection.targetScope);

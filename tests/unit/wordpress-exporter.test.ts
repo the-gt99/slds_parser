@@ -74,6 +74,35 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("builds the same payload from direct DTO-to-WordPress terms without reference lookups", async () => {
+    const base = context();
+    const previous = await buildWordPressUpsertPayload(base);
+    const direct: ExportContext = { ...base, product: { ...base.product,
+      referenceCandidates: [
+        { key: "product:brand", typeCode: "brand", scope: "product.brand", subjectKind: "product",
+          sourceValue: "Nike", context: {}, evidence: {} },
+        { key: "product:category", typeCode: "category", scope: "product.category", subjectKind: "product",
+          sourceValue: "sneakers", context: {}, evidence: {} },
+      ],
+      classification: { ...base.product.classification!, execution: { mode: "v2", revision: "5" } },
+    }, references: { ...base.references,
+      resolveReference: vi.fn().mockRejectedValue(new Error("Internal reference lookup must not run")),
+      resolveProjections: vi.fn().mockRejectedValue(new Error("Internal projection lookup must not run")),
+      resolveDirect: vi.fn().mockResolvedValue({ selections: [
+        { candidateKey: "product:brand", status: "resolved", sourceRuleId: "1" },
+        { candidateKey: "product:category", status: "resolved", sourceRuleId: "2" },
+      ], terms: [
+        { candidateKey: "product:brand", referenceType: "brand", originKind: "target_mapping", originId: "11",
+          targetScope: "product.brand", externalValue: "31", externalLabel: "Nike", externalSlug: null, metadata: {} },
+        { candidateKey: "product:category", referenceType: "category", originKind: "target_mapping", originId: "12",
+          targetScope: "product.category", externalValue: "41", externalLabel: "Кроссовки", externalSlug: null, metadata: {} },
+      ] }),
+    } };
+    expect(await buildWordPressUpsertPayload(direct)).toEqual(previous);
+    expect(direct.references.resolveReference).not.toHaveBeenCalled();
+    expect(direct.references.resolveProjections).not.toHaveBeenCalled();
+  });
+
   it("lets a v2 replacement set a category directly when an old internal category cannot map", async () => {
     const base = context();
     const direct: ExportContext = {

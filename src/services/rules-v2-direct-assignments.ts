@@ -1,8 +1,8 @@
-import type { TargetAssignmentDTO, UniversalProductDTO } from "../contracts/index.js";
+import type { DirectTargetDecisionDTO, TargetAssignmentDTO, UniversalProductDTO } from "../contracts/index.js";
 import { IntegrationContractError } from "../core/errors/index.js";
 import type { RuleV2Record, TargetAssignmentRuleRecord } from "../repositories/index.js";
 import { auditRulesV2Dependencies } from "./rules-v2-dependency-audit.js";
-import { buildDirectTargetRulePlans } from "./rules-v2-direct-plan.js";
+import { buildDirectTargetRulePlans, type DirectTargetRulePlan } from "./rules-v2-direct-plan.js";
 import { DirectRulesV2Selector } from "./rules-v2-direct-selector.js";
 import { rulesV2FieldReader, type RulesV2ProductSource } from "./rules-v2-snapshot.js";
 import { resolveTargetAssignments } from "./target-assignment-rule-matcher.js";
@@ -12,7 +12,7 @@ const key = (...parts: readonly string[]) => JSON.stringify(parts);
 /** Compiles dependent assignments to WordPress terms, without reading internal reference tables. */
 export class DirectRulesV2Assignments {
   private readonly selector: DirectRulesV2Selector;
-  private readonly plansBySource = new Map<string, ReturnType<typeof buildDirectTargetRulePlans>[number][]>();
+  private readonly plansBySource = new Map<string, DirectTargetRulePlan[]>();
   private readonly assignments: readonly TargetAssignmentRuleRecord[];
 
   constructor(records: readonly RuleV2Record[], private readonly targetId: string) {
@@ -63,20 +63,38 @@ export class DirectRulesV2Assignments {
     });
   }
 
-  resolve(product: UniversalProductDTO, source: RulesV2ProductSource): readonly TargetAssignmentDTO[] {
+  resolveTerms(product: UniversalProductDTO, source: RulesV2ProductSource): DirectTargetDecisionDTO {
     const selected = this.selector.select(source, product);
-    const assigned = new Map<string, Set<string>>();
+    const terms: DirectTargetDecisionDTO["terms"][number][] = [];
+    const seenProjections = new Set<string>();
     for (const selection of selected) {
       if (selection.status !== "resolved" || selection.sourceRuleId === null) continue;
       for (const plan of this.plansBySource.get(selection.sourceRuleId) ?? []) {
         for (const action of plan.actions) {
-          if (action.originKind !== "target_mapping") continue;
-          const field = `assigned.${plan.referenceType}`;
-          const terms = assigned.get(field) ?? new Set<string>();
-          terms.add(action.externalValue);
-          assigned.set(field, terms);
+          const projectionKey = key(action.originKind, action.originId, action.targetScope, action.dictionaryValueId);
+          if (action.originKind !== "target_mapping") {
+            if (seenProjections.has(projectionKey)) continue;
+            seenProjections.add(projectionKey);
+          }
+          terms.push({ candidateKey: selection.candidateKey, referenceType: plan.referenceType,
+            originKind: action.originKind, originId: action.originId, targetScope: action.targetScope,
+            externalValue: action.externalValue, externalLabel: action.externalLabel,
+            externalSlug: action.externalSlug, metadata: action.metadata });
         }
       }
+    }
+    return { selections: selected, terms };
+  }
+
+  resolve(product: UniversalProductDTO, source: RulesV2ProductSource): readonly TargetAssignmentDTO[] {
+    const decision = this.resolveTerms(product, source);
+    const assigned = new Map<string, Set<string>>();
+    for (const term of decision.terms) {
+      if (term.originKind !== "target_mapping") continue;
+      const field = `assigned.${term.referenceType}`;
+      const terms = assigned.get(field) ?? new Set<string>();
+      terms.add(term.externalValue);
+      assigned.set(field, terms);
     }
     const read = rulesV2FieldReader(product, source);
     return resolveTargetAssignments(product, this.assignments.filter((rule) => {
