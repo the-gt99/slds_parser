@@ -16,8 +16,10 @@ async function setup(
   const repositories = createMemoryRepositories(store); const internal = await repositories.internalProducts.upsert({ sourceProductId: "2", data: validProduct(), inputHash: "input", contentHash: "content", processorVersion: "1", status: "processed" });
   const exporter: TargetExporter = { targetCode: "fake-exporter", version, export: implementation }; const registry = new TargetExporterRegistry(); registry.register(exporter);
   const sourceRefresher = { refresh: vi.fn().mockResolvedValue(liveVariants) };
+  const mappings = new TargetReferenceMappingService(repositories.references);
   return { store, repositories, internal, implementation, sourceRefresher,
-    runner: new ExportRunner(repositories, registry, new TargetReferenceMappingService(repositories.references), sourceRefresher as never, () => refreshEnabled, currentTime) };
+    mappings,
+    runner: new ExportRunner(repositories, registry, mappings, sourceRefresher as never, () => refreshEnabled, currentTime) };
 }
 
 describe("ExportRunner", () => {
@@ -29,6 +31,17 @@ describe("ExportRunner", () => {
     const value = await setup("1", implementation);
     await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false });
     expect(implementation).toHaveBeenCalledOnce();
+  });
+  it("uses direct v2 assignments without invoking legacy assignment resolution", async () => {
+    const implementation = vi.fn(async (context: Parameters<TargetExporter["export"]>[0]) => {
+      expect(await context.references.resolveAssignments(context.product)).toEqual([]);
+      return { externalId: "ext-1", operation: "created" as const, metadata: {} };
+    });
+    const value = await setup("1", implementation);
+    vi.spyOn(value.mappings, "resolveDirectAssignments").mockResolvedValue([]);
+    vi.spyOn(value.mappings, "resolveTargetAssignments").mockRejectedValue(new Error("Legacy assignments ran"));
+    await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false });
+    expect(value.mappings.resolveTargetAssignments).not.toHaveBeenCalled();
   });
   it("selects exporter and saves success", async () => { const value = await setup(); await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false }); expect(value.implementation).toHaveBeenCalledOnce(); expect([...value.store.targetProducts.values()][0]).toMatchObject({ externalId: "ext-1", status: "synced", lastExportedHash: "content" }); });
   it("skips the same fingerprint after checking live data again", async () => { const value = await setup(); const payload = { internalProductId: value.internal.id, targetId: "10", force: false }; await value.runner.exportProduct(payload); await value.runner.exportProduct(payload); expect(value.sourceRefresher.refresh).toHaveBeenCalledTimes(2); expect(value.implementation).toHaveBeenCalledOnce(); });

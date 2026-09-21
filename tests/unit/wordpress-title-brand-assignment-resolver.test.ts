@@ -56,6 +56,14 @@ function repository(
 }
 
 describe("WordPressTitleBrandAssignmentResolver", () => {
+  it("uses an explicit direct v2 brand decision without stored classification", async () => {
+    const resolve = await new WordPressTitleBrandAssignmentResolver(repository([
+      dictionaryValue("1", "brands", "101", "Nike"),
+    ], [])).createTargetAssignmentResolver("1");
+    const { classification: _classification, ...unclassified } = product("Nike Dunk");
+    expect(resolve(unclassified, true)).toEqual([expect.objectContaining({ targetScope: "product.brand", externalValue: "101" })]);
+    expect(resolve(unclassified, false)).toEqual([]);
+  });
   it("adds every exact brand mention and its active landing tag", async () => {
     const brands = [
       dictionaryValue("1", "brands", "100", "Marvel", { rawMeta: { tag_id: 200 } }),

@@ -1,5 +1,5 @@
 import { IntegrationContractError } from "../core/errors/index.js";
-import type { RuleV2Draft, RuleV2ImportedDraft, RulesV2Repository, TargetAssignmentRuleRepository } from "../repositories/index.js";
+import type { RuleV2Draft, RuleV2ImportedDraft, RulesV2Repository } from "../repositories/index.js";
 import { compileTargetAssignmentRegex } from "./target-assignment-rule-matcher.js";
 import { validateRulesV2Field } from "./rules-v2-fields.js";
 
@@ -27,8 +27,8 @@ function validate(draft: RuleV2Draft): void {
 }
 
 export class RulesV2Service {
-  constructor(private readonly repository: RulesV2Repository, private readonly legacyPreview: TargetAssignmentRuleRepository,
-    private readonly evaluator?: { preview(draft: RuleV2Draft): Promise<object> },
+  constructor(private readonly repository: RulesV2Repository,
+    private readonly evaluator: { preview(draft: RuleV2Draft): Promise<object> },
     private readonly executionState?: () => Promise<{ mode: "v1" | "v2" }>) {}
 
   async updateImported(id: string, raw: unknown, revision: string, actor: string) {
@@ -81,10 +81,7 @@ export class RulesV2Service {
   async preview(draft: RuleV2Draft) {
     validate(draft);
     const mode = (await this.executionState?.())?.mode === "v2" ? "active" : "shadow";
-    if (this.evaluator !== undefined) return { ...await this.evaluator.preview(draft), mode, writes: false };
-    const result = await this.legacyPreview.preview({ sourceId: draft.sourceId, targetId: draft.targetId, name: draft.name, groupCode: draft.groupCode,
-      priority: draft.priority, enabled: draft.status === "shadow", conditionGroups: draft.conditionGroups, actions: draft.actions });
-    return { ...result, mode, writes: false };
+    return { ...await this.evaluator.preview(draft), mode, writes: false };
   }
 
   async create(draft: RuleV2Draft, actor: string) { validate(draft); return this.repository.create(draft, actor); }

@@ -5,9 +5,10 @@ import { RulesV2Snapshot } from "../../src/services/rules-v2-snapshot.js";
 import type { ClassificationRepository, ReferenceRepository } from "../../src/repositories/index.js";
 import type { SqlPool, SqlExecutor, SqlResult } from "../../src/infrastructure/db/sql-executor.js";
 import type { UniversalProductDTO } from "../../src/contracts/index.js";
+import type { SupplementalTargetAssignmentResolver } from "../../src/services/target-reference-mapping-service.js";
 
 const product: UniversalProductDTO = { sourceProductId: "1", title: "Samba", description: "", sku: "", images: [], variants: [], referenceCandidates: [], attributes: {}, metadata: {} };
-function setup() {
+function setup(titleBrandAssignments?: SupplementalTargetAssignmentResolver) {
   let mode: "v1" | "v2" = "v1";
   let revision = "1";
   const statements: string[] = [];
@@ -22,11 +23,23 @@ function setup() {
     getActiveRuleSetRevision: async () => "old", listAllActiveRules: async () => [], listActiveRules: async () => [], saveProductResult: async () => {} };
   const references = { getTargetMappingRevision: async () => "17" } as unknown as ReferenceRepository;
   const load = vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("frozen", []));
-  const execution = new RulesExecution(pool, legacy);
+  const execution = new RulesExecution(pool, legacy, titleBrandAssignments);
   return { execution, references, statements, load, switchMode: (next: "v1" | "v2", nextRevision: string) => { mode = next; revision = nextRevision; } };
 }
 afterEach(() => vi.restoreAllMocks());
 describe("RulesExecution", () => {
+  it("resolves v2 assignments without stored product classification", async () => {
+    const resolveTitle = vi.fn().mockReturnValue([]);
+    const title = { createTargetAssignmentResolver: vi.fn().mockResolvedValue(resolveTitle) };
+    const { execution, switchMode } = setup(title);
+    const source = { id: "1", code: "goat", config: {} };
+    const sourceProduct = { id: "1", sourceId: "1", sourceKey: "shoe", metadata: {} };
+    expect(await execution.resolveDirectAssignments("10", source, sourceProduct, product)).toBeNull();
+    switchMode("v2", "2");
+    expect(await execution.resolveDirectAssignments("10", source, sourceProduct, product)).toEqual([]);
+    expect(resolveTitle).toHaveBeenCalledWith(product, false);
+    expect(title.createTargetAssignmentResolver).toHaveBeenCalledTimes(1);
+  });
   it("keeps v1 unchanged and switches processing and export preparation together", async () => {
     const { execution, switchMode, references } = setup();
     const old = await execution.classifier.classify("1", product);

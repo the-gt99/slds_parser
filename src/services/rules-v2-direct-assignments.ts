@@ -86,7 +86,7 @@ export class DirectRulesV2Assignments {
     return { selections: selected, terms };
   }
 
-  resolve(product: UniversalProductDTO, source: RulesV2ProductSource): readonly TargetAssignmentDTO[] {
+  private assignmentReader(product: UniversalProductDTO, source: RulesV2ProductSource): (field: string) => readonly string[] {
     const decision = this.resolveTerms(product, source);
     const assigned = new Map<string, Set<string>>();
     for (const term of decision.terms) {
@@ -97,10 +97,20 @@ export class DirectRulesV2Assignments {
       assigned.set(field, terms);
     }
     const read = rulesV2FieldReader(product, source);
+    return (field) => field.startsWith("assigned.") ? [...(assigned.get(field) ?? [])] : read(field);
+  }
+
+  matchesRule(ruleId: string, product: UniversalProductDTO, source: RulesV2ProductSource): boolean {
+    const rule = this.assignments.find((item) => item.id === ruleId);
+    if (rule === undefined) throw new IntegrationContractError(`Unknown direct assignment rule ${ruleId}`);
+    return resolveTargetAssignments(product, [rule], this.assignmentReader(product, source)).length > 0;
+  }
+
+  resolve(product: UniversalProductDTO, source: RulesV2ProductSource): readonly TargetAssignmentDTO[] {
     return resolveTargetAssignments(product, this.assignments.filter((rule) => {
       const original = this.assignmentsById.get(rule.id);
       return original?.sourceId === null || original?.sourceId === source.id;
-    }), (field) => field.startsWith("assigned.") ? [...(assigned.get(field) ?? [])] : read(field));
+    }), this.assignmentReader(product, source));
   }
 
   private readonly assignmentsById = new Map<string, RuleV2Record>();

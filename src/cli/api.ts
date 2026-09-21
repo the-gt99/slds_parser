@@ -58,10 +58,11 @@ async function main(): Promise<void> {
     const wordpress = loadWordPressTargetConfig();
     pool = createPostgresPool();
     const repositories = createPostgresRepositories(pool);
-    const rulesExecution = new RulesExecution(pool, repositories.classifications);
     const providers = new TargetDictionaryProviderRegistry();
     if (wordpress !== null) providers.register(new WordPressDictionaryProvider(wordpress));
     const targetDictionaryRepository = new PostgresTargetDictionaryRepository(pool);
+    const titleBrandAssignments = new WordPressTitleBrandAssignmentResolver(targetDictionaryRepository);
+    const rulesExecution = new RulesExecution(pool, repositories.classifications, titleBrandAssignments);
     const processors = new SourceProcessorRegistry();
     registerSourceProcessors(processors);
     const sources = await repositories.sources.listEnabled();
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
     );
     const targetMappings = new TargetReferenceMappingService(
       rulesExecution.references(repositories.references),
-      rulesExecution.supplemental(new WordPressTitleBrandAssignmentResolver(targetDictionaryRepository)),
+      rulesExecution.supplemental(titleBrandAssignments),
       rulesExecution,
     );
     const exportControlRepository = new PostgresExportControlRepository(pool);
@@ -126,7 +127,7 @@ async function main(): Promise<void> {
       : undefined;
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
-    const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), targetAssignmentRepository, new RulesV2PreviewService(pool), () => rulesExecution.state());
+    const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), new RulesV2PreviewService(pool), () => rulesExecution.state());
     server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
 
     for (const signal of signals) {

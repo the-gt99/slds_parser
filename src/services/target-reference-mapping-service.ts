@@ -15,6 +15,7 @@ import { resolveTargetAssignments } from "./target-assignment-rule-matcher.js";
 export interface SupplementalTargetAssignmentResolver {
   createTargetAssignmentResolver(targetId: EntityId): Promise<(
     product: UniversalProductDTO,
+    resolvedSourceBrand?: boolean,
   ) => readonly TargetAssignmentDTO[] | Promise<readonly TargetAssignmentDTO[]>>;
 }
 
@@ -23,6 +24,8 @@ export interface RulesOperationScope {
   prepareProduct(sourceId: EntityId, product: UniversalProductDTO): Promise<UniversalProductDTO>;
   resolveDirectTarget?(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
     product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null>;
+  resolveDirectAssignments?(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<readonly TargetAssignmentDTO[] | null>;
 }
 
 function mergeAssignments(
@@ -56,6 +59,11 @@ export class TargetReferenceMappingService {
   resolveDirectTarget(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
     product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null> {
     return this.execution?.resolveDirectTarget?.(targetId, source, sourceProduct, product) ?? Promise.resolve(null);
+  }
+
+  resolveDirectAssignments(targetId: EntityId, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<readonly TargetAssignmentDTO[] | null> {
+    return this.execution?.resolveDirectAssignments?.(targetId, source, sourceProduct, product) ?? Promise.resolve(null);
   }
 
   async resolveTargetValue(

@@ -151,6 +151,7 @@ function setup(targetId: number, matchedBy: string, options: { readonly missingC
     }] : []),
     resolveTargetAssignments: vi.fn().mockResolvedValue([]),
     resolveDirectTarget: vi.fn().mockResolvedValue(null),
+    resolveDirectAssignments: vi.fn().mockResolvedValue(null),
   };
   const dictionaryValues = [
     ...(options.landingProjection ? [{
@@ -220,6 +221,12 @@ describe("WordPressPreviewService", () => {
       expect.objectContaining({ id: "1", code: "goat" }),
       expect.objectContaining({ id: "2", externalId: "100" }),
       expect.objectContaining({ sourceProductId: "2" }));
+  });
+  it("uses direct assignments without calling the previous assignment resolver", async () => {
+    const { service, mappings } = setup(321, "source_identity");
+    mappings.resolveDirectAssignments.mockResolvedValue([]);
+    await service.preview("2", "10");
+    expect(mappings.resolveTargetAssignments).not.toHaveBeenCalled();
   });
   it("builds a read-only preview for an existing WordPress product", async () => {
     const { service, request } = setup(321, "source_identity");

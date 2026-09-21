@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { RuleV2Draft, RulesV2Repository, TargetAssignmentRuleRepository } from "../../src/repositories/index.js";
+import type { RuleV2Draft, RulesV2Repository } from "../../src/repositories/index.js";
 import { RulesV2Service } from "../../src/services/index.js";
 
 const draft: RuleV2Draft = {
@@ -10,27 +10,28 @@ const draft: RuleV2Draft = {
 };
 
 describe("RulesV2Service", () => {
-  it("previews through the indexed assignment query without writing", async () => {
+  const evaluator = { preview: async () => ({}) };
+  it("previews through the direct evaluator without writing", async () => {
     const repository = {} as RulesV2Repository;
     const preview = vi.fn().mockResolvedValue({ productCount: 425, examples: [] });
-    const service = new RulesV2Service(repository, { preview } as unknown as TargetAssignmentRuleRepository);
+    const service = new RulesV2Service(repository, { preview });
 
     await expect(service.preview(draft)).resolves.toEqual({ productCount: 425, examples: [], mode: "shadow", writes: false });
     expect(preview).toHaveBeenCalledWith(expect.objectContaining({ targetId: "10", conditionGroups: draft.conditionGroups }));
   });
 
   it("rejects unsupported rule statuses", async () => {
-    const service = new RulesV2Service({} as RulesV2Repository, {} as TargetAssignmentRuleRepository);
+    const service = new RulesV2Service({} as RulesV2Repository, evaluator);
     await expect(service.create({ ...draft, status: "active" } as unknown as RuleV2Draft, "admin")).rejects.toThrow();
   });
   it("reports the selected engine in previews", async () => {
-    const service = new RulesV2Service({} as RulesV2Repository, {} as TargetAssignmentRuleRepository,
+    const service = new RulesV2Service({} as RulesV2Repository,
       { preview: async () => ({ productCount: 1 }) }, async () => ({ mode: "v2" }));
     await expect(service.preview(draft)).resolves.toEqual({ productCount: 1, mode: "active", writes: false });
   });
   it("rejects invalid equals and regex before persistence", async () => {
     const create = vi.fn();
-    const service = new RulesV2Service({ create } as unknown as RulesV2Repository, {} as TargetAssignmentRuleRepository);
+    const service = new RulesV2Service({ create } as unknown as RulesV2Repository, evaluator);
     for (const condition of [
       { field: "product.title", operator: "equals", values: ["a", "b"] },
       { field: "product.title", operator: "regex", values: ["("] },
@@ -41,7 +42,7 @@ describe("RulesV2Service", () => {
   });
   it("validates imported updates and delegates with optimistic revision", async () => {
     const updateImported = vi.fn().mockResolvedValue({ id: "1" });
-    const service = new RulesV2Service({ updateImported } as unknown as RulesV2Repository, {} as TargetAssignmentRuleRepository);
+    const service = new RulesV2Service({ updateImported } as unknown as RulesV2Repository, evaluator);
     await expect(service.updateImported("1", { ...draft, actions: [{ kind: "resolve_reference", referenceType: "model", referenceValueId: "4", resolutionStatus: "confirmed" }] }, "2", "admin")).resolves.toEqual({ id: "1" });
     expect(updateImported).toHaveBeenCalledWith("1", expect.anything(), "2", "admin");
     for (const invalid of [null, { ...draft, conditionGroups: [{}] }, { ...draft, actions: [{ kind: "unexpected" }] }]) {
@@ -51,7 +52,7 @@ describe("RulesV2Service", () => {
   });
   it("returns a page without silently hiding the rest of the catalog", async () => {
     const list = vi.fn().mockResolvedValue(Array.from({ length: 101 }, (_, id) => ({ id: String(id) })));
-    const service = new RulesV2Service({ list, summary: async () => ({}) } as unknown as RulesV2Repository, {} as TargetAssignmentRuleRepository);
+    const service = new RulesV2Service({ list, summary: async () => ({}) } as unknown as RulesV2Repository, evaluator);
     const result = await service.overview("2", { search: "adidas", offset: 100 });
     expect(result.items).toHaveLength(100);
     expect(result.page).toEqual({ offset: 100, limit: 100, hasMore: true });

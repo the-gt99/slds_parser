@@ -34,6 +34,8 @@ describe("direct dependent assignments", () => {
         externalValue: "50" }] });
     expect(engine.resolve(product, source)).toMatchObject([{ ruleId: "22", targetScope: "product.brand",
       externalValue: "70" }]);
+    expect(engine.matchesRule("22", product, source)).toBe(true);
+    expect(engine.matchesRule("22", { ...product, referenceCandidates: [] }, source)).toBe(false);
     expect(engine.resolve({ ...product, referenceCandidates: [] }, source)).toEqual([]);
   });
 });

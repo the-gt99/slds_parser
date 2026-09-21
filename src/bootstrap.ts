@@ -88,12 +88,13 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const exporters = new TargetExporterRegistry();
   const translationCache = new PostgresTranslationCacheRepository(pool);
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache);
-  const rulesExecution = new RulesExecution(pool, repositories.classifications);
-  const classifier = rulesExecution.classifier;
   const targetDictionary = new PostgresTargetDictionaryRepository(pool);
+  const titleBrandAssignments = new WordPressTitleBrandAssignmentResolver(targetDictionary);
+  const rulesExecution = new RulesExecution(pool, repositories.classifications, titleBrandAssignments);
+  const classifier = rulesExecution.classifier;
   const targetMappings = new TargetReferenceMappingService(
     rulesExecution.references(repositories.references),
-    rulesExecution.supplemental(new WordPressTitleBrandAssignmentResolver(targetDictionary)),
+    rulesExecution.supplemental(titleBrandAssignments),
     rulesExecution,
   );
   const workerOptions = loadWorkerConfig(environment);

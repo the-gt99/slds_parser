@@ -60,8 +60,9 @@ function assignmentsForTitle(
   brands: readonly PreparedBrand[],
   brandScope: string,
   tagScope: string,
+  resolvedSourceBrand?: boolean,
 ): readonly TargetAssignmentDTO[] {
-  if (!product.classification?.resolved.some((reference) => reference.typeCode === "brand")) return [];
+  if (!(resolvedSourceBrand ?? product.classification?.resolved.some((reference) => reference.typeCode === "brand"))) return [];
   const titleTokens = normalizedTokens(product.title);
   const matches = brands.flatMap((brand) => brandMentionOffsets(titleTokens, brand.tokens)
     .map((offset) => ({ brand, offset, end: offset + brand.tokens.length })));
@@ -137,11 +138,12 @@ export class WordPressTitleBrandAssignmentResolver implements SupplementalTarget
         } }),
       };
     });
-    return (product: UniversalProductDTO) => assignmentsForTitle(
+    return (product: UniversalProductDTO, resolvedSourceBrand?: boolean) => assignmentsForTitle(
       product,
       prepared,
       scopes["product.brand"] ?? "product.brand",
       scopes["product.tag"] ?? "product.tag",
+      resolvedSourceBrand,
     );
   }
 }

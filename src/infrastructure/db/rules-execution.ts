@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { DirectTargetDecisionDTO, SourceDTO, SourceProductDTO, UniversalProductDTO } from "../../contracts/index.js";
+import type { DirectTargetDecisionDTO, SourceDTO, SourceProductDTO, TargetAssignmentDTO, UniversalProductDTO } from "../../contracts/index.js";
 import type { ClassificationRepository, ReferenceRepository } from "../../repositories/index.js";
 import { ProductClassifier } from "../../services/product-classifier.js";
 import { DirectRulesV2Assignments } from "../../services/rules-v2-direct-assignments.js";
-import type { RulesV2Snapshot } from "../../services/rules-v2-snapshot.js";
+import type { RulesV2ProductSource, RulesV2Snapshot } from "../../services/rules-v2-snapshot.js";
 import type { RulesOperationScope, SupplementalTargetAssignmentResolver } from "../../services/target-reference-mapping-service.js";
 import { RulesV2Runtime } from "./rules-v2-runtime.js";
 import type { SqlExecutor, SqlPool } from "./sql-executor.js";
@@ -23,9 +23,12 @@ export class RulesExecution implements RulesOperationScope {
   private readonly legacyClassifier: ProductClassifier;
   private readonly v2Classifier: ProductClassifier;
   private readonly directTargets = new WeakMap<RulesV2Snapshot, Map<string, DirectRulesV2Assignments>>();
+  private readonly directSupplemental = new WeakMap<RulesV2Snapshot, Map<string, (product: UniversalProductDTO,
+    resolvedSourceBrand?: boolean) => readonly TargetAssignmentDTO[] | Promise<readonly TargetAssignmentDTO[]>>>();
   readonly classifier: Pick<ProductClassifier, "classify" | "version">;
 
-  constructor(private readonly pool: SqlPool & SqlExecutor, private readonly legacy: ClassificationRepository) {
+  constructor(private readonly pool: SqlPool & SqlExecutor, private readonly legacy: ClassificationRepository,
+    private readonly titleBrandAssignments?: SupplementalTargetAssignmentResolver) {
     this.legacyClassifier = new ProductClassifier(legacy);
     const repository: ClassificationRepository = {
       listReferenceTypes: (types) => this.current().runtime!.classificationRepository(legacy).listReferenceTypes(types),
@@ -98,21 +101,50 @@ export class RulesExecution implements RulesOperationScope {
       : (await this.classifier.classify(sourceId, product)).product);
   }
 
+  private directSource(source: SourceDTO, sourceProduct: SourceProductDTO): RulesV2ProductSource {
+    return { id: source.id, code: source.code, productId: sourceProduct.id,
+      sourceKey: sourceProduct.sourceKey, externalId: sourceProduct.externalId ?? null };
+  }
+
+  private async directEngine(targetId: string): Promise<{ snapshot: RulesV2Snapshot; engine: DirectRulesV2Assignments }> {
+    const snapshot = await this.current().runtime!.snapshot();
+    const targets = this.directTargets.get(snapshot) ?? new Map<string, DirectRulesV2Assignments>();
+    this.directTargets.set(snapshot, targets);
+    let engine = targets.get(targetId);
+    if (engine === undefined) {
+      engine = new DirectRulesV2Assignments(snapshot.records, targetId);
+      targets.set(targetId, engine);
+    }
+    return { snapshot, engine };
+  }
+
   async resolveDirectTarget(targetId: string, source: SourceDTO, sourceProduct: SourceProductDTO,
     product: UniversalProductDTO): Promise<DirectTargetDecisionDTO | null> {
+    return this.run(async () => this.current().mode === "v2"
+      ? (await this.directEngine(targetId)).engine.resolveTerms(product, this.directSource(source, sourceProduct)) : null);
+  }
+
+  async resolveDirectAssignments(targetId: string, source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<readonly TargetAssignmentDTO[] | null> {
     return this.run(async () => {
-      const current = this.current();
-      if (current.mode !== "v2") return null;
-      const snapshot = await current.runtime!.snapshot();
-      const targets = this.directTargets.get(snapshot) ?? new Map<string, DirectRulesV2Assignments>();
-      this.directTargets.set(snapshot, targets);
-      let engine = targets.get(targetId);
-      if (engine === undefined) {
-        engine = new DirectRulesV2Assignments(snapshot.records, targetId);
-        targets.set(targetId, engine);
+      if (this.current().mode !== "v2") return null;
+      const { snapshot, engine } = await this.directEngine(targetId);
+      const directSource = this.directSource(source, sourceProduct);
+      const assignments = engine.resolve(product, directSource);
+      if (this.titleBrandAssignments === undefined) return assignments;
+      const resolvers = this.directSupplemental.get(snapshot) ?? new Map();
+      this.directSupplemental.set(snapshot, resolvers);
+      let resolve = resolvers.get(targetId);
+      if (resolve === undefined) {
+        resolve = await this.titleBrandAssignments.createTargetAssignmentResolver(targetId);
+        resolvers.set(targetId, resolve);
       }
-      return engine.resolveTerms(product, { id: source.id, code: source.code, productId: sourceProduct.id,
-        sourceKey: sourceProduct.sourceKey, externalId: sourceProduct.externalId ?? null });
+      const brandKeys = new Set(product.referenceCandidates.filter((candidate) => candidate.typeCode === "brand")
+        .map((candidate) => candidate.key));
+      const sourceBrandResolved = engine.resolveTerms(product, directSource).selections.some((selection) =>
+        selection.status === "resolved" && brandKeys.has(selection.candidateKey));
+      return [...new Map([...(await resolve(product, sourceBrandResolved)), ...assignments].map((assignment) =>
+        [`${assignment.targetScope}\u0000${assignment.externalValue}\u0000${assignment.mode}`, assignment])).values()];
     });
   }
 

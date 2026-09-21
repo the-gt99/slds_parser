@@ -111,7 +111,8 @@ export class ExportRunner {
         references: {
           resolveReference: (input) => this.mappings.resolveTargetMapping(target.id, input.referenceId, input.targetScope),
           resolveProjections: (inputs) => this.mappings.resolveTargetProjections(target.id, inputs),
-          resolveAssignments: (product) => this.mappings.resolveTargetAssignments(target.id, product),
+          resolveAssignments: async (product) => (await this.mappings.resolveDirectAssignments(target.id, sourceDto, sourceProductDto, product))
+            ?? this.mappings.resolveTargetAssignments(target.id, product),
           resolveDirect: (product) => this.mappings.resolveDirectTarget(target.id, sourceDto, sourceProductDto, product),
         },
         contentTemplates: contentTemplates.map((template) => ({
