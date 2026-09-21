@@ -6,17 +6,70 @@ import type { ProductOperationHistoryRepository } from "../../src/repositories/i
 import { ProductClassifier } from "../../src/services/index.js";
 import { createMemoryRepositories, MemoryStore, MemoryUnitOfWork, seedProduct, sourceRecord, targetRecord, validProduct } from "../support/in-memory.js";
 
-async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository) {
+async function setup(version = "1", operation?: ProductOperation, history?: ProductOperationHistoryRepository,
+  directDecisions?: ConstructorParameters<typeof ProcessingRunner>[5]) {
   const store = new MemoryStore(); store.sources.set("1", sourceRecord()); store.targets.set("10", targetRecord()); seedProduct(store);
   const repositories = createMemoryRepositories(store); await repositories.sourceProducts.upsertPart({ sourceProductId: "2", partKey: "details", rawPayload: {}, parsedPayload: { a: 1 }, contentHash: "part-hash", fetchedAt: "2026-01-01T00:00:00.000Z", adapterVersion: "1" });
   const process = vi.fn().mockResolvedValue(validProduct()); const processor: SourceProcessor = { sourceCode: "fake", version, classificationVersion: "c1", process };
   const registry = new SourceProcessorRegistry(); registry.register(processor);
   const operationRegistry = new ProductOperationRegistry(); if (operation) operationRegistry.register(operation);
   const transactionRepositories = history === undefined ? repositories : { ...repositories, productOperationHistory: history };
-  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, transactionRepositories), registry, new ProductOperationPipeline(operationRegistry, history), new ProductClassifier(repositories.classifications)) };
+  return { store, repositories, process, runner: new ProcessingRunner(repositories, new MemoryUnitOfWork(store, transactionRepositories), registry, new ProductOperationPipeline(operationRegistry, history), new ProductClassifier(repositories.classifications), directDecisions) };
 }
 
 describe("ProcessingRunner", () => {
+  it("stores direct v2 decisions without writing old observations", async () => {
+    const direct = { decideProduct: vi.fn(async (_source, _sourceProduct, product) => ({ ...product,
+      rulesV2: { revision: "2", fingerprint: "direct", status: "complete" as const, selections: [] } })) } satisfies
+      NonNullable<ConstructorParameters<typeof ProcessingRunner>[5]>;
+    const { runner, store, repositories } = await setup("1", undefined, undefined, direct);
+    const saveLegacy = vi.spyOn(repositories.classifications, "saveProductResult");
+    await runner.processProduct({ sourceProductId: "2", force: false });
+    const saved = [...store.internals.values()][0]!;
+    expect(saved.data.classification).toBeUndefined();
+    expect(saved.data.rulesV2).toMatchObject({ revision: "2", status: "complete" });
+    expect(saved.status).toBe("classified");
+    expect(saveLegacy).not.toHaveBeenCalled();
+    expect(direct.decideProduct).toHaveBeenCalledWith(expect.objectContaining({ id: "1" }),
+      expect.objectContaining({ id: "2" }), expect.objectContaining({ sourceProductId: "2" }));
+    await expect(runner.reclassifyProduct({ sourceProductId: "2" })).resolves.toEqual({ status: "skipped" });
+    expect(saveLegacy).not.toHaveBeenCalled();
+  });
+  it("reclassifies direct v2 decisions without repeating source processing", async () => {
+    let revision = "2";
+    const direct = { decideProduct: vi.fn(async (_source, _sourceProduct, product) => ({ ...product,
+      rulesV2: { revision, fingerprint: revision, status: "partial" as const, selections: [
+        { candidateKey: "product:brand", status: "unresolved" as const, sourceRuleId: null },
+      ] } })) } satisfies NonNullable<ConstructorParameters<typeof ProcessingRunner>[5]>;
+    const { runner, store, repositories, process } = await setup("1", undefined, undefined, direct);
+    const saveLegacy = vi.spyOn(repositories.classifications, "saveProductResult");
+    await runner.processProduct({ sourceProductId: "2", force: false });
+    const before = [...store.internals.values()][0]!;
+    revision = "3";
+    await runner.reclassifyProduct({ sourceProductId: "2" });
+    const after = [...store.internals.values()][0]!;
+    expect(process).toHaveBeenCalledTimes(1);
+    expect(after.data.rulesV2?.revision).toBe("3");
+    expect(after.inputHash).toBe(before.inputHash);
+    expect(after.status).toBe("classification_pending");
+    expect(saveLegacy).not.toHaveBeenCalled();
+  });
+  it("rebuilds legacy classification when returning from v2 to v1", async () => {
+    const direct = { decideProduct: vi.fn(async (_source, _sourceProduct, product) => ({ ...product,
+      rulesV2: { revision: "2", fingerprint: "direct", status: "complete" as const, selections: [] } })) } satisfies
+      NonNullable<ConstructorParameters<typeof ProcessingRunner>[5]>;
+    const first = await setup("1", undefined, undefined, direct);
+    await first.runner.processProduct({ sourceProductId: "2", force: false });
+    const processors = new SourceProcessorRegistry();
+    processors.register({ sourceCode: "fake", version: "1", classificationVersion: "c1", process: first.process });
+    const legacy = new ProcessingRunner(first.repositories, new MemoryUnitOfWork(first.store, first.repositories), processors,
+      new ProductOperationPipeline(new ProductOperationRegistry()), new ProductClassifier(first.repositories.classifications));
+    await legacy.reclassifyProduct({ sourceProductId: "2" });
+    const saved = [...first.store.internals.values()][0]!;
+    expect(saved.data.rulesV2).toBeUndefined();
+    expect(saved.data.classification?.status).toBe("complete");
+    expect(first.store.classificationObservations.size).toBe(0);
+  });
   it("selects processor, saves DTO and enqueues enabled targets", async () => {
     const { runner, store, process } = await setup(); await runner.processProduct({ sourceProductId: "2", force: false });
     expect(process).toHaveBeenCalledOnce(); expect([...store.internals.values()][0]?.data).toMatchObject({ ...validProduct(), classification: { status: "complete", resolved: [], ignored: [], unresolved: [] } });

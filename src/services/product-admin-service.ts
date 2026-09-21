@@ -2,6 +2,7 @@ import { statfs } from "node:fs/promises";
 
 import { toCommonProductDTO, type EntityId, type JsonValue, type ProductImageDTO, type ProductVariantDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
+import { stableJsonStringify } from "../core/utils/index.js";
 import type { TargetDictionaryProviderRegistry } from "../integrations/index.js";
 import type {
   InternalProductRecord,
@@ -65,6 +66,7 @@ function publicProduct(internal: InternalProductRecord) {
     images: data.images.map(publicImage),
     variants: data.variants.map(publicVariant),
     classification: data.classification,
+    rulesV2: data.rulesV2,
     processorVersion: internal.processorVersion,
     processedAt: internal.processedAt,
     lastError: internal.lastError,
@@ -325,7 +327,7 @@ export class ProductAdminService {
       readonly resolutionKind: "mapping" | "rule" | null;
       readonly resolutionId: EntityId | null;
     }>();
-    if (hasPendingProcessing && internal !== null && this.classifier !== undefined) {
+    if (hasPendingProcessing && internal !== null && internal.data.rulesV2 === undefined && this.classifier !== undefined) {
       const current = await this.classifier.classify(snapshot.source.id, internal.data);
       for (const observation of current.observations) {
         pendingResolutions.set(observation.candidate.key, {
@@ -344,6 +346,15 @@ export class ProductAdminService {
       );
       return { ...observation, pendingResolution: changed ? pending : null };
     });
+    const candidates = new Map(internal?.data.referenceCandidates.map((candidate) => [candidate.key, candidate]) ?? []);
+    const directClassifications = internal?.data.rulesV2?.selections.flatMap((selection) => {
+      const candidate = candidates.get(selection.candidateKey);
+      if (candidate === undefined) return [];
+      return [{ candidateKey: candidate.key, typeCode: candidate.typeCode, typeName: candidate.typeCode,
+        sourceValue: candidate.sourceValue, contextKey: stableJsonStringify(candidate.context),
+        status: selection.status, sourceRuleId: selection.sourceRuleId, outputs: [], pendingResolution: null }];
+    }) ?? [];
+    const visibleClassifications = internal?.data.rulesV2 === undefined ? classifications : directClassifications;
 
     return {
       source: {
@@ -397,8 +408,9 @@ export class ProductAdminService {
         statusCounts: statusCounts(snapshot.operations),
       },
       classification: {
-        observations: classifications,
-        statusCounts: statusCounts(classifications),
+        mode: internal?.data.rulesV2 === undefined ? "v1" as const : "v2" as const,
+        observations: visibleClassifications,
+        statusCounts: statusCounts(visibleClassifications),
       },
       jobs: snapshot.jobs.map((job) => ({
         id: job.id,

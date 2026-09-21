@@ -105,7 +105,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
     operations,
     new PostgresProductOperationHistoryRepository(pool),
   );
-  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier);
+  const processingRunner = new ProcessingRunner(repositories, unitOfWork, processors, operationPipeline, classifier, rulesExecution);
   const translationOperation = operations.list().find((operation): operation is TranslateContentOperation => operation instanceof TranslateContentOperation);
   if (translationOperation === undefined) throw new Error("Translate content operation is not registered");
   const retranslationRunner = new RetranslationRunner(repositories, translationOperation);

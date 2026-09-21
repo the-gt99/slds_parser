@@ -44,6 +44,22 @@ function snapshot(): ProductAdminReadModel {
 }
 
 describe("ProductAdminService", () => {
+  it("shows saved v2 selections instead of stale v1 observations", async () => {
+    const value = snapshot();
+    const repository: ProductAdminRepository = { getById: vi.fn().mockResolvedValue({ ...value,
+      internalProduct: { ...value.internalProduct!, data: { ...value.internalProduct!.data,
+        referenceCandidates: [{ key: "product:brand", typeCode: "brand", scope: "product.brand",
+          subjectKind: "product", sourceValue: "Nike", context: {}, evidence: {} }],
+        rulesV2: { revision: "2", fingerprint: "direct", status: "complete", selections: [
+          { candidateKey: "product:brand", status: "resolved", sourceRuleId: "42" },
+        ] },
+      } }, classifications: [{ candidateKey: "old", status: "unresolved" }] } as unknown as ProductAdminReadModel) };
+    const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry()).getProduct("3");
+    expect(result.classification).toMatchObject({ mode: "v2", observations: [
+      { candidateKey: "product:brand", sourceValue: "Nike", status: "resolved", sourceRuleId: "42" },
+    ] });
+    expect(result.classification.observations).toHaveLength(1);
+  });
   it("builds donor and target links without exposing local image paths", async () => {
     const repository: ProductAdminRepository = { getById: vi.fn().mockResolvedValue(snapshot()) };
     const provider: TargetDictionaryProvider = {

@@ -1,8 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { DirectTargetDecisionDTO, SourceDTO, SourceProductDTO, TargetAssignmentDTO, UniversalProductDTO } from "../../contracts/index.js";
+import type { DirectTargetDecisionDTO, ProductRulesV2DTO, SourceDTO, SourceProductDTO, TargetAssignmentDTO, UniversalProductDTO } from "../../contracts/index.js";
+import { hashStableJson } from "../../core/utils/index.js";
 import type { ClassificationRepository, ReferenceRepository } from "../../repositories/index.js";
 import { ProductClassifier } from "../../services/product-classifier.js";
 import { DirectRulesV2Assignments } from "../../services/rules-v2-direct-assignments.js";
+import { DirectRulesV2Selector } from "../../services/rules-v2-direct-selector.js";
+import { prepareReferenceCandidates, validateReferenceCandidates } from "../../services/reference-candidate-validation.js";
 import type { RulesV2ProductSource, RulesV2Snapshot } from "../../services/rules-v2-snapshot.js";
 import type { RulesOperationScope, SupplementalTargetAssignmentResolver } from "../../services/target-reference-mapping-service.js";
 import { RulesV2Runtime } from "./rules-v2-runtime.js";
@@ -23,6 +26,7 @@ export class RulesExecution implements RulesOperationScope {
   private readonly legacyClassifier: ProductClassifier;
   private readonly v2Classifier: ProductClassifier;
   private readonly directTargets = new WeakMap<RulesV2Snapshot, Map<string, DirectRulesV2Assignments>>();
+  private readonly directSelectors = new WeakMap<RulesV2Snapshot, DirectRulesV2Selector>();
   private readonly directSupplemental = new WeakMap<RulesV2Snapshot, Map<string, (product: UniversalProductDTO,
     resolvedSourceBrand?: boolean) => readonly TargetAssignmentDTO[] | Promise<readonly TargetAssignmentDTO[]>>>();
   readonly classifier: Pick<ProductClassifier, "classify" | "version">;
@@ -97,10 +101,40 @@ export class RulesExecution implements RulesOperationScope {
 
   async prepareProduct(sourceId: string, product: UniversalProductDTO): Promise<UniversalProductDTO> {
     return this.run(async () => {
-      if (this.current().mode === "v1") return product.classification?.execution?.mode === "v2"
-        ? (await this.legacyClassifier.classify(sourceId, product)).product : product;
+      if (this.current().mode === "v1") {
+        if (product.rulesV2 === undefined && product.classification?.execution?.mode !== "v2") return product;
+        const { rulesV2: _rulesV2, ...legacyProduct } = product;
+        return (await this.legacyClassifier.classify(sourceId, legacyProduct)).product;
+      }
       const { classification: _classification, ...unclassified } = product;
       return unclassified;
+    });
+  }
+
+  async decideProduct(source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<(UniversalProductDTO & { readonly rulesV2: ProductRulesV2DTO }) | null> {
+    return this.run(async () => {
+      if (this.current().mode !== "v2") return null;
+      const snapshot = await this.current().runtime!.snapshot();
+      const prepared = prepareReferenceCandidates(product.referenceCandidates);
+      validateReferenceCandidates(prepared, snapshot.listReferenceTypes([...new Set(prepared.map((item) => item.candidate.typeCode))]));
+      let selector = this.directSelectors.get(snapshot);
+      if (selector === undefined) {
+        selector = new DirectRulesV2Selector(snapshot.records);
+        this.directSelectors.set(snapshot, selector);
+      }
+      const selections = selector.select(this.directSource(source, sourceProduct), product);
+      const rulesV2: ProductRulesV2DTO = {
+        revision: snapshot.revision,
+        fingerprint: hashStableJson({ revision: snapshot.revision,
+          selections: selections.map((selection) => ({ candidateKey: selection.candidateKey,
+            status: selection.status, sourceRuleId: selection.sourceRuleId })) }),
+        status: selections.every((selection) => selection.status === "resolved" || selection.status === "ignored")
+          ? "complete" : "partial",
+        selections,
+      };
+      const { classification: _classification, rulesV2: _previous, ...unclassified } = product;
+      return { ...unclassified, rulesV2 };
     });
   }
 

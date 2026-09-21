@@ -1,4 +1,4 @@
-import type { JsonValue, SourceDTO, SourceProductDTO, SourceProductPartDTO, UniversalProductDTO } from "../contracts/index.js";
+import type { JsonValue, ProductRulesV2DTO, SourceDTO, SourceProductDTO, SourceProductPartDTO, UniversalProductDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { SourceProcessorRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
@@ -16,6 +16,13 @@ export interface ProcessingRunnerRepositories {
   readonly targets: TargetRepository;
 }
 
+interface ProcessingDecision {
+  readonly mode: "v1" | "v2";
+  readonly data: UniversalProductDTO;
+  readonly status: "classified" | "classification_pending";
+  readonly legacyRun: ProductClassifierRun | null;
+}
+
 export class ProcessingRunner {
   constructor(
     private readonly repositories: ProcessingRunnerRepositories,
@@ -23,7 +30,20 @@ export class ProcessingRunner {
     private readonly processors: SourceProcessorRegistry,
     private readonly operations: ProductOperationPipeline,
     private readonly classifier: Pick<ProductClassifier, "classify" | "version">,
+    private readonly directDecisions?: { decideProduct(source: SourceDTO, sourceProduct: SourceProductDTO,
+      product: UniversalProductDTO): Promise<(UniversalProductDTO & { readonly rulesV2: ProductRulesV2DTO }) | null> },
   ) {}
+
+  private async decide(source: SourceDTO, sourceProduct: SourceProductDTO,
+    product: UniversalProductDTO): Promise<ProcessingDecision> {
+    const direct = await this.directDecisions?.decideProduct(source, sourceProduct, product);
+    if (direct !== undefined && direct !== null) return { mode: "v2", data: direct,
+      status: direct.rulesV2.status === "complete" ? "classified" : "classification_pending", legacyRun: null };
+    const { rulesV2: _rulesV2, ...legacyProduct } = product;
+    const legacyRun = await this.classifier.classify(source.id, legacyProduct);
+    return { mode: "v1", data: legacyRun.product,
+      status: legacyRun.product.classification.status === "complete" ? "classified" : "classification_pending", legacyRun };
+  }
 
   async processProduct(payload: ProcessProductPayload): Promise<RunnerResult> {
     const product = await this.repositories.sourceProducts.getById(payload.sourceProductId);
@@ -55,12 +75,12 @@ export class ProcessingRunner {
       ...(product.externalId === null ? {} : { externalId: product.externalId }), ...(product.slug === null ? {} : { slug: product.slug }),
       ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
     const existing = await this.repositories.internalProducts.findBySourceProductId(product.id);
-    let classificationRun: ProductClassifierRun;
+    let decision: ProcessingDecision;
     let attemptId: string | null = null;
     let operationsOutput: UniversalProductDTO | null = null;
     if (!payload.force && existing?.inputHash === inputHash) {
-      classificationRun = await this.classifier.classify(source.id, existing.data);
-      const reclassifiedHash = hashStableJson(classificationRun.product as unknown as JsonValue);
+      decision = await this.decide(sourceDto, productDto, existing.data);
+      const reclassifiedHash = hashStableJson(decision.data as unknown as JsonValue);
       if (existing.contentHash === reclassifiedHash) return { status: "skipped" };
     } else {
       const partDtos: SourceProductPartDTO[] = parts.map((part) => ({ partKey: part.partKey, rawPayload: part.rawPayload, parsedPayload: part.parsedPayload,
@@ -75,32 +95,32 @@ export class ProcessingRunner {
       attemptId = operationRun.attemptId;
       operationsOutput = operationRun.product;
       try {
-        classificationRun = await this.classifier.classify(source.id, operationRun.product);
+        decision = await this.decide(sourceDto, productDto, operationRun.product);
       } catch (error) {
         await this.operations.failAttempt(operationRun.attemptId, error);
         throw error;
       }
     }
-    const data = classificationRun.product;
+    const data = decision.data;
     try {
       const contentHash = hashStableJson(data as unknown as JsonValue);
       const targets = await this.repositories.targets.listEnabled();
       await this.unitOfWork.transaction(async (repositories) => {
         const internal = await repositories.internalProducts.upsert({ sourceProductId: product.id, data, inputHash, contentHash,
-          processorVersion: processor.version, status: data.classification.status === "complete" ? "classified" : "classification_pending",
+          processorVersion: processor.version, status: decision.status,
           processedAt: new Date().toISOString(), lastError: null });
-        await repositories.classifications.saveProductResult({
+        if (decision.legacyRun !== null) await repositories.classifications.saveProductResult({
           sourceId: source.id,
           sourceProductId: product.id,
           processorVersion: processor.classificationVersion,
           classifierVersion: this.classifier.version,
-          fingerprint: data.classification.fingerprint,
-          observations: classificationRun.observations,
+          fingerprint: decision.legacyRun.product.classification.fingerprint,
+          observations: decision.legacyRun.observations,
         });
         if (attemptId !== null && operationsOutput !== null) {
-          await repositories.productOperationHistory.completeAttempt(attemptId, operationsOutput, classificationRun.product, new Date().toISOString());
+          await repositories.productOperationHistory.completeAttempt(attemptId, operationsOutput, data, new Date().toISOString());
         }
-        if ((data.classification.status === "complete" || data.classification.execution?.mode === "v2") && existing?.contentHash !== contentHash) {
+        if ((decision.status === "classified" || decision.mode === "v2") && existing?.contentHash !== contentHash) {
           for (const target of targets) await repositories.jobs.enqueue({ jobType: "export_product",
             payload: { internalProductId: internal.id, targetId: target.id, force: false }, uniqueKey: `internal-product:${internal.id}:target:${target.id}:export` });
         }
@@ -121,8 +141,13 @@ export class ProcessingRunner {
     if (existing === null) throw new EntityNotFoundError("Internal product for source product", product.id);
 
     const processor = this.processors.get(source.code);
-    const classificationRun = await this.classifier.classify(source.id, existing.data);
-    const data = classificationRun.product;
+    const sourceDto: SourceDTO = { id: source.id, code: source.code, config: source.config };
+    const productDto: SourceProductDTO = { id: product.id, sourceId: source.id, sourceKey: product.sourceKey,
+      ...(product.externalId === null ? {} : { externalId: product.externalId }),
+      ...(product.slug === null ? {} : { slug: product.slug }),
+      ...(product.url === null ? {} : { url: product.url }), metadata: product.discoveryMetadata };
+    const decision = await this.decide(sourceDto, productDto, existing.data);
+    const data = decision.data;
     const contentHash = hashStableJson(data as unknown as JsonValue);
     if (existing.contentHash === contentHash) return { status: "skipped" };
 
@@ -134,19 +159,19 @@ export class ProcessingRunner {
         inputHash: existing.inputHash,
         contentHash,
         processorVersion: existing.processorVersion,
-        status: data.classification.status === "complete" ? "classified" : "classification_pending",
+        status: decision.status,
         processedAt: existing.processedAt,
         lastError: null,
       });
-      await repositories.classifications.saveProductResult({
+      if (decision.legacyRun !== null) await repositories.classifications.saveProductResult({
         sourceId: source.id,
         sourceProductId: product.id,
         processorVersion: processor.classificationVersion,
         classifierVersion: this.classifier.version,
-        fingerprint: data.classification.fingerprint,
-        observations: classificationRun.observations,
+        fingerprint: decision.legacyRun.product.classification.fingerprint,
+        observations: decision.legacyRun.observations,
       });
-      if (data.classification.status === "complete" || data.classification.execution?.mode === "v2") {
+      if (decision.status === "classified" || decision.mode === "v2") {
         for (const target of targets) await repositories.jobs.enqueue({
           jobType: "export_product",
           payload: { internalProductId: internal.id, targetId: target.id, force: false },

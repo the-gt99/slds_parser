@@ -370,7 +370,13 @@ function renderClassifications(item) {
     }
     const actions = document.createElement("div");
     actions.className = "classification-actions";
-    if (pending?.resolutionKind && pending.resolutionId) {
+    if (item.classification.mode === "v2") {
+      const details = document.createElement("a");
+      details.className = `button ${value.sourceRuleId ? "quiet" : "primary"} small-button`;
+      details.href = `/rules-v2?${new URLSearchParams({ search: value.sourceRuleId || value.sourceValue })}`;
+      details.textContent = value.sourceRuleId ? "Открыть правило v2" : "Найти правило v2";
+      actions.append(details);
+    } else if (pending?.resolutionKind && pending.resolutionId) {
       const details = document.createElement("a");
       details.className = "button quiet small-button";
       details.href = `/classifier?${new URLSearchParams(pending.resolutionKind === "rule"

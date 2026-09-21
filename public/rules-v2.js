@@ -1,5 +1,6 @@
 const byId = (id) => document.getElementById(id);
 const state = { session: null, schema: null, targets: [], overview: null, selected: null, searchTimer: null };
+state.search = new URLSearchParams(location.search).get("search") || "";
 const dictionaryTypes = { "product.category": "product_categories", "product.tag": "tags", "product.brand": "brands", "product.model": "models", "product.color": "colors", "product.material": "materials", "product.activity": "activities", "product.shoe_height": "shoe_heights", "product.season": "seasons" };
 async function api(url, options = {}) { const headers = { Accept: "application/json" }; if (options.body !== undefined) headers["Content-Type"] = "application/json"; if (options.method && options.method !== "GET" && state.session?.csrfToken) headers["X-CSRF-Token"] = state.session.csrfToken; const response = await fetch(url, { credentials: "same-origin", headers, ...options, ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`); return data; }
 function node(tag, className = "", value = "") { const item = document.createElement(tag); item.className = className; item.textContent = value; return item; }
@@ -99,7 +100,7 @@ function initializeMultiEditor() {
   const groups = node("div"); groups.id = "multi-conditions"; blocks[0].append(groups, uiButton("+ Группа И", () => addConditionGroup()));
   const actions = node("div"); actions.id = "multi-actions"; blocks[1].append(actions, uiButton("+ Действие", () => addTargetAction()));
   renderConditions(); renderActions();
-  const form = node("form", "rule-editor-actions"); const search = node("input"); search.type = "search"; search.placeholder = "Название, ID, условие или действие"; const submit = node("button", "button secondary", "Найти"); form.append(search, submit); byId("rules-list").before(form);
+  const form = node("form", "rule-editor-actions"); const search = node("input"); search.type = "search"; search.placeholder = "Название, ID, условие или действие"; search.value = state.search; const submit = node("button", "button secondary", "Найти"); form.append(search, submit); byId("rules-list").before(form);
   let loading = false;
   async function load() { if (loading) return; loading = true; try { await loadRules(); } catch (cause) { error(cause.message); } finally { loading = false; } }
   form.addEventListener("submit", (event) => { event.preventDefault(); if (loading) return; state.search = search.value.trim(); state.offset = 0; void load(); });

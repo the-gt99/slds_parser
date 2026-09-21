@@ -29,6 +29,7 @@ export type {
   ProductOperationContext,
   ProductImageDTO,
   ProductClassificationDTO,
+  ProductRulesV2DTO,
   ReferenceCandidateDTO,
   ReferenceResolutionKind,
   ReferenceSubjectKind,

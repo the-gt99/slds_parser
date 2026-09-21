@@ -324,7 +324,9 @@ export class PostgresProductAdminRepository implements ProductAdminRepository {
          WHERE source_product_id = $1 ORDER BY started_at DESC LIMIT 30`,
         [sourceProductId],
       );
-      const classificationsResult = await client.query<DatabaseRow>(
+      const classificationsResult = (internalResult.rows[0]?.data as { rulesV2?: unknown } | undefined)?.rulesV2 !== undefined
+        ? { rows: [] as DatabaseRow[] }
+        : await client.query<DatabaseRow>(
         `SELECT observation.*, type.code AS type_code, type.name AS type_name,
                 value.name AS resolved_reference_name,
                 COALESCE((

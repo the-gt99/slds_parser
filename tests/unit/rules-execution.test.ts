@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RulesExecution } from "../../src/infrastructure/db/rules-execution.js";
 import { RulesV2Runtime } from "../../src/infrastructure/db/rules-v2-runtime.js";
 import { RulesV2Snapshot } from "../../src/services/rules-v2-snapshot.js";
-import type { ClassificationRepository, ReferenceRepository } from "../../src/repositories/index.js";
+import type { ClassificationRepository, ReferenceRepository, RuleV2Record } from "../../src/repositories/index.js";
 import type { SqlPool, SqlExecutor, SqlResult } from "../../src/infrastructure/db/sql-executor.js";
 import type { UniversalProductDTO } from "../../src/contracts/index.js";
 import type { SupplementalTargetAssignmentResolver } from "../../src/services/target-reference-mapping-service.js";
@@ -28,6 +28,29 @@ function setup(titleBrandAssignments?: SupplementalTargetAssignmentResolver) {
 }
 afterEach(() => vi.restoreAllMocks());
 describe("RulesExecution", () => {
+  it("persists direct source selections without internal reference IDs", async () => {
+    const { execution, switchMode, load } = setup();
+    const rule: RuleV2Record = { id: "7", sourceId: "1", sourceCode: "goat", targetId: null, targetCode: null,
+      name: "Nike", groupCode: "classification_exact", priority: 100, status: "shadow",
+      conditionGroups: [{ conditions: [{ field: "candidate.brand.sourceValue", operator: "equals", values: ["Nike"] }] }],
+      actions: [{ kind: "resolve_reference", referenceType: "brand", referenceValueId: "11", referenceValueCode: "nike",
+        referenceValueName: "Nike", resolutionStatus: "confirmed" }],
+      originKind: "exact_mapping", originId: "20", originRevision: "1",
+      originPayload: { scope: "product.brand", normalizedSourceValue: "nike", contextKey: "{}" },
+      revision: "1", createdAt: "2026-09-20", updatedAt: "2026-09-20" };
+    load.mockResolvedValue(new RulesV2Snapshot("frozen", [rule], [{ code: "brand", cardinality: "single",
+      allowedSubjectKinds: ["product"], metadata: {} }]));
+    switchMode("v2", "2");
+    const result = await execution.decideProduct({ id: "1", code: "goat", config: {} },
+      { id: "1", sourceId: "1", sourceKey: "shoe", metadata: {} }, { ...product,
+        referenceCandidates: [{ key: "product:brand", typeCode: "brand", scope: "product.brand",
+          subjectKind: "product", sourceValue: "Nike", context: {}, evidence: {} }] });
+    expect(result?.classification).toBeUndefined();
+    expect(result?.rulesV2).toMatchObject({ status: "complete", selections: [
+      { candidateKey: "product:brand", status: "resolved", sourceRuleId: "7" },
+    ] });
+    expect(JSON.stringify(result)).not.toContain("referenceValueId");
+  });
   it("resolves v2 assignments without stored product classification", async () => {
     const resolveTitle = vi.fn().mockReturnValue([]);
     const title = { createTargetAssignmentResolver: vi.fn().mockResolvedValue(resolveTitle) };
@@ -52,6 +75,9 @@ describe("RulesExecution", () => {
     const storedV2 = (await execution.classifier.classify("1", old.product)).product;
     switchMode("v1", "3");
     expect(await execution.prepareProduct("1", storedV2)).toEqual(old.product);
+    const directProduct = { ...next, rulesV2: { revision: "2", fingerprint: "direct",
+      status: "complete" as const, selections: [] } };
+    expect(await execution.prepareProduct("1", directProduct)).toEqual(old.product);
   });
   it("pins a snapshot through concurrent mode changes and refreshes on the next operation", async () => {
     const { execution, switchMode, load } = setup();

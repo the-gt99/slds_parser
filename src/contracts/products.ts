@@ -234,6 +234,17 @@ export interface ProductClassificationDTO {
   readonly unresolved: readonly UnresolvedReferenceDTO[];
 }
 
+export interface ProductRulesV2DTO {
+  readonly revision: string;
+  readonly fingerprint: string;
+  readonly status: "complete" | "partial";
+  readonly selections: readonly {
+    readonly candidateKey: string;
+    readonly status: "resolved" | "ignored" | "unresolved" | "ambiguous";
+    readonly sourceRuleId: EntityId | null;
+  }[];
+}
+
 export interface ProductSizeDTO {
   readonly sourceValue: string;
   readonly displayValue: string;
@@ -261,6 +272,7 @@ export interface UniversalProductDTO {
   readonly variants: readonly ProductVariantDTO[];
   readonly referenceCandidates: readonly ReferenceCandidateDTO[];
   readonly classification?: ProductClassificationDTO;
+  readonly rulesV2?: ProductRulesV2DTO;
   readonly translatedContent?: ProductTranslatedContentDTO;
   /** Source-provided scalar facts that may be used by source-neutral business rules. */
   readonly sourceFacts?: JsonObject;
