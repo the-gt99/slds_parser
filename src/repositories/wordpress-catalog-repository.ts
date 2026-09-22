@@ -2,7 +2,7 @@ import type { EntityId, JsonObject, ProductVariantDTO, SourceDTO, SourceProductD
 
 export type WordPressCatalogRunStatus = "running" | "paused" | "completed" | "failed";
 export type WordPressCatalogMatchStatus = "matched" | "unmatched" | "ambiguous";
-export type WordPressCatalogVariationFilter = "not_started" | "in_progress" | "completed" | "skipped" | "failed";
+export type WordPressCatalogVariationFilter = "not_started" | "due" | "in_progress" | "changed" | "completed" | "skipped" | "failed";
 export type WordPressCatalogAuditFilter = "ready" | "blocked" | "error";
 export type WordPressCatalogRiskFilter = "safe" | "review" | "danger" | "blocked";
 export type WordPressCatalogOperationFilter = "update" | "new" | "unmatched";
@@ -64,6 +64,10 @@ export interface WordPressCatalogRunRecord {
   readonly variationCompletedCount: number;
   readonly variationSkippedCount: number;
   readonly variationFailedCount: number;
+  readonly variationEligibleCount: number;
+  readonly variationCheckedCycleCount: number;
+  readonly variationDueCount: number;
+  readonly variationChangedCount: number;
   readonly auditPendingCount: number;
   readonly auditReadyCount: number;
   readonly auditBlockedCount: number;
@@ -98,6 +102,7 @@ export interface WordPressCatalogRunItemSummaryRecord {
   readonly variationStatus: string;
   readonly wordpressJobId: string | null;
   readonly variationError: string | null;
+  readonly variationChangedCount: number;
   readonly snapshotFetchedAt: string;
   readonly variationCheckedAt: string | null;
   readonly updatedAt: string;

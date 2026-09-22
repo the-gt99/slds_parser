@@ -16,6 +16,7 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
     totalCount: 10_000, matchedCount: 9_000, unmatchedCount: 1_000, ambiguousCount: 0,
     variationPendingCount: 2_000, variationNotStartedCount: 6_000, variationSubmittedCount: 1_000,
     variationCompletedCount: 987, variationSkippedCount: 13, variationFailedCount: 0,
+    variationEligibleCount: 9_000, variationCheckedCycleCount: 1_000, variationDueCount: 4_000, variationChangedCount: 500,
     auditPendingCount: 0, auditReadyCount: 7_000, auditBlockedCount: 2_000, auditErrorCount: 0,
     ...overrides,
   };

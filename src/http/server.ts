@@ -1401,8 +1401,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         throw new HttpInputError("match must be matched, unmatched or ambiguous");
       }
       const variation = optionalString(request.query.variation);
-      if (variation !== undefined && !["not_started", "in_progress", "completed", "skipped", "failed"].includes(variation)) {
-        throw new HttpInputError("variation must be not_started, in_progress, completed, skipped or failed");
+      if (variation !== undefined && !["not_started", "due", "in_progress", "changed", "completed", "skipped", "failed"].includes(variation)) {
+        throw new HttpInputError("variation must be not_started, due, in_progress, changed, completed, skipped or failed");
       }
       return wordpressCatalogService().listItems({
         runId: entityId(request.params.runId, "runId"),
@@ -1412,7 +1412,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
         ...(optionalString(request.query.risk) === undefined ? {} : { risk: catalogRisk(request.query.risk) }),
         ...(optionalString(request.query.operation) === undefined ? {} : { operation: catalogOperation(request.query.operation) }),
         ...(optionalString(request.query.change) === undefined ? {} : { changeFlag: catalogChange(request.query.change) }),
-        ...(variation === undefined ? {} : { variationFilter: variation as "not_started" | "in_progress" | "completed" | "skipped" | "failed" }),
+        ...(variation === undefined ? {} : { variationFilter: variation as "not_started" | "due" | "in_progress" | "changed" | "completed" | "skipped" | "failed" }),
         limit: positiveInteger(request.query.limit, 50, 200),
         offset: positiveInteger(request.query.offset, 0, 1_000_000),
       });

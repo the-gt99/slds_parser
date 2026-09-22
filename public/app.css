@@ -264,6 +264,13 @@ h3 { font-size: 17px; line-height: 1.3; }
 .catalog-price-progress { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
 .catalog-price-progress strong { font-size: 34px; color: var(--accent); }
 .catalog-price-progress .muted { flex-basis: 100%; font-size: 12px; }
+.catalog-sync-meter { height: 11px; overflow: hidden; border-radius: 999px; background: var(--surface-soft); border: 1px solid var(--line); }
+.catalog-sync-meter span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .3s ease; }
+.catalog-sync-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.catalog-sync-stats button { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); text-align: left; color: var(--text); cursor: pointer; }
+.catalog-sync-stats button:hover { border-color: var(--accent); }
+.catalog-sync-stats strong { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.catalog-sync-stats span { color: var(--muted); font-size: 11px; }
 .catalog-price-actions { display: grid; grid-template-columns: minmax(145px, 1fr) repeat(2, auto); align-items: end; gap: 8px; }
 .catalog-price-actions .danger, .catalog-price-actions .secondary:last-child { grid-column: 2 / -1; }
 .catalog-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }

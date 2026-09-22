@@ -171,6 +171,17 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(count.values).not.toContain(80);
   });
 
+  it("filters WordPress catalog products with saved variation changes and sorts newest first", async () => {
+    const executor = new FakeExecutor([[], [{ total: "2" }]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await repository.listItems({ runId: "1", variationFilter: "changed", limit: 40, offset: 0 });
+
+    const page = executor.calls.find((call) => call.text.includes("WITH page AS MATERIALIZED"))!;
+    expect(page.text).toContain("variation_result->'result'->>'updated_count'");
+    expect(page.text).toContain("item.variation_checked_at DESC NULLS LAST");
+  });
+
   it("returns locally stored proposed images with WordPress catalog item details", async () => {
     const executor = new FakeExecutor([[]]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));

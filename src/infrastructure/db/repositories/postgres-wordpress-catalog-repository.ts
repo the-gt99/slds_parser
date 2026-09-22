@@ -94,6 +94,10 @@ function mapRun(row: DatabaseRow): WordPressCatalogRunRecord {
     variationCompletedCount: Number(row.variation_completed_count ?? 0),
     variationSkippedCount: Number(row.variation_skipped_count ?? 0),
     variationFailedCount: Number(row.variation_failed_count ?? 0),
+    variationEligibleCount: Number(row.variation_eligible_count ?? 0),
+    variationCheckedCycleCount: Number(row.variation_checked_cycle_count ?? 0),
+    variationDueCount: Number(row.variation_due_count ?? 0),
+    variationChangedCount: Number(row.variation_changed_count ?? 0),
     auditPendingCount: Number(row.audit_pending_count ?? 0),
     auditReadyCount: Number(row.audit_ready_count ?? 0),
     auditBlockedCount: Number(row.audit_blocked_count ?? 0),
@@ -161,6 +165,7 @@ function mapItemSummary(row: DatabaseRow): WordPressCatalogRunItemSummaryRecord 
     variationStatus: text(row, "variation_status"),
     wordpressJobId: nullableText(row, "wordpress_job_id"),
     variationError: nullableText(row, "variation_error"),
+    variationChangedCount: Number(row.variation_changed_count ?? 0),
     snapshotFetchedAt: timestamp(row, "fetched_at"),
     variationCheckedAt: nullableTimestamp(row, "variation_checked_at"),
     updatedAt: timestamp(row, "updated_at"),
@@ -180,6 +185,14 @@ const runSelect = `
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'completed')::BIGINT AS variation_completed_count
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'skipped' AND item.variation_checked_at IS NOT NULL)::BIGINT AS variation_skipped_count
          ,COUNT(item.id) FILTER (WHERE item.variation_status = 'failed')::BIGINT AS variation_failed_count
+         ,COUNT(item.id) FILTER (WHERE item.match_status = 'matched' AND item.internal_product_id IS NOT NULL)::BIGINT AS variation_eligible_count
+         ,COUNT(item.id) FILTER (WHERE item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+           AND item.variation_sync_cycle = run.variation_sync_cycle AND item.variation_checked_at IS NOT NULL
+           AND item.variation_status IN ('completed', 'skipped'))::BIGINT AS variation_checked_cycle_count
+         ,COUNT(item.id) FILTER (WHERE item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+           AND item.variation_next_check_at <= NOW() AND item.variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted'))::BIGINT AS variation_due_count
+         ,COUNT(item.id) FILTER (WHERE item.variation_status = 'completed' AND
+           COALESCE((item.variation_result->'result'->>'updated_count')::INTEGER, 0) > 0)::BIGINT AS variation_changed_count
          ,COUNT(item.id) FILTER (WHERE item.audit_status IN ('pending', 'running'))::BIGINT AS audit_pending_count
          ,COUNT(item.id) FILTER (WHERE item.audit_status = 'ready')::BIGINT AS audit_ready_count
          ,COUNT(item.id) FILTER (WHERE item.audit_status = 'blocked')::BIGINT AS audit_blocked_count
@@ -254,10 +267,14 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
     }
     if (input.variationFilter === "not_started") {
       where.push("item.variation_status = 'skipped' AND item.variation_checked_at IS NULL");
+    } else if (input.variationFilter === "due") {
+      where.push("item.match_status = 'matched' AND item.internal_product_id IS NOT NULL AND item.variation_next_check_at <= NOW() AND item.variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')");
     } else if (input.variationFilter === "in_progress") {
       where.push("item.variation_status IN ('pending', 'refreshing', 'ready', 'submitted')");
     } else if (input.variationFilter === "skipped") {
       where.push("item.variation_status = 'skipped' AND item.variation_checked_at IS NOT NULL");
+    } else if (input.variationFilter === "changed") {
+      where.push("item.variation_status = 'completed' AND COALESCE((item.variation_result->'result'->>'updated_count')::INTEGER, 0) > 0");
     } else if (input.variationFilter !== undefined) {
       parameters.push(input.variationFilter);
       where.push(`item.variation_status = $${parameters.length}`);
@@ -271,13 +288,14 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            FROM wordpress_catalog_run_items item
            JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
            WHERE ${where.join(" AND ")}
-           ORDER BY item.id
+           ORDER BY ${input.variationFilter === "changed" || input.variationFilter === "completed" ? "item.variation_checked_at DESC NULLS LAST, item.id DESC" : "item.id"}
            LIMIT $${parameters.length - 1} OFFSET $${parameters.length}
          )
          SELECT item.id, item.wordpress_product_id, item.source_external_id, item.legacy_goat_id,
                 item.sku, item.source_product_id, item.internal_product_id, item.match_status,
                 item.match_method, item.audit_status, item.audit_error,
                 item.variation_status, item.wordpress_job_id, item.variation_error,
+                COALESCE((item.variation_result->'result'->>'updated_count')::INTEGER, 0) AS variation_changed_count,
                 item.variation_checked_at, item.updated_at,
                 model.title, model.image_url, model.wordpress_variation_count,
                 model.wordpress_image_count, model.audit_risk, model.change_flags,
@@ -286,7 +304,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
          JOIN wordpress_catalog_run_items item ON item.id = page.id
          JOIN wordpress_catalog_item_read_models model ON model.item_id = item.id
          JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
-         ORDER BY item.id`, parameters),
+         ORDER BY ${input.variationFilter === "changed" || input.variationFilter === "completed" ? "item.variation_checked_at DESC NULLS LAST, item.id DESC" : "item.id"}`, parameters),
       queryPool<DatabaseRow>(this.pool,
         `SELECT COUNT(*)::BIGINT AS total
          FROM wordpress_catalog_run_items item
