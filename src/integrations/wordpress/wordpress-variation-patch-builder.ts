@@ -71,10 +71,24 @@ export function matchExistingWordPressVariations(
   for (const [key, matches] of bySize) {
     if (matches.length > 1) throw new IntegrationContractError(`WordPress contains more than one variation for size ${key}`);
   }
-  for (const key of draft.replacedTargetSizes ?? []) {
-    if (bySize.get(key)?.some((variation) => variation.stock_status !== "outofstock")) {
-      throw new IntegrationContractError(`WordPress size ${key} requires full product synchronization before inventory updates`);
+  const renamesByCurrent = new Map<string, { previous: string; variation: Record<string, unknown> }>();
+  for (const rename of draft.renamedTargetSizes ?? []) {
+    const previousMatches = bySize.get(rename.previous) ?? [];
+    const currentMatches = bySize.get(rename.current) ?? [];
+    if (previousMatches.length === 0) continue;
+    if (draft.sourceTargetSizes.includes(rename.previous)) {
+      throw new IntegrationContractError(`WordPress size ${rename.previous} is also a current source size`);
     }
+    if (currentMatches.length > 0) {
+      if (previousMatches[0]!.stock_status !== "outofstock") {
+        throw new IntegrationContractError(`WordPress size ${rename.current} already has another active variation`);
+      }
+      continue;
+    }
+    if (renamesByCurrent.has(rename.current)) {
+      throw new IntegrationContractError(`More than one old WordPress size resolves to ${rename.current}`);
+    }
+    renamesByCurrent.set(rename.current, { previous: rename.previous, variation: previousMatches[0]! });
   }
 
   if (draft.requiresExactSizeSet) {
@@ -88,6 +102,7 @@ export function matchExistingWordPressVariations(
 
   const items: JsonObject[] = [];
   const ignored: JsonObject[] = [...draft.ignored];
+  const renamedVariationIds = new Set<number>();
   for (const rawItem of draft.items) {
     const item = record(rawItem);
     const size = record(item.size);
@@ -97,6 +112,23 @@ export function matchExistingWordPressVariations(
     const key = `${taxonomy}:${termId}`;
     const matches = bySize.get(key) ?? [];
     if (matches.length === 0) {
+      const rename = renamesByCurrent.get(key);
+      if (rename !== undefined) {
+        const variationId = positiveInteger(rename.variation.variation_id);
+        if (variationId === null || renamedVariationIds.has(variationId)) {
+          throw new IntegrationContractError(`WordPress size ${rename.previous} cannot be renamed unambiguously`);
+        }
+        const [previousTaxonomy, previousTermId] = rename.previous.split(":");
+        renamedVariationIds.add(variationId);
+        items.push({
+          variation_id: variationId,
+          previous_size: { taxonomy: previousTaxonomy!, term_id: Number(previousTermId) },
+          size: { taxonomy, term_id: termId },
+          ...(item.price === null || item.price === undefined ? {} : { price: item.price as JsonObject }),
+          ...(item.inventory === null || item.inventory === undefined ? {} : { inventory: item.inventory as JsonObject }),
+        });
+        continue;
+      }
       const inventory = record(item.inventory);
       const price = record(item.price);
       const variationKey = String(item.variation_key ?? "").trim();
@@ -128,6 +160,7 @@ export function matchExistingWordPressVariations(
   const knownSizes = new Set(draft.knownTargetSizes);
   for (const [key, matches] of bySize) {
     if (!knownSizes.has(key) || sourceSizes.has(key)) continue;
+    if (renamedVariationIds.has(positiveInteger(matches[0]!.variation_id) ?? -1)) continue;
     const [taxonomy, termIdText] = key.split(":");
     items.push({
       variation_id: positiveInteger(matches[0]!.variation_id)!,

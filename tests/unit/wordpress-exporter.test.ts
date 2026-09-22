@@ -220,7 +220,7 @@ describe("WordPressExporter", () => {
     expect((payload.variations as JsonObject).items).toMatchObject(expected);
     expect(live.items).toMatchObject(expected);
     expect(preview.ignoredSizeVariants).toEqual([]);
-    expect(live.replacedTargetSizes).toEqual(["pa_razmer:1551"]);
+    expect(live.renamedTargetSizes).toEqual([{ previous: "pa_razmer:1551", current: "pa_razmer:1401" }]);
     expect(input.product).toEqual(original);
     expect(live.items.map((item) => item.source_variant_key)).toEqual(input.product.variants.map((variant) => variant.sourceVariantKey));
     const refreshed = await previewWordPressUpsertPayload({ ...input, liveVariants: [input.product.variants[2]!] });
@@ -245,17 +245,28 @@ describe("WordPressExporter", () => {
       reason: expect.stringContaining("us-numeric/infant/10.5") });
   });
 
-  it("blocks inventory-only updates of old Y variations until full synchronization", async () => {
+  it("renames an old Y variation to its exact K size while keeping its variation ID", async () => {
     const draft = await previewWordPressVariationPatchItems(childContext());
     const oldSnapshot = { product: { variations: [
       { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 1551 }] },
     ] } };
-    expect(() => matchExistingWordPressVariations(draft, oldSnapshot)).toThrow("requires full product synchronization");
+    const renamed = matchExistingWordPressVariations(draft, oldSnapshot);
+    expect(renamed.items).toContainEqual(expect.objectContaining({
+      variation_id: 500,
+      previous_size: { taxonomy: "pa_razmer", term_id: 1551 },
+      size: { taxonomy: "pa_razmer", term_id: 1401 },
+    }));
+    expect(renamed.items.filter((item) => item.variation_id === 500)).toHaveLength(1);
     const repaired = matchExistingWordPressVariations(draft, { product: { variations: [
       { variation_id: 500, attributes: [{ taxonomy: "pa_razmer", term_id: 1401 }] },
       { variation_id: 501, stock_status: "outofstock", attributes: [{ taxonomy: "pa_razmer", term_id: 1551 }] },
     ] } });
     expect(repaired.items).toContainEqual(expect.objectContaining({ variation_id: 500, size: { taxonomy: "pa_razmer", term_id: 1401 } }));
+    expect(repaired.items.find((item) => item.variation_id === 500)).not.toHaveProperty("previous_size");
+    expect(() => matchExistingWordPressVariations(draft, { product: { variations: [
+      { variation_id: 500, stock_status: "instock", attributes: [{ taxonomy: "pa_razmer", term_id: 1551 }] },
+      { variation_id: 501, stock_status: "instock", attributes: [{ taxonomy: "pa_razmer", term_id: 1401 }] },
+    ] } })).toThrow("already has another active variation");
   });
 
   it("keeps a converted range as one exact target size", async () => {

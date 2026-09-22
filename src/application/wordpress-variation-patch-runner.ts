@@ -423,6 +423,16 @@ export class WordPressVariationPatchRunner {
       },
     }, this.converter);
     const matched = matchExistingWordPressVariations(draft, candidate.item.payload);
+    if (!targetSnapshotRefreshed && matched.items.some((item) => item.previous_size !== undefined)) {
+      const currentWordPress = await this.client.readProduct(candidate.item.wordpressProductId);
+      if (currentWordPress === null) {
+        throw new IntegrationContractError(`WordPress product not found: ${candidate.item.wordpressProductId}`);
+      }
+      return this.buildPatchPayload({
+        ...candidate,
+        item: { ...candidate.item, payload: currentWordPress.snapshot },
+      }, runId, liveVariants, true);
+    }
     if (matched.items.length === 0 || matched.items.length > 100) {
       const error = matched.items.length === 0
         ? "Нет безопасных вариаций для обновления или создания"
@@ -431,7 +441,9 @@ export class WordPressVariationPatchRunner {
       return null;
     }
     const basis = {
-      contract_version: "slds.wordpress.variation-patch.v3",
+      contract_version: matched.items.some((item) => item.previous_size !== undefined)
+        ? "slds.wordpress.variation-patch.v4"
+        : "slds.wordpress.variation-patch.v3",
       mode: "upsert_variations",
       identity: buildWordPressVariationPatchIdentity({
         targetId: candidate.item.wordpressProductId,

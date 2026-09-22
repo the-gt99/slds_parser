@@ -1108,7 +1108,7 @@ export async function previewWordPressUpsertPayload(
 export interface WordPressVariationPatchDraft {
   readonly requiresExactSizeSet?: boolean;
   /** Old target terms that require full synchronization before inventory patches. */
-  readonly replacedTargetSizes?: readonly string[];
+  readonly renamedTargetSizes?: readonly { readonly previous: string; readonly current: string }[];
   readonly items: readonly JsonObject[];
   readonly sourceTargetSizes: readonly string[];
   readonly knownTargetSizes: readonly string[];
@@ -1142,15 +1142,18 @@ export async function previewWordPressVariationPatchItems(
     conversionIdentity = sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId);
   }
   const resolution = await resolveVariationSet(context, variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
-  const replacedTargetSizes = [...new Set(variants.flatMap((variant) => {
+  const renamedTargetSizes = variants.flatMap((variant) => {
     const corrected = resolveWordPressSourceSize(context, variant.size);
     if (corrected === variant.size) return [];
     const previous = findSizeMapping(variant.size, mappings);
     const current = findSizeMapping(corrected, mappings.filter((mapping) =>
       mapping.system === corrected.system && mapping.audience === corrected.audience));
     if (previous !== null && current?.termId === previous.termId && current.taxonomy === previous.taxonomy) return [];
-    return previous === null ? [] : [`${previous.taxonomy}:${previous.termId}`];
-  }))];
+    return previous === null || current === null ? [] : [{
+      previous: `${previous.taxonomy}:${previous.termId}`,
+      current: `${current.taxonomy}:${current.termId}`,
+    }];
+  });
   const items = resolution.resolved;
   const targetSizes = items.map((item) => {
     const size = item.payload.size as JsonObject;
@@ -1162,7 +1165,7 @@ export async function previewWordPressVariationPatchItems(
   return {
     ...(nativeProfile === null ? {} : { requiresExactSizeSet: true }),
     items: items.map((item) => item.payload),
-    ...(replacedTargetSizes.length === 0 ? {} : { replacedTargetSizes }),
+    ...(renamedTargetSizes.length === 0 ? {} : { renamedTargetSizes }),
     sourceTargetSizes: [...new Set(resolution.resolved.map((item) => {
       const size = item.payload.size as JsonObject;
       return `${String(size.taxonomy)}:${String(size.term_id)}`;
