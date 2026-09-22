@@ -695,7 +695,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             variation_error = $5,
             variation_source_variants = CASE WHEN $2 = 'ready' THEN variation_source_variants ELSE '[]'::JSONB END,
             variation_checked_at = NOW(), updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND ($2 <> 'ready' OR (variation_status IN ('refreshing', 'submitted') AND variation_source_hash IS NOT NULL))`,
       [input.itemId, input.status, input.payload === undefined ? null : JSON.stringify(input.payload), JSON.stringify(input.notices), input.error ?? null]);
   }
 
@@ -718,6 +719,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                ELSE '[]'::JSONB END,
              updated_at = NOW()
          WHERE run_id = $1 AND id = $2 AND wordpress_product_id = $3::BIGINT
+           AND variation_status = 'pending'
          RETURNING id`,
         [input.runId, input.itemId, input.wordpressProductId, input.sourceHash, JSON.stringify(input.variants), input.unchanged],
       );
@@ -1158,6 +1160,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             FROM wordpress_catalog_run_items item
             JOIN source_products source_product ON source_product.id = item.source_product_id
             WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+              AND item.variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')
               AND (
                 (item.variation_sync_cycle < $3::BIGINT AND item.variation_next_check_at <= NOW())
                 OR source_product.discovery_changed_at > COALESCE(item.variation_checked_at, '-infinity'::TIMESTAMPTZ)

@@ -271,6 +271,9 @@ export class WordPressVariationPatchRunner {
     });
     const candidate = candidates.find((item) => item.item.id === payload.itemId);
     if (candidate === undefined) return { status: "skipped" };
+    if (candidate.item.variationStatus !== "refreshing" || candidate.item.variationSourceHash === null) {
+      return { status: "skipped" };
+    }
     try {
       const refreshedProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
       if (refreshedProduct?.externalId === null || refreshedProduct === null) {
@@ -344,6 +347,15 @@ export class WordPressVariationPatchRunner {
     liveVariants: readonly ProductVariantDTO[],
     targetSnapshotRefreshed = false,
   ): Promise<JsonObject | null> {
+    if (liveVariants.length === 0) {
+      await this.repository.saveVariationPreparation({
+        itemId: candidate.item.id,
+        status: "skipped",
+        notices: [{ code: "empty_source_offers", message: "GOAT не вернул вариации; WordPress оставлен без изменений" }],
+        error: "Пустой список GOAT offers не подтверждает отсутствие остатков",
+      });
+      return null;
+    }
     const cacheKey = runId + ":" + await this.mappings.getTargetMappingRevision(candidate.target.id);
     this.trimRunCaches(cacheKey);
     let referenceCache = this.referenceCachesByRun.get(cacheKey);
@@ -417,7 +429,6 @@ export class WordPressVariationPatchRunner {
       notices: [
         ...matched.ignored,
         { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" },
-        ...(liveVariants.length === 0 ? [{ code: "confirmed_source_sold_out", message: "GOAT вернул корректный пустой список вариаций; существующие размеры WordPress будут сняты с продажи без удаления и изменения цен" }] : []),
         ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта identity" }] : []),
       ] });
     return patchPayload;

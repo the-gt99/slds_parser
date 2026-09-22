@@ -1,7 +1,40 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
 import { parseCollectWordPressVariationSourcePayload, parsePrepareWordPressVariationPatchPayload } from "../../src/application/job-payloads.js";
-import { buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { WordPressVariationPatchRunner, buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+
+describe("WordPressVariationPatchRunner preparation safety", () => {
+  it("does not interpret a cleared refresh state as sold-out GOAT offers", async () => {
+    const sourceProducts = { getById: vi.fn() };
+    const repository = { listVariationCandidates: vi.fn().mockResolvedValue([{ item: {
+      id: "7", variationStatus: "pending", variationSourceHash: null, variationSourceVariants: [],
+    } }]), saveVariationPreparation: vi.fn() };
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), {
+      repository, sourceProducts, mappings: { runWithRules: (callback: () => Promise<unknown>) => callback() },
+    }) as WordPressVariationPatchRunner;
+
+    await expect(runner.preparePatch({ runId: "4", itemId: "7", wordpressProductId: "100", force: false })).resolves.toEqual({ status: "skipped" });
+    expect(sourceProducts.getById).not.toHaveBeenCalled();
+    expect(repository.saveVariationPreparation).not.toHaveBeenCalled();
+  });
+
+  it("leaves WordPress unchanged when a confirmed refresh has zero offers", async () => {
+    const repository = { listVariationCandidates: vi.fn().mockResolvedValue([{ item: {
+      id: "7", variationStatus: "refreshing", variationSourceHash: "empty-hash", variationSourceVariants: [], payload: {},
+    }, sourceProduct: { id: "21" } }]), saveVariationPreparation: vi.fn().mockResolvedValue(undefined) };
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), {
+      repository,
+      sourceProducts: { getById: vi.fn().mockResolvedValue({ id: "21", externalId: "goat-21", slug: null, url: null, discoveryMetadata: {} }) },
+      client: { readProduct: vi.fn().mockResolvedValue({ snapshot: {} }) },
+      mappings: { runWithRules: (callback: () => Promise<unknown>) => callback() },
+    }) as WordPressVariationPatchRunner;
+
+    await expect(runner.preparePatch({ runId: "4", itemId: "7", wordpressProductId: "100", force: false })).resolves.toEqual({ status: "skipped" });
+    expect(repository.saveVariationPreparation).toHaveBeenCalledWith(expect.objectContaining({
+      itemId: "7", status: "skipped", notices: [expect.objectContaining({ code: "empty_source_offers" })],
+    }));
+  });
+});
 
 describe("parseCollectWordPressVariationSourcePayload", () => {
   it("keeps the force flag for a manual canary", () => {

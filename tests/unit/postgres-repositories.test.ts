@@ -263,6 +263,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(executor.calls).toHaveLength(4);
     expect(executor.calls[1]?.text).toContain("variation_source_hash = $4");
+    expect(executor.calls[1]?.text).toContain("AND variation_status = 'pending'");
     expect(executor.calls[1]?.text).toContain("variation_next_check_at");
     expect(executor.calls[1]?.text).toContain("INTERVAL '24 hours'");
     expect(executor.calls[1]?.text).toContain("variation_unchanged_streak");
@@ -308,6 +309,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(executor.calls[3]?.text).toContain("item.variation_next_check_at <= NOW()");
     expect(executor.calls[3]?.text).toContain("source_product.discovery_changed_at > COALESCE(item.variation_checked_at");
+    expect(executor.calls[3]?.text).toContain("item.variation_status NOT IN ('pending', 'refreshing', 'ready', 'submitted')");
     expect(executor.calls[4]?.text).toContain("variation_sync_next_cycle_at");
     expect(executor.calls[4]?.text).not.toContain("variation_auto_status = 'completed'");
   });
