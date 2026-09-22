@@ -447,7 +447,7 @@ export class WordPressVariationPatchRunner {
       notices: [
         ...matched.ignored,
         { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" },
-        ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта identity" }] : []),
+        ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта размеров или identity" }] : []),
       ] });
     return patchPayload;
   }
