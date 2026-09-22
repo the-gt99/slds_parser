@@ -1649,6 +1649,33 @@ describe("WordPressExporter", () => {
     expect(draft).toEqual({ items: [], sourceTargetSizes: [], knownTargetSizes: [], ignored: [], deactivateAll: true });
   });
 
+  it("updates exactly mapped variations without requiring product classification", async () => {
+    const base = context();
+    const { classification: _classification, ...unclassified } = base.product;
+    const references = {
+      ...base.references,
+      resolveReference: vi.fn().mockRejectedValue(new Error("Classification lookup must not run")),
+      resolveAssignments: vi.fn().mockRejectedValue(new Error("Assignment lookup must not run")),
+    };
+
+    const draft = await previewWordPressVariationPatchItems({ ...base, product: unclassified, references,
+      liveVariants: base.product.variants });
+
+    expect(draft.items).toMatchObject([{ size: { taxonomy: "pa_razmer", term_id: 107 } }]);
+    expect(references.resolveReference).not.toHaveBeenCalled();
+    expect(references.resolveAssignments).not.toHaveBeenCalled();
+  });
+
+  it("still requires a primary classified brand when size conversion is needed", async () => {
+    const base = context();
+    const { classification: _classification, ...unclassified } = base.product;
+    const missingSize = { ...base.product.variants[0]!, size: { ...base.product.variants[0]!.size, sourceValue: "11", displayValue: "11" } };
+    const converter = { supports: vi.fn(() => true), convert: vi.fn() };
+
+    await expect(previewWordPressVariationPatchItems({ ...base, product: unclassified, liveVariants: [missingSize] }, converter))
+      .rejects.toThrow("Product classification is required");
+  });
+
   it("sends an explicit null price for an unavailable variation", async () => {
     const base = context();
     const input: ExportContext = {

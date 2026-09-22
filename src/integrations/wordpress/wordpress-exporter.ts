@@ -1132,14 +1132,15 @@ export async function previewWordPressVariationPatchItems(
   const mappings = sizeMappings(nativeProfile ?? context.target.config);
   if (nativeProfile !== null) converter = undefined;
   const ignoreMissing = ignoreUnmappedSizeVariants(context.target.config);
-  const taxonomyResult = await taxonomyPayload(context, requiredReferenceTypes(context.target.config), true);
-  const taxonomies = mergePreservedTaxonomyTerms(context, taxonomyResult.taxonomies);
   const needsConversion = converter !== undefined && variants.some(
     (variant) => findSizeMapping(variant.size, mappings) === null && converter.supports(variant.size),
   );
-  const conversionIdentity = needsConversion && converter !== undefined
-    ? sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId)
-    : undefined;
+  let conversionIdentity: ReturnType<typeof sizeConversionIdentity> | undefined;
+  if (needsConversion) {
+    const taxonomyResult = await taxonomyPayload(context, requiredReferenceTypes(context.target.config), true);
+    const taxonomies = mergePreservedTaxonomyTerms(context, taxonomyResult.taxonomies);
+    conversionIdentity = sizeConversionIdentity(taxonomies, context.target.config, taxonomyResult.primaryBrandTermId);
+  }
   const resolution = await resolveVariationSet(context, variants, externalKey, mappings, converter, conversionIdentity, ignoreMissing);
   const replacedTargetSizes = [...new Set(variants.flatMap((variant) => {
     const corrected = resolveWordPressSourceSize(context, variant.size);
