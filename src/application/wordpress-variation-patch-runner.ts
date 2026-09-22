@@ -63,6 +63,11 @@ export function shouldRefreshWordPressVariationSnapshot(
     && !notices.some((notice) => notice.code === freshTargetSnapshotNotice);
 }
 
+export function shouldRefreshWordPressVariationSnapshotBeforeSubmit(error: unknown): boolean {
+  return error instanceof IntegrationContractError
+    && /^WordPress size pa_[a-z0-9_-]+:\d+ requires full product synchronization before (?:native size )?inventory updates$/u.test(error.message);
+}
+
 export function wordpressCatalogItemError(error: unknown): string | null {
   return error instanceof IntegrationContractError || error instanceof MappingMissingError
     || (error instanceof PermanentError && error.code === "GOAT_PRODUCT_NOT_FOUND")
@@ -300,7 +305,20 @@ export class WordPressVariationPatchRunner {
           metadata: refreshedProduct.discoveryMetadata,
         },
       };
-      const patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, candidate.item.variationSourceVariants);
+      let patchPayload: JsonObject | null;
+      try {
+        patchPayload = await this.buildPatchPayload(effectiveCandidate, payload.runId, candidate.item.variationSourceVariants);
+      } catch (error) {
+        if (payload.force === true || !shouldRefreshWordPressVariationSnapshotBeforeSubmit(error)) throw error;
+        const currentWordPress = await this.client.readProduct(candidate.item.wordpressProductId);
+        if (currentWordPress === null) {
+          throw new IntegrationContractError(`WordPress product not found: ${candidate.item.wordpressProductId}`);
+        }
+        patchPayload = await this.buildPatchPayload({
+          ...effectiveCandidate,
+          item: { ...effectiveCandidate.item, payload: currentWordPress.snapshot },
+        }, payload.runId, candidate.item.variationSourceVariants, true);
+      }
       if (patchPayload === null) return { status: "skipped" };
       if (!await this.repository.isVariationAutoSyncRunning(payload.runId)) {
         await this.repository.enqueueReadyVariationBatches(payload.runId, 100);

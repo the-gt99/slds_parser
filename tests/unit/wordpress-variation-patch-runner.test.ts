@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
 import { parseCollectWordPressVariationSourcePayload, parsePrepareWordPressVariationPatchPayload } from "../../src/application/job-payloads.js";
-import { WordPressVariationPatchRunner, buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { WordPressVariationPatchRunner, buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, shouldRefreshWordPressVariationSnapshotBeforeSubmit, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
 
 describe("WordPressVariationPatchRunner preparation safety", () => {
   it("does not interpret a cleared refresh state as sold-out GOAT offers", async () => {
@@ -33,6 +33,37 @@ describe("WordPressVariationPatchRunner preparation safety", () => {
     expect(repository.saveVariationPreparation).toHaveBeenCalledWith(expect.objectContaining({
       itemId: "7", status: "skipped", notices: [expect.objectContaining({ code: "empty_source_offers" })],
     }));
+  });
+
+  it("rechecks a stale size snapshot before skipping a live inventory patch", async () => {
+    const oldSnapshot = { product: { variations: [{ variation_id: 11, attributes: [{ taxonomy: "pa_razmer", term_id: 2601 }] }] } };
+    const currentSnapshot = { product: { variations: [{ variation_id: 11, attributes: [{ taxonomy: "pa_razmer", term_id: 1388 }] }] } };
+    const buildPatchPayload = vi.fn()
+      .mockRejectedValueOnce(new IntegrationContractError("WordPress size pa_razmer:2601 requires full product synchronization before inventory updates"))
+      .mockResolvedValueOnce({ mode: "upsert_variations" });
+    const repository = {
+      listVariationCandidates: vi.fn().mockResolvedValue([{ item: {
+        id: "7", wordpressProductId: "100", variationStatus: "refreshing", variationSourceHash: "fresh-hash",
+        variationSourceVariants: [{ key: "11k" }], payload: oldSnapshot,
+      }, sourceProduct: { id: "21", sourceId: "1" } }]),
+      isVariationAutoSyncRunning: vi.fn().mockResolvedValue(true),
+    };
+    const client = { readProduct: vi.fn().mockResolvedValue({ snapshot: currentSnapshot }) };
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), {
+      repository, client, buildPatchPayload,
+      sourceProducts: { getById: vi.fn().mockResolvedValue({
+        id: "21", sourceId: "1", sourceKey: "goat-21", externalId: "goat-21", slug: null, url: null,
+        discoveryMetadata: {},
+      }) },
+      mappings: { runWithRules: (callback: () => Promise<unknown>) => callback() },
+    }) as WordPressVariationPatchRunner;
+
+    await expect(runner.preparePatch({ runId: "4", itemId: "7", wordpressProductId: "100", force: false }))
+      .resolves.toEqual({ status: "completed" });
+    expect(client.readProduct).toHaveBeenCalledWith("100");
+    expect(buildPatchPayload).toHaveBeenCalledTimes(2);
+    expect(buildPatchPayload.mock.calls[1]?.[0].item.payload).toBe(currentSnapshot);
+    expect(buildPatchPayload.mock.calls[1]?.[3]).toBe(true);
   });
 });
 
@@ -124,5 +155,19 @@ describe("shouldRefreshWordPressVariationSnapshot", () => {
       "Variation patch permanent [legacy_sku_identity_conflict]: identity does not match.",
       [],
     )).toBe(false);
+  });
+});
+
+describe("shouldRefreshWordPressVariationSnapshotBeforeSubmit", () => {
+  it("refreshes only for a pre-submit size conflict that can come from a stale catalog snapshot", () => {
+    expect(shouldRefreshWordPressVariationSnapshotBeforeSubmit(new IntegrationContractError(
+      "WordPress size pa_razmer:2601 requires full product synchronization before inventory updates",
+    ))).toBe(true);
+    expect(shouldRefreshWordPressVariationSnapshotBeforeSubmit(new IntegrationContractError(
+      "WordPress size pa_razmer:2601 requires full product synchronization before native size inventory updates",
+    ))).toBe(true);
+    expect(shouldRefreshWordPressVariationSnapshotBeforeSubmit(new IntegrationContractError(
+      "WordPress contains more than one variation for size pa_razmer:2601",
+    ))).toBe(false);
   });
 });
