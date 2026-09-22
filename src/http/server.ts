@@ -162,6 +162,9 @@ interface RuleV2WorkbenchQuery {
   readonly status?: string;
   readonly limit?: string;
   readonly offset?: string;
+  readonly missingField?: string;
+  readonly sort?: string;
+  readonly productId?: string;
 }
 interface ExportControlQuery {
   readonly targetId?: string;
@@ -1855,12 +1858,25 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       status: status as "incomplete" | "conflict" | "ready" | "all",
       limit: positiveInteger(request.query.limit, 40, 100),
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
+      ...(request.query.missingField === undefined ? {} : { missingField: requiredString(request.query.missingField, "missingField") as "brand" | "model" | "category" }),
+      ...(request.query.sort === undefined ? {} : { sort: requiredString(request.query.sort, "sort") as "latest" | "title" | "problems" }),
+      ...(request.query.productId === undefined ? {} : { productId: entityId(request.query.productId, "productId") }),
     });
   });
 
   server.post<{ Body: RuleV2Body }>("/api/rules-v2/preview", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
     if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
     return { preview: await dependencies.rulesV2.preview(ruleV2Body(request.body)) };
+  });
+
+  server.post<{ Body: RuleV2Body }>("/api/rules-v2/preview-full", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return dependencies.rulesV2.startFullPreview(ruleV2Body(request.body));
+  });
+
+  server.get<{ Params: { previewId: string } }>("/api/rules-v2/preview-full/:previewId", { preHandler: requireAdmin }, async (request) => {
+    if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
+    return dependencies.rulesV2.fullPreviewStatus(request.params.previewId);
   });
 
   server.post<{ Body: RuleV2Body }>("/api/rules-v2", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => {

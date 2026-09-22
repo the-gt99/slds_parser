@@ -32,6 +32,8 @@ export class RulesV2Service {
     private readonly evaluator: {
       preview(draft: RuleV2Draft): Promise<object>;
       workbench?(query: RulesV2WorkbenchQuery): Promise<object>;
+      startFullPreview?(draft: RuleV2Draft): { id: string };
+      fullPreviewStatus?(id: string): object;
     },
     private readonly executionState?: () => Promise<{ mode: "v1" | "v2" }>) {}
 
@@ -91,6 +93,17 @@ export class RulesV2Service {
   async workbench(query: RulesV2WorkbenchQuery) {
     if (this.evaluator.workbench === undefined) throw new IntegrationContractError("Rules v2 workbench is unavailable");
     return this.evaluator.workbench(query);
+  }
+
+  startFullPreview(draft: RuleV2Draft) {
+    validate(draft);
+    if (this.evaluator.startFullPreview === undefined) throw new IntegrationContractError("Full preview is unavailable");
+    return this.evaluator.startFullPreview(draft);
+  }
+
+  fullPreviewStatus(id: string) {
+    if (this.evaluator.fullPreviewStatus === undefined) throw new IntegrationContractError("Full preview is unavailable");
+    return this.evaluator.fullPreviewStatus(id);
   }
 
   async create(draft: RuleV2Draft, actor: string) { validate(draft); return this.repository.create(draft, actor); }

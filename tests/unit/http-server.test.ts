@@ -86,6 +86,19 @@ describe("HTTP server", () => {
     await server.close();
   });
 
+  it("reports a complete rule impact check without starting an export", async () => {
+    const fullPreviewStatus = vi.fn().mockReturnValue({ status: "complete", checked: 200, matched: 4, conflicts: [] });
+    const server = createHttpServer({ ...dependencies({ query: vi.fn() }), rulesV2: { fullPreviewStatus } as unknown as RulesV2Service });
+
+    const response = await server.inject({ method: "GET", url: "/api/rules-v2/preview-full/check-1",
+      headers: { authorization: `Bearer ${adminToken}` } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: "complete", matched: 4 });
+    expect(fullPreviewStatus).toHaveBeenCalledWith("check-1");
+    await server.close();
+  });
+
   it("queues all safe WordPress suggestions in one short request", async () => {
     const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const targetClassificationImport = {

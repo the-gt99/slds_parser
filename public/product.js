@@ -425,6 +425,52 @@ function renderClassifications(item) {
   }
 }
 
+async function renderRulesReadiness(item) {
+  const list = byId("classification-list");
+  list.replaceChildren();
+  byId("classification-count").textContent = "Проверяю";
+  const target = item.targets?.find((entry) => entry.exporterCode === "wordpress");
+  if (!target || !item.source?.id) {
+    list.textContent = "Для товара пока нет данных для проверки правил.";
+    return;
+  }
+  try {
+    const query = new URLSearchParams({ sourceId: item.source.id, targetId: target.id, productId });
+    const response = await api(`/api/rules-v2/workbench?${query}`);
+    const result = response.items?.[0];
+    if (!result) { list.textContent = "Обработанный DTO пока не создан."; return; }
+    byId("classification-count").textContent = result.status === "ready" ? "Минимум заполнен" : result.status === "conflict" ? "Конфликт" : "Не готов";
+    const scopeNames = { "product.brand": "Бренд", "product.model": "Модель", "product.category": "Категория" };
+    for (const [scope, label] of Object.entries(scopeNames)) {
+      const row = document.createElement("div"); row.className = "classification-row readiness-row";
+      const values = result.result?.fields?.[scope] || [];
+      const content = document.createElement("div"); content.append(document.createElement("strong"), document.createElement("span"));
+      content.children[0].textContent = `${label} · обязательно`;
+      content.children[1].textContent = values.length ? values.map((value) => value.label).join(", ") : "Не заполнено";
+      const link = document.createElement("a"); link.className = `button ${values.length ? "quiet" : "primary"} small-button`;
+      link.href = `/rules-v2?${new URLSearchParams({ productId })}`;
+      link.textContent = values.length ? "Посмотреть правила" : "Создать правило";
+      row.append(content, link); list.append(row);
+    }
+    for (const issue of [...(result.conflicts || []), ...(result.blockers || [])].filter((entry) => !entry.code?.startsWith("required_"))) {
+      const row = document.createElement("div"); row.className = "inline-message"; row.textContent = issue.message; list.append(row);
+    }
+    const optional = Object.entries(result.result?.fields || {}).filter(([scope]) => !(scope in scopeNames));
+    if (optional.length) {
+      const details = document.createElement("details"); const summary = document.createElement("summary");
+      summary.textContent = "Дополнительные назначения (необязательные)"; details.append(summary);
+      for (const [scope, values] of optional) {
+        const row = document.createElement("p");
+        row.textContent = `${scope}: ${values.map((value) => value.label).join(", ")}`; details.append(row);
+      }
+      list.append(details);
+    }
+    const note = document.createElement("p"); note.className = "muted";
+    note.textContent = "Название, описание, изображения и вариации обязательны. Необязательные атрибуты не блокируют товар. Отсутствие исходных данных не исправляется правилом.";
+    list.append(note);
+  } catch (cause) { list.textContent = `Не удалось проверить правила: ${cause.message}`; byId("classification-count").textContent = "Ошибка"; }
+}
+
 function eventTime(value) {
   return new Date(value).valueOf();
 }
@@ -999,7 +1045,7 @@ function renderProduct(item) {
   renderHero(item);
   renderData(item);
   renderVariants(item);
-  renderClassifications(item);
+  void renderRulesReadiness(item);
   renderPipeline(item);
   renderTargets(item);
   renderStages(item);
