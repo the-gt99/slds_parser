@@ -200,7 +200,7 @@ function scheduleRunRefresh() {
   const run = state.run;
   const active = Number(run?.variationPendingCount || 0) + Number(run?.variationSubmittedCount || 0);
   if (!document.hidden && (run?.status === "running" || run?.variationAutoStatus === "running" || active > 0)) {
-    state.timer = window.setTimeout(() => refresh(false), active > 0 || run?.status === "running" ? 5000 : 60000);
+    state.timer = window.setTimeout(() => refresh(false), active > 0 || run?.status === "running" ? 15000 : 60000);
   }
 }
 

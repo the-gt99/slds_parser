@@ -232,7 +232,14 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
 
   async listRuns(targetId: string, limit: number): Promise<readonly WordPressCatalogRunRecord[]> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `${runSelect} WHERE run.target_id = $1 GROUP BY run.id, target.name ORDER BY run.created_at DESC, run.id DESC LIMIT $2`,
+      `WITH latest_runs AS MATERIALIZED (
+         SELECT id FROM wordpress_catalog_runs
+         WHERE target_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2
+       )
+       ${runSelect}
+       JOIN latest_runs latest ON latest.id = run.id
+       WHERE run.target_id = $1
+       GROUP BY run.id, target.name ORDER BY run.created_at DESC, run.id DESC`,
       [targetId, limit],
     );
     return result.rows.map(mapRun);

@@ -182,6 +182,17 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(page.text).toContain("item.variation_checked_at DESC NULLS LAST");
   });
 
+  it("limits catalog runs before aggregating product progress", async () => {
+    const executor = new FakeExecutor([[]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await repository.listRuns("1", 1);
+
+    expect(executor.calls[0]?.text).toContain("WITH latest_runs AS MATERIALIZED");
+    expect(executor.calls[0]?.text).toContain("JOIN latest_runs latest ON latest.id = run.id");
+    expect(executor.calls[0]?.values).toEqual(["1", 1]);
+  });
+
   it("returns locally stored proposed images with WordPress catalog item details", async () => {
     const executor = new FakeExecutor([[]]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
