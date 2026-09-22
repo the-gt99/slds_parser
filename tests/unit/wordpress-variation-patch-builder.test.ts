@@ -60,7 +60,7 @@ describe("matchExistingWordPressVariations", () => {
     expect(result.ignored).toEqual([]);
   });
 
-  it("does not create an absent size without an available priced offer", () => {
+  it("creates an absent unavailable size without inventing a price", () => {
     const result = matchExistingWordPressVariations({
       items: [{
         variation_key: "goat:product|pa_razmer:11",
@@ -75,8 +75,24 @@ describe("matchExistingWordPressVariations", () => {
       deactivateAll: false,
     }, { product: { variations: [] } });
 
+    expect(result.items).toEqual([{
+      variation_key: "goat:product|pa_razmer:11",
+      source_variant_key: "b",
+      size: { taxonomy: "pa_razmer", term_id: 11 },
+      inventory: { availability: "unavailable", quantity: 0 },
+    }]);
+    expect(result.items[0]).not.toHaveProperty("price");
+    expect(result.ignored).toEqual([]);
+  });
+
+  it("does not create an available size without a price", () => {
+    const result = matchExistingWordPressVariations({
+      items: [{ variation_key: "goat:product|pa_razmer:11", size: { taxonomy: "pa_razmer", term_id: 11 },
+        price: null, inventory: { availability: "available" } }],
+      sourceTargetSizes: ["pa_razmer:11"], knownTargetSizes: ["pa_razmer:11"], ignored: [], deactivateAll: false,
+    }, { product: { variations: [] } });
     expect(result.items).toEqual([]);
-    expect(result.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "b", reason: expect.stringContaining("только для доступного") })]);
+    expect(result.ignored).toHaveLength(1);
   });
 
   it("blocks duplicate existing variations for one size", () => {

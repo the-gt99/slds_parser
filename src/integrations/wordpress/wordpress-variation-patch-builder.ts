@@ -101,18 +101,17 @@ export function matchExistingWordPressVariations(
       const price = record(item.price);
       const variationKey = String(item.variation_key ?? "").trim();
       const sourceVariantKey = String(item.source_variant_key ?? "").trim();
-      const canCreate = inventory.availability === "available"
-        && Object.keys(price).length > 0
-        && variationKey !== "";
+      const canCreate = variationKey !== "" && (inventory.availability === "unavailable"
+        || (inventory.availability === "available" && Object.keys(price).length > 0));
       if (!canCreate) {
-        ignored.push({ sourceVariantKey, size: key, reason: "Размера нет в WordPress; вариация создаётся только для доступного предложения с ценой" });
+        ignored.push({ sourceVariantKey, size: key, reason: "Размера нет в WordPress; для создания нужен стабильный ключ и наличие, а для доступного размера также цена" });
         continue;
       }
       items.push({
         variation_key: variationKey,
         ...(sourceVariantKey === "" ? {} : { source_variant_key: sourceVariantKey }),
         size: { taxonomy, term_id: termId },
-        price: price as JsonObject,
+        ...(Object.keys(price).length === 0 ? {} : { price: price as JsonObject }),
         inventory: inventory as JsonObject,
       });
       continue;

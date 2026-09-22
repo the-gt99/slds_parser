@@ -267,42 +267,6 @@ function ignoreUnmappedSizeVariants(config: JsonObject): boolean {
   return value;
 }
 
-function maximumVariantPriceRatio(config: JsonObject): bigint | null {
-  const value = config.maxVariantPriceRatio;
-  if (value === undefined) return null;
-  if (!Number.isSafeInteger(value) || Number(value) < 2 || Number(value) > 100) {
-    throw new IntegrationContractError("target.config.maxVariantPriceRatio must be an integer from 2 to 100");
-  }
-  return BigInt(Number(value));
-}
-
-function unsafeVariantPriceKeys(variants: readonly ProductVariantDTO[], ratio: bigint | null): ReadonlySet<string> {
-  if (ratio === null) return new Set();
-  const prices = variants
-    .filter((variant) => variant.inventory.availability === "available" && variant.price !== null)
-    .map((variant) => {
-      if (variant.price!.currency.toUpperCase() !== "USD") {
-        throw new IntegrationContractError(`WordPress pricing supports USD only: ${variant.price!.currency}`);
-      }
-      return { key: variant.sourceVariantKey, minor: BigInt(moneyToMinorUnits(variant.price!.amount)) };
-    });
-  if (prices.length < 2) return new Set();
-  const minimum = prices.reduce((value, item) => item.minor < value ? item.minor : value, prices[0]!.minor);
-  return new Set(prices.filter((item) => item.minor > minimum * ratio).map((item) => item.key));
-}
-
-function unavailablePriceOutlier(payload: JsonObject): JsonObject {
-  return {
-    ...payload,
-    price: null,
-    inventory: { availability: "unavailable", quantity: 0 },
-  };
-}
-
-function priceOutlierReason(ratio: bigint | null): string {
-  return `Цена выше безопасного порога x${ratio?.toString() ?? "—"}; вариация будет переведена в статус «нет в наличии», а аномальная цена не будет отправлена`;
-}
-
 function isMissingSizeMappingError(error: unknown): error is IntegrationContractError {
   return error instanceof IntegrationContractError
     && (error instanceof WordPressSizeConversionMissingError
@@ -1065,15 +1029,7 @@ async function buildWordPressPayload(
   if (resolvedVariations.length === 0 && !soldOut) {
     throw new IntegrationContractError("WordPress export has no variants with mapped sizes");
   }
-  const resolvedSourceKeys = new Set(resolvedVariations.map((variation) => String(variation.payload.source_variant_key)));
-  const priceRatio = maximumVariantPriceRatio(context.target.config);
-  const unsafePriceKeys = unsafeVariantPriceKeys(
-    outputVariants.filter((variant) => resolvedSourceKeys.has(variant.sourceVariantKey)),
-    priceRatio,
-  );
-  const variations = resolvedVariations.map((variation) => unsafePriceKeys.has(String(variation.payload.source_variant_key))
-    ? unavailablePriceOutlier(variation.payload)
-    : variation.payload);
+  const variations = resolvedVariations.map((variation) => variation.payload);
   const targetSizes = new Set(variations.map((variation) => {
     const size = variation.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -1133,13 +1089,7 @@ async function buildWordPressPayload(
     payload: { ...payload, payload_hash: hashStableJson(payload) },
     missingRequiredReferences: missingRequired,
     ignoredSizeVariants: [...new Map(
-      [
-        ...outputResolution.ignored,
-        ...contentResolution.ignored,
-        ...outputVariants
-          .filter((variant) => unsafePriceKeys.has(variant.sourceVariantKey))
-          .map((variant) => ignoredSizeVariant(variant, priceOutlierReason(priceRatio))),
-      ]
+      [...outputResolution.ignored, ...contentResolution.ignored]
         .map((variant) => [variant.sourceVariantKey, variant]),
     ).values()],
     contentContext,
@@ -1200,11 +1150,7 @@ export async function previewWordPressVariationPatchItems(
     if (previous !== null && current?.termId === previous.termId && current.taxonomy === previous.taxonomy) return [];
     return previous === null ? [] : [`${previous.taxonomy}:${previous.termId}`];
   }))];
-  const priceRatio = maximumVariantPriceRatio(context.target.config);
-  const unsafeKeys = unsafeVariantPriceKeys(variants, priceRatio);
-  const items = resolution.resolved.map((item) => unsafeKeys.has(String(item.payload.source_variant_key))
-    ? { ...item, payload: unavailablePriceOutlier(item.payload) }
-    : item);
+  const items = resolution.resolved;
   const targetSizes = items.map((item) => {
     const size = item.payload.size as JsonObject;
     return `${String(size.taxonomy)}:${String(size.term_id)}`;
@@ -1212,7 +1158,6 @@ export async function previewWordPressVariationPatchItems(
   if (new Set(targetSizes).size !== targetSizes.length) {
     throw new IntegrationContractError("More than one source variant resolves to the same WordPress size");
   }
-  const variantByKey = new Map(variants.map((variant) => [variant.sourceVariantKey, variant]));
   return {
     ...(nativeProfile === null ? {} : { requiresExactSizeSet: true }),
     items: items.map((item) => item.payload),
@@ -1222,17 +1167,7 @@ export async function previewWordPressVariationPatchItems(
       return `${String(size.taxonomy)}:${String(size.term_id)}`;
     }))],
     knownTargetSizes: [...new Set(mappings.map((mapping) => `${mapping.taxonomy}:${mapping.termId}`))],
-    ignored: [
-      ...resolution.ignored.map((item) => ({ sourceVariantKey: item.sourceVariantKey, size: item.displayValue, reason: item.reason })),
-      ...[...unsafeKeys].map((key) => {
-        const variant = variantByKey.get(key)!;
-        return {
-          sourceVariantKey: key,
-          size: variant.size.displayValue,
-          reason: priceOutlierReason(priceRatio),
-        };
-      }),
-    ],
+    ignored: resolution.ignored.map((item) => ({ sourceVariantKey: item.sourceVariantKey, size: item.displayValue, reason: item.reason })),
     deactivateAll: false,
   };
 }

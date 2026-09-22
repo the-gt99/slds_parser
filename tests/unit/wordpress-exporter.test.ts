@@ -340,7 +340,7 @@ describe("WordPressExporter", () => {
     })).rejects.toThrow("Для выгрузки WordPress требуется актуальный перевод deepl 1.0.0 en→ru");
   });
 
-  it("marks only the x5 price outlier unavailable in a full product payload", async () => {
+  it("keeps a high source price in a full product payload", async () => {
     const base = context({
       maxVariantPriceRatio: 5,
       sizeMappings: [
@@ -370,12 +370,12 @@ describe("WordPressExporter", () => {
     expect(variations).toHaveLength(2);
     expect(variations[1]).toMatchObject({
       source_variant_key: "offer-8",
-      price: null,
-      inventory: { availability: "unavailable", quantity: 0 },
+      price: { source_currency: "USD", source_minor_amount: "70000" },
+      inventory: { availability: "available" },
     });
   });
 
-  it("marks the x5 price outlier unavailable in a variation-only patch", async () => {
+  it("keeps a high source price in a variation-only patch", async () => {
     const base = context({
       maxVariantPriceRatio: 5,
       sizeMappings: [
@@ -397,10 +397,10 @@ describe("WordPressExporter", () => {
     expect(draft.items[0]?.source_variant_key).toBe("offer-7");
     expect(draft.items[1]).toMatchObject({
       source_variant_key: "offer-8",
-      price: null,
-      inventory: { availability: "unavailable", quantity: 0 },
+      price: { source_currency: "USD", source_minor_amount: "70000" },
+      inventory: { availability: "available" },
     });
-    expect(draft.ignored).toEqual([expect.objectContaining({ sourceVariantKey: "offer-8", reason: expect.stringContaining("x5") })]);
+    expect(draft.ignored).toEqual([]);
   });
 
   it("builds the strict source-neutral upsert payload", async () => {
