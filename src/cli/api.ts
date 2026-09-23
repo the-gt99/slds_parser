@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { RulesV2PreviewService } from "../services/rules-v2-preview.js";
 import { RulesExecution } from "../infrastructure/db/rules-execution.js";
 
-import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../config/index.js";
+import { loadAdminApiConfig, loadHttpConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
 import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
 import { ProductOperationRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
@@ -22,7 +22,7 @@ import {
   PostgresUnitOfWork,
   PostgresWordPressCatalogRepository,
 } from "../infrastructure/db/index.js";
-import { GoatProxyTester, TargetDictionaryProviderRegistry, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
+import { GoatProxyTester, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
@@ -56,6 +56,7 @@ async function main(): Promise<void> {
     const config = loadHttpConfig();
     const admin = loadAdminApiConfig();
     const wordpress = loadWordPressTargetConfig();
+    const telegram = loadTelegramNotificationConfig();
     pool = createPostgresPool();
     const repositories = createPostgresRepositories(pool);
     const providers = new TargetDictionaryProviderRegistry();
@@ -118,7 +119,12 @@ async function main(): Promise<void> {
       : new ExportControlService(exportControlRepository, repositories.jobs);
     const wordpressCatalog = wordpress === null
       ? undefined
-      : new WordPressCatalogService(new PostgresWordPressCatalogRepository(pool), repositories.sources, repositories.targets);
+      : new WordPressCatalogService(
+          new PostgresWordPressCatalogRepository(pool),
+          repositories.sources,
+          repositories.targets,
+          telegram === null ? undefined : new TelegramVariationAutoPauseNotifier(telegram),
+        );
     const contentTemplates = wordpressPreview === undefined
       ? undefined
       : new ContentTemplateAdminService(repositories.contentTemplates, repositories.targets, wordpressPreview, new PostgresUnitOfWork(pool));

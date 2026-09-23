@@ -23,6 +23,7 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
 }
 
 function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "waiting" | "queued" | "paused" | "cycle_completed" | "cycle_started" = "queued") {
+  const pauseNotifier = { notify: vi.fn().mockResolvedValue(undefined) };
   const repository = {
     getActiveVariationSync: vi.fn().mockResolvedValue(current === null ? null : {
       runId: current.id,
@@ -38,14 +39,16 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
     enqueueInventoryReconciliation: vi.fn().mockResolvedValue(undefined),
     recoverOrphanedVariationItems: vi.fn().mockResolvedValue(0),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
+    getRun: vi.fn().mockResolvedValue(current),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;
   const service = new WordPressCatalogService(
     repository,
     {} as SourceRepository,
     {} as TargetRepository,
+    pauseNotifier,
   );
-  return { repository, service };
+  return { repository, service, pauseNotifier };
 }
 
 describe("WordPressCatalogService variation auto-sync", () => {
@@ -112,9 +115,27 @@ describe("WordPressCatalogService variation auto-sync", () => {
   });
 
   it("reports an automatic pause as work", async () => {
-    const value = setup(run(), "paused");
+    const current = run({ variationFailedCount: 3, variationAutoError: "new failures" });
+    const value = setup(current, "paused");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
+    expect(value.pauseNotifier.notify).toHaveBeenCalledWith({ runId: "1", failedCount: 3, error: "new failures" });
+  });
+
+  it("keeps the auto-sync paused when Telegram notification fails", async () => {
+    const logError = vi.fn();
+    const value = setup(run(), "paused");
+    value.pauseNotifier.notify.mockRejectedValue(new Error("network unavailable"));
+    const service = new WordPressCatalogService(
+      value.repository,
+      {} as SourceRepository,
+      {} as TargetRepository,
+      value.pauseNotifier,
+      logError,
+    );
+
+    await expect(service.tickVariationAutoSync()).resolves.toBe(true);
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("network unavailable"));
   });
 
   it("reports a completed cycle as work", async () => {

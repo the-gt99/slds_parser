@@ -10,6 +10,16 @@ import type {
   WordPressCatalogVariationFilter,
 } from "../repositories/index.js";
 
+export interface VariationAutoPauseNotification {
+  readonly runId: string;
+  readonly failedCount: number;
+  readonly error: string | null;
+}
+
+export interface VariationAutoPauseNotifier {
+  notify(notification: VariationAutoPauseNotification): Promise<void>;
+}
+
 export class WordPressCatalogService {
   private static readonly variationSubmitBatchSize = 100;
   private nextCoverageCheckAt = 0;
@@ -18,6 +28,8 @@ export class WordPressCatalogService {
     private readonly repository: WordPressCatalogRepository,
     private readonly sources: SourceRepository,
     private readonly targets: TargetRepository,
+    private readonly pauseNotifier?: VariationAutoPauseNotifier,
+    private readonly logError: (message: string) => void = console.error,
   ) {}
 
   async createRun(input: {
@@ -170,6 +182,20 @@ export class WordPressCatalogService {
     }
     if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize) > 0) return true;
     const outcome = await this.repository.replenishVariationAutoSync();
+    if (outcome === "paused" && active !== null && this.pauseNotifier !== undefined) {
+      try {
+        const pausedRun = await this.repository.getRun(active.runId);
+        if (pausedRun !== null) {
+          await this.pauseNotifier.notify({
+            runId: pausedRun.id,
+            failedCount: pausedRun.variationFailedCount,
+            error: pausedRun.variationAutoError,
+          });
+        }
+      } catch (error) {
+        this.logError(`Failed to send variation auto-sync pause notification: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
     return outcome !== "idle" && outcome !== "waiting";
   }
 

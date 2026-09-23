@@ -1,17 +1,17 @@
 import { CollectionRunner, ExportRunner, ExportSourceRefresher, ExportSourceRefreshRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
-import { loadProcessingConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
+import { loadProcessingConfig, loadTelegramNotificationConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type TelegramNotificationEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
 import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore, S3ImageStore } from "./infrastructure/media/index.js";
 import { CachedTranslationProvider, createTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
-import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
+import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProcessor, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressCatalogClient, WordPressClassificationAssignmentReader, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver, type GoatHttpEnvironment, type GoatProxyPoolEnvironment } from "./integrations/index.js";
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 import { RulesExecution } from "./infrastructure/db/rules-execution.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
-export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment;
+export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment;
 
 export interface ApplicationOptions {
   readonly workerLogError?: (message: string) => void;
@@ -118,8 +118,15 @@ export function createApplication(environment: ApplicationEnvironment = process.
   );
   const runtimeWorkerSettings = new PostgresRuntimeWorkerSettingsRepository(pool);
   const wordpress = loadWordPressTargetConfig(environment);
+  const telegram = loadTelegramNotificationConfig(environment);
   const wordpressCatalog = new PostgresWordPressCatalogRepository(pool);
-  const wordpressCatalogService = new WordPressCatalogService(wordpressCatalog, repositories.sources, repositories.targets);
+  const wordpressCatalogService = new WordPressCatalogService(
+    wordpressCatalog,
+    repositories.sources,
+    repositories.targets,
+    telegram === null ? undefined : new TelegramVariationAutoPauseNotifier(telegram),
+    options.workerLogError ?? console.error,
+  );
   const wordpressCatalogSync = wordpress === null
     ? undefined
     : new WordPressCatalogSyncRunner(wordpressCatalog, new WordPressCatalogClient(wordpress));
