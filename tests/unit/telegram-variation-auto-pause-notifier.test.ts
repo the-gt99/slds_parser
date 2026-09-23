@@ -25,4 +25,16 @@ describe("TelegramVariationAutoPauseNotifier", () => {
     await expect(notifier.notify({ runId: "4", failedCount: 1, error: null }))
       .rejects.toThrow("Telegram sendMessage failed with HTTP 401");
   });
+
+  it("passes the configured proxy dispatcher to Telegram requests", async () => {
+    const request = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const notifier = new TelegramVariationAutoPauseNotifier(
+      { botToken: "token", chatId: "123", proxyUrl: "http://proxy.example:8080" },
+      request,
+    );
+
+    await notifier.notify({ runId: "4", failedCount: 1, error: "failed" });
+
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ dispatcher: expect.any(Object) });
+  });
 });

@@ -1,5 +1,6 @@
 import type { TelegramNotificationConfig } from "../../config/index.js";
 import type { VariationAutoPauseNotification, VariationAutoPauseNotifier } from "../../services/wordpress-catalog-service.js";
+import { fetch, ProxyAgent } from "undici";
 
 type Fetch = typeof fetch;
 
@@ -8,10 +9,14 @@ function oneLine(value: string): string {
 }
 
 export class TelegramVariationAutoPauseNotifier implements VariationAutoPauseNotifier {
+  readonly #proxy: ProxyAgent | undefined;
+
   constructor(
     private readonly config: TelegramNotificationConfig,
     private readonly request: Fetch = fetch,
-  ) {}
+  ) {
+    this.#proxy = config.proxyUrl === undefined ? undefined : new ProxyAgent(config.proxyUrl);
+  }
 
   async notify(notification: VariationAutoPauseNotification): Promise<void> {
     const reason = oneLine(notification.error ?? "причина не указана");
@@ -21,6 +26,7 @@ export class TelegramVariationAutoPauseNotifier implements VariationAutoPauseNot
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: this.config.chatId, text }),
       signal: AbortSignal.timeout(10_000),
+      ...(this.#proxy === undefined ? {} : { dispatcher: this.#proxy }),
     });
     if (!response.ok) throw new Error(`Telegram sendMessage failed with HTTP ${response.status}`);
   }
