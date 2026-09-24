@@ -13,6 +13,8 @@
 
 Нужны `wireguard-tools`, `python3-venv` и `iptables`. Файлы `mitmproxy_addon.py`, `gateway_reconcile.py` и `requirements.txt` устанавливаются в `/opt/slds-shihuo-gateway`, виртуальное окружение — в `/opt/slds-shihuo-gateway/venv`. Сервис mitmproxy работает от отдельного пользователя `slds-shihuo` и слушает только `10.77.0.1:8080`.
 
+`firewall.sh` устанавливается в `/usr/local/sbin/slds-shihuo-firewall` и вызывается из `PostUp`/`PostDown` конфигурации WireGuard. Скрипт использует только выделенные цепочки `SLDS_SHIHUO_*` и не очищает системные цепочки firewall.
+
 Пример `/etc/slds-shihuo-gateway.env`:
 
 ```text
