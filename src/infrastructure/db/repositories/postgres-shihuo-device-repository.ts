@@ -95,11 +95,20 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE shihuo_guest_devices SET
          status=CASE WHEN $2::text='ready' AND $4::text IS NOT NULL THEN 'ready' ELSE status END,
-           diagnostic_stage=CASE WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_stage ELSE $2 END,
-           diagnostic_message=CASE WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_message ELSE $3 END,
+           diagnostic_stage=CASE
+             WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_stage
+             WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_stage
+             ELSE $2
+           END,
+           diagnostic_message=CASE
+             WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_message
+             WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_message
+             ELSE $3
+           END,
          guest_profile_ciphertext=COALESCE($4, guest_profile_ciphertext),
          last_handshake_at=COALESCE($5::timestamptz, last_handshake_at),
-         last_traffic_at=NOW(), last_request_at=CASE WHEN $2 IN ('ready','authorized_request_rejected','profile_incomplete') THEN NOW() ELSE last_request_at END,
+           last_traffic_at=CASE WHEN $5::timestamptz IS NULL THEN NOW() ELSE last_traffic_at END,
+           last_request_at=CASE WHEN $2 IN ('ready','authorized_request_rejected','profile_incomplete') THEN NOW() ELSE last_request_at END,
          updated_at=NOW()
        WHERE wireguard_ip=$1::inet AND status NOT IN ('paused','revoked') RETURNING *`,
       [input.wireguardIp, input.stage, input.message ?? null, ready ? input.profileCiphertext : null, input.handshakeAt ?? null],

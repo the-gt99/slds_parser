@@ -3,13 +3,18 @@ import json, logging, os, time
 from urllib.request import Request, urlopen
 from mitmproxy import http, tls
 
-HOST = "sh-gateway.shihuo.cn"
 SEARCH_PATH = "/v3/sh-api/daga/search/goods/v1"
 PROFILE_FIELDS = ("platform", "app-v", "sk", "luid", "osv", "user-agent")
 AUTH_HEADERS = ("authorization", "sh-token", "sh-id", "cookie", "x-wechat-token", "wechat-token")
 BASE_URL = os.environ["SHIHUO_PARSER_BASE_URL"].rstrip("/")
 TOKEN = os.environ["SHIHUO_GATEWAY_TOKEN"]
 LOG = logging.getLogger("shihuo-capture")
+
+def contains_challenge(value, challenge):
+    expected = challenge.strip().casefold()
+    if isinstance(value, dict): return any(contains_challenge(item, challenge) for item in value.values())
+    if isinstance(value, list): return any(contains_challenge(item, challenge) for item in value)
+    return isinstance(value, (str, int, float)) and str(value).strip().casefold() == expected
 
 class ShihuoGuestCapture:
     def __init__(self): self.peers, self.loaded_at = {}, 0
@@ -34,13 +39,12 @@ class ShihuoGuestCapture:
         address = data.context.client.peername
         if address: self.event(str(address[0]), "certificate_not_trusted")
     def request(self, flow: http.HTTPFlow):
-        if flow.request.pretty_host != HOST: return
+        if flow.request.path.split("?", 1)[0] != SEARCH_PATH or flow.request.method != "POST": return
         ip, peer = self.peer(flow)
         if not ip or not peer: return
-        if flow.request.path.split("?", 1)[0] != SEARCH_PATH or flow.request.method != "POST": self.event(ip, "challenge_not_found"); return
         try: payload = json.loads(flow.request.get_text(strict=True))
         except (ValueError, UnicodeError): self.event(ip, "profile_incomplete", message="Некорректный JSON поискового запроса"); return
-        if peer["challenge"] not in {str(payload.get("keywords", "")), str(payload.get("user_input", ""))}: return
+        if not contains_challenge(payload, peer["challenge"]): self.event(ip, "challenge_not_found"); return
         headers = {key.lower(): value.strip() for key, value in flow.request.headers.items()}
         if any(headers.get(key) for key in AUTH_HEADERS): self.event(ip, "authorized_request_rejected"); return
         profile = {key: headers.get(key, "") for key in PROFILE_FIELDS}; missing = [key for key, value in profile.items() if not value]

@@ -36,6 +36,7 @@ describe("Shihuo guest device onboarding", () => {
     const result = await service.create(" iPhone Андрей ", "admin");
     expect(result.onboardingUrl).toMatch(/^https:\/\/parser\.example\/shihuo\/onboarding\/[A-Za-z0-9_-]+$/u);
     expect(saved?.tokenHash).toMatch(/^[a-f0-9]{64}$/u); expect(saved?.privateKeyCiphertext).not.toContain("client-private");
+    expect(saved?.challenge).toBe("DD1391-100");
     expect(saved?.firstHost).toBe(10); expect(result.item).not.toHaveProperty("wireguardPublicKey");
     expect(wireguard.reconcile).toHaveBeenCalledOnce();
   });
