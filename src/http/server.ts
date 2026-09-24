@@ -890,6 +890,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     shihuoService().acknowledgeCertificate(request.params.token));
   server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/complete", async (request) =>
     shihuoService().acknowledgeCompletion(request.params.token));
+  server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/verify", async (request) =>
+    shihuoService().verify(request.params.token));
   server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/check", async (request) => shihuoService().check(request.params.token));
   server.get("/api/shihuo/gateway/peers", { preHandler: requireShihuoGateway }, async () => shihuoService().gatewayPeers());
   server.post<{ Body: ShihuoGatewayBody }>("/api/shihuo/gateway/events", { preHandler: requireShihuoGateway }, async (request) => shihuoService().gatewayEvent(request.body));

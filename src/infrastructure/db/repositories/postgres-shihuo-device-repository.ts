@@ -17,7 +17,7 @@ function mapDevice(row: DatabaseRow): ShihuoDeviceRecord {
     diagnosticStage: row.diagnostic_stage as ShihuoDiagnosticStage,
     diagnosticMessage: row.diagnostic_message == null ? null : String(row.diagnostic_message),
     lastHandshakeAt: timestamp(row.last_handshake_at), lastTrafficAt: timestamp(row.last_traffic_at),
-    lastRequestAt: timestamp(row.last_request_at), certificateAcknowledgedAt: timestamp(row.certificate_acknowledged_at),
+    lastRequestAt: timestamp(row.last_request_at), lastVerificationAt: timestamp(row.last_verification_at), certificateAcknowledgedAt: timestamp(row.certificate_acknowledged_at),
     completionAcknowledgedAt: timestamp(row.completion_acknowledged_at), createdAt: timestamp(row.created_at) ?? "",
     updatedAt: timestamp(row.updated_at) ?? "", revokedAt: timestamp(row.revoked_at),
   };
@@ -125,33 +125,42 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
   }
 
   async recordGatewayEvent(input: Parameters<ShihuoDeviceRepository["recordGatewayEvent"]>[0]): Promise<ShihuoDeviceRecord | null> {
-    const ready = input.stage === "ready" && input.profileCiphertext !== undefined;
+    const captured = input.stage === "profile_captured" && input.profileCiphertext !== undefined;
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE shihuo_guest_devices SET
-         status=CASE WHEN $2::text='ready' AND $4::text IS NOT NULL THEN 'ready' ELSE status END,
            diagnostic_stage=CASE
              WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_stage
              WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_stage
-             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_stage
-             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_stage
+             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','profile_captured','ready') THEN diagnostic_stage
+             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','profile_captured','ready') THEN diagnostic_stage
              ELSE $2
            END,
            diagnostic_message=CASE
              WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_message
              WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_message
-             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_message
-             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_message
+             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','profile_captured','ready') THEN diagnostic_message
+             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','profile_captured','ready') THEN diagnostic_message
              ELSE $3
            END,
          guest_profile_ciphertext=COALESCE($4, guest_profile_ciphertext),
          last_handshake_at=COALESCE($5::timestamptz, last_handshake_at),
            last_traffic_at=CASE WHEN $5::timestamptz IS NULL THEN NOW() ELSE last_traffic_at END,
-           last_request_at=CASE WHEN $2 IN ('ready','authorized_request_rejected','profile_incomplete') THEN NOW() ELSE last_request_at END,
+           last_request_at=CASE WHEN $2 IN ('profile_captured','authorized_request_rejected','profile_incomplete') THEN NOW() ELSE last_request_at END,
          updated_at=NOW()
        WHERE wireguard_ip=$1::inet AND status NOT IN ('paused','revoked') RETURNING *`,
-      [input.wireguardIp, input.stage, input.message ?? null, ready ? input.profileCiphertext : null, input.handshakeAt ?? null],
+      [input.wireguardIp, input.stage, input.message ?? null, captured ? input.profileCiphertext : null, input.handshakeAt ?? null],
     );
     return result.rows[0] ? mapDevice(result.rows[0]) : null;
+  }
+
+  async recordVerification(id: EntityId, success: boolean, message?: string): Promise<ShihuoDeviceRecord> {
+    const result = await this.executor.query<DatabaseRow>(
+      `UPDATE shihuo_guest_devices SET status=CASE WHEN $2 THEN 'ready' ELSE 'onboarding' END,
+       diagnostic_stage=CASE WHEN $2 THEN 'ready' ELSE 'verification_failed' END,
+       diagnostic_message=$3, last_verification_at=NOW(), updated_at=NOW()
+       WHERE id=$1 AND status NOT IN ('paused','revoked') RETURNING *`, [id, success, message ?? null],
+    );
+    return mapDevice(requireRow(result.rows, "Shihuo device", id));
   }
 
   async delete(id: EntityId): Promise<void> {

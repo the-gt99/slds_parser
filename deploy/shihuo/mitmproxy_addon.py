@@ -71,6 +71,6 @@ class ShihuoGuestCapture:
         headers = {key.lower(): value.strip() for key, value in flow.request.headers.items()}
         profile = {key: headers.get(key, "") for key in PROFILE_FIELDS}; missing = [key for key, value in profile.items() if not value]
         if missing: self.event(ip, "profile_incomplete", message="Отсутствуют поля: " + ", ".join(missing)); return
-        self.event(ip, "ready", profile=profile); LOG.info("Forwarded guest profile for device_id=%s", peer["id"])
+        self.event(ip, "profile_captured", profile=profile); LOG.info("Forwarded guest profile for device_id=%s", peer["id"])
 
 addons = [ShihuoGuestCapture()]

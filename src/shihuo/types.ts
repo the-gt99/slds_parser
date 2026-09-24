@@ -2,7 +2,8 @@ import type { EntityId } from "../contracts/index.js";
 
 export type ShihuoDeviceStatus = "onboarding" | "ready" | "paused" | "revoked" | "error";
 export type ShihuoDiagnosticStage = "wireguard_not_connected" | "traffic_not_seen" | "certificate_not_trusted"
-  | "certificate_trusted" | "challenge_not_found" | "authorized_request_rejected" | "profile_incomplete" | "ready" | "paused" | "revoked" | "error";
+  | "certificate_trusted" | "challenge_not_found" | "authorized_request_rejected" | "profile_incomplete"
+  | "profile_captured" | "verification_in_progress" | "verification_failed" | "ready" | "paused" | "revoked" | "error";
 
 export interface ShihuoGuestProfile {
   readonly platform: string;
@@ -29,6 +30,7 @@ export interface ShihuoDeviceRecord {
   readonly lastHandshakeAt: string | null;
   readonly lastTrafficAt: string | null;
   readonly lastRequestAt: string | null;
+  readonly lastVerificationAt: string | null;
   readonly certificateAcknowledgedAt: string | null;
   readonly completionAcknowledgedAt: string | null;
   readonly createdAt: string;
@@ -49,6 +51,7 @@ export interface ShihuoDeviceRepository {
   acknowledgeCompletion(id: EntityId): Promise<ShihuoDeviceRecord>;
   updateHandshake(publicKey: string, handshakeAt: string | null): Promise<void>;
   recordGatewayEvent(input: { readonly wireguardIp: string; readonly stage: ShihuoDiagnosticStage; readonly message?: string | null; readonly profileCiphertext?: string; readonly handshakeAt?: string }): Promise<ShihuoDeviceRecord | null>;
+  recordVerification(id: EntityId, success: boolean, message?: string): Promise<ShihuoDeviceRecord>;
   delete(id: EntityId): Promise<void>;
   audit(input: { readonly deviceId: EntityId | null; readonly action: string; readonly actor: string; readonly payload?: Record<string, unknown> }): Promise<void>;
 }

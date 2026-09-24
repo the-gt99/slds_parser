@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Настройка Shihuo</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <script type="module" src="/assets/shihuo-onboarding.js?v=20260924-2"></script>
+  <script type="module" src="/assets/shihuo-onboarding.js?v=20260924-3"></script>
 </head>
 <body>
 <main class="admin-page shihuo-onboarding">
@@ -14,6 +14,12 @@
     <h1>Подключение устройства Shihuo</h1>
     <p id="device-name" class="muted">Загрузка...</p>
     <div id="progress" class="shihuo-progress" hidden><span id="progress-label"></span></div>
+    <nav class="shihuo-step-nav" aria-label="Шаги настройки">
+      <button type="button" data-onboarding-step="certificate">1</button><button type="button" data-onboarding-step="wireguard">2</button>
+      <button type="button" data-onboarding-step="trust">3</button><button type="button" data-onboarding-step="search">4</button>
+      <button type="button" data-onboarding-step="verify">5</button>
+    </nav>
+    <button id="current-step" class="button quiet" type="button" hidden>Вернуться к текущему шагу</button>
     <div id="fatal" class="product-message error" hidden></div>
   </section>
 
@@ -26,6 +32,7 @@
       <li>Откройте «Настройки → Основные → Об этом устройстве → Доверие сертификатам» и включите полное доверие сертификату SLDS Shihuo CA.</li>
     </ol>
     <details><summary>Инструкция для Android</summary><p>Откройте скачанный сертификат и установите его как CA-сертификат для VPN и приложений. Названия пунктов зависят от производителя.</p></details>
+    <p><strong>После установки вернитесь на эту страницу</strong> и нажмите кнопку:</p>
     <p><button id="certificate-next" class="button primary">Сертификат установлен</button></p>
   </section>
 
@@ -34,13 +41,13 @@
     <p><a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener">WireGuard для iPhone</a> · <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener">WireGuard для Android</a></p>
     <img id="wg-qr" class="shihuo-wg-qr" alt="QR-код WireGuard">
     <p><a id="config-link" class="button secondary">Скачать конфигурацию</a></p>
-    <p>Добавьте туннель по QR-коду или из файла и включите его. Страница сама увидит подключение.</p>
+    <p>Добавьте туннель по QR-коду или из файла и включите его. <strong>Затем вернитесь на эту страницу</strong> — она увидит подключение автоматически.</p>
     <div class="shihuo-wait"><span class="shihuo-spinner"></span><span>Ожидаем подключение VPN…</span></div>
   </section>
 
   <section id="step-trust" class="section shihuo-step" hidden>
     <h2>3. Проверяем сертификат</h2>
-    <p>Не закрывайте страницу. Проверка выполняется автоматически через подключённый VPN.</p>
+    <p>Если вы открывали настройки доверия, <strong>вернитесь на эту страницу</strong>. Проверка выполняется здесь автоматически через подключённый VPN.</p>
     <div class="shihuo-wait"><span class="shihuo-spinner"></span><span>Проверяем полное доверие сертификату…</span></div>
     <div id="trust-help" class="product-message" hidden>Если проверка не проходит, убедитесь, что для SLDS Shihuo CA включено полное доверие, затем вернитесь сюда.</div>
   </section>
@@ -50,7 +57,15 @@
     <p><a id="ios-link" target="_blank" rel="noopener">Shihuo в App Store</a> · <a id="android-link" target="_blank" rel="noopener">официальная страница Android</a></p>
     <p><strong>Не входите в аккаунт.</strong> Найдите товар по реальному артикулу:</p>
     <p class="shihuo-search-row"><code id="challenge"></code> <button id="copy" class="button quiet">Копировать</button></p>
+    <p><strong>После появления результатов вернитесь на эту страницу.</strong></p>
     <div class="shihuo-wait"><span class="shihuo-spinner"></span><span id="search-status">Ожидаем поисковый запрос…</span></div>
+  </section>
+
+  <section id="step-verify" class="section shihuo-step" hidden>
+    <h2>5. Проверяем запрос к Shihuo</h2>
+    <p>Сервер создаёт свежую подпись из сохранённого гостевого профиля и выполняет реальный контрольный поиск.</p>
+    <div class="shihuo-wait"><span class="shihuo-spinner"></span><span id="verify-status">Подготавливаем контрольный запрос…</span></div>
+    <p><button id="verify-retry" class="button secondary" type="button" hidden>Повторить проверку</button></p>
   </section>
 
   <section id="step-complete" class="section shihuo-step shihuo-complete" hidden>

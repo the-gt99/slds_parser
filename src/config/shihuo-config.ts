@@ -11,6 +11,9 @@ export interface ShihuoEnvironment {
   readonly SHIHUO_GATEWAY_TOKEN_HASH?: string;
   readonly SHIHUO_APP_IOS_URL?: string;
   readonly SHIHUO_APP_ANDROID_URL?: string;
+  readonly SHIHUO_SIGNER_PYTHON?: string;
+  readonly SHIHUO_SIGNER_SCRIPT?: string;
+  readonly SHIHUO_SIGNER_ASSET_DIR?: string;
 }
 
 export interface ShihuoConfig {
@@ -26,6 +29,9 @@ export interface ShihuoConfig {
   readonly gatewayTokenHash: string;
   readonly iosAppUrl: string;
   readonly androidAppUrl: string;
+  readonly signerPython: string;
+  readonly signerScript: string;
+  readonly signerAssetDirectory: string;
 }
 
 export function loadShihuoConfig(environment: ShihuoEnvironment = process.env): ShihuoConfig | null {
@@ -51,5 +57,7 @@ export function loadShihuoConfig(environment: ShihuoEnvironment = process.env): 
     gatewayTokenHash,
     iosAppUrl: environment.SHIHUO_APP_IOS_URL?.trim() || "https://apps.apple.com/cn/app/id875177200",
     androidAppUrl: environment.SHIHUO_APP_ANDROID_URL?.trim() || "https://www.shihuo.cn/app/",
+    signerPython: required("SHIHUO_SIGNER_PYTHON"), signerScript: required("SHIHUO_SIGNER_SCRIPT"),
+    signerAssetDirectory: required("SHIHUO_SIGNER_ASSET_DIR"),
   };
 }

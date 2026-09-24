@@ -7,6 +7,8 @@ import type { ShihuoConfig } from "../config/index.js";
 import { PermanentError } from "../core/errors/index.js";
 import { ShihuoSecretCrypto } from "./secret-crypto.js";
 import type { ShihuoDeviceRecord, ShihuoDeviceRepository, ShihuoDeviceStatus } from "./types.js";
+import type { ShihuoGuestProfile } from "./types.js";
+import type { ShihuoSearchVerifier } from "./search-verifier.js";
 import type { WireGuardManager } from "./wireguard-manager.js";
 
 const tokenHash = (token: string): string => createHash("sha256").update(token).digest("hex");
@@ -15,6 +17,7 @@ export interface ShihuoAdminDevice {
   readonly id: EntityId; readonly name: string; readonly status: ShihuoDeviceStatus; readonly wireguardIp: string;
   readonly diagnosticStage: string; readonly diagnosticMessage: string | null; readonly createdAt: string;
   readonly updatedAt: string; readonly lastHandshakeAt: string | null; readonly lastRequestAt: string | null;
+  readonly lastVerificationAt: string | null;
   readonly onboardingExpiresAt: string | null; readonly hasProfile: boolean;
 }
 
@@ -22,12 +25,14 @@ function publicDevice(record: ShihuoDeviceRecord): ShihuoAdminDevice {
   return { id: record.id, name: record.name, status: record.status, wireguardIp: record.wireguardIp,
     diagnosticStage: record.diagnosticStage, diagnosticMessage: record.diagnosticMessage, createdAt: record.createdAt,
     updatedAt: record.updatedAt, lastHandshakeAt: record.lastHandshakeAt, lastRequestAt: record.lastRequestAt,
+    lastVerificationAt: record.lastVerificationAt,
     onboardingExpiresAt: record.onboardingExpiresAt, hasProfile: record.guestProfileCiphertext !== null };
 }
 
 export class ShihuoGuestDeviceService {
   constructor(private readonly repository: ShihuoDeviceRepository, private readonly crypto: ShihuoSecretCrypto,
-    private readonly wireguard: WireGuardManager, private readonly config: ShihuoConfig, private readonly now = () => new Date()) {}
+    private readonly wireguard: WireGuardManager, private readonly config: ShihuoConfig, private readonly verifier: ShihuoSearchVerifier,
+    private readonly now = () => new Date()) {}
 
   async list(): Promise<readonly ShihuoAdminDevice[]> { return (await this.repository.list()).map(publicDevice); }
 
@@ -48,11 +53,11 @@ export class ShihuoGuestDeviceService {
   async gatewayEvent(value: unknown) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) throw new PermanentError("Gateway event must be an object", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
     const body = value as Record<string, unknown>; const wireguardIp = typeof body.wireguardIp === "string" ? body.wireguardIp : "";
-    const allowedStages = ["traffic_not_seen", "certificate_not_trusted", "certificate_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "ready"] as const;
+    const allowedStages = ["traffic_not_seen", "certificate_not_trusted", "certificate_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "profile_captured"] as const;
     const stage = allowedStages.find((candidate) => candidate === body.stage);
     if (!/^10\.77\.0\.\d{1,3}$/u.test(wireguardIp) || stage === undefined) throw new PermanentError("Gateway event is invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
     let profileCiphertext: string | undefined;
-    if (stage === "ready") {
+    if (stage === "profile_captured") {
       if (body.profile === null || typeof body.profile !== "object" || Array.isArray(body.profile)) throw new PermanentError("Guest profile is required", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
       const profile = body.profile as Record<string, unknown>; const keys = ["platform", "app-v", "sk", "luid", "osv", "user-agent"] as const;
       if (Object.keys(profile).length !== keys.length || keys.some((key) => typeof profile[key] !== "string" || !(profile[key] as string))) throw new PermanentError("Guest profile fields are invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
@@ -116,6 +121,8 @@ export class ShihuoGuestDeviceService {
       diagnosticMessage: record.diagnosticMessage, expiresAt: record.onboardingExpiresAt, iosAppUrl: this.config.iosAppUrl,
       androidAppUrl: this.config.androidAppUrl, lastHandshakeAt: record.lastHandshakeAt, lastRequestAt: record.lastRequestAt,
       wireguardConnected,
+      profileCaptured: record.guestProfileCiphertext !== null,
+      lastVerificationAt: record.lastVerificationAt,
       certificateAcknowledged: record.certificateAcknowledgedAt !== null,
       completionAcknowledged: record.completionAcknowledgedAt !== null };
   }
@@ -134,6 +141,25 @@ export class ShihuoGuestDeviceService {
     if (record.completionAcknowledgedAt === null) await this.repository.audit({ deviceId: record.id, action: "onboarding_complete", actor: "onboarding" });
     await this.wireguard.reconcile();
     return { completed: updated.completionAcknowledgedAt !== null };
+  }
+
+  async verify(token: string) {
+    const record = await this.validToken(token);
+    if (record.guestProfileCiphertext === null) throw new PermanentError("Shihuo guest profile has not been captured", { code: "INVALID_SHIHUO_DEVICE_STATE" });
+    let profile: ShihuoGuestProfile;
+    try { profile = JSON.parse(this.crypto.decrypt(record.guestProfileCiphertext)) as ShihuoGuestProfile; }
+    catch { throw new PermanentError("Shihuo guest profile cannot be read", { code: "SHIHUO_VERIFICATION_FAILED" }); }
+    try {
+      const result = await this.verifier.verify(profile, record.challenge);
+      await this.repository.recordVerification(record.id, true);
+      await this.repository.audit({ deviceId: record.id, action: "profile_verified", actor: "onboarding", payload: { httpStatus: result.httpStatus, goodsCount: result.goodsCount } });
+      return { verified: true, goodsCount: result.goodsCount };
+    } catch {
+      const message = "Тестовый запрос к Shihuo не прошёл. Повторите проверку позже.";
+      await this.repository.recordVerification(record.id, false, message);
+      await this.repository.audit({ deviceId: record.id, action: "profile_verification_failed", actor: "onboarding" });
+      return { verified: false, message };
+    }
   }
 
   async configuration(token: string): Promise<string> {
@@ -161,6 +187,8 @@ export class ShihuoGuestDeviceService {
       challenge_not_found: "Shihuo работает через VPN, но проверочный поиск ещё не найден.",
       authorized_request_rejected: "Обнаружена авторизованная сессия. Выйдите из аккаунта Shihuo и повторите поиск.",
       profile_incomplete: "Запрос найден, но обязательные поля гостевого профиля отсутствуют.", error: "Настройку не удалось проверить.",
+      profile_captured: "Гостевой профиль получен. Ожидается тестовый запрос к Shihuo.",
+      verification_failed: "Тестовый запрос к Shihuo не прошёл.",
       paused: "Устройство приостановлено.", revoked: "Устройство отозвано.",
     };
     return { ready: false, status: record.status, stage: record.diagnosticStage,

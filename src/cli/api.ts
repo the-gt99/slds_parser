@@ -25,7 +25,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ShihuoGuestDeviceService, ShihuoSecretCrypto, SystemWireGuardManager } from "../shihuo/index.js";
+import { ShihuoGuestDeviceService, ShihuoSecretCrypto, SignedShihuoSearchVerifier, SystemWireGuardManager } from "../shihuo/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
@@ -137,6 +137,7 @@ async function main(): Promise<void> {
     const shihuo = shihuoConfig === null ? undefined : new ShihuoGuestDeviceService(
       new PostgresShihuoDeviceRepository(pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
       new SystemWireGuardManager(shihuoConfig.wgCommand, shihuoConfig.reconcileService), shihuoConfig,
+      new SignedShihuoSearchVerifier({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
     );
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
