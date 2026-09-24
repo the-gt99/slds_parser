@@ -261,6 +261,7 @@ interface LoginBody { readonly username?: unknown; readonly password?: unknown }
 interface ShihuoDeviceParams { readonly deviceId: string }
 interface ShihuoTokenParams { readonly token: string }
 interface ShihuoCreateBody { readonly name?: unknown }
+interface ShihuoGatewayBody { readonly [key: string]: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
 interface ProxyBody {
@@ -801,6 +802,9 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (dependencies.shihuo === undefined) throw new HttpInputError("Shihuo device management is not configured");
     return dependencies.shihuo;
   };
+  const requireShihuoGateway = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (!shihuoService().gatewayAuthorized(request.headers.authorization)) await reply.code(401).send({ error: "unauthorized" });
+  };
 
   registerStaticUi(server);
 
@@ -883,6 +887,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/ca", async (request, reply) =>
     reply.header("Content-Disposition", "attachment; filename=slds-shihuo-ca.cer").type("application/x-x509-ca-cert").send(await shihuoService().certificate(request.params.token)));
   server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/check", async (request) => shihuoService().check(request.params.token));
+  server.get("/api/shihuo/gateway/peers", { preHandler: requireShihuoGateway }, async () => shihuoService().gatewayPeers());
+  server.post<{ Body: ShihuoGatewayBody }>("/api/shihuo/gateway/events", { preHandler: requireShihuoGateway }, async (request) => shihuoService().gatewayEvent(request.body));
 
   server.get<{ Querystring: QueueQuery }>("/api/classifier/queue", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);

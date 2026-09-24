@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import QRCode from "qrcode";
 
@@ -30,6 +30,38 @@ export class ShihuoGuestDeviceService {
     private readonly wireguard: WireGuardManager, private readonly config: ShihuoConfig, private readonly now = () => new Date()) {}
 
   async list(): Promise<readonly ShihuoAdminDevice[]> { return (await this.repository.list()).map(publicDevice); }
+
+  gatewayAuthorized(value: string | undefined): boolean {
+    const token = /^Bearer\s+(.+)$/iu.exec(value ?? "")?.[1]?.trim();
+    if (!token) return false;
+    const actual = Buffer.from(tokenHash(token), "hex");
+    const expected = Buffer.from(this.config.gatewayTokenHash, "hex");
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  }
+
+  async gatewayPeers() {
+    return { items: (await this.repository.list()).filter((item) => item.status !== "paused" && item.status !== "revoked").map((item) => ({
+      id: item.id, publicKey: item.wireguardPublicKey, wireguardIp: item.wireguardIp, challenge: item.challenge,
+    })) };
+  }
+
+  async gatewayEvent(value: unknown) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new PermanentError("Gateway event must be an object", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
+    const body = value as Record<string, unknown>; const wireguardIp = typeof body.wireguardIp === "string" ? body.wireguardIp : "";
+    const allowedStages = ["traffic_not_seen", "certificate_not_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "ready"] as const;
+    const stage = allowedStages.find((candidate) => candidate === body.stage);
+    if (!/^10\.77\.0\.\d{1,3}$/u.test(wireguardIp) || stage === undefined) throw new PermanentError("Gateway event is invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
+    let profileCiphertext: string | undefined;
+    if (stage === "ready") {
+      if (body.profile === null || typeof body.profile !== "object" || Array.isArray(body.profile)) throw new PermanentError("Guest profile is required", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
+      const profile = body.profile as Record<string, unknown>; const keys = ["platform", "app-v", "sk", "luid", "osv", "user-agent"] as const;
+      if (Object.keys(profile).length !== keys.length || keys.some((key) => typeof profile[key] !== "string" || !(profile[key] as string))) throw new PermanentError("Guest profile fields are invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
+      profileCiphertext = this.crypto.encrypt(JSON.stringify(Object.fromEntries(keys.map((key) => [key, profile[key]]))));
+    }
+    const handshakeAt = typeof body.handshakeAt === "number" && Number.isSafeInteger(body.handshakeAt) && body.handshakeAt > 0 ? new Date(body.handshakeAt * 1_000).toISOString() : undefined;
+    const item = await this.repository.recordGatewayEvent({ wireguardIp, stage, ...(typeof body.message === "string" ? { message: body.message.slice(0, 200) } : {}), ...(profileCiphertext ? { profileCiphertext } : {}), ...(handshakeAt ? { handshakeAt } : {}) });
+    return { accepted: item !== null };
+  }
 
   private issueToken(): { token: string; hash: string; expiresAt: string } {
     const token = randomBytes(32).toString("base64url");

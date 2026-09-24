@@ -43,6 +43,7 @@ export interface ShihuoDeviceRepository {
   setStatus(id: EntityId, status: ShihuoDeviceStatus, stage: ShihuoDiagnosticStage): Promise<ShihuoDeviceRecord>;
   clearPrivateKey(id: EntityId): Promise<void>;
   updateHandshake(publicKey: string, handshakeAt: string | null): Promise<void>;
+  recordGatewayEvent(input: { readonly wireguardIp: string; readonly stage: ShihuoDiagnosticStage; readonly message?: string | null; readonly profileCiphertext?: string; readonly handshakeAt?: string }): Promise<ShihuoDeviceRecord | null>;
   delete(id: EntityId): Promise<void>;
   audit(input: { readonly deviceId: EntityId | null; readonly action: string; readonly actor: string; readonly payload?: Record<string, unknown> }): Promise<void>;
 }

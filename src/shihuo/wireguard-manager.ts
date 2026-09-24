@@ -19,12 +19,12 @@ function run(command: string, args: readonly string[], stdin?: string): Promise<
 }
 
 export class SystemWireGuardManager implements WireGuardManager {
-  constructor(private readonly wgCommand = "wg", private readonly reconcileService = "slds-shihuo-wireguard-reconcile.service") {}
+  constructor(private readonly wgCommand = "wg", private readonly reconcileService = "") {}
   async generateKeyPair() {
     const privateKey = await run(this.wgCommand, ["genkey"]);
     const publicKey = await run(this.wgCommand, ["pubkey"], `${privateKey}\n`);
     if (!privateKey || !publicKey) throw new Error("WireGuard returned an empty key");
     return { privateKey, publicKey };
   }
-  async reconcile(): Promise<void> { await run("systemctl", ["start", this.reconcileService]); }
+  async reconcile(): Promise<void> { if (this.reconcileService) await run("systemctl", ["start", this.reconcileService]); }
 }

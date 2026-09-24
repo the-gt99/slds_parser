@@ -1,23 +1,34 @@
-# Shihuo guest devices
+# Shihuo gateway
 
-Секреты и runtime-конфигурация не входят в репозиторий. На сервере должны быть установлены `wireguard-tools`, `python3-venv`, `iptables` и Node.js 22.
+На сервере сайта работает только сетевой шлюз: выделенный WireGuard-интерфейс, transparent mitmproxy и синхронизация peers с API парсера. PostgreSQL, профили устройств и другие данные парсера на этом сервере не хранятся.
 
-1. Создать `/etc/wireguard/private.key` командой `umask 077; wg genkey > /etc/wireguard/private.key` и получить public key через `wg pubkey` без вывода private key.
-2. Создать root-only `/etc/wireguard/wg0.conf` с адресом `10.77.0.1/24`, UDP-портом `51820`, сохранённым private key и `SaveConfig = false`.
-3. Включить IPv4 forwarding. В firewall разрешить UDP/51820, DNS из `wg0`, TCP/80 и TCP/443 из `wg0`; запретить `wg0 → wg0` и другие исходящие протоколы.
-4. Перенаправить TCP/80 и TCP/443, пришедшие через `wg0`, в transparent mitmproxy на порт 8080. Порт 8080 с внешних интерфейсов должен быть запрещён.
-5. Создать `/srv/slds-parser/venv-shihuo`, установить зависимости из `requirements.txt`; каталог `/srv/slds-parser/state/mitmproxy` должен принадлежать `slds-parser` и иметь режим `0700`.
-6. Первый локальный запуск mitmproxy создаёт CA. Private key остаётся только в runtime-каталоге с режимом `0600`; публичный `.cer` задаётся через `SHIHUO_CA_CERT_PATH`.
-7. Установить systemd units и polkit rule из `deploy/`, применить миграции, собрать приложение, затем включить `wg-quick@wg0`, `slds-shihuo-mitmproxy` и reconcile timer.
+## Разделение секретов
 
-Пример firewall-логики (интерфейс выхода следует определить на сервере):
+- `/etc/wireguard/private.key` содержит private key сервера WireGuard.
+- `/etc/slds-shihuo-gateway.env` содержит случайный `SHIHUO_GATEWAY_TOKEN` и доступен только root.
+- Парсер получает только SHA-256 отпечаток этого токена в `SHIHUO_GATEWAY_TOKEN_HASH`.
+- Private key CA остаётся в `/var/lib/slds-shihuo/mitmproxy`; на парсер копируется только публичный `mitmproxy-ca-cert.cer`.
+
+## Runtime шлюза
+
+Нужны `wireguard-tools`, `python3-venv` и `iptables`. Файлы `mitmproxy_addon.py`, `gateway_reconcile.py` и `requirements.txt` устанавливаются в `/opt/slds-shihuo-gateway`, виртуальное окружение — в `/opt/slds-shihuo-gateway/venv`. Сервис mitmproxy работает от отдельного пользователя `slds-shihuo` и слушает только `10.77.0.1:8080`.
+
+Пример `/etc/slds-shihuo-gateway.env`:
 
 ```text
-iptables -A FORWARD -i wg0 -o wg0 -j REJECT
-iptables -A FORWARD -i wg0 -p udp --dport 53 -j ACCEPT
-iptables -A FORWARD -i wg0 -p tcp -m multiport --dports 80,443,53 -j ACCEPT
-iptables -A FORWARD -i wg0 -j REJECT
-iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 80,443 -j REDIRECT --to-ports 8080
+SHIHUO_PARSER_BASE_URL=https://parser.example
+SHIHUO_GATEWAY_TOKEN=<случайный секрет>
+SHIHUO_WIREGUARD_INTERFACE=wg0
 ```
 
-Правила необходимо сделать идемпотентными и сохранить штатным механизмом дистрибутива. PostgreSQL, порт 8080 и любые control-интерфейсы наружу не публикуются.
+`wg0` использует адрес `10.77.0.1/24`, UDP-порт `51820` и `SaveConfig = false`. Firewall должен:
+
+- разрешать UDP/51820 на внешнем интерфейсе;
+- запрещать обмен трафиком между клиентами `wg0`;
+- перенаправлять TCP/80 и TCP/443 из `wg0` на `10.77.0.1:8080`;
+- разрешать из `wg0` только DNS наружу; QUIC/UDP 443 не разрешать, чтобы приложение использовало перехватываемый TCP;
+- делать MASQUERADE только для `10.77.0.0/24` на внешнем интерфейсе.
+
+После первого запуска mitmproxy создаёт CA. Затем публичный `.cer` передаётся парсеру, а его путь задаётся через `SHIHUO_CA_CERT_PATH`. На парсере также задаются public key WireGuard шлюза, endpoint шлюза и hash токена. После этого включаются `slds-shihuo-mitmproxy.service` и `slds-shihuo-wireguard-reconcile.timer`.
+
+Addon принимает только гостевой поисковый запрос к `sh-gateway.shihuo.cn/v3/sh-api/daga/search/goods/v1`, отклоняет запросы с признаками авторизации, оставляет ровно шесть разрешённых полей и сразу отправляет их по HTTPS на парсер. Локальные файлы и база данных для профилей не используются.

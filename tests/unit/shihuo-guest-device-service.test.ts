@@ -4,7 +4,7 @@ import { ShihuoGuestDeviceService, ShihuoSecretCrypto, type ShihuoDeviceRecord, 
 const key = Buffer.alloc(32, 7).toString("base64");
 const config = { onboardingBaseUrl: "https://parser.example", endpoint: "parser.example:51820", serverPublicKey: "server-public",
   subnet: "10.77.0.0/24", dns: "1.1.1.1", caCertificatePath: "unused", onboardingTtlHours: 24, wgCommand: "wg",
-  reconcileService: "reconcile.service", iosAppUrl: "https://apps.apple.com/app/id875177200", androidAppUrl: "https://www.shihuo.cn/app/" };
+  reconcileService: "", gatewayTokenHash: "961d5cf1ff56cd36374aee671429d741ba0b1207f6935d68e1df9f167e3c3d2e", iosAppUrl: "https://apps.apple.com/app/id875177200", androidAppUrl: "https://www.shihuo.cn/app/" };
 
 function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord {
   return { id: "1", name: "iPhone Андрей", status: "onboarding", wireguardPublicKey: "client-public", wireguardIp: "10.77.0.10",
@@ -15,6 +15,12 @@ function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord
 }
 
 describe("Shihuo guest device onboarding", () => {
+  it("authorizes the gateway by a timing-safe token hash comparison", () => {
+    const service = new ShihuoGuestDeviceService({} as never, new ShihuoSecretCrypto(key), {} as never, config);
+    expect(service.gatewayAuthorized("Bearer gateway-token-with-at-least-32-characters")).toBe(true);
+    expect(service.gatewayAuthorized("Bearer wrong-token")).toBe(false);
+  });
+
   it("encrypts secrets with authenticated encryption", () => {
     const crypto = new ShihuoSecretCrypto(key); const encrypted = crypto.encrypt('{"sk":"secret"}');
     expect(encrypted).not.toContain("secret"); expect(crypto.decrypt(encrypted)).toBe('{"sk":"secret"}');
@@ -32,6 +38,16 @@ describe("Shihuo guest device onboarding", () => {
     expect(saved?.tokenHash).toMatch(/^[a-f0-9]{64}$/u); expect(saved?.privateKeyCiphertext).not.toContain("client-private");
     expect(saved?.firstHost).toBe(10); expect(result.item).not.toHaveProperty("wireguardPublicKey");
     expect(wireguard.reconcile).toHaveBeenCalledOnce();
+  });
+
+  it("accepts only the six guest profile fields from a gateway event", async () => {
+    const crypto = new ShihuoSecretCrypto(key); let event: Parameters<ShihuoDeviceRepository["recordGatewayEvent"]>[0] | undefined;
+    const repository = { recordGatewayEvent: vi.fn(async (input) => { event = input; return record({ status: "ready" }); }) } as unknown as ShihuoDeviceRepository;
+    const service = new ShihuoGuestDeviceService(repository, crypto, {} as never, config);
+    const profile = { platform: "ios", "app-v": "7.6.0", sk: "guest", luid: "device", osv: "18.0", "user-agent": "shihuo" };
+    await expect(service.gatewayEvent({ wireguardIp: "10.77.0.10", stage: "ready", profile })).resolves.toEqual({ accepted: true });
+    expect(JSON.parse(crypto.decrypt(event?.profileCiphertext ?? ""))).toEqual(profile);
+    await expect(service.gatewayEvent({ wireguardIp: "10.77.0.10", stage: "ready", profile: { ...profile, cookie: "secret" } })).rejects.toThrow("Guest profile fields are invalid");
   });
 
   it("builds a full-tunnel WireGuard configuration from encrypted client material", async () => {
