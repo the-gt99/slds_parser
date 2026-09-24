@@ -7,6 +7,7 @@ from mitmproxy import http, tls
 SEARCH_PATH = "/v3/sh-api/daga/search/goods/v1"
 CERT_CHECK_PATH = "/slds-shihuo-ca-check"
 CERT_CHECK_HOST = "195.161.68.104"
+ONBOARDING_API_PREFIX = "/api/shihuo/onboarding/"
 PROFILE_FIELDS = ("platform", "app-v", "sk", "luid", "osv", "user-agent")
 AUTH_HEADERS = ("authorization", "sh-token", "sh-id", "cookie", "x-wechat-token", "wechat-token")
 BASE_URL = os.environ["SHIHUO_PARSER_BASE_URL"].rstrip("/")
@@ -50,6 +51,10 @@ class ShihuoGuestCapture:
             self.event(str(address[0]), "certificate_not_trusted")
     def request(self, flow: http.HTTPFlow):
         path = flow.request.path.split("?", 1)[0]
+        if flow.request.host == CERT_CHECK_HOST and path.startswith(ONBOARDING_API_PREFIX):
+            ip, peer = self.peer(flow)
+            if ip and peer: self.event(ip, "certificate_trusted")
+            return
         if flow.request.host == CERT_CHECK_HOST and path == CERT_CHECK_PATH:
             ip, peer = self.peer(flow)
             if not ip or not peer: return
