@@ -21,6 +21,10 @@ def contains_challenge(value, challenge):
     actual = re.sub(r"[^0-9a-z]+", "", str(value).casefold())
     return bool(expected) and expected in actual
 
+def is_encrypted_search_payload(value):
+    return (isinstance(value, dict) and set(value) == {"data"}
+            and isinstance(value["data"], str) and len(value["data"]) >= 200)
+
 class ShihuoGuestCapture:
     def __init__(self): self.peers, self.loaded_at = {}, 0
     def api(self, path, body=None):
@@ -58,7 +62,8 @@ class ShihuoGuestCapture:
         try: payload = json.loads(flow.request.get_text(strict=True))
         except (ValueError, UnicodeError): self.event(ip, "profile_incomplete", message="Некорректный JSON поискового запроса"); return
         query = {key: flow.request.query.get_all(key) for key in flow.request.query.keys()}
-        if not contains_challenge({"body": payload, "query": query}, peer["challenge"]): self.event(ip, "challenge_not_found"); return
+        challenge_found = contains_challenge({"body": payload, "query": query}, peer["challenge"])
+        if not challenge_found and not is_encrypted_search_payload(payload): self.event(ip, "challenge_not_found"); return
         headers = {key.lower(): value.strip() for key, value in flow.request.headers.items()}
         if any(headers.get(key) for key in AUTH_HEADERS): self.event(ip, "authorized_request_rejected"); return
         profile = {key: headers.get(key, "") for key in PROFILE_FIELDS}; missing = [key for key, value in profile.items() if not value]
