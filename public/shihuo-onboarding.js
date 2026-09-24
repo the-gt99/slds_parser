@@ -23,9 +23,10 @@ function showStep(step) {
 
 function desiredStep(data) {
   if (data.status === "ready" || data.diagnosticStage === "ready") return "complete";
-  if (trustedStages.has(data.diagnosticStage)) return "search";
-  if (!data.certificateAcknowledged) return "certificate";
-  if (!data.lastHandshakeAt) return "wireguard";
+  const certificateWasProven = trustedStages.has(data.diagnosticStage);
+  if (!data.certificateAcknowledged && !certificateWasProven) return "certificate";
+  if (!data.wireguardConnected) return "wireguard";
+  if (certificateWasProven) return "search";
   return "trust";
 }
 
@@ -37,7 +38,7 @@ function searchMessage(stage, message) {
 }
 
 async function probeCertificate(data) {
-  if (!data.lastHandshakeAt || trustedStages.has(data.diagnosticStage) || Date.now() - lastProbeAt < 5000) return;
+  if (!data.wireguardConnected || trustedStages.has(data.diagnosticStage) || Date.now() - lastProbeAt < 5000) return;
   lastProbeAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 7000);

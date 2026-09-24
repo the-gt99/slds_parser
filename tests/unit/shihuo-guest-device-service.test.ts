@@ -61,6 +61,12 @@ describe("Shihuo guest device onboarding", () => {
     expect(text).toContain("AllowedIPs = 0.0.0.0/0, ::/0");
   });
 
+  it("does not treat an old WireGuard handshake as a current connection", async () => {
+    const repository = { findByTokenHash: vi.fn().mockResolvedValue(record({ lastHandshakeAt: "2026-09-24T00:00:00.000Z" })) } as unknown as ShihuoDeviceRepository;
+    const service = new ShihuoGuestDeviceService(repository, new ShihuoSecretCrypto(key), {} as never, config, () => new Date("2026-09-24T00:10:00.000Z"));
+    await expect(service.onboarding("a".repeat(43))).resolves.toMatchObject({ wireguardConnected: false });
+  });
+
   it("keeps onboarding progress on the server and removes a completed peer from the gateway", async () => {
     const ready = record({ status: "ready", diagnosticStage: "ready", guestProfileCiphertext: "encrypted", certificateAcknowledgedAt: "2026-09-24T00:01:00.000Z" });
     const completed = { ...ready, completionAcknowledgedAt: "2026-09-24T00:02:00.000Z", clientPrivateKeyCiphertext: null };

@@ -110,9 +110,12 @@ export class ShihuoGuestDeviceService {
 
   async onboarding(token: string) {
     const record = await this.validToken(token);
+    const handshakeTime = record.lastHandshakeAt === null ? Number.NaN : Date.parse(record.lastHandshakeAt);
+    const wireguardConnected = Number.isFinite(handshakeTime) && this.now().getTime() - handshakeTime < 180_000;
     return { name: record.name, challenge: record.challenge, status: record.status, diagnosticStage: record.diagnosticStage,
       diagnosticMessage: record.diagnosticMessage, expiresAt: record.onboardingExpiresAt, iosAppUrl: this.config.iosAppUrl,
       androidAppUrl: this.config.androidAppUrl, lastHandshakeAt: record.lastHandshakeAt, lastRequestAt: record.lastRequestAt,
+      wireguardConnected,
       certificateAcknowledged: record.certificateAcknowledgedAt !== null,
       completionAcknowledged: record.completionAcknowledgedAt !== null };
   }
