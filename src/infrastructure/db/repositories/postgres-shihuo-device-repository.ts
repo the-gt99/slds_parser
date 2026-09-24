@@ -84,7 +84,11 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
   async setStatus(id: EntityId, status: ShihuoDeviceStatus, stage: ShihuoDiagnosticStage): Promise<ShihuoDeviceRecord> {
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE shihuo_guest_devices SET status=$2, diagnostic_stage=$3,
-       revoked_at=CASE WHEN $2='revoked' THEN NOW() ELSE revoked_at END, updated_at=NOW()
+       revoked_at=CASE WHEN $2='revoked' THEN NOW() ELSE revoked_at END,
+       onboarding_token_hash=CASE WHEN $2='revoked' THEN NULL ELSE onboarding_token_hash END,
+       onboarding_expires_at=CASE WHEN $2='revoked' THEN NULL ELSE onboarding_expires_at END,
+       client_private_key_ciphertext=CASE WHEN $2='revoked' THEN NULL ELSE client_private_key_ciphertext END,
+       updated_at=NOW()
        WHERE id=$1 RETURNING *`, [id, status, stage],
     );
     return mapDevice(requireRow(result.rows, "Shihuo device", id));
