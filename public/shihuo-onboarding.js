@@ -43,7 +43,7 @@ async function probeCertificate(data) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 7000);
   try {
-    await fetch(`https://sh-gateway.shihuo.cn/slds-shihuo-ca-check?t=${Date.now()}`, { cache: "no-store", mode: "cors", signal: controller.signal });
+    await fetch(`https://ipv4only.arpa/slds-shihuo-ca-check?t=${Date.now()}`, { cache: "no-store", mode: "cors", signal: controller.signal });
   } catch {
     if (currentStep === "trust") byId("trust-help").hidden = false;
   } finally { clearTimeout(timeout); }

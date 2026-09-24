@@ -6,7 +6,7 @@ from mitmproxy import http, tls
 
 SEARCH_PATH = "/v3/sh-api/daga/search/goods/v1"
 CERT_CHECK_PATH = "/slds-shihuo-ca-check"
-CERT_CHECK_HOST = "sh-gateway.shihuo.cn"
+CERT_CHECK_HOST = "ipv4only.arpa"
 PROFILE_FIELDS = ("platform", "app-v", "sk", "luid", "osv", "user-agent")
 AUTH_HEADERS = ("authorization", "sh-token", "sh-id", "cookie", "x-wechat-token", "wechat-token")
 BASE_URL = os.environ["SHIHUO_PARSER_BASE_URL"].rstrip("/")
