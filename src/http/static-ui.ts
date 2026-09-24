@@ -21,6 +21,8 @@ const assets = new Map([
   ["/assets/wordpress-catalog-model.js", { file: "wordpress-catalog-model.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/data-schema.js", { file: "data-schema.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/rules-v2.js", { file: "rules-v2.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/shihuo-devices.js", { file: "shihuo-devices.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/shihuo-onboarding.js", { file: "shihuo-onboarding.js", type: "text/javascript; charset=utf-8" }],
   ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/overview", { file: "overview.html", type: "text/html; charset=utf-8" }],
   ["/classifier-config", { file: "index.html", type: "text/html; charset=utf-8" }],
@@ -36,6 +38,7 @@ const assets = new Map([
   ["/wordpress-catalog", { file: "wordpress-catalog.html", type: "text/html; charset=utf-8" }],
   ["/data-schema", { file: "data-schema.html", type: "text/html; charset=utf-8" }],
   ["/rules-v2", { file: "rules-v2.html", type: "text/html; charset=utf-8" }],
+  ["/shihuo-devices", { file: "shihuo-devices.html", type: "text/html; charset=utf-8" }],
 ] as const);
 
 function securityHeaders(reply: FastifyReply): FastifyReply {
@@ -61,5 +64,10 @@ export function registerStaticUi(server: FastifyInstance, publicDirectory = path
     return securityHeaders(reply)
       .type("text/html; charset=utf-8")
       .send(content);
+  });
+
+  server.get("/shihuo/onboarding/:token", async (_request, reply) => {
+    const content = await readFile(path.join(publicDirectory, "shihuo-onboarding.html"));
+    return securityHeaders(reply).type("text/html; charset=utf-8").send(content);
   });
 }

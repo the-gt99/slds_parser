@@ -1,0 +1,45 @@
+import { describe, expect, it, vi } from "vitest";
+import { ShihuoGuestDeviceService, ShihuoSecretCrypto, type ShihuoDeviceRecord, type ShihuoDeviceRepository } from "../../src/shihuo/index.js";
+
+const key = Buffer.alloc(32, 7).toString("base64");
+const config = { onboardingBaseUrl: "https://parser.example", endpoint: "parser.example:51820", serverPublicKey: "server-public",
+  subnet: "10.77.0.0/24", dns: "1.1.1.1", caCertificatePath: "unused", onboardingTtlHours: 24, wgCommand: "wg",
+  reconcileService: "reconcile.service", iosAppUrl: "https://apps.apple.com/app/id875177200", androidAppUrl: "https://www.shihuo.cn/app/" };
+
+function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord {
+  return { id: "1", name: "iPhone Андрей", status: "onboarding", wireguardPublicKey: "client-public", wireguardIp: "10.77.0.10",
+    onboardingTokenHash: "hash", onboardingExpiresAt: "2026-09-25T00:00:00.000Z", challenge: "SLDS-TEST",
+    guestProfileCiphertext: null, clientPrivateKeyCiphertext: null, diagnosticStage: "wireguard_not_connected", diagnosticMessage: null,
+    lastHandshakeAt: null, lastTrafficAt: null, lastRequestAt: null, createdAt: "2026-09-24T00:00:00.000Z",
+    updatedAt: "2026-09-24T00:00:00.000Z", revokedAt: null, ...overrides };
+}
+
+describe("Shihuo guest device onboarding", () => {
+  it("encrypts secrets with authenticated encryption", () => {
+    const crypto = new ShihuoSecretCrypto(key); const encrypted = crypto.encrypt('{"sk":"secret"}');
+    expect(encrypted).not.toContain("secret"); expect(crypto.decrypt(encrypted)).toBe('{"sk":"secret"}');
+  });
+
+  it("creates an isolated peer and returns the token only in the onboarding URL", async () => {
+    const crypto = new ShihuoSecretCrypto(key); let saved: Parameters<ShihuoDeviceRepository["create"]>[0] | undefined;
+    const repository = { create: vi.fn(async (input) => { saved = input; return record({ clientPrivateKeyCiphertext: input.privateKeyCiphertext }); }),
+      audit: vi.fn(), list: vi.fn(), getById: vi.fn(), findByTokenHash: vi.fn(), rotateToken: vi.fn(), setStatus: vi.fn(),
+      clearPrivateKey: vi.fn(), updateHandshake: vi.fn(), delete: vi.fn() } as unknown as ShihuoDeviceRepository;
+    const wireguard = { generateKeyPair: vi.fn().mockResolvedValue({ privateKey: "client-private", publicKey: "client-public" }), reconcile: vi.fn() };
+    const service = new ShihuoGuestDeviceService(repository, crypto, wireguard, config, () => new Date("2026-09-24T00:00:00Z"));
+    const result = await service.create(" iPhone Андрей ", "admin");
+    expect(result.onboardingUrl).toMatch(/^https:\/\/parser\.example\/shihuo\/onboarding\/[A-Za-z0-9_-]+$/u);
+    expect(saved?.tokenHash).toMatch(/^[a-f0-9]{64}$/u); expect(saved?.privateKeyCiphertext).not.toContain("client-private");
+    expect(saved?.firstHost).toBe(10); expect(result.item).not.toHaveProperty("wireguardPublicKey");
+    expect(wireguard.reconcile).toHaveBeenCalledOnce();
+  });
+
+  it("builds a full-tunnel WireGuard configuration from encrypted client material", async () => {
+    const crypto = new ShihuoSecretCrypto(key); const device = record({ clientPrivateKeyCiphertext: crypto.encrypt("client-private") });
+    const repository = { findByTokenHash: vi.fn().mockResolvedValue(device) } as unknown as ShihuoDeviceRepository;
+    const service = new ShihuoGuestDeviceService(repository, crypto, {} as never, config);
+    const text = await service.configuration("a".repeat(43));
+    expect(text).toContain("PrivateKey = client-private"); expect(text).toContain("Address = 10.77.0.10/32");
+    expect(text).toContain("AllowedIPs = 0.0.0.0/0, ::/0");
+  });
+});

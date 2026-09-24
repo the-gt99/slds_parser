@@ -1,0 +1,22 @@
+[Unit]
+Description=Shihuo guest capture proxy
+After=network-online.target wg-quick@wg0.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+ExecStart=/srv/slds-parser/venv-shihuo/bin/mitmdump --mode transparent --listen-host 0.0.0.0 --listen-port 8080 --set confdir=/srv/slds-parser/state/mitmproxy --set block_global=false --set connection_strategy=lazy --set allow_hosts=^sh-gateway\\.shihuo\\.cn(?::443)?$ --scripts /srv/slds-parser/app/deploy/shihuo/mitmproxy_addon.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/slds-parser/state/mitmproxy
+
+[Install]
+WantedBy=multi-user.target

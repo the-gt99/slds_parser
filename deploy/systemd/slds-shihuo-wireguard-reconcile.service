@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconcile Shihuo WireGuard peers
+After=wg-quick@wg0.service postgresql.service
+Requires=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+ExecStart=/usr/bin/node /srv/slds-parser/app/dist/src/cli/shihuo-wireguard-reconcile.js

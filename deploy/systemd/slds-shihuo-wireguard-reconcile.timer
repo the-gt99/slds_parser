@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Shihuo WireGuard handshakes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=slds-shihuo-wireguard-reconcile.service
+
+[Install]
+WantedBy=timers.target

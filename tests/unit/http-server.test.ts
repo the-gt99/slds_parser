@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError } from "../../src/core/errors/index.js";
 import { createHttpServer } from "../../src/http/index.js";
 import type { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetClassificationImportService, TargetDictionaryService, WordPressCatalogService } from "../../src/services/index.js";
+import type { ShihuoGuestDeviceService } from "../../src/shihuo/index.js";
 
 const adminToken = "test-admin-token-with-at-least-32-characters";
 const auth = {
@@ -22,6 +23,14 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("protects Shihuo device administration while keeping token onboarding public", async () => {
+    const shihuo = { list: vi.fn().mockResolvedValue([]), onboarding: vi.fn().mockResolvedValue({ name: "Phone", challenge: "SLDS-X" }) } as unknown as ShihuoGuestDeviceService;
+    const server = createHttpServer({ ...dependencies({ query: vi.fn() }), shihuo });
+    expect((await server.inject({ method: "GET", url: "/api/shihuo/devices" })).statusCode).toBe(401);
+    const page = await server.inject({ method: "GET", url: `/api/shihuo/onboarding/${"a".repeat(43)}` });
+    expect(page.statusCode).toBe(200); expect(page.json()).toMatchObject({ challenge: "SLDS-X" });
+    await server.close();
+  });
   it("protects imported v2 edits and forwards the expected revision", async () => {
     const updateImported = vi.fn().mockResolvedValue({ id: "46", revision: "2" });
     const server = createHttpServer({ ...dependencies({ query: vi.fn() }), rulesV2: { updateImported } as unknown as RulesV2Service });

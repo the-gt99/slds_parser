@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { RulesV2PreviewService } from "../services/rules-v2-preview.js";
 import { RulesExecution } from "../infrastructure/db/rules-execution.js";
 
-import { loadAdminApiConfig, loadHttpConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
+import { loadAdminApiConfig, loadHttpConfig, loadShihuoConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
 import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
 import { ProductOperationRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
@@ -21,9 +21,11 @@ import {
   PostgresTargetClassificationImportRepository,
   PostgresUnitOfWork,
   PostgresWordPressCatalogRepository,
+  PostgresShihuoDeviceRepository,
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
+import { ShihuoGuestDeviceService, ShihuoSecretCrypto, SystemWireGuardManager } from "../shihuo/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
     const config = loadHttpConfig();
     const admin = loadAdminApiConfig();
     const wordpress = loadWordPressTargetConfig();
+    const shihuoConfig = loadShihuoConfig();
     const telegram = loadTelegramNotificationConfig();
     pool = createPostgresPool();
     const repositories = createPostgresRepositories(pool);
@@ -131,10 +134,14 @@ async function main(): Promise<void> {
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
       : undefined;
+    const shihuo = shihuoConfig === null ? undefined : new ShihuoGuestDeviceService(
+      new PostgresShihuoDeviceRepository(pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
+      new SystemWireGuardManager(shihuoConfig.wgCommand, shihuoConfig.reconcileService), shihuoConfig,
+    );
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
     const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), new RulesV2PreviewService(pool), () => rulesExecution.state());
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
+    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(shihuo === undefined ? {} : { shihuo }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

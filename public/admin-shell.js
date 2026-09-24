@@ -8,6 +8,7 @@ const sections = [
   ["/wordpress-catalog", "Каталог WordPress", ["/wordpress-catalog"]],
   ["/jobs", "Очередь и ошибки", ["/jobs"]],
   ["/wordpress-snapshots", "Снимки WordPress", ["/wordpress-snapshots"]],
+  ["/shihuo-devices", "Устройства Shihuo", ["/shihuo-devices"]],
 ];
 
 function isActive(paths) {

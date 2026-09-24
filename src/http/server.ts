@@ -35,6 +35,7 @@ import type {
   WordPressPreviewService,
   WordPressCatalogService,
 } from "../services/index.js";
+import type { ShihuoGuestDeviceService } from "../shihuo/index.js";
 import { targetClassificationSuggestionStatus } from "../services/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
 import { registerStaticUi } from "./static-ui.js";
@@ -59,6 +60,7 @@ export interface HttpServerDependencies {
   readonly wordpressCatalog?: WordPressCatalogService;
   readonly dataSchema?: DataSchemaService;
   readonly rulesV2?: RulesV2Service;
+  readonly shihuo?: ShihuoGuestDeviceService;
 }
 
 interface QueueQuery {
@@ -256,6 +258,9 @@ interface WordPressTargetSettingsBody {
 }
 interface WordPressCatalogAuditRebuildBody { readonly changeFlag?: unknown }
 interface LoginBody { readonly username?: unknown; readonly password?: unknown }
+interface ShihuoDeviceParams { readonly deviceId: string }
+interface ShihuoTokenParams { readonly token: string }
+interface ShihuoCreateBody { readonly name?: unknown }
 interface RuntimeDiscoveryBody { readonly discoveryBatchSize?: unknown; readonly requestDelayMs?: unknown; readonly enqueueCollection?: unknown }
 interface ProxyParams { readonly proxyId: string }
 interface ProxyBody {
@@ -792,6 +797,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (dependencies.wordpressCatalog === undefined) throw new HttpInputError("WordPress catalog is not configured");
     return dependencies.wordpressCatalog;
   };
+  const shihuoService = (): ShihuoGuestDeviceService => {
+    if (dependencies.shihuo === undefined) throw new HttpInputError("Shihuo device management is not configured");
+    return dependencies.shihuo;
+  };
 
   registerStaticUi(server);
 
@@ -851,6 +860,29 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       return { authenticated: false };
     },
   );
+
+  server.get("/api/shihuo/devices", { preHandler: requireAdmin }, async () => ({ items: await shihuoService().list() }));
+  server.post<{ Body: ShihuoCreateBody }>("/api/shihuo/devices", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) =>
+    reply.code(201).send(await shihuoService().create(request.body?.name, actor(request))));
+  server.post<{ Params: ShihuoDeviceParams }>("/api/shihuo/devices/:deviceId/link", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) =>
+    shihuoService().rotateLink(entityId(request.params.deviceId, "deviceId"), actor(request)));
+  for (const action of ["pause", "resume"] as const) server.post<{ Params: ShihuoDeviceParams }>(`/api/shihuo/devices/:deviceId/${action}`,
+    { preHandler: [requireAdmin, requireMutationAccess] }, async (request) => ({ item: await shihuoService().setStatus(
+      entityId(request.params.deviceId, "deviceId"), action === "pause" ? "paused" : "onboarding", actor(request)) }));
+  server.post<{ Params: ShihuoDeviceParams }>("/api/shihuo/devices/:deviceId/revoke", { preHandler: [requireAdmin, requireMutationAccess] }, async (request) =>
+    ({ item: await shihuoService().revoke(entityId(request.params.deviceId, "deviceId"), actor(request)) }));
+  server.delete<{ Params: ShihuoDeviceParams }>("/api/shihuo/devices/:deviceId", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) => {
+    await shihuoService().delete(entityId(request.params.deviceId, "deviceId"), actor(request)); return reply.code(204).send();
+  });
+
+  server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token", async (request) => shihuoService().onboarding(request.params.token));
+  server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/config", async (request, reply) =>
+    reply.header("Content-Disposition", "attachment; filename=shihuo-wireguard.conf").type("text/plain; charset=utf-8").send(await shihuoService().configuration(request.params.token)));
+  server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/qr", async (request, reply) =>
+    reply.type("image/svg+xml").send(await shihuoService().configurationQr(request.params.token)));
+  server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/ca", async (request, reply) =>
+    reply.header("Content-Disposition", "attachment; filename=slds-shihuo-ca.cer").type("application/x-x509-ca-cert").send(await shihuoService().certificate(request.params.token)));
+  server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/check", async (request) => shihuoService().check(request.params.token));
 
   server.get<{ Querystring: QueueQuery }>("/api/classifier/queue", { preHandler: requireAdmin }, async (request) => {
     const limit = positiveInteger(request.query.limit, 50, 200);

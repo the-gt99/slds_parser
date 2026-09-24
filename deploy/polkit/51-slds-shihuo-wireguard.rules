@@ -1,0 +1,6 @@
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "slds-parser" &&
+      action.lookup("unit") == "slds-shihuo-wireguard-reconcile.service" && action.lookup("verb") == "start") {
+    return polkit.Result.YES;
+  }
+});

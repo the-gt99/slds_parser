@@ -37,6 +37,7 @@
     "proxy:test": "node --env-file-if-exists=.env --import tsx src/cli/proxy-test.ts",
     "proxy:enable": "node --env-file-if-exists=.env --import tsx src/cli/proxy-enable.ts",
     "proxy:disable": "node --env-file-if-exists=.env --import tsx src/cli/proxy-disable.ts",
+    "shihuo:wireguard-reconcile": "node --env-file-if-exists=.env --import tsx src/cli/shihuo-wireguard-reconcile.ts",
     "wordpress:bootstrap": "node --env-file-if-exists=.env --import tsx src/cli/wordpress-bootstrap.ts",
     "worker": "node --env-file-if-exists=.env --import tsx src/cli/worker.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -48,6 +49,7 @@
   "devDependencies": {
     "@types/node": "^22.20.1",
     "@types/pg": "^8.20.3",
+    "@types/qrcode": "^1.5.6",
     "@types/sanitize-html": "^2.16.1",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",
@@ -58,6 +60,7 @@
     "fastify": "^5.11.0",
     "htmlparser2": "^12.0.0",
     "pg": "^8.22.0",
+    "qrcode": "^1.5.4",
     "sanitize-html": "^2.17.6",
     "saxes": "^6.0.0",
     "sharp": "^0.35.3",

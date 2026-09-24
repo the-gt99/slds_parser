@@ -18,6 +18,7 @@ import { PostgresTargetDictionaryRepository } from "./postgres-target-dictionary
 import { PostgresTargetAssignmentRuleRepository } from "./postgres-target-assignment-rule-repository.js";
 import { PostgresTargetClassificationImportRepository } from "./postgres-target-classification-import-repository.js";
 import { PostgresWordPressCatalogRepository } from "./postgres-wordpress-catalog-repository.js";
+import { PostgresShihuoDeviceRepository } from "./postgres-shihuo-device-repository.js";
 
 export { PostgresClassificationRepository } from "./postgres-classification-repository.js";
 export { PostgresClassificationAdminRepository } from "./postgres-classification-admin-repository.js";
@@ -39,6 +40,7 @@ export { PostgresTargetAssignmentRuleRepository } from "./postgres-target-assign
 export { PostgresRulesV2Repository } from "./postgres-rules-v2-repository.js";
 export { PostgresTargetClassificationImportRepository } from "./postgres-target-classification-import-repository.js";
 export { PostgresWordPressCatalogRepository } from "./postgres-wordpress-catalog-repository.js";
+export { PostgresShihuoDeviceRepository } from "./postgres-shihuo-device-repository.js";
 
 export function createPostgresRepositories(executor: SqlExecutor): TransactionRepositories {
   return {

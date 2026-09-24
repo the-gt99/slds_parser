@@ -37,4 +37,5 @@ export {
   PostgresRulesV2Repository,
   PostgresTargetClassificationImportRepository,
   PostgresWordPressCatalogRepository,
+  PostgresShihuoDeviceRepository,
 } from "./repositories/index.js";
