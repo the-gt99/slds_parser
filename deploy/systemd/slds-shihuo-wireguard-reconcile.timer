@@ -2,8 +2,8 @@
 Description=Refresh Shihuo WireGuard handshakes
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=1min
+OnBootSec=10sec
+OnUnitActiveSec=10sec
 Unit=slds-shihuo-wireguard-reconcile.service
 
 [Install]

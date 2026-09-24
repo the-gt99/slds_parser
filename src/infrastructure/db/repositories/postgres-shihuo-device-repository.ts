@@ -17,7 +17,8 @@ function mapDevice(row: DatabaseRow): ShihuoDeviceRecord {
     diagnosticStage: row.diagnostic_stage as ShihuoDiagnosticStage,
     diagnosticMessage: row.diagnostic_message == null ? null : String(row.diagnostic_message),
     lastHandshakeAt: timestamp(row.last_handshake_at), lastTrafficAt: timestamp(row.last_traffic_at),
-    lastRequestAt: timestamp(row.last_request_at), createdAt: timestamp(row.created_at) ?? "",
+    lastRequestAt: timestamp(row.last_request_at), certificateAcknowledgedAt: timestamp(row.certificate_acknowledged_at),
+    completionAcknowledgedAt: timestamp(row.completion_acknowledged_at), createdAt: timestamp(row.created_at) ?? "",
     updatedAt: timestamp(row.updated_at) ?? "", revokedAt: timestamp(row.revoked_at),
   };
 }
@@ -91,8 +92,23 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
 
   async clearPrivateKey(id: EntityId): Promise<void> {
     await this.executor.query(
-      "UPDATE shihuo_guest_devices SET client_private_key_ciphertext=NULL, onboarding_token_hash=NULL, onboarding_expires_at=NULL, updated_at=NOW() WHERE id=$1", [id],
+      "UPDATE shihuo_guest_devices SET client_private_key_ciphertext=NULL, updated_at=NOW() WHERE id=$1", [id],
     );
+  }
+
+  async acknowledgeCertificate(id: EntityId): Promise<ShihuoDeviceRecord> {
+    const result = await this.executor.query<DatabaseRow>(
+      "UPDATE shihuo_guest_devices SET certificate_acknowledged_at=COALESCE(certificate_acknowledged_at,NOW()), updated_at=NOW() WHERE id=$1 RETURNING *", [id],
+    );
+    return mapDevice(requireRow(result.rows, "Shihuo device", id));
+  }
+
+  async acknowledgeCompletion(id: EntityId): Promise<ShihuoDeviceRecord> {
+    const result = await this.executor.query<DatabaseRow>(
+      `UPDATE shihuo_guest_devices SET completion_acknowledged_at=COALESCE(completion_acknowledged_at,NOW()),
+       client_private_key_ciphertext=NULL, updated_at=NOW() WHERE id=$1 AND status='ready' RETURNING *`, [id],
+    );
+    return mapDevice(requireRow(result.rows, "Shihuo device", id));
   }
 
   async updateHandshake(publicKey: string, handshakeAt: string | null): Promise<void> {
@@ -112,11 +128,15 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
            diagnostic_stage=CASE
              WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_stage
              WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_stage
+             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_stage
+             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_stage
              ELSE $2
            END,
            diagnostic_message=CASE
              WHEN status='ready' AND $2::text<>'ready' THEN diagnostic_message
              WHEN $2::text='traffic_not_seen' AND $5::timestamptz IS NOT NULL AND diagnostic_stage<>'wireguard_not_connected' THEN diagnostic_message
+             WHEN $2::text='certificate_not_trusted' AND diagnostic_stage IN ('certificate_trusted','challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_message
+             WHEN $2::text='certificate_trusted' AND diagnostic_stage IN ('challenge_not_found','authorized_request_rejected','profile_incomplete','ready') THEN diagnostic_message
              ELSE $3
            END,
          guest_profile_ciphertext=COALESCE($4, guest_profile_ciphertext),

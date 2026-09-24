@@ -2,7 +2,7 @@ import type { EntityId } from "../contracts/index.js";
 
 export type ShihuoDeviceStatus = "onboarding" | "ready" | "paused" | "revoked" | "error";
 export type ShihuoDiagnosticStage = "wireguard_not_connected" | "traffic_not_seen" | "certificate_not_trusted"
-  | "challenge_not_found" | "authorized_request_rejected" | "profile_incomplete" | "ready" | "paused" | "revoked" | "error";
+  | "certificate_trusted" | "challenge_not_found" | "authorized_request_rejected" | "profile_incomplete" | "ready" | "paused" | "revoked" | "error";
 
 export interface ShihuoGuestProfile {
   readonly platform: string;
@@ -29,6 +29,8 @@ export interface ShihuoDeviceRecord {
   readonly lastHandshakeAt: string | null;
   readonly lastTrafficAt: string | null;
   readonly lastRequestAt: string | null;
+  readonly certificateAcknowledgedAt: string | null;
+  readonly completionAcknowledgedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly revokedAt: string | null;
@@ -43,6 +45,8 @@ export interface ShihuoDeviceRepository {
   rotateToken(id: EntityId, tokenHash: string, expiresAt: string): Promise<ShihuoDeviceRecord>;
   setStatus(id: EntityId, status: ShihuoDeviceStatus, stage: ShihuoDiagnosticStage): Promise<ShihuoDeviceRecord>;
   clearPrivateKey(id: EntityId): Promise<void>;
+  acknowledgeCertificate(id: EntityId): Promise<ShihuoDeviceRecord>;
+  acknowledgeCompletion(id: EntityId): Promise<ShihuoDeviceRecord>;
   updateHandshake(publicKey: string, handshakeAt: string | null): Promise<void>;
   recordGatewayEvent(input: { readonly wireguardIp: string; readonly stage: ShihuoDiagnosticStage; readonly message?: string | null; readonly profileCiphertext?: string; readonly handshakeAt?: string }): Promise<ShihuoDeviceRecord | null>;
   delete(id: EntityId): Promise<void>;

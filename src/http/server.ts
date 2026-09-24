@@ -886,6 +886,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     reply.type("image/svg+xml").send(await shihuoService().configurationQr(request.params.token)));
   server.get<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/ca", async (request, reply) =>
     reply.header("Content-Disposition", "attachment; filename=slds-shihuo-ca.cer").type("application/x-x509-ca-cert").send(await shihuoService().certificate(request.params.token)));
+  server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/certificate-ack", async (request) =>
+    shihuoService().acknowledgeCertificate(request.params.token));
+  server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/complete", async (request) =>
+    shihuoService().acknowledgeCompletion(request.params.token));
   server.post<{ Params: ShihuoTokenParams }>("/api/shihuo/onboarding/:token/check", async (request) => shihuoService().check(request.params.token));
   server.get("/api/shihuo/gateway/peers", { preHandler: requireShihuoGateway }, async () => shihuoService().gatewayPeers());
   server.post<{ Body: ShihuoGatewayBody }>("/api/shihuo/gateway/events", { preHandler: requireShihuoGateway }, async (request) => shihuoService().gatewayEvent(request.body));

@@ -10,7 +10,8 @@ function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord
   return { id: "1", name: "iPhone Андрей", status: "onboarding", wireguardPublicKey: "client-public", wireguardIp: "10.77.0.10",
     onboardingTokenHash: "hash", onboardingExpiresAt: "2026-09-25T00:00:00.000Z", challenge: "SLDS-TEST",
     guestProfileCiphertext: null, clientPrivateKeyCiphertext: null, diagnosticStage: "wireguard_not_connected", diagnosticMessage: null,
-    lastHandshakeAt: null, lastTrafficAt: null, lastRequestAt: null, createdAt: "2026-09-24T00:00:00.000Z",
+    lastHandshakeAt: null, lastTrafficAt: null, lastRequestAt: null, certificateAcknowledgedAt: null,
+    completionAcknowledgedAt: null, createdAt: "2026-09-24T00:00:00.000Z",
     updatedAt: "2026-09-24T00:00:00.000Z", revokedAt: null, ...overrides };
 }
 
@@ -58,5 +59,22 @@ describe("Shihuo guest device onboarding", () => {
     const text = await service.configuration("a".repeat(43));
     expect(text).toContain("PrivateKey = client-private"); expect(text).toContain("Address = 10.77.0.10/32");
     expect(text).toContain("AllowedIPs = 0.0.0.0/0, ::/0");
+  });
+
+  it("keeps onboarding progress on the server and removes a completed peer from the gateway", async () => {
+    const ready = record({ status: "ready", diagnosticStage: "ready", guestProfileCiphertext: "encrypted", certificateAcknowledgedAt: "2026-09-24T00:01:00.000Z" });
+    const completed = { ...ready, completionAcknowledgedAt: "2026-09-24T00:02:00.000Z", clientPrivateKeyCiphertext: null };
+    const repository = {
+      findByTokenHash: vi.fn().mockResolvedValueOnce(ready).mockResolvedValueOnce(ready),
+      acknowledgeCertificate: vi.fn().mockResolvedValue(ready), acknowledgeCompletion: vi.fn().mockResolvedValue(completed),
+      audit: vi.fn(), list: vi.fn().mockResolvedValue([completed, record({ id: "2" })]),
+    } as unknown as ShihuoDeviceRepository;
+    const wireguard = { reconcile: vi.fn() };
+    const service = new ShihuoGuestDeviceService(repository, new ShihuoSecretCrypto(key), wireguard as never, config);
+
+    await expect(service.acknowledgeCertificate("a".repeat(43))).resolves.toEqual({ acknowledged: true });
+    await expect(service.acknowledgeCompletion("a".repeat(43))).resolves.toEqual({ completed: true });
+    await expect(service.gatewayPeers()).resolves.toMatchObject({ items: [{ id: "2" }] });
+    expect(wireguard.reconcile).toHaveBeenCalledOnce();
   });
 });

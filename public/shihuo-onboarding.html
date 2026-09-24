@@ -1,6 +1,68 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Настройка Shihuo</title><link rel="stylesheet" href="/assets/app.css"><script type="module" src="/assets/shihuo-onboarding.js"></script></head><body><main class="admin-page shihuo-onboarding"><section class="section"><p class="eyebrow">SLDS Parser</p><h1>Подключение устройства Shihuo</h1><p id="device-name" class="muted">Загрузка...</p><div id="fatal" class="product-message error" hidden></div></section>
-<section id="steps" hidden><section class="section"><h2>1. Установите сертификат</h2><p><a id="ca-link" class="button primary">Скачать CA-сертификат</a></p><ol><li>Откройте скачанный файл на iPhone и разрешите установку профиля.</li><li>Откройте «Настройки → Основные → VPN и управление устройством», выберите профиль и установите его.</li><li><strong>Обязательно:</strong> откройте «Настройки → Основные → Об этом устройстве → Доверие сертификатам» и включите полное доверие сертификату SLDS Shihuo CA.</li></ol><details><summary>Android</summary><p>Откройте скачанный сертификат, выберите установку CA-сертификата для VPN и приложений. Названия пунктов зависят от производителя.</p></details></section>
-<section class="section"><h2>2. Установите WireGuard</h2><p><a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener">WireGuard для iPhone</a> · <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener">WireGuard для Android</a></p><img id="wg-qr" class="shihuo-wg-qr" alt="QR-код WireGuard"><p><a id="config-link" class="button secondary">Скачать конфигурацию</a></p><p>В WireGuard нажмите «Добавить туннель», отсканируйте QR-код или импортируйте файл, затем включите туннель.</p></section>
-<section class="section"><h2>3. Установите Shihuo</h2><p><a id="ios-link" target="_blank" rel="noopener">Shihuo в App Store</a> · <a id="android-link" target="_blank" rel="noopener">официальная страница Android</a></p><p><strong>Не входите в аккаунт.</strong> Для настройки нужна только гостевая сессия.</p></section>
-<section class="section"><h2>4. Выполните проверочный поиск</h2><p>Найдите товар в Shihuo по реальному артикулу:</p><p class="shihuo-search-row"><code id="challenge"></code> <button id="copy" class="button quiet">Копировать</button></p></section>
-<section class="section"><h2>5. Проверьте подключение</h2><button id="check" class="button primary">Проверить подключение</button><div id="status" class="product-message" hidden></div></section></section></main></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Настройка Shihuo</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/shihuo-onboarding.js"></script>
+</head>
+<body>
+<main class="admin-page shihuo-onboarding">
+  <section class="section shihuo-heading">
+    <p class="eyebrow">SLDS Parser</p>
+    <h1>Подключение устройства Shihuo</h1>
+    <p id="device-name" class="muted">Загрузка...</p>
+    <div id="progress" class="shihuo-progress" hidden><span id="progress-label"></span></div>
+    <div id="fatal" class="product-message error" hidden></div>
+  </section>
+
+  <section id="step-certificate" class="section shihuo-step" hidden>
+    <h2>1. Установите сертификат</h2>
+    <p><a id="ca-link" class="button primary">Скачать CA-сертификат</a></p>
+    <ol>
+      <li>Откройте скачанный файл и разрешите установку профиля.</li>
+      <li>На iPhone откройте «Настройки → Основные → VPN и управление устройством» и установите профиль.</li>
+      <li>Откройте «Настройки → Основные → Об этом устройстве → Доверие сертификатам» и включите полное доверие сертификату SLDS Shihuo CA.</li>
+    </ol>
+    <details><summary>Инструкция для Android</summary><p>Откройте скачанный сертификат и установите его как CA-сертификат для VPN и приложений. Названия пунктов зависят от производителя.</p></details>
+    <p><button id="certificate-next" class="button primary">Сертификат установлен</button></p>
+  </section>
+
+  <section id="step-wireguard" class="section shihuo-step" hidden>
+    <h2>2. Подключите WireGuard</h2>
+    <p><a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener">WireGuard для iPhone</a> · <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener">WireGuard для Android</a></p>
+    <img id="wg-qr" class="shihuo-wg-qr" alt="QR-код WireGuard">
+    <p><a id="config-link" class="button secondary">Скачать конфигурацию</a></p>
+    <p>Добавьте туннель по QR-коду или из файла и включите его. Страница сама увидит подключение.</p>
+    <div class="shihuo-wait"><span class="shihuo-spinner"></span><span>Ожидаем подключение VPN…</span></div>
+  </section>
+
+  <section id="step-trust" class="section shihuo-step" hidden>
+    <h2>3. Проверяем сертификат</h2>
+    <p>Не закрывайте страницу. Проверка выполняется автоматически через подключённый VPN.</p>
+    <div class="shihuo-wait"><span class="shihuo-spinner"></span><span>Проверяем полное доверие сертификату…</span></div>
+    <div id="trust-help" class="product-message" hidden>Если проверка не проходит, убедитесь, что для SLDS Shihuo CA включено полное доверие, затем вернитесь сюда.</div>
+  </section>
+
+  <section id="step-search" class="section shihuo-step" hidden>
+    <h2>4. Выполните поиск в Shihuo</h2>
+    <p><a id="ios-link" target="_blank" rel="noopener">Shihuo в App Store</a> · <a id="android-link" target="_blank" rel="noopener">официальная страница Android</a></p>
+    <p><strong>Не входите в аккаунт.</strong> Найдите товар по реальному артикулу:</p>
+    <p class="shihuo-search-row"><code id="challenge"></code> <button id="copy" class="button quiet">Копировать</button></p>
+    <div class="shihuo-wait"><span class="shihuo-spinner"></span><span id="search-status">Ожидаем поисковый запрос…</span></div>
+  </section>
+
+  <section id="step-complete" class="section shihuo-step shihuo-complete" hidden>
+    <h2>Готово</h2>
+    <p>Данные гостевого подключения получены. Теперь удалите временную настройку с телефона:</p>
+    <ol>
+      <li>В WireGuard выключите и удалите туннель Shihuo.</li>
+      <li>На iPhone откройте «Настройки → Основные → VPN и управление устройством» и удалите профиль SLDS Shihuo CA.</li>
+      <li>На Android удалите установленный пользовательский CA-сертификат в настройках безопасности.</li>
+    </ol>
+    <p class="muted">Доступ к VPN уже отзывается автоматически. Эту страницу можно закрыть.</p>
+  </section>
+</main>
+</body>
+</html>

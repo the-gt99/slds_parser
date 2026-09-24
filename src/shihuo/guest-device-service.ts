@@ -40,7 +40,7 @@ export class ShihuoGuestDeviceService {
   }
 
   async gatewayPeers() {
-    return { items: (await this.repository.list()).filter((item) => item.status !== "paused" && item.status !== "revoked").map((item) => ({
+    return { items: (await this.repository.list()).filter((item) => item.status !== "paused" && item.status !== "revoked" && item.completionAcknowledgedAt === null).map((item) => ({
       id: item.id, publicKey: item.wireguardPublicKey, wireguardIp: item.wireguardIp, challenge: item.challenge,
     })) };
   }
@@ -48,7 +48,7 @@ export class ShihuoGuestDeviceService {
   async gatewayEvent(value: unknown) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) throw new PermanentError("Gateway event must be an object", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
     const body = value as Record<string, unknown>; const wireguardIp = typeof body.wireguardIp === "string" ? body.wireguardIp : "";
-    const allowedStages = ["traffic_not_seen", "certificate_not_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "ready"] as const;
+    const allowedStages = ["traffic_not_seen", "certificate_not_trusted", "certificate_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "ready"] as const;
     const stage = allowedStages.find((candidate) => candidate === body.stage);
     if (!/^10\.77\.0\.\d{1,3}$/u.test(wireguardIp) || stage === undefined) throw new PermanentError("Gateway event is invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
     let profileCiphertext: string | undefined;
@@ -112,7 +112,25 @@ export class ShihuoGuestDeviceService {
     const record = await this.validToken(token);
     return { name: record.name, challenge: record.challenge, status: record.status, diagnosticStage: record.diagnosticStage,
       diagnosticMessage: record.diagnosticMessage, expiresAt: record.onboardingExpiresAt, iosAppUrl: this.config.iosAppUrl,
-      androidAppUrl: this.config.androidAppUrl, lastHandshakeAt: record.lastHandshakeAt, lastRequestAt: record.lastRequestAt };
+      androidAppUrl: this.config.androidAppUrl, lastHandshakeAt: record.lastHandshakeAt, lastRequestAt: record.lastRequestAt,
+      certificateAcknowledged: record.certificateAcknowledgedAt !== null,
+      completionAcknowledged: record.completionAcknowledgedAt !== null };
+  }
+
+  async acknowledgeCertificate(token: string) {
+    const record = await this.validToken(token);
+    const updated = await this.repository.acknowledgeCertificate(record.id);
+    if (record.certificateAcknowledgedAt === null) await this.repository.audit({ deviceId: record.id, action: "certificate_acknowledged", actor: "onboarding" });
+    return { acknowledged: updated.certificateAcknowledgedAt !== null };
+  }
+
+  async acknowledgeCompletion(token: string) {
+    const record = await this.validToken(token);
+    if (record.status !== "ready" || record.guestProfileCiphertext === null) throw new PermanentError("Shihuo onboarding is not ready", { code: "INVALID_SHIHUO_DEVICE_STATE" });
+    const updated = await this.repository.acknowledgeCompletion(record.id);
+    if (record.completionAcknowledgedAt === null) await this.repository.audit({ deviceId: record.id, action: "onboarding_complete", actor: "onboarding" });
+    await this.wireguard.reconcile();
+    return { completed: updated.completionAcknowledgedAt !== null };
   }
 
   async configuration(token: string): Promise<string> {
@@ -131,13 +149,12 @@ export class ShihuoGuestDeviceService {
   async check(token: string) {
     const record = await this.validToken(token);
     if (record.status === "ready" && record.guestProfileCiphertext !== null) {
-      await this.repository.clearPrivateKey(record.id);
-      await this.repository.audit({ deviceId: record.id, action: "onboarding_complete", actor: "onboarding" });
       return { ready: true, status: "ready", stage: "ready", message: "Устройство готово" };
     }
     const messages: Record<string, string> = {
       wireguard_not_connected: "WireGuard ещё не подключён.", traffic_not_seen: "VPN подключён, но трафик Shihuo ещё не замечен.",
       certificate_not_trusted: "Трафик виден, но сертификат не установлен или для него не включено полное доверие.",
+      certificate_trusted: "Сертификат работает. Ожидается проверочный поиск в Shihuo.",
       challenge_not_found: "Shihuo работает через VPN, но проверочный поиск ещё не найден.",
       authorized_request_rejected: "Обнаружена авторизованная сессия. Выйдите из аккаунта Shihuo и повторите поиск.",
       profile_incomplete: "Запрос найден, но обязательные поля гостевого профиля отсутствуют.", error: "Настройку не удалось проверить.",
