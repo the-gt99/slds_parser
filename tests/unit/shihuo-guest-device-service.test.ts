@@ -28,7 +28,7 @@ describe("Shihuo guest device onboarding", () => {
 
   it("creates an isolated peer and returns the token only in the onboarding URL", async () => {
     const crypto = new ShihuoSecretCrypto(key); let saved: Parameters<ShihuoDeviceRepository["create"]>[0] | undefined;
-    const repository = { create: vi.fn(async (input) => { saved = input; return record({ clientPrivateKeyCiphertext: input.privateKeyCiphertext }); }),
+    const repository = { randomProductSku: vi.fn().mockResolvedValue("DA6125 900"), create: vi.fn(async (input) => { saved = input; return record({ clientPrivateKeyCiphertext: input.privateKeyCiphertext }); }),
       audit: vi.fn(), list: vi.fn(), getById: vi.fn(), findByTokenHash: vi.fn(), rotateToken: vi.fn(), setStatus: vi.fn(),
       clearPrivateKey: vi.fn(), updateHandshake: vi.fn(), delete: vi.fn() } as unknown as ShihuoDeviceRepository;
     const wireguard = { generateKeyPair: vi.fn().mockResolvedValue({ privateKey: "client-private", publicKey: "client-public" }), reconcile: vi.fn() };
@@ -36,7 +36,7 @@ describe("Shihuo guest device onboarding", () => {
     const result = await service.create(" iPhone Андрей ", "admin");
     expect(result.onboardingUrl).toMatch(/^https:\/\/parser\.example\/shihuo\/onboarding\/[A-Za-z0-9_-]+$/u);
     expect(saved?.tokenHash).toMatch(/^[a-f0-9]{64}$/u); expect(saved?.privateKeyCiphertext).not.toContain("client-private");
-    expect(saved?.challenge).toBe("DD1391-100");
+    expect(saved?.challenge).toBe("DA6125 900");
     expect(saved?.firstHost).toBe(10); expect(result.item).not.toHaveProperty("wireguardPublicKey");
     expect(wireguard.reconcile).toHaveBeenCalledOnce();
   });

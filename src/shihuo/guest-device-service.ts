@@ -10,7 +10,6 @@ import type { ShihuoDeviceRecord, ShihuoDeviceRepository, ShihuoDeviceStatus } f
 import type { WireGuardManager } from "./wireguard-manager.js";
 
 const tokenHash = (token: string): string => createHash("sha256").update(token).digest("hex");
-const ONBOARDING_PRODUCT_SKU = "DD1391-100";
 
 export interface ShihuoAdminDevice {
   readonly id: EntityId; readonly name: string; readonly status: ShihuoDeviceStatus; readonly wireguardIp: string;
@@ -73,8 +72,9 @@ export class ShihuoGuestDeviceService {
 
   async create(nameValue: unknown, actor: string) {
     if (typeof nameValue !== "string" || nameValue.trim().length < 1 || nameValue.trim().length > 100) throw new PermanentError("Device name must be 1-100 characters", { code: "INVALID_SHIHUO_DEVICE" });
-    const name = nameValue.trim(); const issued = this.issueToken(); const keys = await this.wireguard.generateKeyPair();
-    const challenge = ONBOARDING_PRODUCT_SKU;
+    const name = nameValue.trim(); const challenge = await this.repository.randomProductSku();
+    if (challenge === null) throw new PermanentError("No real product SKU is available for Shihuo onboarding", { code: "SHIHUO_PRODUCT_SKU_UNAVAILABLE" });
+    const issued = this.issueToken(); const keys = await this.wireguard.generateKeyPair();
     const record = await this.repository.create({ name, publicKey: keys.publicKey, tokenHash: issued.hash, expiresAt: issued.expiresAt,
       challenge, privateKeyCiphertext: this.crypto.encrypt(keys.privateKey), subnet: this.config.subnet, firstHost: 10, lastHost: 254 });
     await this.repository.audit({ deviceId: record.id, action: "create", actor, payload: { name, wireguardIp: record.wireguardIp } });

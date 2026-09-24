@@ -35,6 +35,7 @@ export interface ShihuoDeviceRecord {
 }
 
 export interface ShihuoDeviceRepository {
+  randomProductSku(): Promise<string | null>;
   list(): Promise<readonly ShihuoDeviceRecord[]>;
   getById(id: EntityId): Promise<ShihuoDeviceRecord | null>;
   findByTokenHash(hash: string): Promise<ShihuoDeviceRecord | null>;

@@ -25,6 +25,20 @@ function mapDevice(row: DatabaseRow): ShihuoDeviceRecord {
 export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
   constructor(private readonly executor: SqlExecutor) {}
 
+  async randomProductSku(): Promise<string | null> {
+    const result = await this.executor.query<DatabaseRow>(
+      `SELECT BTRIM(data->>'sku') AS sku
+         FROM internal_products TABLESAMPLE SYSTEM (1)
+         WHERE status IN ('classified','classification_pending')
+           AND data->'metadata'->>'route'='sneakers'
+           AND data->'attributes'->>'productType'='sneakers'
+           AND COALESCE((data->'metadata'->>'activeVariantCount')::INTEGER, 0) > 0
+           AND BTRIM(data->>'sku') ~ '^[A-Za-z0-9][A-Za-z0-9 ._/-]{2,39}$'
+         ORDER BY RANDOM() LIMIT 1`,
+    );
+    return result.rows[0]?.sku == null ? null : String(result.rows[0].sku);
+  }
+
   async list(): Promise<readonly ShihuoDeviceRecord[]> {
     const result = await this.executor.query<DatabaseRow>("SELECT * FROM shihuo_guest_devices ORDER BY created_at DESC, id DESC");
     return result.rows.map(mapDevice);
