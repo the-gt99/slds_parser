@@ -9,7 +9,6 @@ CERT_CHECK_PATH = "/slds-shihuo-ca-check"
 CERT_CHECK_HOST = "195.161.68.104"
 ONBOARDING_API_PREFIX = "/api/shihuo/onboarding/"
 PROFILE_FIELDS = ("platform", "app-v", "sk", "luid", "osv", "user-agent")
-AUTH_HEADERS = ("authorization", "sh-token", "sh-id", "cookie", "x-wechat-token", "wechat-token")
 BASE_URL = os.environ["SHIHUO_PARSER_BASE_URL"].rstrip("/")
 TOKEN = os.environ["SHIHUO_GATEWAY_TOKEN"]
 LOG = logging.getLogger("shihuo-capture")
@@ -70,7 +69,6 @@ class ShihuoGuestCapture:
         challenge_found = contains_challenge({"body": payload, "query": query}, peer["challenge"])
         if not challenge_found and not is_encrypted_search_payload(payload): self.event(ip, "challenge_not_found"); return
         headers = {key.lower(): value.strip() for key, value in flow.request.headers.items()}
-        if any(headers.get(key) for key in AUTH_HEADERS): self.event(ip, "authorized_request_rejected"); return
         profile = {key: headers.get(key, "") for key in PROFILE_FIELDS}; missing = [key for key, value in profile.items() if not value]
         if missing: self.event(ip, "profile_incomplete", message="Отсутствуют поля: " + ", ".join(missing)); return
         self.event(ip, "ready", profile=profile); LOG.info("Forwarded guest profile for device_id=%s", peer["id"])
