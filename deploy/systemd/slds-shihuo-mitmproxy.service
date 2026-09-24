@@ -10,7 +10,7 @@ User=slds-shihuo
 Group=slds-shihuo
 WorkingDirectory=/opt/slds-shihuo-gateway
 EnvironmentFile=/etc/slds-shihuo-gateway.env
-ExecStart=/opt/slds-shihuo-gateway/venv/bin/mitmdump --mode transparent --listen-host 10.77.0.1 --listen-port 8080 --set confdir=/var/lib/slds-shihuo/mitmproxy --set block_global=false --set connection_strategy=lazy --set allow_hosts=^195\\.161\\.68\\.104(?::443)?$ --scripts /opt/slds-shihuo-gateway/mitmproxy_addon.py
+ExecStart=/opt/slds-shihuo-gateway/venv/bin/mitmdump --mode transparent --listen-host 10.77.0.1 --listen-port 8080 --set confdir=/var/lib/slds-shihuo/mitmproxy --set block_global=false --set connection_strategy=lazy --set allow_hosts=^(?:195\\.161\\.68\\.104|sh-gateway\\.shihuo\\.cn)(?::443)?$ --scripts /opt/slds-shihuo-gateway/mitmproxy_addon.py
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
