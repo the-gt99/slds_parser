@@ -5,7 +5,6 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 const assets = new Map([
   ["/", { file: "overview.html", type: "text/html; charset=utf-8" }],
-  ["/classifier", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/assets/app.css", { file: "app.css", type: "text/css; charset=utf-8" }],
   ["/assets/admin-shell.js", { file: "admin-shell.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/overview.js", { file: "overview.js", type: "text/javascript; charset=utf-8" }],
@@ -25,7 +24,6 @@ const assets = new Map([
   ["/assets/shihuo-onboarding.js", { file: "shihuo-onboarding.js", type: "text/javascript; charset=utf-8" }],
   ["/products", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/overview", { file: "overview.html", type: "text/html; charset=utf-8" }],
-  ["/classifier-config", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/operations", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/wordpress-snapshots", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
   ["/runtime", { file: "admin-list.html", type: "text/html; charset=utf-8" }],
@@ -50,6 +48,10 @@ function securityHeaders(reply: FastifyReply): FastifyReply {
 }
 
 export function registerStaticUi(server: FastifyInstance, publicDirectory = path.resolve(process.cwd(), "public")): void {
+  for (const route of ["/classifier", "/classifier-config"]) {
+    server.get(route, async (_request, reply) => reply.code(308).redirect("/rules-v2"));
+  }
+
   for (const [route, asset] of assets) {
     server.get(route, async (_request, reply) => {
       const content = await readFile(path.join(publicDirectory, asset.file));

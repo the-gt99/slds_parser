@@ -70,11 +70,17 @@ describe("HTTP server", () => {
 
     const schemaPage = await server.inject({ method: "GET", url: "/data-schema" });
     const rulesPage = await server.inject({ method: "GET", url: "/rules-v2" });
+    const legacyClassifier = await server.inject({ method: "GET", url: "/classifier" });
+    const legacyClassifierConfig = await server.inject({ method: "GET", url: "/classifier-config" });
     const schema = await server.inject({ method: "GET", url: "/api/data-schema", headers: { authorization: `Bearer ${adminToken}` } });
     const rules = await server.inject({ method: "GET", url: "/api/rules-v2?targetId=10", headers: { authorization: `Bearer ${adminToken}` } });
 
     expect(schemaPage.statusCode).toBe(200);
     expect(rulesPage.statusCode).toBe(200);
+    expect(legacyClassifier.statusCode).toBe(308);
+    expect(legacyClassifier.headers.location).toBe("/rules-v2");
+    expect(legacyClassifierConfig.statusCode).toBe(308);
+    expect(legacyClassifierConfig.headers.location).toBe("/rules-v2");
     expect(schema.json()).toEqual({ version: "universal-product-dto.v1", donors: [] });
     expect(rules.json()).toEqual({ mode: "shadow", authoritative: false, items: [] });
     expect(rulesV2.overview).toHaveBeenCalledWith("10", { search: "", offset: 0 });
