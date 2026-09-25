@@ -87,6 +87,7 @@ async function main(): Promise<void> {
       targetDictionaryRepository,
       providers,
       classifier,
+      repositories.sources,
     );
     const targetAssignmentRepository = new PostgresTargetAssignmentRuleRepository(pool);
     const targetAssignments = new TargetAssignmentAdminService(

@@ -7,6 +7,7 @@ import type {
 } from "../integrations/index.js";
 import type {
   ClassificationDecisionKey,
+  SourceRepository,
   TargetDictionaryQuery,
   TargetDictionaryRepository,
   TargetDictionaryValueInput,
@@ -27,6 +28,16 @@ export interface CreateTargetTermCommand extends ClassificationDecisionKey {
     readonly externalId?: string;
   };
   readonly reason?: string;
+}
+
+export interface CreateRulesV2TargetTermCommand {
+  readonly sourceId: EntityId;
+  readonly targetId: EntityId;
+  readonly entityType: string;
+  readonly name: string;
+  readonly slug?: string;
+  readonly parentExternalId?: string;
+  readonly relatedTerm?: CreateTargetTermCommand["relatedTerm"];
 }
 
 function providerCode(config: JsonObject, exporterCode: string): string {
@@ -63,6 +74,7 @@ export class TargetDictionaryService {
     private readonly repository: TargetDictionaryRepository,
     private readonly providers: TargetDictionaryProviderRegistry,
     private readonly classifier: ClassifierAdminService,
+    private readonly sources: SourceRepository,
   ) {}
 
   async listTargets() {
@@ -237,6 +249,89 @@ export class TargetDictionaryService {
         }, actor);
       await this.repository.completeTermCreation(auditId, dictionaryValue.externalId);
       return { dictionaryValue, decision, relatedDictionaryValue: relatedDictionaryValue ?? null, projection };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown target term creation error";
+      try {
+        await this.repository.failTermCreation(auditId, message.slice(0, 2_000), remoteExternalId);
+      } catch {
+        // The target error is the primary failure and must remain visible to the operator.
+      }
+      throw error;
+    }
+  }
+
+  async createTermForRulesV2(command: CreateRulesV2TargetTermCommand, actor = "admin-api") {
+    const name = command.name.trim();
+    if (name === "" || name.length > 200) {
+      throw new IntegrationContractError("name must contain from 1 to 200 characters");
+    }
+    if (command.slug !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(command.slug)) {
+      throw new IntegrationContractError("slug must contain lowercase Latin letters, digits and hyphens");
+    }
+    if (command.parentExternalId !== undefined
+      && (!/^\d+$/u.test(command.parentExternalId) || BigInt(command.parentExternalId) <= 0n)) {
+      throw new IntegrationContractError("parentExternalId must be a positive integer");
+    }
+    if (command.parentExternalId !== undefined && command.entityType !== "product_categories") {
+      throw new IntegrationContractError("parentExternalId is supported only for product_categories");
+    }
+
+    const [{ provider }, source] = await Promise.all([
+      this.resolveTarget(command.targetId),
+      this.sources.getById(command.sourceId),
+    ]);
+    if (source === null) throw new EntityNotFoundError("Source", command.sourceId);
+    if (!provider.creatableEntityTypes.includes(command.entityType)) {
+      throw new IntegrationContractError(`Creating ${command.entityType} terms is not supported by this target`);
+    }
+    const relation = command.relatedTerm === undefined
+      ? undefined
+      : provider.termRelationCapabilities?.find((item) => item.relationCode === command.relatedTerm?.relationCode
+        && item.sourceEntityType === command.entityType
+        && item.relatedEntityType === command.relatedTerm?.entityType);
+    if (command.relatedTerm !== undefined && relation === undefined) {
+      throw new IntegrationContractError(`Relation ${command.relatedTerm.relationCode} is not supported for ${command.entityType}`);
+    }
+    if (command.relatedTerm?.mode === "existing" && !/^\d+$/u.test(command.relatedTerm.externalId ?? "")) {
+      throw new IntegrationContractError("Existing related term requires a positive externalId");
+    }
+    if (command.relatedTerm?.mode === "create" && relation?.canCreateRelated !== true) {
+      throw new IntegrationContractError(`Creating related ${command.relatedTerm.entityType} terms is not supported`);
+    }
+
+    const auditId = await this.repository.startTermCreation({
+      targetId: command.targetId,
+      sourceId: command.sourceId,
+      entityType: command.entityType,
+      name,
+      ...(command.slug === undefined ? {} : { slug: command.slug }),
+      ...(command.parentExternalId === undefined ? {} : { parentExternalId: command.parentExternalId }),
+      actor,
+    });
+    let remoteExternalId: string | undefined;
+    try {
+      const stableReference = ["rules-v2", command.sourceId, command.entityType, command.slug ?? name]
+        .join(":").toLowerCase();
+      const remoteResult = await provider.createTerm({
+        entityType: command.entityType,
+        name,
+        sourceValue: name,
+        sourceCode: source.code,
+        requestReference: stableReference,
+        ...(command.slug === undefined ? {} : { slug: command.slug }),
+        ...(command.parentExternalId === undefined ? {} : { parentExternalId: command.parentExternalId }),
+        ...(command.relatedTerm === undefined ? {} : { relatedTerm: command.relatedTerm }),
+      });
+      remoteExternalId = remoteResult.value.externalId;
+      const dictionaryValue = await this.repository.upsertValue(
+        command.targetId,
+        command.entityType,
+        dictionaryInput(remoteResult.value),
+      );
+      const relatedDictionaryValues = await Promise.all(remoteResult.relatedValues.map((item) =>
+        this.repository.upsertValue(command.targetId, item.entityType, dictionaryInput(item.value))));
+      await this.repository.completeTermCreation(auditId, remoteResult.value.externalId);
+      return { dictionaryValue, relatedDictionaryValues };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown target term creation error";
       try {

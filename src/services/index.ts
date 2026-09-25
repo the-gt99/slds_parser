@@ -25,6 +25,7 @@ export {
 } from "./classification-rule-matcher.js";
 export {
   TargetDictionaryService,
+  type CreateRulesV2TargetTermCommand,
   type CreateTargetTermCommand,
 } from "./target-dictionary-service.js";
 export { ProductAdminService } from "./product-admin-service.js";

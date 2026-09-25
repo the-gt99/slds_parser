@@ -1,5 +1,5 @@
 const byId = (id) => document.getElementById(id);
-const state = { session: null, schema: null, targets: [], overview: null, selected: null, searchTimer: null, workbenchOffset: 0, workbench: null, focusProductId: new URLSearchParams(location.search).get("productId"), indexPoll: null };
+const state = { session: null, schema: null, targets: [], overview: null, selected: null, searchTimer: null, workbenchOffset: 0, workbench: null, focusProductId: new URLSearchParams(location.search).get("productId"), indexPoll: null, termCreation: null, termLandingError: null };
 state.search = new URLSearchParams(location.search).get("search") || "";
 const dictionaryTypes = { "product.category": "product_categories", "product.tag": "tags", "product.brand": "brands", "product.model": "models", "product.color": "colors", "product.material": "materials", "product.activity": "activities", "product.shoe_height": "shoe_heights", "product.season": "seasons" };
 const scopeLabels = { "product.brand": "Бренд", "product.model": "Модель", "product.category": "Категория", "product.tag": "Метка", "product.color": "Цвет", "product.material": "Материал", "product.activity": "Вид спорта", "product.shoe_height": "Высота обуви", "product.season": "Сезон" };
@@ -8,10 +8,26 @@ function node(tag, className = "", value = "") { const item = document.createEle
 function toast(value) { byId("toast").textContent = value; byId("toast").hidden = false; setTimeout(() => { byId("toast").hidden = true; }, 2600); }
 function error(value) { byId("page-error").textContent = value; byId("page-error").hidden = false; }
 function number(value) { return Number(value || 0).toLocaleString("ru-RU"); }
+function slugify(value) { const replacements = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" }; return value.toLowerCase().split("").map((letter) => replacements[letter] ?? letter).join("").normalize("NFKD").replace(/[\u0300-\u036f]/gu, "").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, ""); }
+function activeTarget() { return state.targets[0] ?? null; }
+function termRelation(entityType) { return activeTarget()?.dictionary?.termRelationCapabilities?.find((item) => item.sourceEntityType === entityType && item.relationCode === "landing") ?? null; }
+function canCreateTerm(entityType) { return activeTarget()?.dictionary?.creatableEntityTypes?.includes(entityType) === true; }
 function renderSummary() { const catalog = state.overview.summary.catalog; const counts = state.overview.summary.native; const cards = catalog ? [["Всего записей", catalog.total], ["Точное условие", catalog.exact], ["Составные / другие условия", catalog.conditional]] : [["Всего записей", counts.shadow + counts.draft + counts.disabled]]; byId("rules-summary").replaceChildren(...cards.map(([label, value]) => { const card = node("article", "rule-summary-card"); card.append(node("strong", "", number(value)), node("span", "", label)); return card; })); }
 function workbenchStatus(value) { return value === "ready" ? "Готов" : value === "conflict" ? "Конфликт" : "Не завершён"; }
 function scopeFromBlocker(code) { return code === "required_brand_missing" ? "product.brand" : code === "required_model_missing" ? "product.model" : code === "required_category_missing" ? "product.category" : null; }
 function resultField(scope, values) { const box = node("div", `workbench-field ${values.length ? "complete" : "missing"}`); box.append(node("span", "", scopeLabels[scope] || scope), node("strong", "", values.length ? values.map((item) => item.label).join(" · ") : "Не заполнено")); return box; }
+function suggestedConditions(item, scope) {
+  const type = scope.split(".").at(-1); const candidate = item.candidates?.[scope]?.[0];
+  if (!candidate?.sourceValue) return [{ conditions: [{ field: "common.source.productId", operator: "equals", values: [item.sourceProductId] }] }];
+  const groups = [{ conditions: [{ field: `candidate.${type}.sourceValue`, operator: "equals", values: [candidate.sourceValue] }] }];
+  if (scope === "product.model") {
+    for (const key of ["brand", "family"]) {
+      const value = candidate.context?.[key];
+      if (typeof value === "string" && value.trim()) groups.push({ conditions: [{ field: `candidate.model.context.${key}`, operator: "equals", values: [value.trim()] }] });
+    }
+  }
+  return groups;
+}
 function prefillFromProduct(item, scope) {
   reset();
   const short = scope.split(".").at(-1);
@@ -20,8 +36,8 @@ function prefillFromProduct(item, scope) {
   byId("rule-group").value = `${short}_product_${item.sourceProductId}`;
   byId("rule-source").value = byId("workbench-source").value;
   byId("rule-status").value = "draft";
-  renderConditions([{ conditions: [{ field: "common.source.productId", operator: "equals", values: [item.sourceProductId] }] }]);
-  renderActions([{ targetScope: scope, mode: "add" }]);
+  renderConditions(suggestedConditions(item, scope));
+  renderActions([{ targetScope: scope, mode: "add", searchValue: item.candidates?.[scope]?.[0]?.sourceValue || "" }]);
   document.querySelector(".rule-editor-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function renderWorkbench() {
@@ -91,7 +107,8 @@ async function loadWorkbench(quiet = false) {
   if (!quiet) { byId("workbench-loading").hidden = false; byId("workbench-items").replaceChildren(); byId("workbench-empty").hidden = true; }
   try {
     const query = new URLSearchParams({ sourceId: byId("workbench-source").value, targetId: state.targets[0].id,
-      status: byId("workbench-status").value, search: byId("workbench-search").value.trim(), limit: "40", offset: String(state.workbenchOffset) });
+      status: byId("workbench-status").value, variants: byId("workbench-variants").value,
+      search: byId("workbench-search").value.trim(), limit: "40", offset: String(state.workbenchOffset) });
     if (byId("workbench-missing").value) query.set("missingField", byId("workbench-missing").value);
     query.set("sort", byId("workbench-sort").value);
     if (state.focusProductId) query.set("productId", state.focusProductId);
@@ -173,18 +190,93 @@ function addTargetAction(action) {
   const row = node("div", "rule-block");
   const scope = copySelect("action-scope", "action-scope", action?.targetScope || "product.category");
   const mode = copySelect("action-mode", "action-mode", action?.mode || "add");
-  const search = node("input"); search.type = "search"; search.placeholder = "Найти значение WordPress";
+  const search = node("input"); search.type = "search"; search.placeholder = "Найти значение WordPress"; search.value = action?.searchValue || "";
   const values = node("select", "action-value"); values.size = 4;
   if (action?.dictionaryValueId) { const o = node("option", "", action.externalLabel || action.dictionaryValueId); o.value = action.dictionaryValueId; values.append(o); values.value = action.dictionaryValueId; }
   let timer; let generation = 0;
   async function find() { const request = ++generation; try { const data = await api("/api/targets/" + state.targets[0].id + "/dictionary?entityType=" + encodeURIComponent(dictionaryTypes[scope.value]) + "&search=" + encodeURIComponent(search.value.trim()) + "&limit=30&offset=0"); if (request !== generation || !row.isConnected) return; const empty = node("option", "", "Выберите значение"); empty.value = ""; values.replaceChildren(empty, ...(data.items || []).map((item) => { const o = node("option", "", item.name + " · " + item.externalId); o.value = item.id; return o; })); } catch (cause) { if (request === generation) error(cause.message); } }
   search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(find, 300); });
   scope.addEventListener("change", () => { generation++; values.replaceChildren(); void find(); });
-  const grid = node("div", "rule-condition-grid"); const choice = node("div"); choice.append(search, values); grid.append(scope, mode, choice);
+  const grid = node("div", "rule-condition-grid"); const choice = node("div"); choice.append(search, values);
+  const create = uiButton("+ Создать в WordPress", () => openTermCreation(row, scope, search, values)); create.classList.add("wide");
+  const syncCreate = () => { create.hidden = !canCreateTerm(dictionaryTypes[scope.value]); }; scope.addEventListener("change", syncCreate); syncCreate(); choice.append(create); grid.append(scope, mode, choice);
   const primaryLabel = node("label", "rule-primary-brand"); const primary = node("input", "action-primary-brand"); primary.type = "checkbox"; primary.checked = action?.primarySourceBrand === true; primaryLabel.append(primary, node("span", "", "Основной бренд товара для размерной сетки")); const syncPrimary = () => { primaryLabel.hidden = scope.value !== "product.brand"; if (primaryLabel.hidden) primary.checked = false; }; scope.addEventListener("change", syncPrimary); syncPrimary();
   row.append(grid, primaryLabel, uiButton("Удалить действие", () => { generation++; clearTimeout(timer); row.remove(); })); byId("multi-actions").append(row);
 }
 function renderActions(actions) { byId("multi-actions").parentElement.querySelectorAll(":scope > button").forEach((item) => { item.disabled = false; }); byId("multi-actions").replaceChildren(); (actions || [undefined]).forEach(addTargetAction); }
+
+async function loadTermParents(targetId, search = "") {
+  const select = byId("v2-term-parent"); select.replaceChildren(new Option("Без родителя", ""));
+  const params = new URLSearchParams({ entityType: "product_categories", search, limit: "50", offset: "0" });
+  const data = await api(`/api/targets/${encodeURIComponent(targetId)}/dictionary?${params}`);
+  for (const item of data.items || []) select.append(new Option(`${item.name} · ${item.externalId}`, item.externalId));
+}
+
+async function loadTermLanding(targetId, relation, name) {
+  const select = byId("v2-term-landing-mode"); select.replaceChildren(new Option("Создать новую метку", "create"));
+  state.termLandingError = null;
+  try {
+    const params = new URLSearchParams({ entityType: relation.relatedEntityType, search: name, limit: "30", offset: "0" });
+    const data = await api(`/api/targets/${encodeURIComponent(targetId)}/dictionary?${params}`);
+    const expected = slugify(name);
+    const exact = (data.items || []).filter((item) => item.slug === expected || slugify(item.name) === expected);
+    for (const item of exact) select.append(new Option(`Связать существующую: ${item.name} · ${item.externalId}`, `existing:${item.externalId}`));
+    if (exact[0]) select.value = `existing:${exact[0].externalId}`;
+    byId("v2-term-landing-status").textContent = exact.length
+      ? "Найдена одноимённая метка. Новая метка создаваться не будет."
+      : "Одноимённой метки нет: WordPress создаст новую посадочную метку.";
+  } catch (cause) {
+    state.termLandingError = cause.message;
+    byId("v2-term-landing-status").textContent = `Не удалось проверить существующие метки: ${cause.message}`;
+  }
+}
+
+async function openTermCreation(row, scope, search, values) {
+  const target = activeTarget(); const entityType = dictionaryTypes[scope.value]; const name = search.value.trim();
+  if (!target || !canCreateTerm(entityType)) return;
+  if (!name) { error("Сначала введите точное название нового термина WordPress."); return; }
+  state.termCreation = { row, scope, values, entityType };
+  byId("v2-term-name").value = name; byId("v2-term-slug").value = slugify(name);
+  byId("v2-term-type").textContent = `${scopeLabels[scope.value] || scope.value} · ${entityType}`;
+  byId("v2-term-confirm").checked = false; byId("v2-term-error").hidden = true;
+  const parent = byId("v2-term-parent-field"); parent.hidden = entityType !== "product_categories";
+  if (!parent.hidden) { byId("v2-term-parent-search").value = ""; await loadTermParents(target.id); }
+  const relation = termRelation(entityType); const landing = byId("v2-term-landing-field"); landing.hidden = !relation;
+  byId("v2-term-landing").checked = Boolean(relation); byId("v2-term-landing-mode-field").hidden = !relation;
+  if (relation) await loadTermLanding(target.id, relation, name);
+  byId("v2-term-dialog").showModal();
+}
+
+async function createTermForRule(event) {
+  event.preventDefault();
+  const creation = state.termCreation; const target = activeTarget();
+  if (!creation || !creation.row.isConnected || !target) return;
+  const submit = byId("v2-term-submit"); const failure = byId("v2-term-error"); failure.hidden = true; submit.disabled = true;
+  try {
+    const body = { sourceId: byId("rule-source").value, entityType: creation.entityType, name: byId("v2-term-name").value.trim() };
+    const slug = byId("v2-term-slug").value.trim(); if (slug) body.slug = slug;
+    const parent = byId("v2-term-parent").value; if (creation.entityType === "product_categories" && parent) body.parentExternalId = parent;
+    const relation = termRelation(creation.entityType);
+    if (relation) {
+      if (byId("v2-term-landing").checked) {
+        if (state.termLandingError) throw new Error(`Нельзя безопасно подключить посадочную: ${state.termLandingError}`);
+        const [mode, externalId] = byId("v2-term-landing-mode").value.split(":");
+        body.relatedTerm = { relationCode: relation.relationCode, entityType: relation.relatedEntityType, mode, ...(externalId ? { externalId } : {}) };
+      } else body.relatedTerm = { relationCode: relation.relationCode, entityType: relation.relatedEntityType, mode: "none" };
+    }
+    const response = await api(`/api/targets/${encodeURIComponent(target.id)}/dictionary/terms/rules-v2`, { method: "POST", body });
+    const value = response.result.dictionaryValue; const option = new Option(`${value.name} · ${value.externalId}`, value.id);
+    creation.values.replaceChildren(option); creation.values.value = value.id;
+    const related = response.result.relatedDictionaryValues?.[0];
+    if (related && ![...document.querySelectorAll(".action-value")].some((select) => select.value === related.id)) {
+      addTargetAction({ targetScope: relation.targetScope, mode: "add", dictionaryValueId: related.id, externalLabel: related.name });
+    }
+    state.previewSignature = null; byId("v2-term-dialog").close(); state.termCreation = null;
+    toast(`Термин «${value.name}» создан и выбран. Теперь выполните полную проверку правила.`);
+  } catch (cause) {
+    failure.textContent = cause.message; failure.hidden = false;
+  } finally { submit.disabled = false; }
+}
 
 function editImported(rule) {
   edit(rule);
@@ -235,4 +327,10 @@ function initializeMultiEditor() {
 async function initialize() { const [schema, targets] = await Promise.all([api("/api/data-schema"), api("/api/targets")]); state.schema = schema; state.targets = (targets.items || []).filter((target) => target.code === "slamdunk" || target.exporterCode === "wordpress"); if (!state.targets.length) state.targets = targets.items || []; if (!state.targets.length) throw new Error("Target не настроен"); const details = node("div", "rule-details"); details.id = "rule-details"; details.hidden = true; document.querySelector(".rule-editor-card > .rule-editor-grid").before(details); const sourceOptions = () => schema.donors.map((source) => { const option = node("option", "", source.name); option.value = source.id; return option; }); byId("rule-source").replaceChildren(...sourceOptions()); byId("workbench-source").replaceChildren(...sourceOptions()); fieldOptions(); initializeMultiEditor(); await Promise.all([loadRules(), loadWorkbench()]); byId("page-loading").hidden = true; byId("rules-workspace").hidden = false; }
 async function session() { const data = await api("/api/auth/session"); if (!data.authenticated) { byId("login-view").hidden = false; return; } state.session = data; byId("operator-name").textContent = data.operator; byId("app-view").hidden = false; try { await initialize(); } catch (cause) { byId("page-loading").hidden = true; error(cause.message); } }
 byId("login-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/api/auth/login", { method: "POST", body: { username: byId("login-username").value, password: byId("login-password").value } }); location.reload(); } catch { byId("login-error").textContent = "Неверные данные входа."; byId("login-error").hidden = false; } });
+byId("v2-term-form").addEventListener("submit", createTermForRule);
+for (const id of ["v2-term-close", "v2-term-cancel"]) byId(id).addEventListener("click", () => { byId("v2-term-dialog").close(); state.termCreation = null; });
+byId("v2-term-landing").addEventListener("change", () => { byId("v2-term-landing-mode-field").hidden = !byId("v2-term-landing").checked; });
+byId("v2-term-name").addEventListener("input", () => { byId("v2-term-slug").value = slugify(byId("v2-term-name").value); });
+let parentSearchTimer;
+byId("v2-term-parent-search").addEventListener("input", () => { clearTimeout(parentSearchTimer); parentSearchTimer = setTimeout(() => { const target = activeTarget(); if (target) loadTermParents(target.id, byId("v2-term-parent-search").value.trim()).catch((cause) => error(cause.message)); }, 250); });
 byId("logout-button").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST", body: {} }); location.reload(); }); byId("new-rule").addEventListener("click", reset); byId("preview-rule").addEventListener("click", preview); byId("save-rule").addEventListener("click", save); byId("condition-operator").addEventListener("change", () => { byId("condition-value").disabled = byId("condition-operator").value === "absent"; }); byId("dictionary-search").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => searchDictionary().catch((cause) => error(cause.message)), 250); }); byId("action-scope").addEventListener("change", () => searchDictionary().catch((cause) => error(cause.message))); byId("workbench-filters").addEventListener("submit", (event) => { event.preventDefault(); state.focusProductId = null; history.replaceState(null, "", "/rules-v2"); state.workbenchOffset = 0; void loadWorkbench(); }); byId("refresh-workbench").addEventListener("click", () => loadWorkbench()); byId("workbench-prev").addEventListener("click", () => { state.workbenchOffset = Math.max(0, state.workbenchOffset - 40); void loadWorkbench(); }); byId("workbench-next").addEventListener("click", () => { state.workbenchOffset += 40; void loadWorkbench(); }); await session();

@@ -23,7 +23,8 @@ export interface RulesV2WorkbenchQuery {
   readonly offset?: number;
   readonly limit?: number;
   readonly missingField?: "brand" | "model" | "category";
-  readonly sort?: "latest" | "title" | "problems";
+  readonly variants?: "with" | "without" | "all";
+  readonly sort?: "latest" | "title" | "problems" | "rule_gaps" | "data_ready";
   readonly productId?: string;
 }
 
@@ -85,7 +86,8 @@ export class RulesV2PreviewService {
     if (!Number.isSafeInteger(offset) || offset < 0) throw new IntegrationContractError("Workbench offset must be a non-negative integer");
     if (!["incomplete", "conflict", "ready", "all"].includes(status)) throw new IntegrationContractError("Unsupported workbench status");
     if (query.missingField !== undefined && !["brand", "model", "category"].includes(query.missingField)) throw new IntegrationContractError("Unsupported required field");
-    if (query.sort !== undefined && !["latest", "title", "problems"].includes(query.sort)) throw new IntegrationContractError("Unsupported workbench sort");
+    if (query.variants !== undefined && !["with", "without", "all"].includes(query.variants)) throw new IntegrationContractError("Unsupported variants filter");
+    if (query.sort !== undefined && !["latest", "title", "problems", "rule_gaps", "data_ready"].includes(query.sort)) throw new IntegrationContractError("Unsupported workbench sort");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -117,18 +119,28 @@ export class RulesV2PreviewService {
       const complete = state?.rules_revision === revision && state.complete;
       const search = query.search?.trim() ?? "";
       const missing = query.missingField === undefined ? "" : `required_${query.missingField}_missing`;
+      const variants = query.variants ?? "all";
+      const ruleGapCount = `(CASE WHEN 'required_brand_missing' = ANY(item.issue_codes) THEN 1 ELSE 0 END
+        + CASE WHEN 'required_model_missing' = ANY(item.issue_codes) THEN 1 ELSE 0 END
+        + CASE WHEN 'required_category_missing' = ANY(item.issue_codes) THEN 1 ELSE 0 END)`;
       const order = query.sort === "title" ? "item.title COLLATE \"C\" ASC, item.source_product_id DESC"
         : query.sort === "problems" ? "item.issue_count DESC, item.source_product_id DESC"
+          : query.sort === "rule_gaps" ? `${ruleGapCount} DESC, item.product_updated_at DESC, item.source_product_id DESC`
+            : query.sort === "data_ready" ? `(item.issue_count - ${ruleGapCount}) ASC, ${ruleGapCount} DESC,
+              item.product_updated_at DESC, item.source_product_id DESC`
           : "item.product_updated_at DESC, item.source_product_id DESC";
       const filter = `item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
         AND item.product_updated_at = internal.updated_at
         AND ($4::TEXT = '' OR item.search_text ILIKE '%' || $4 || '%')
         AND ($5::TEXT = '' OR $5 = ANY(item.issue_codes))
-        AND ($6::TEXT = 'all' OR item.status = $6 OR ($6 = 'incomplete' AND item.status = 'conflict'))`;
-      const values = [query.sourceId, query.targetId, revision, search, missing, status];
+        AND ($6::TEXT = 'all' OR item.status = $6 OR ($6 = 'incomplete' AND item.status = 'conflict'))
+        AND ($7::TEXT = 'all'
+          OR ($7 = 'with' AND NOT ('variants_missing' = ANY(item.issue_codes)))
+          OR ($7 = 'without' AND 'variants_missing' = ANY(item.issue_codes)))`;
+      const values = [query.sourceId, query.targetId, revision, search, missing, status, variants];
       const rows = (await client.query<Record<string, unknown>>(`SELECT item.* FROM rules_v2_workbench_items item
         JOIN internal_products internal ON internal.source_product_id = item.source_product_id
-        WHERE ${filter} ORDER BY ${order} LIMIT $7 OFFSET $8`, [...values, limit + 1, offset])).rows;
+        WHERE ${filter} ORDER BY ${order} LIMIT $8 OFFSET $9`, [...values, limit + 1, offset])).rows;
       const count = (await client.query<{ total: number }>(`SELECT COUNT(*)::INT AS total FROM rules_v2_workbench_items item
         JOIN internal_products internal ON internal.source_product_id = item.source_product_id WHERE ${filter}`, values)).rows[0]?.total ?? 0;
       const counts = (await client.query<{ status: string; count: number }>(`SELECT item.status, COUNT(*)::INT AS count

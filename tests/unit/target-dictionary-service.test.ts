@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TargetDictionaryProvider } from "../../src/integrations/index.js";
 import { TargetDictionaryProviderRegistry } from "../../src/integrations/index.js";
-import type { TargetDictionaryRepository } from "../../src/repositories/index.js";
+import type { SourceRepository, TargetDictionaryRepository } from "../../src/repositories/index.js";
 import type { ClassifierAdminService } from "../../src/services/index.js";
 import { TargetDictionaryService } from "../../src/services/index.js";
 
@@ -53,7 +53,14 @@ function setup() {
     saveDecision: vi.fn().mockResolvedValue({ mappingId: "99", referenceValueId: "100", revision: "1", affectedProductCount: 3, affectedExportCount: 0 }),
     createReferenceProjection: vi.fn().mockResolvedValue({ projection: { id: "200" } }),
   } as unknown as ClassifierAdminService;
-  return { provider, repository, classifier, service: new TargetDictionaryService(repository, registry, classifier) };
+  const sources = {
+    getById: vi.fn().mockResolvedValue({
+      id: "1", code: "goat", name: "GOAT", adapterCode: "goat", config: {}, enabled: true,
+      createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    }),
+  } as unknown as SourceRepository;
+  return { provider, repository, classifier, sources,
+    service: new TargetDictionaryService(repository, registry, classifier, sources) };
 }
 
 describe("TargetDictionaryService", () => {
@@ -144,6 +151,55 @@ describe("TargetDictionaryService", () => {
       parentExternalId: "15",
       actor: "roman",
     }));
+  });
+
+  it("creates and snapshots a WordPress term for Rules v2 without writing legacy mappings", async () => {
+    const { provider, repository, classifier, service } = setup();
+
+    const result = await service.createTermForRulesV2({
+      sourceId: "1",
+      targetId: "10",
+      entityType: "models",
+      name: "Simone Rocha Peeling Waist Wide Leg Trousers",
+      slug: "simone-rocha-peeling-waist-wide-leg-trousers",
+    }, "roman");
+
+    expect(provider.createTerm).toHaveBeenCalledWith(expect.objectContaining({
+      sourceCode: "goat",
+      sourceValue: "Simone Rocha Peeling Waist Wide Leg Trousers",
+      requestReference: "rules-v2:1:models:simone-rocha-peeling-waist-wide-leg-trousers",
+    }));
+    expect(repository.startTermCreation).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "1",
+      entityType: "models",
+      actor: "roman",
+    }));
+    expect(repository.upsertValue).toHaveBeenCalledWith("10", "models", expect.objectContaining({ externalId: "77" }));
+    expect(repository.completeTermCreation).toHaveBeenCalledWith("audit-1", "77");
+    expect(classifier.saveDecision).not.toHaveBeenCalled();
+    expect(result.dictionaryValue.id).toBe("88");
+  });
+
+  it("returns a related landing term for a Rules v2 action without creating a legacy projection", async () => {
+    const { provider, repository, classifier, service } = setup();
+    (provider as { termRelationCapabilities?: unknown }).termRelationCapabilities = [
+      { relationCode: "landing", sourceEntityType: "models", relatedEntityType: "tags", targetScope: "product.tag", label: "Посадочная", canCreateRelated: true },
+    ];
+    vi.mocked(provider.createTerm).mockResolvedValueOnce({
+      value: { externalId: "77", name: "New model", metadata: {} },
+      relatedValues: [{ entityType: "tags", value: { externalId: "91", name: "New model", metadata: {} } }],
+    });
+    vi.mocked(repository.upsertValue)
+      .mockResolvedValueOnce({ id: "88", targetId: "10", entityType: "models", externalId: "77", name: "New model", slug: null, parentExternalId: null, taxonomy: "pa_model", attributeCode: "model", remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" })
+      .mockResolvedValueOnce({ id: "89", targetId: "10", entityType: "tags", externalId: "91", name: "New model", slug: null, parentExternalId: null, taxonomy: "product_tag", attributeCode: null, remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true, firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01" });
+
+    const result = await service.createTermForRulesV2({
+      sourceId: "1", targetId: "10", entityType: "models", name: "New model",
+      relatedTerm: { relationCode: "landing", entityType: "tags", mode: "create" },
+    });
+
+    expect(result.relatedDictionaryValues).toEqual([expect.objectContaining({ id: "89", entityType: "tags" })]);
+    expect(classifier.createReferenceProjection).not.toHaveBeenCalled();
   });
 
   it("records a failed remote creation without hiding the original error", async () => {

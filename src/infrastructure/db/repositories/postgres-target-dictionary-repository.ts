@@ -182,7 +182,7 @@ export class PostgresTargetDictionaryRepository implements TargetDictionaryRepos
         [
           input.targetId,
           input.sourceId,
-          input.observationId,
+          input.observationId ?? null,
           input.entityType,
           input.name,
           input.slug ?? null,

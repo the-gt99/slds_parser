@@ -1541,7 +1541,7 @@ export interface TargetDictionaryQuery {
 export interface StartTargetTermCreationInput {
   readonly targetId: EntityId;
   readonly sourceId: EntityId;
-  readonly observationId: EntityId;
+  readonly observationId?: EntityId;
   readonly entityType: string;
   readonly name: string;
   readonly slug?: string;

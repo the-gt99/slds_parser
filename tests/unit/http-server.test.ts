@@ -86,12 +86,13 @@ describe("HTTP server", () => {
     const server = createHttpServer({ ...dependencies({ query: vi.fn() }), rulesV2: { workbench } as unknown as RulesV2Service });
 
     const response = await server.inject({ method: "GET",
-      url: "/api/rules-v2/workbench?sourceId=1&targetId=10&status=incomplete&limit=40&offset=0",
+      url: "/api/rules-v2/workbench?sourceId=1&targetId=10&status=incomplete&variants=with&sort=rule_gaps&limit=40&offset=0",
       headers: { authorization: `Bearer ${adminToken}` } });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ mode: "resulting_target_dto", items: [] });
-    expect(workbench).toHaveBeenCalledWith({ sourceId: "1", targetId: "10", search: "", status: "incomplete", limit: 40, offset: 0 });
+    expect(workbench).toHaveBeenCalledWith({ sourceId: "1", targetId: "10", search: "", status: "incomplete",
+      variants: "with", sort: "rule_gaps", limit: 40, offset: 0 });
     await server.close();
   });
 
@@ -921,6 +922,48 @@ describe("HTTP server", () => {
       expect.objectContaining({ targetId: "10", slug: "pegasus-trail" }),
       "admin",
     );
+    await server.close();
+  });
+
+  it("creates a WordPress dictionary term for a Rules v2 action without a legacy decision payload", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const targetDictionaries = {
+      createTermForRulesV2: vi.fn().mockResolvedValue({
+        dictionaryValue: { id: "88", name: "New model" },
+        relatedDictionaryValues: [],
+      }),
+    } as unknown as TargetDictionaryService;
+    const server = createHttpServer({ ...dependencies(database), targetDictionaries });
+    const login = await server.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "admin", password: "test-admin-password" },
+    });
+    const headers = {
+      cookie: String(login.headers["set-cookie"]).split(";")[0],
+      "x-csrf-token": login.json().csrfToken,
+    };
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/targets/10/dictionary/terms/rules-v2",
+      headers,
+      payload: {
+        sourceId: "1",
+        entityType: "models",
+        name: "New model",
+        slug: "new-model",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(targetDictionaries.createTermForRulesV2).toHaveBeenCalledWith({
+      sourceId: "1",
+      targetId: "10",
+      entityType: "models",
+      name: "New model",
+      slug: "new-model",
+    }, "admin");
     await server.close();
   });
 

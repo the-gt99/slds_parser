@@ -124,12 +124,13 @@ describe("RulesV2PreviewService", () => {
     vi.spyOn(service as unknown as { startIndexing(): void }, "startIndexing").mockImplementation(() => {});
 
     const result = await service.workbench({ sourceId: "1", targetId: "10", search: "сандали",
-      missingField: "model", sort: "problems", status: "incomplete", limit: 40 });
+      missingField: "model", variants: "with", sort: "rule_gaps", status: "incomplete", limit: 40 });
 
     expect(result).toMatchObject({ filteredCount: 2, index: { complete: true, indexed: 2, total: 2 } });
     const list = statements.find(({ sql }) => sql.includes("SELECT item.*"));
-    expect(list?.sql).toContain("ORDER BY item.issue_count DESC");
+    expect(list?.sql).toContain("'required_brand_missing' = ANY(item.issue_codes)");
+    expect(list?.sql).toContain("NOT ('variants_missing' = ANY(item.issue_codes))");
     expect(list?.sql).toContain("item.product_updated_at = internal.updated_at");
-    expect(list?.values).toEqual(["1", "10", "revision-1", "сандали", "required_model_missing", "incomplete", 41, 0]);
+    expect(list?.values).toEqual(["1", "10", "revision-1", "сандали", "required_model_missing", "incomplete", "with", 41, 0]);
   });
 });

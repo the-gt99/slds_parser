@@ -22,6 +22,7 @@ import type {
   ClassificationRuleDraft,
   ClassifierAdminService,
   ContentTemplateAdminService,
+  CreateRulesV2TargetTermCommand,
   CreateTargetTermCommand,
   ExportControlService,
   ProductAdminService,
@@ -165,6 +166,7 @@ interface RuleV2WorkbenchQuery {
   readonly limit?: string;
   readonly offset?: string;
   readonly missingField?: string;
+  readonly variants?: string;
   readonly sort?: string;
   readonly productId?: string;
 }
@@ -678,6 +680,39 @@ function targetTermBody(targetId: string, value: unknown): CreateTargetTermComma
       : { parentExternalId: entityId(body.parentExternalId, "parentExternalId") }),
     ...(relatedTerm === undefined ? {} : { relatedTerm }),
     ...(optionalString(body.reason) === undefined ? {} : { reason: optionalString(body.reason)! }),
+  };
+}
+
+function rulesV2TargetTermBody(targetId: string, value: unknown): CreateRulesV2TargetTermCommand {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new HttpInputError("JSON object is required");
+  const body = value as Record<string, unknown>;
+  let relatedTerm: CreateRulesV2TargetTermCommand["relatedTerm"];
+  if (body.relatedTerm !== undefined) {
+    if (body.relatedTerm === null || typeof body.relatedTerm !== "object" || Array.isArray(body.relatedTerm)) {
+      throw new HttpInputError("relatedTerm must be an object");
+    }
+    const related = body.relatedTerm as Record<string, unknown>;
+    const mode = related.mode;
+    if (mode !== "create" && mode !== "existing" && mode !== "none") {
+      throw new HttpInputError("relatedTerm.mode must be create, existing or none");
+    }
+    relatedTerm = {
+      relationCode: requiredString(related.relationCode, "relatedTerm.relationCode"),
+      entityType: requiredString(related.entityType, "relatedTerm.entityType"),
+      mode,
+      ...(mode === "existing" ? { externalId: entityId(related.externalId, "relatedTerm.externalId") } : {}),
+    };
+  }
+  return {
+    sourceId: entityId(body.sourceId, "sourceId"),
+    targetId,
+    entityType: requiredString(body.entityType, "entityType"),
+    name: requiredString(body.name, "name"),
+    ...(optionalString(body.slug) === undefined ? {} : { slug: optionalString(body.slug)! }),
+    ...(optionalString(body.parentExternalId) === undefined
+      ? {}
+      : { parentExternalId: entityId(body.parentExternalId, "parentExternalId") }),
+    ...(relatedTerm === undefined ? {} : { relatedTerm }),
   };
 }
 
@@ -1862,6 +1897,17 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     }),
   );
 
+  server.post<{ Params: TargetParams }>(
+    "/api/targets/:targetId/dictionary/terms/rules-v2",
+    { preHandler: [requireAdmin, requireMutationAccess] },
+    async (request, reply) => reply.code(201).send({
+      result: await dependencies.targetDictionaries.createTermForRulesV2(
+        rulesV2TargetTermBody(entityId(request.params.targetId, "targetId"), request.body),
+        actor(request),
+      ),
+    }),
+  );
+
   server.post<{ Params: ProductParams; Body: { readonly targetId?: unknown } }>(
     "/api/products/:productId/wordpress-preflight",
     { preHandler: [requireAdmin, requireMutationAccess] },
@@ -1895,6 +1941,10 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
     if (dependencies.rulesV2 === undefined) throw new HttpInputError("Rules v2 are not configured");
     const status = optionalString(request.query.status) ?? "incomplete";
     if (!["incomplete", "conflict", "ready", "all"].includes(status)) throw new HttpInputError("Unsupported workbench status");
+    const variants = optionalString(request.query.variants) ?? "all";
+    if (!["with", "without", "all"].includes(variants)) throw new HttpInputError("Unsupported variants filter");
+    const sort = optionalString(request.query.sort) ?? "latest";
+    if (!["latest", "title", "problems", "rule_gaps", "data_ready"].includes(sort)) throw new HttpInputError("Unsupported workbench sort");
     return dependencies.rulesV2.workbench({
       sourceId: entityId(request.query.sourceId, "sourceId"),
       targetId: entityId(request.query.targetId, "targetId"),
@@ -1903,7 +1953,8 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       limit: positiveInteger(request.query.limit, 40, 100),
       offset: positiveInteger(request.query.offset, 0, 1_000_000),
       ...(request.query.missingField === undefined ? {} : { missingField: requiredString(request.query.missingField, "missingField") as "brand" | "model" | "category" }),
-      ...(request.query.sort === undefined ? {} : { sort: requiredString(request.query.sort, "sort") as "latest" | "title" | "problems" }),
+      variants: variants as "with" | "without" | "all",
+      sort: sort as "latest" | "title" | "problems" | "rule_gaps" | "data_ready",
       ...(request.query.productId === undefined ? {} : { productId: entityId(request.query.productId, "productId") }),
     });
   });
