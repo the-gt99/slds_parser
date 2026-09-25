@@ -5,7 +5,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createClassificationMcpServer, registerClassificationMcp } from "../../src/mcp/index.js";
-import type { ProductAdminService, RulesV2Service, TargetDictionaryService } from "../../src/services/index.js";
+import type { ExportControlService, ProductAdminService, RulesV2Service, TargetDictionaryService, WordPressPreviewService } from "../../src/services/index.js";
 
 const closeCallbacks: Array<() => Promise<void>> = [];
 
@@ -13,12 +13,18 @@ afterEach(async () => {
   await Promise.allSettled(closeCallbacks.splice(0).map((close) => close()));
 });
 
-async function connectedClient(rulesV2: Partial<RulesV2Service>) {
+async function connectedClient(options: {
+  readonly rulesV2?: Partial<RulesV2Service>;
+  readonly targetDictionaries?: Partial<TargetDictionaryService>;
+  readonly wordpressPreview?: Partial<WordPressPreviewService>;
+} = {}) {
   const server = createClassificationMcpServer({
     config: { token: "m".repeat(32) },
+    exportControl: {} as ExportControlService,
     productAdmin: {} as ProductAdminService,
-    rulesV2: rulesV2 as RulesV2Service,
-    targetDictionaries: {} as TargetDictionaryService,
+    rulesV2: (options.rulesV2 ?? {}) as RulesV2Service,
+    targetDictionaries: (options.targetDictionaries ?? {}) as TargetDictionaryService,
+    wordpressPreview: (options.wordpressPreview ?? {}) as WordPressPreviewService,
   });
   const client = new Client({ name: "test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -46,9 +52,11 @@ describe("classification MCP", () => {
     const app = Fastify();
     registerClassificationMcp(app, {
       config: { token: "m".repeat(32) },
+      exportControl: {} as ExportControlService,
       productAdmin: {} as ProductAdminService,
       rulesV2: {} as RulesV2Service,
       targetDictionaries: {} as TargetDictionaryService,
+      wordpressPreview: {} as WordPressPreviewService,
     });
     closeCallbacks.push(() => app.close());
     const payload = {
@@ -77,6 +85,9 @@ describe("classification MCP", () => {
       "get_product_context",
       "list_classification_rules",
       "search_target_dictionary",
+      "list_saved_preflights",
+      "get_wordpress_preflight",
+      "create_target_term",
       "preview_classification_rule",
       "create_classification_rule",
     ]));
@@ -85,10 +96,10 @@ describe("classification MCP", () => {
 
   it("refuses a rule when the fresh preview count differs", async () => {
     const create = vi.fn();
-    const client = await connectedClient({
+    const client = await connectedClient({ rulesV2: {
       preview: vi.fn().mockResolvedValue({ productCount: 2, conflicts: [] }),
       create,
-    });
+    } });
     const result = await client.callTool({
       name: "create_classification_rule",
       arguments: { ...ruleArguments, expectedSampleProductCount: 1, expectedSampleConflictCount: 0 },
@@ -99,15 +110,40 @@ describe("classification MCP", () => {
 
   it("creates a previewed Rules v2 classification with a dedicated audit actor", async () => {
     const create = vi.fn().mockResolvedValue({ id: "11", revision: "20" });
-    const client = await connectedClient({
+    const client = await connectedClient({ rulesV2: {
       preview: vi.fn().mockResolvedValue({ productCount: 1, conflicts: [] }),
       create,
-    });
+    } });
     const result = await client.callTool({
       name: "create_classification_rule",
       arguments: { ...ruleArguments, expectedSampleProductCount: 1, expectedSampleConflictCount: 0 },
     });
     expect(result.isError).not.toBe(true);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ status: "shadow", targetId: "10" }), "mcp-genspark");
+  });
+
+  it("returns a real WordPress preflight without exporting", async () => {
+    const preview = vi.fn().mockResolvedValue({ readiness: { ready: false }, payload: { name: "Test" } });
+    const client = await connectedClient({ wordpressPreview: { preview } });
+    const result = await client.callTool({
+      name: "get_wordpress_preflight",
+      arguments: { sourceProductId: "77", targetId: "10", refreshWordPress: true },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(preview).toHaveBeenCalledWith("77", "10", [], { refreshWordPress: true });
+  });
+
+  it("does not create a target term already present in the synchronized dictionary", async () => {
+    const createTermForRulesV2 = vi.fn();
+    const client = await connectedClient({ targetDictionaries: {
+      listValues: vi.fn().mockResolvedValue([{ id: "5", externalId: "101", name: "Air Max", slug: "air-max" }]),
+      createTermForRulesV2,
+    } });
+    const result = await client.callTool({
+      name: "create_target_term",
+      arguments: { sourceId: "1", targetId: "10", entityType: "models", name: "Air Max", confirmed: true },
+    });
+    expect(result.isError).toBe(true);
+    expect(createTermForRulesV2).not.toHaveBeenCalled();
   });
 });

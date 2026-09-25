@@ -846,11 +846,16 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   registerStaticUi(server);
   if (dependencies.mcp !== undefined) {
     if (dependencies.rulesV2 === undefined) throw new Error("MCP requires Rules v2");
+    if (dependencies.wordpressPreview === undefined || dependencies.exportControl === undefined) {
+      throw new Error("MCP requires WordPress preview and export control");
+    }
     registerClassificationMcp(server, {
       config: dependencies.mcp,
+      exportControl: dependencies.exportControl,
       productAdmin: dependencies.productAdmin,
       rulesV2: dependencies.rulesV2,
       targetDictionaries: dependencies.targetDictionaries,
+      wordpressPreview: dependencies.wordpressPreview,
     });
   }
 

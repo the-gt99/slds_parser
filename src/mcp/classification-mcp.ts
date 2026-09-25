@@ -7,13 +7,21 @@ import * as z from "zod/v4";
 
 import type { McpConfig } from "../config/index.js";
 import type { RuleV2Draft } from "../repositories/index.js";
-import type { ProductAdminService, RulesV2Service, TargetDictionaryService } from "../services/index.js";
+import type {
+  ExportControlService,
+  ProductAdminService,
+  RulesV2Service,
+  TargetDictionaryService,
+  WordPressPreviewService,
+} from "../services/index.js";
 
 export interface ClassificationMcpDependencies {
   readonly config: McpConfig;
   readonly productAdmin: ProductAdminService;
   readonly rulesV2: RulesV2Service;
   readonly targetDictionaries: TargetDictionaryService;
+  readonly wordpressPreview: WordPressPreviewService;
+  readonly exportControl: ExportControlService;
 }
 
 const conditionSchema = z.object({
@@ -158,6 +166,95 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       targetId, entityType, ...(search === undefined ? {} : { search }), limit, offset,
     }),
   }));
+
+  server.registerTool("list_saved_preflights", {
+    description: "List saved WordPress preflight results with readiness, blockers, risks and change summaries. This is read-only and never starts export.",
+    inputSchema: {
+      targetId: z.string().regex(/^\d+$/u),
+      status: z.enum(["checking", "ready", "blocked", "error", "stale"]).optional(),
+      operation: z.enum(["create", "update"]).optional(),
+      riskLevel: z.enum(["none", "review", "danger"]).optional(),
+      changeFlag: z.string().regex(/^[a-z0-9_:.-]{1,80}$/u).optional(),
+      search: z.string().max(500).optional(),
+      cursorAt: z.string().optional(),
+      cursorId: z.string().regex(/^\d+$/u).optional(),
+      limit: z.number().int().min(1).max(100).default(25),
+    },
+  }, async (input) => textResult(await dependencies.exportControl.list({
+    targetId: input.targetId,
+    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.operation === undefined ? {} : { operation: input.operation }),
+    ...(input.riskLevel === undefined ? {} : { riskLevel: input.riskLevel }),
+    ...(input.changeFlag === undefined ? {} : { changeFlag: input.changeFlag }),
+    ...(input.search === undefined ? {} : { search: input.search }),
+    ...(input.cursorAt === undefined || input.cursorId === undefined
+      ? {} : { cursor: { checkedAt: input.cursorAt, id: input.cursorId } }),
+    limit: input.limit,
+  })));
+
+  server.registerTool("get_wordpress_preflight", {
+    description: "Build the real WordPress payload preview and show current/proposed fields, taxonomies, variations, images, blockers and diff. refreshWordPress=true performs a read-only remote lookup and refreshes the local snapshot; it never exports.",
+    inputSchema: {
+      sourceProductId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      refreshWordPress: z.boolean().default(false),
+    },
+  }, async ({ sourceProductId, targetId, refreshWordPress }) => textResult(await dependencies.wordpressPreview.preview(
+    sourceProductId,
+    targetId,
+    [],
+    { refreshWordPress },
+  )));
+
+  server.registerTool("create_target_term", {
+    description: "Create a missing model, category, tag or other supported term on WordPress and store it in the local dictionary. Use only after an exact dictionary search and explicit user confirmation. This changes WordPress but does not classify or export a product.",
+    inputSchema: {
+      sourceId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      entityType: z.string().min(1).max(200),
+      name: z.string().min(1).max(200),
+      slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).optional(),
+      parentExternalId: z.string().regex(/^\d+$/u).optional()
+        .describe("WordPress parent term ID; supported only for product_categories"),
+      relatedTerm: z.object({
+        relationCode: z.string().min(1).max(200),
+        entityType: z.string().min(1).max(200),
+        mode: z.enum(["create", "existing", "none"]),
+        externalId: z.string().regex(/^\d+$/u).optional(),
+      }).optional(),
+      confirmed: z.literal(true).describe("Must be true only after the user explicitly approved creating the WordPress term"),
+    },
+  }, async ({ confirmed: _confirmed, ...input }) => {
+    const existing = await dependencies.targetDictionaries.listValues({
+      targetId: input.targetId,
+      entityType: input.entityType,
+      search: input.name,
+      limit: 200,
+      offset: 0,
+    });
+    const normalizedName = input.name.trim().normalize("NFKC").toLocaleLowerCase("ru-RU");
+    const normalizedSlug = input.slug?.trim().toLocaleLowerCase("en-US");
+    const duplicate = existing.find((item) => item.name.trim().normalize("NFKC").toLocaleLowerCase("ru-RU") === normalizedName
+      || (normalizedSlug !== undefined && item.slug?.trim().toLocaleLowerCase("en-US") === normalizedSlug));
+    if (duplicate !== undefined) {
+      throw new Error(`Target term already exists in the synchronized dictionary: ${duplicate.id}/${duplicate.externalId}`);
+    }
+    const result = await dependencies.targetDictionaries.createTermForRulesV2({
+      sourceId: input.sourceId,
+      targetId: input.targetId,
+      entityType: input.entityType,
+      name: input.name,
+      ...(input.slug === undefined ? {} : { slug: input.slug }),
+      ...(input.parentExternalId === undefined ? {} : { parentExternalId: input.parentExternalId }),
+      ...(input.relatedTerm === undefined ? {} : { relatedTerm: {
+        relationCode: input.relatedTerm.relationCode,
+        entityType: input.relatedTerm.entityType,
+        mode: input.relatedTerm.mode,
+        ...(input.relatedTerm.externalId === undefined ? {} : { externalId: input.relatedTerm.externalId }),
+      } }),
+    }, "mcp-genspark");
+    return textResult({ result });
+  });
 
   server.registerTool("preview_classification_rule", {
     description: "Preview a Rules v2 target classification rule on a read-only sample. For one product, use common.source.productId equals its ID. Always inspect conflicts and call this before create_classification_rule.",
