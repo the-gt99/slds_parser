@@ -1,4 +1,4 @@
-import { PermanentError, RetryableError } from "../core/errors/index.js";
+import { AppError, PermanentError, RetryableError } from "../core/errors/index.js";
 import type { JobRepository, JobRecord, JobType } from "../repositories/index.js";
 import type { JobHandler } from "./job-dispatcher.js";
 import { parsePollWordPressVariationPatchesPayload, type PollWordPressVariationPatchesPayload } from "./job-payloads.js";
@@ -78,6 +78,7 @@ export class Worker {
   private static readonly reclassificationBatchSize = 16;
   private static readonly wordpressVariationPollClaimBatchSize = 100;
   private static readonly wordpressVariationPollRequestSize = 500;
+  private readonly pausedJobTypes = new Set<JobType>();
 
   constructor(private readonly jobs: JobRepository, private readonly dispatcher: JobHandler,
     private readonly options: WorkerOptions, private readonly sleep: WorkerSleep = abortableSleep,
@@ -89,6 +90,7 @@ export class Worker {
     private readonly wordpressVariationAuto?: WordPressVariationAutoCoordinator) {}
 
   async processNext(jobTypes?: readonly JobType[], workerId = this.options.workerId): Promise<boolean> {
+    if (jobTypes?.some((jobType) => this.pausedJobTypes.has(jobType)) === true) return false;
     const permit = this.claimPermit === undefined ? undefined : await this.claimPermit(jobTypes ?? []);
     if (permit === null) return false;
     const job = await this.jobs.claimNext(workerId, this.options.lockTimeoutMs, jobTypes);
@@ -151,6 +153,15 @@ export class Worker {
   }
 
   private async handleClaimedFailure(job: JobRecord, error: unknown): Promise<void> {
+    if (error instanceof AppError && error.code === "TRANSLATION_QUOTA") {
+      this.pausedJobTypes.add(job.jobType);
+      await this.jobs.retry(job.id, {
+        error: errorText(error),
+        availableAt: new Date(this.currentTime() + this.options.retryMaxMs).toISOString(),
+      });
+      this.logError(`Paused ${job.jobType} after the translation balance reserve was reached`);
+      return;
+    }
     const wordpressPolicy = usesWordPressRetryPolicy(job, error);
     const maxAttempts = wordpressPolicy
       ? (this.options.wordpressMaxJobAttempts ?? this.options.maxJobAttempts)

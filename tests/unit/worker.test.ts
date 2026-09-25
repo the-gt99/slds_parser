@@ -13,6 +13,35 @@ async function setup(error?: unknown, attempts = 0) {
 describe("Worker", () => {
   it("completes a successful job", async () => { const value = await setup(); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("completed"); });
   it("retries only RetryableError with exponential capped backoff", async () => { const value = await setup(new RetryableError("later", { code: "LATER" }), 2); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" }); const retry = await setup(new RetryableError("later", { code: "LATER" }), 1); await retry.worker.processNext(); expect(retry.store.jobs.get(retry.job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:00:02.000Z" }); });
+  it("pauses a translation queue at the configured balance reserve without failing queued jobs", async () => {
+    const value = await setup(new PermanentError("reserve reached", { code: "TRANSLATION_QUOTA" }), 3);
+    const next = await value.jobs.enqueue({
+      jobType: "process_product",
+      payload: { sourceProductId: "2", force: false },
+      uniqueKey: "two",
+    });
+    const log = vi.fn();
+    const worker = new Worker(
+      value.jobs,
+      value.handler,
+      options,
+      async () => {},
+      () => Date.parse("2026-01-01T00:00:00.000Z"),
+      log,
+    );
+
+    await worker.processNext(["process_product"]);
+    expect(value.store.jobs.get(value.job.id)).toMatchObject({
+      status: "retry",
+      availableAt: "2026-01-01T00:00:02.500Z",
+    });
+    expect(value.handler.handleTerminalFailure).not.toHaveBeenCalled();
+
+    expect(await worker.processNext(["process_product"])).toBe(false);
+    expect(value.store.jobs.get(next.id)?.status).toBe("pending");
+    expect(value.handler.dispatch).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Paused process_product"));
+  });
   it("uses the long retry policy for WordPress campaign jobs", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
