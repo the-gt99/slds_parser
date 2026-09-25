@@ -41,6 +41,7 @@ describe("RulesV2PreviewService", () => {
       actions: [{ targetScope: scope, dictionaryValueId: id, externalValue: id, externalLabel: label, mode: "add" }],
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "",
     });
+    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
     vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", [
       rule("31", "product.brand", "Nike"), rule("32", "product.brand", "Jordan Brand"),
       rule("41", "product.category", "Кроссовки"),
@@ -56,7 +57,7 @@ describe("RulesV2PreviewService", () => {
           referenceCandidates: [{ key: "product:model", typeCode: "model", scope: "product.model", subjectKind: "product",
             sourceValue: "Nike Test", context: {}, evidence: {} }], attributes: {}, metadata: {},
         },
-      }] : [];
+      }] : sql.includes("FROM rules_v2_workbench_state") ? [{ rules_revision: "1", complete: true }] : [];
       return { rows: rows as unknown as Row[], rowCount: rows.length };
     };
     const pool = { connect: async () => ({ query, release() {} }), async end() {} } as SqlPool;
@@ -78,6 +79,7 @@ describe("RulesV2PreviewService", () => {
       actions: [{ targetScope: scope, dictionaryValueId: id, externalValue: id, externalLabel: scope, mode: "add" }],
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "",
     });
+    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
     vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", [
       existing("31", "product.brand"), existing("41", "product.category"),
     ]));
@@ -109,7 +111,8 @@ describe("RulesV2PreviewService", () => {
   });
 
   it("filters and sorts the indexed catalogue before pagination", async () => {
-    vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("revision-1", []));
+    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("revision-1");
+    const snapshot = vi.spyOn(RulesV2Runtime.prototype, "snapshot");
     const statements: { sql: string; values: unknown[] | undefined }[] = [];
     const query = async <Row extends Record<string, unknown>>(sql: string, values?: unknown[]): Promise<SqlResult<Row>> => {
       statements.push({ sql, values });
@@ -130,7 +133,9 @@ describe("RulesV2PreviewService", () => {
     const list = statements.find(({ sql }) => sql.includes("SELECT item.*"));
     expect(list?.sql).toContain("'required_brand_missing' = ANY(item.issue_codes)");
     expect(list?.sql).toContain("NOT ('variants_missing' = ANY(item.issue_codes))");
-    expect(list?.sql).toContain("item.product_updated_at = internal.updated_at");
-    expect(list?.values).toEqual(["1", "10", "revision-1", "сандали", "required_model_missing", "incomplete", "with", 41, 0]);
+    expect(list?.sql).toContain("item.product_updated_at IS NOT NULL");
+    expect(list?.sql).not.toContain("JOIN internal_products");
+    expect(list?.values).toEqual(["1", "10", "revision-1", "сандали", "required_model_missing", 41, 0]);
+    expect(snapshot).not.toHaveBeenCalled();
   });
 });

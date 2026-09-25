@@ -27,12 +27,16 @@ export class RulesV2Runtime {
     try { return await this.loading; } finally { this.loading = undefined; }
   }
 
-  private async load(): Promise<RulesV2Snapshot> {
+  async revision(): Promise<string> {
     const stamp = await this.db.query<DatabaseRow>(`SELECT
       COALESCE(SUM(revision), 0)::TEXT || ':' || COUNT(*)::TEXT || ':' || COALESCE(MAX(updated_at)::TEXT, '') AS revision
       FROM rules_v2`);
     const dictionaryStamp = await this.db.query<DatabaseRow>(`SELECT COALESCE(SUM(revision), 0)::TEXT AS revision FROM target_export_revisions`);
-    const revision = `${stamp.rows[0]!.revision}:${dictionaryStamp.rows[0]!.revision}`;
+    return `${stamp.rows[0]!.revision}:${dictionaryStamp.rows[0]!.revision}`;
+  }
+
+  private async load(): Promise<RulesV2Snapshot> {
+    const revision = await this.revision();
     if (this.cached?.revision === revision) { this.checkedAt = this.now(); return this.cached; }
     const result = await this.db.query<DatabaseRow>(`SELECT rule.*, source.code AS source_code, target.code AS target_code
       FROM rules_v2 rule LEFT JOIN sources source ON source.id = rule.source_id

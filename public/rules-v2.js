@@ -1,5 +1,5 @@
 const byId = (id) => document.getElementById(id);
-const state = { session: null, schema: null, targets: [], overview: null, selected: null, searchTimer: null, workbenchOffset: 0, workbench: null, focusProductId: new URLSearchParams(location.search).get("productId"), indexPoll: null, termCreation: null, termLandingError: null };
+const state = { session: null, schema: null, targets: [], overview: null, selected: null, ruleProductId: null, searchTimer: null, workbenchOffset: 0, workbench: null, workbenchLoading: false, focusProductId: new URLSearchParams(location.search).get("productId"), indexPoll: null, termCreation: null, termLandingError: null };
 state.search = new URLSearchParams(location.search).get("search") || "";
 const dictionaryTypes = { "product.category": "product_categories", "product.tag": "tags", "product.brand": "brands", "product.model": "models", "product.color": "colors", "product.material": "materials", "product.activity": "activities", "product.shoe_height": "shoe_heights", "product.season": "seasons" };
 const scopeLabels = { "product.brand": "Бренд", "product.model": "Модель", "product.category": "Категория", "product.tag": "Метка", "product.color": "Цвет", "product.material": "Материал", "product.activity": "Вид спорта", "product.shoe_height": "Высота обуви", "product.season": "Сезон" };
@@ -30,6 +30,7 @@ function suggestedConditions(item, scope) {
 }
 function prefillFromProduct(item, scope) {
   reset();
+  state.ruleProductId = item.sourceProductId;
   const short = scope.split(".").at(-1);
   byId("editor-title").textContent = `Правило для товара #${item.sourceProductId}`;
   byId("rule-name").value = `Товар #${item.sourceProductId}: ${scopeLabels[scope]}`;
@@ -104,6 +105,8 @@ function renderWorkbench() {
   byId("workbench-next").disabled = !data?.page?.hasMore;
 }
 async function loadWorkbench(quiet = false) {
+  if (state.workbenchLoading) return;
+  state.workbenchLoading = true;
   if (!quiet) { byId("workbench-loading").hidden = false; byId("workbench-items").replaceChildren(); byId("workbench-empty").hidden = true; }
   try {
     const query = new URLSearchParams({ sourceId: byId("workbench-source").value, targetId: state.targets[0].id,
@@ -114,9 +117,9 @@ async function loadWorkbench(quiet = false) {
     if (state.focusProductId) query.set("productId", state.focusProductId);
     state.workbench = await api(`/api/rules-v2/workbench?${query}`); renderWorkbench();
     clearTimeout(state.indexPoll);
-    if (!state.focusProductId && state.workbench.index?.complete === false && !state.workbench.index?.error) state.indexPoll = setTimeout(() => loadWorkbench(true), 4000);
+    if (!state.focusProductId && state.workbench.index?.complete === false && !state.workbench.index?.error) state.indexPoll = setTimeout(() => loadWorkbench(true), 10000);
   } catch (cause) { error(cause.message); }
-  finally { byId("workbench-loading").hidden = true; }
+  finally { state.workbenchLoading = false; byId("workbench-loading").hidden = true; }
 }
 function statusLabel(status) { return status === "shadow" ? (state.overview?.authoritative ? "Работает" : "В тени") : status === "disabled" ? "Выключено" : "Черновик"; }
 const originLabels = { native: "Создано в v2", exact_mapping: "Точное сопоставление", classification_rule: "Правило классификатора", target_mapping: "Связь с WordPress", classification_projection: "Проекция классификации", reference_projection: "Проекция справочника", target_assignment_rule: "Назначение WordPress" };
@@ -124,7 +127,7 @@ function actionLabel(action) { if (action.kind === "resolve_reference") return a
 function renderList() { const items = state.overview.items || []; if (!items.length) { byId("rules-list").replaceChildren(node("p", "muted rules-empty", "Правил v2 пока нет. Создайте первое и проверьте охват товаров.")); return; } byId("rules-list").replaceChildren(...items.map((rule) => { const button = node("button", `rule-list-item${state.selected?.id === rule.id ? " active" : ""}`); button.type = "button"; const heading = node("span", "rule-list-heading"); heading.append(node("strong", "", rule.name), node("small", `rule-status ${rule.status}`, statusLabel(rule.status))); const condition = rule.conditionGroups[0]?.conditions[0]; heading.append(node("span", "muted", `${condition?.field || "—"} ${condition?.operator || ""} ${(condition?.values || []).join(", ")} → ${(rule.actions || []).map(actionLabel).join(", ")}`)); button.append(heading, node("b", "rule-priority", String(rule.priority))); button.addEventListener("click", () => selectRule(rule)); return button; })); }
 function editable(rule) { return rule.originKind === "native" && rule.sourceId !== null && rule.targetId !== null && rule.actions.every((action) => action.kind !== "resolve_reference"); }
 function showForm(visible) { document.querySelectorAll(".rule-editor-card > .rule-editor-grid, .rule-editor-card > .rule-block, .rule-editor-card > .rule-editor-actions").forEach((item) => { item.hidden = !visible; }); byId("rule-details").hidden = visible; }
-function reset() { state.fixedDependency = false; state.selected = null; state.previewSignature = null; showForm(true); byId("editor-title").textContent = "Новое правило"; byId("editor-revision").textContent = "Черновик"; byId("rule-name").value = ""; byId("rule-group").value = "category"; byId("rule-priority").value = "100"; byId("rule-status").value = "draft"; byId("preview-rule").disabled = false; byId("rule-source").disabled = false; byId("rule-group").disabled = false; byId("rule-priority").disabled = false; byId("condition-operator").value = "equals"; byId("condition-value").disabled = false; byId("condition-value").value = ""; byId("dictionary-search").value = ""; byId("dictionary-value").replaceChildren(); byId("preview-result").hidden = true; if (byId("multi-conditions")) { renderConditions(); renderActions(); } renderList(); }
+function reset() { state.fixedDependency = false; state.selected = null; state.ruleProductId = null; state.previewSignature = null; showForm(true); byId("editor-title").textContent = "Новое правило"; byId("editor-revision").textContent = "Черновик"; byId("rule-name").value = ""; byId("rule-group").value = "category"; byId("rule-priority").value = "100"; byId("rule-status").value = "draft"; byId("preview-rule").disabled = false; byId("rule-source").disabled = false; byId("rule-group").disabled = false; byId("rule-priority").disabled = false; byId("condition-operator").value = "equals"; byId("condition-value").disabled = false; byId("condition-value").value = ""; byId("dictionary-search").value = ""; byId("dictionary-value").replaceChildren(); byId("preview-result").hidden = true; if (byId("multi-conditions")) { renderConditions(); renderActions(); } renderList(); }
 function detailRow(label, value) { const row = node("div", "rule-detail-row"); row.append(node("span", "muted", label), node("strong", "", String(value ?? "—"))); return row; }
 function inspect(rule) { state.selected = rule; showForm(false); byId("editor-title").textContent = rule.name; byId("editor-revision").textContent = `${statusLabel(rule.status)} · v${rule.revision}`; const details = byId("rule-details"); const meta = node("div", "rule-detail-meta"); meta.append(detailRow("Происхождение", `${originLabels[rule.originKind] || rule.originKind}${rule.originId ? ` #${rule.originId}` : ""}`), detailRow("Источник", rule.sourceCode || "Любой"), detailRow("Target", rule.targetCode || "Любой"), detailRow("Группа конфликта", rule.groupCode), detailRow("Приоритет", rule.priority)); const groups = node("div", "rule-detail-section"); groups.append(node("h4", "", "Условия · группы соединяются И")); rule.conditionGroups.forEach((group, index) => { const block = node("div", "rule-detail-group"); block.append(node("strong", "", `Группа ${index + 1} · условия соединяются ИЛИ`)); group.conditions.forEach((condition) => block.append(node("p", "", `${condition.field} · ${condition.operator} · ${condition.values?.join(", ") || "без значения"}`))); groups.append(block); }); const actions = node("div", "rule-detail-section"); actions.append(node("h4", "", "Действия")); rule.actions.forEach((action) => { const label = action.kind === "resolve_reference" ? `${action.resolutionStatus === "ignored" ? "Игнорировать" : "Сопоставить"}: ${action.referenceType} → ${action.referenceValueName || action.referenceValueCode || action.referenceValueId || "—"}` : `${action.mode === "replace" ? "Заменить" : "Добавить"}: ${action.targetScope} → ${action.externalLabel || action.externalValue || action.dictionaryValueId}`; actions.append(node("p", "rule-detail-action", label)); }); const technical = node("details", "rule-detail-raw"); technical.append(node("summary", "", "Технические данные и исходная запись"), node("pre", "", JSON.stringify({ conditionGroups: rule.conditionGroups, actions: rule.actions, originPayload: rule.originPayload }, null, 2))); details.replaceChildren(node("p", "rule-detail-notice", rule.originPayload.manualOverride ? "Копия v2 изменена вручную и защищена от повторного импорта." : "Копия старого контура. Можно изменить её отдельно в v2; исходный контур не изменится."), meta, groups, actions, technical, uiButton("Редактировать копию v2", () => editImported(rule))); byId("preview-result").hidden = true; renderList(); }
 function edit(rule) { reset(); state.selected = rule; byId("editor-title").textContent = rule.name; byId("editor-revision").textContent = "Версия " + rule.revision; byId("rule-name").value = rule.name; byId("rule-group").value = rule.groupCode; byId("rule-priority").value = rule.priority; byId("rule-status").value = rule.status; byId("rule-source").value = rule.sourceId; renderConditions(rule.conditionGroups); renderActions(rule.actions); renderList(); }
@@ -166,7 +169,31 @@ async function preview() {
     }
   } catch (cause) { error(cause.message); } finally { byId("preview-rule").disabled = false; }
 }
-async function save() { try { const payload = body(); if ((!state.selected || state.selected.originKind === "native") && state.previewSignature !== JSON.stringify(payload)) throw new Error("Сначала завершите полную проверку влияния этого правила без конфликтов."); const url = state.selected ? `/api/rules-v2/${state.selected.id}${state.selected.originKind === "native" ? "" : "/imported"}` : "/api/rules-v2"; await api(url, { method: state.selected ? "PUT" : "POST", body: payload }); await loadRules(); reset(); await loadWorkbench(); toast("Правило сохранено. Индекс готовности обновляется."); } catch (cause) { error(cause.message); } }
+function matchesWorkbenchFilters(item) {
+  const status = byId("workbench-status").value;
+  if (status === "incomplete" && !["incomplete", "conflict"].includes(item.status)) return false;
+  if (!["all", "incomplete"].includes(status) && item.status !== status) return false;
+  const missing = byId("workbench-missing").value;
+  if (missing && !(item.blockers || []).some((issue) => issue.code === `required_${missing}_missing`)) return false;
+  const variants = byId("workbench-variants").value;
+  const hasVariants = !(item.blockers || []).some((issue) => issue.code === "variants_missing");
+  return variants === "all" || (variants === "with" && hasVariants) || (variants === "without" && !hasVariants);
+}
+async function refreshSavedProduct(productId) {
+  const query = new URLSearchParams({ sourceId: byId("workbench-source").value, targetId: state.targets[0].id, productId });
+  const result = await api(`/api/rules-v2/workbench?${query}`);
+  const item = result.items?.[0];
+  if (!item || !state.workbench) return { removed: false, blockers: [] };
+  const index = (state.workbench.items || []).findIndex((candidate) => candidate.sourceProductId === productId);
+  const visible = matchesWorkbenchFilters(item);
+  if (index >= 0 && visible) state.workbench.items[index] = item;
+  if (index >= 0 && !visible) { state.workbench.items.splice(index, 1); state.workbench.filteredCount = Math.max(0, (state.workbench.filteredCount || 1) - 1); }
+  renderWorkbench();
+  clearTimeout(state.indexPoll);
+  state.indexPoll = setTimeout(() => loadWorkbench(true), 10000);
+  return { removed: !visible, blockers: [...(item.conflicts || []), ...(item.blockers || [])] };
+}
+async function save() { try { const payload = body(); const productId = state.ruleProductId; if ((!state.selected || state.selected.originKind === "native") && state.previewSignature !== JSON.stringify(payload)) throw new Error("Сначала завершите полную проверку влияния этого правила без конфликтов."); const url = state.selected ? `/api/rules-v2/${state.selected.id}${state.selected.originKind === "native" ? "" : "/imported"}` : "/api/rules-v2"; await api(url, { method: state.selected ? "PUT" : "POST", body: payload }); await loadRules(); reset(); if (payload.status !== "shadow") { await loadWorkbench(); toast("Черновик сохранён. Он не применяется к товарам и не меняет очередь."); return; } if (productId) { const outcome = await refreshSavedProduct(productId); toast(outcome.removed ? "Рабочее правило сохранено. Товар убран из текущей выборки." : `Рабочее правило сохранено. Товар остаётся в очереди: нерешённых проблем ${outcome.blockers.length}.`); } else { await loadWorkbench(); toast("Рабочее правило сохранено. Очередь пересчитывается."); } } catch (cause) { error(cause.message); } }
 function fieldOptions() { const types = ["brand", "designer", "model", "category", "merchandising_category", "color", "material", "tag", "activity", "shoe_height", "season"]; const fields = (state.schema.v2RuleFields || state.schema.ruleFields).flatMap((field) => field.path.includes("{type}") ? types.map((type) => ({ ...field, path: field.path.replace("{type}", type), name: `${field.name}: ${type}` })) : [field]); byId("condition-field").replaceChildren(...fields.map((field) => { const option = node("option", "", `${field.name} · ${field.path}`); option.value = field.path; option.title = field.description; return option; })); }
 
 function uiButton(text, callback) { const button = node("button", "button secondary", text); button.type = "button"; button.addEventListener("click", callback); return button; }

@@ -6,6 +6,7 @@ import type { SqlExecutor, SqlPool } from "../infrastructure/db/sql-executor.js"
 import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { DirectRulesV2Assignments } from "./rules-v2-direct-assignments.js";
 import { rulesV2TargetEntities } from "./rules-v2-fields.js";
+import type { RulesV2Snapshot } from "./rules-v2-snapshot.js";
 
 const requiredTargetFields = [
   { scope: "product.brand", label: "Бренд", candidateType: "brand" },
@@ -70,6 +71,7 @@ function ruleIdentity(rule: RuleV2Record): string {
 export class RulesV2PreviewService {
   private readonly indexing = new Map<string, string>();
   private readonly indexErrors = new Map<string, string>();
+  private cachedSnapshot: RulesV2Snapshot | undefined;
   private readonly fullPreviews = new Map<string, { status: "running" | "complete" | "failed"; checked: number;
     total: number; matched: number; newlyReady: number; filled: Record<string, number>; existing: number;
     changedExisting: number; conflictCount: number;
@@ -77,6 +79,13 @@ export class RulesV2PreviewService {
     examples: { sourceProductId: string; title: string; before: string; after: string;
       beforeFields: Record<string, string[]>; afterFields: Record<string, string[]> }[]; error: string | undefined }>();
   constructor(private readonly pool: SqlPool) {}
+
+  private async rulesSnapshot(db: SqlExecutor, revision?: string): Promise<RulesV2Snapshot> {
+    if (revision !== undefined && this.cachedSnapshot?.revision === revision) return this.cachedSnapshot;
+    const snapshot = await new RulesV2Runtime(db, () => 0).snapshot();
+    this.cachedSnapshot = snapshot;
+    return snapshot;
+  }
 
   async workbench(query: RulesV2WorkbenchQuery) {
     const limit = query.limit ?? 40;
@@ -92,8 +101,9 @@ export class RulesV2PreviewService {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const runtime = new RulesV2Runtime(client, () => 0);
-      const snapshot = await runtime.snapshot();
+      const revision = await runtime.revision();
       if (query.productId !== undefined) {
+        const snapshot = await this.rulesSnapshot(client, revision);
         const rows = (await client.query<WorkbenchRow>(`
         SELECT product.id::TEXT, product.source_id::TEXT, product.source_key, product.external_id,
                source.code, internal.data, internal.updated_at::TEXT
@@ -104,7 +114,13 @@ export class RulesV2PreviewService {
         const direct = new DirectRulesV2Assignments(snapshot.records, query.targetId);
         const records = new Map(snapshot.records.map((rule) => [ruleIdentity(rule), rule]));
         const items = rows.map((row) => this.workbenchItem(row, direct, records));
+        const state = (await client.query<{ rules_revision: string; complete: boolean }>(
+          "SELECT rules_revision, complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2",
+          [query.sourceId, query.targetId])).rows[0];
         await client.query("COMMIT");
+        if (state?.rules_revision !== revision || !state.complete) {
+          this.startIndexing(query.sourceId, query.targetId, revision, snapshot.records);
+        }
         return { mode: "resulting_target_dto" as const, requiredTargetFields, items, scannedCount: items.length,
           counts: { ready: items.filter((item) => item.status === "ready").length,
             incomplete: items.filter((item) => item.status === "incomplete").length,
@@ -112,7 +128,6 @@ export class RulesV2PreviewService {
           index: { complete: true, indexed: items.length, total: items.length },
           page: { offset: 0, limit: 1, hasMore: false, nextOffset: null } };
       }
-      const revision = snapshot.revision;
       const state = (await client.query<{ rules_revision: string; complete: boolean }>(
         "SELECT rules_revision, complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2",
         [query.sourceId, query.targetId])).rows[0];
@@ -129,37 +144,40 @@ export class RulesV2PreviewService {
             : query.sort === "data_ready" ? `(item.issue_count - ${ruleGapCount}) ASC, ${ruleGapCount} DESC,
               item.product_updated_at DESC, item.source_product_id DESC`
           : "item.product_updated_at DESC, item.source_product_id DESC";
-      const filter = `item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
-        AND item.product_updated_at = internal.updated_at
-        AND ($4::TEXT = '' OR item.search_text ILIKE '%' || $4 || '%')
-        AND ($5::TEXT = '' OR $5 = ANY(item.issue_codes))
-        AND ($6::TEXT = 'all' OR item.status = $6 OR ($6 = 'incomplete' AND item.status = 'conflict'))
-        AND ($7::TEXT = 'all'
-          OR ($7 = 'with' AND NOT ('variants_missing' = ANY(item.issue_codes)))
-          OR ($7 = 'without' AND 'variants_missing' = ANY(item.issue_codes)))`;
-      const values = [query.sourceId, query.targetId, revision, search, missing, status, variants];
+      const values: unknown[] = [query.sourceId, query.targetId, revision];
+      const clauses = ["item.source_id = $1", "item.target_id = $2", "item.rules_revision = $3", "item.product_updated_at IS NOT NULL"];
+      const parameter = (value: unknown): string => { values.push(value); return `$${values.length}`; };
+      if (search !== "") clauses.push(`item.search_text ILIKE '%' || ${parameter(search)} || '%'`);
+      if (missing !== "") clauses.push(`${parameter(missing)} = ANY(item.issue_codes)`);
+      if (status === "incomplete") clauses.push("item.status IN ('incomplete', 'conflict')");
+      else if (status !== "all") clauses.push(`item.status = ${parameter(status)}`);
+      if (variants === "with") clauses.push("NOT ('variants_missing' = ANY(item.issue_codes))");
+      else if (variants === "without") clauses.push("'variants_missing' = ANY(item.issue_codes)");
+      const filter = clauses.join(" AND ");
       const rows = (await client.query<Record<string, unknown>>(`SELECT item.* FROM rules_v2_workbench_items item
-        JOIN internal_products internal ON internal.source_product_id = item.source_product_id
-        WHERE ${filter} ORDER BY ${order} LIMIT $8 OFFSET $9`, [...values, limit + 1, offset])).rows;
+        WHERE ${filter} ORDER BY ${order} LIMIT ${parameter(limit + 1)} OFFSET ${parameter(offset)}`, values)).rows;
+      const filterValues = values.slice(0, -2);
       const count = (await client.query<{ total: number }>(`SELECT COUNT(*)::INT AS total FROM rules_v2_workbench_items item
-        JOIN internal_products internal ON internal.source_product_id = item.source_product_id WHERE ${filter}`, values)).rows[0]?.total ?? 0;
+        WHERE ${filter}`, filterValues)).rows[0]?.total ?? 0;
       const counts = (await client.query<{ status: string; count: number }>(`SELECT item.status, COUNT(*)::INT AS count
-        FROM rules_v2_workbench_items item JOIN internal_products internal ON internal.source_product_id = item.source_product_id
+        FROM rules_v2_workbench_items item
         WHERE item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
-        AND item.product_updated_at = internal.updated_at GROUP BY item.status`, [query.sourceId, query.targetId, revision])).rows;
+        AND item.product_updated_at IS NOT NULL GROUP BY item.status`, [query.sourceId, query.targetId, revision])).rows;
       const indexed = counts.reduce((sum, row) => sum + row.count, 0);
-      const total = (await client.query<{ count: number }>(`SELECT COUNT(*)::INT AS count FROM internal_products internal
+      const total = complete ? indexed : (await client.query<{ count: number }>(`SELECT COUNT(*)::INT AS count FROM internal_products internal
         JOIN source_products product ON product.id = internal.source_product_id WHERE product.source_id = $1`, [query.sourceId])).rows[0]?.count ?? 0;
+      const indexComplete = complete && indexed === total;
+      const indexSnapshot = indexComplete ? undefined : await this.rulesSnapshot(client, revision);
       await client.query("COMMIT");
       const indexError = this.indexErrors.get(`${query.sourceId}:${query.targetId}`) ?? null;
-      this.startIndexing(query.sourceId, query.targetId, revision, snapshot.records);
+      if (indexSnapshot !== undefined) this.startIndexing(query.sourceId, query.targetId, revision, indexSnapshot.records);
       const items = rows.slice(0, limit).map((row) => ({ sourceProductId: String(row.source_product_id),
         sourceExternalId: row.source_external_id, title: row.title, sku: row.sku, updatedAt: row.updated_at,
         status: row.status, blockers: row.blockers, conflicts: row.conflicts, result: row.result,
         candidates: row.candidates, trace: row.trace }));
       return { mode: "resulting_target_dto" as const, requiredTargetFields, items, scannedCount: indexed,
         counts: Object.fromEntries(["ready", "incomplete", "conflict"].map((kind) => [kind, counts.find((row) => row.status === kind)?.count ?? 0])),
-        index: { complete: complete && indexed === total, indexed, total, error: indexError }, filteredCount: count,
+        index: { complete: indexComplete, indexed, total, error: indexError }, filteredCount: count,
         page: { offset, limit, hasMore: rows.length > limit, nextOffset: rows.length > limit ? offset + limit : null } };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -177,7 +195,7 @@ export class RulesV2PreviewService {
     const run = async () => {
       try {
         while (this.indexing.get(key) === revision && await this.indexBatch(sourceId, targetId, revision, direct, byId)) {
-          await new Promise((resolve) => setTimeout(resolve, 150));
+          await new Promise((resolve) => setTimeout(resolve, 10));
         }
       } finally { this.indexing.delete(key); }
     };
@@ -218,7 +236,7 @@ export class RulesV2PreviewService {
         JOIN sources source ON source.id = product.source_id JOIN internal_products internal ON internal.source_product_id = product.id
         WHERE item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
           AND item.product_updated_at IS DISTINCT FROM internal.updated_at
-        ORDER BY product.id DESC LIMIT 100`, [sourceId, targetId, revision])).rows;
+        ORDER BY product.id DESC LIMIT 500`, [sourceId, targetId, revision])).rows;
       let rows = dirty;
       if (rows.length === 0 && state.cursor_id !== null) {
         rows = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT, product.source_key,
@@ -226,7 +244,7 @@ export class RulesV2PreviewService {
           FROM source_products product JOIN sources source ON source.id = product.source_id
           JOIN internal_products internal ON internal.source_product_id = product.id
           WHERE product.source_id = $1 AND product.id <= $2 AND product.id > $3
-          ORDER BY product.id DESC LIMIT 100`, [sourceId, state.cursor_id, state.floor_id])).rows;
+          ORDER BY product.id DESC LIMIT 500`, [sourceId, state.cursor_id, state.floor_id])).rows;
       }
       if (rows.length === 0) {
         const maxId = (await db.query<{ id: string | null }>(`SELECT MAX(product.id)::TEXT AS id FROM source_products product
@@ -417,7 +435,7 @@ export class RulesV2PreviewService {
           FROM source_products product JOIN sources source ON source.id = product.source_id
           JOIN internal_products internal ON internal.source_product_id = product.id
           WHERE product.source_id = $1 AND product.id > $2
-          ORDER BY product.id LIMIT 250`, [draft.sourceId, lastId])).rows;
+          ORDER BY product.id LIMIT 1000`, [draft.sourceId, lastId])).rows;
         if (!rows.length) break;
         for (const row of rows) {
           lastId = row.id; job.checked++;
@@ -456,7 +474,6 @@ export class RulesV2PreviewService {
               beforeFields: labels(prior.result.fields), afterFields: labels(next.result.fields) });
           }
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
       }
       const currentRevision = (await new RulesV2Runtime(db, () => 0).snapshot()).revision;
       if (currentRevision !== snapshot.revision) throw new IntegrationContractError("Правила изменились во время проверки. Запустите её повторно.");
