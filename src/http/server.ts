@@ -4,7 +4,7 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 
-import type { AdminApiConfig } from "../config/index.js";
+import type { AdminApiConfig, McpConfig } from "../config/index.js";
 import { AppError } from "../core/errors/index.js";
 import type {
   ClassificationRuleConditionRecord,
@@ -38,6 +38,7 @@ import type {
 } from "../services/index.js";
 import type { ShihuoGuestDeviceService } from "../shihuo/index.js";
 import { targetClassificationSuggestionStatus } from "../services/index.js";
+import { registerClassificationMcp } from "../mcp/index.js";
 import { AdminAuth, type AdminAuthContext } from "./admin-auth.js";
 import { registerStaticUi } from "./static-ui.js";
 
@@ -48,6 +49,7 @@ export interface DatabaseHealthClient {
 export interface HttpServerDependencies {
   readonly database: DatabaseHealthClient;
   readonly auth: AdminApiConfig;
+  readonly mcp?: McpConfig;
   readonly classifier: ClassifierAdminService;
   readonly targetDictionaries: TargetDictionaryService;
   readonly productAdmin: ProductAdminService;
@@ -842,6 +844,15 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
   };
 
   registerStaticUi(server);
+  if (dependencies.mcp !== undefined) {
+    if (dependencies.rulesV2 === undefined) throw new Error("MCP requires Rules v2");
+    registerClassificationMcp(server, {
+      config: dependencies.mcp,
+      productAdmin: dependencies.productAdmin,
+      rulesV2: dependencies.rulesV2,
+      targetDictionaries: dependencies.targetDictionaries,
+    });
+  }
 
   server.setErrorHandler((error, request, reply) => {
     if (!(error instanceof Error)) {

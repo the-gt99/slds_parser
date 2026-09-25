@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { RulesV2PreviewService } from "../services/rules-v2-preview.js";
 import { RulesExecution } from "../infrastructure/db/rules-execution.js";
 
-import { loadAdminApiConfig, loadHttpConfig, loadShihuoConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
+import { loadAdminApiConfig, loadHttpConfig, loadMcpConfig, loadShihuoConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
 import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
 import { ProductOperationRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
@@ -57,6 +57,7 @@ async function main(): Promise<void> {
   try {
     const config = loadHttpConfig();
     const admin = loadAdminApiConfig();
+    const mcp = loadMcpConfig();
     const wordpress = loadWordPressTargetConfig();
     const shihuoConfig = loadShihuoConfig();
     const telegram = loadTelegramNotificationConfig();
@@ -143,7 +144,7 @@ async function main(): Promise<void> {
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
     const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), new RulesV2PreviewService(pool), () => rulesExecution.state());
-    server = createHttpServer({ database: pool, auth: admin, classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(shihuo === undefined ? {} : { shihuo }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
+    server = createHttpServer({ database: pool, auth: admin, ...(mcp === null ? {} : { mcp }), classifier, targetDictionaries, targetAssignments, dataSchema, rulesV2, productAdmin, runtime, ...(targetClassificationImport === undefined ? {} : { targetClassificationImport }), ...(proxies === undefined ? {} : { proxies }), ...(shihuo === undefined ? {} : { shihuo }), ...(wordpressPreview === undefined ? {} : { wordpressPreview }), ...(exportControl === undefined ? {} : { exportControl }), ...(contentTemplates === undefined ? {} : { contentTemplates }), ...(wordpressCatalog === undefined ? {} : { wordpressCatalog }) });
 
     for (const signal of signals) {
       process.once(signal, () => void shutdown(signal));

@@ -14,6 +14,16 @@ const requiredTargetFields = [
   { scope: "product.category", label: "Категория", candidateType: "category" },
 ] as const;
 
+function exactSourceProductId(draft: RuleV2Draft): string | null {
+  for (const group of draft.conditionGroups) {
+    if (group.conditions.length !== 1) continue;
+    const condition = group.conditions[0]!;
+    if (condition.field === "common.source.productId" && condition.operator === "equals"
+      && condition.values.length === 1 && /^\d+$/u.test(condition.values[0]!)) return condition.values[0]!;
+  }
+  return null;
+}
+
 export type RulesV2WorkbenchStatus = "incomplete" | "conflict" | "ready" | "all";
 
 export interface RulesV2WorkbenchQuery {
@@ -510,12 +520,14 @@ export class RulesV2PreviewService {
     const preview: RuleV2Record = { ...draft, id: "0", sourceCode: null, targetCode: null, actions, status: "shadow",
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "" };
     const withDraft = new DirectRulesV2Assignments([...snapshot.records.filter((rule) => rule.id !== draft.previewRuleId), preview], draft.targetId);
+    const productId = exactSourceProductId(draft);
     const rows = (await db.query<{ id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }>(`
       SELECT product.id::TEXT, product.source_key, product.external_id, source.code, internal.data
       FROM source_products product JOIN sources source ON source.id = product.source_id
       JOIN internal_products internal ON internal.source_product_id = product.id
       WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates'
-      ORDER BY product.id DESC LIMIT 200`, [draft.sourceId])).rows;
+      ${productId === null ? "" : "AND product.id = $2"}
+      ORDER BY product.id DESC LIMIT 200`, productId === null ? [draft.sourceId] : [draft.sourceId, productId])).rows;
     let productCount = 0;
     const examples: { sourceProductId: string; title: string; actions: typeof actions }[] = [];
     const conflicts: { sourceProductId: string; message: string }[] = [];

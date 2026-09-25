@@ -5,6 +5,7 @@ export interface HttpEnvironment {
   readonly PARSER_ADMIN_USERNAME?: string;
   readonly PARSER_ADMIN_PASSWORD?: string;
   readonly PARSER_SESSION_SECRET?: string;
+  readonly PARSER_MCP_TOKEN?: string;
 }
 
 export interface HttpConfig {
@@ -17,6 +18,10 @@ export interface AdminApiConfig {
   readonly username: string;
   readonly password: string;
   readonly sessionSecret: string;
+}
+
+export interface McpConfig {
+  readonly token: string;
 }
 
 export function loadHttpConfig(
@@ -58,4 +63,15 @@ export function loadAdminApiConfig(
     password,
     sessionSecret,
   };
+}
+
+export function loadMcpConfig(
+  environment: HttpEnvironment = process.env,
+): McpConfig | null {
+  const token = environment.PARSER_MCP_TOKEN?.trim() ?? "";
+  if (token === "") return null;
+  if (token.length < 32) {
+    throw new Error("PARSER_MCP_TOKEN must contain at least 32 characters");
+  }
+  return { token };
 }

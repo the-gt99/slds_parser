@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadAdminApiConfig, loadHttpConfig, loadWordPressTargetConfig } from "../../src/config/index.js";
+import { loadAdminApiConfig, loadHttpConfig, loadMcpConfig, loadWordPressTargetConfig } from "../../src/config/index.js";
 
 describe("HTTP config", () => {
   it("uses loopback and port 3000 by default", () => {
@@ -27,6 +27,12 @@ describe("HTTP config", () => {
       password: "password-long-enough",
       sessionSecret: "s".repeat(32),
     });
+  });
+
+  it("keeps MCP disabled without a dedicated token and validates configured tokens", () => {
+    expect(loadMcpConfig({})).toBeNull();
+    expect(() => loadMcpConfig({ PARSER_MCP_TOKEN: "short" })).toThrow("PARSER_MCP_TOKEN");
+    expect(loadMcpConfig({ PARSER_MCP_TOKEN: "m".repeat(32) })).toEqual({ token: "m".repeat(32) });
   });
 
   it("keeps WordPress integration disabled unless its complete configuration is present", () => {

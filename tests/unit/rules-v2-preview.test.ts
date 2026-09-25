@@ -71,6 +71,29 @@ describe("RulesV2PreviewService", () => {
       });
   });
 
+  it("previews an exact product rule against that product instead of only the latest sample", async () => {
+    vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", []));
+    let productParameters: readonly unknown[] = [];
+    const query = async <Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<SqlResult<Row>> => {
+      const rows = sql.includes("FROM target_dictionary_values")
+        ? [{ id: "50", external_id: "70", name: "Black", entity_type: "colors" }]
+        : sql.includes("FROM source_products product")
+          ? [{ id: "2", source_key: "shoe", external_id: "100", code: "goat", data: {
+            sourceProductId: "2", title: "Old product", description: "", sku: "S", images: [], variants: [],
+            referenceCandidates: [], attributes: {}, metadata: {},
+          } }] : [];
+      if (sql.includes("FROM source_products product")) productParameters = parameters;
+      return { rows: rows as unknown as Row[], rowCount: rows.length };
+    };
+    const pool = { connect: async () => ({ query, release() {} }), async end() {} } as SqlPool;
+    const draft: RuleV2Draft = { sourceId: "1", targetId: "10", name: "Exact product", groupCode: "product_2",
+      priority: 100, status: "shadow", conditionGroups: [{ conditions: [{ field: "common.source.productId",
+        operator: "equals", values: ["2"] }] }],
+      actions: [{ targetScope: "product.color", dictionaryValueId: "50", mode: "replace" }] };
+    await expect(new RulesV2PreviewService(pool).preview(draft)).resolves.toMatchObject({ examined: 1, productCount: 1 });
+    expect(productParameters).toEqual(["1", "2"]);
+  });
+
   it("counts the effect of a rule across the complete product scan", async () => {
     const existing = (id: string, scope: string): RuleV2Record => ({
       id, sourceId: "1", sourceCode: "goat", targetId: "10", targetCode: "slamdunk",
