@@ -57,6 +57,11 @@ describe("RulesV2Service", () => {
     expect(result.items).toHaveLength(100);
     expect(result.page).toEqual({ offset: 100, limit: 100, hasMore: true });
     expect(list).toHaveBeenCalledWith("2", { search: "adidas", offset: 100, limit: 101 });
+    const compact = await service.overview("2", { limit: 10 });
+    expect(compact.items).toHaveLength(10);
+    expect(compact.page).toEqual({ offset: 0, limit: 10, hasMore: true });
+    expect(list).toHaveBeenLastCalledWith("2", { offset: 0, limit: 11 });
     await expect(service.overview("2", { offset: -1 })).rejects.toThrow();
+    await expect(service.overview("2", { limit: 101 })).rejects.toThrow();
   });
 });

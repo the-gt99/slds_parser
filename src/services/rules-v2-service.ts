@@ -76,12 +76,16 @@ export class RulesV2Service {
     return this.repository.updateImported(id, draft as unknown as RuleV2ImportedDraft, revision, actor);
   }
 
-  async overview(targetId?: string, query: { readonly search?: string; readonly offset?: number } = {}) {
+  async overview(targetId?: string, query: { readonly search?: string; readonly offset?: number; readonly limit?: number } = {}) {
     const offset = query.offset ?? 0;
+    const limit = query.limit ?? 100;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new IntegrationContractError("Invalid rules page offset");
-    const [summary, items] = await Promise.all([this.repository.summary(), this.repository.list(targetId, { ...query, offset, limit: 101 })]);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new IntegrationContractError("Invalid rules page limit");
+    const [summary, items] = await Promise.all([this.repository.summary(), this.repository.list(targetId, {
+      ...(query.search === undefined ? {} : { search: query.search }), offset, limit: limit + 1,
+    })]);
     const active = (await this.executionState?.())?.mode === "v2";
-    return { mode: active ? "active" : "shadow", authoritative: active, summary, items: items.slice(0, 100), page: { offset, limit: 100, hasMore: items.length > 100 } };
+    return { mode: active ? "active" : "shadow", authoritative: active, summary, items: items.slice(0, limit), page: { offset, limit, hasMore: items.length > limit } };
   }
 
   async preview(draft: RuleV2Draft) {

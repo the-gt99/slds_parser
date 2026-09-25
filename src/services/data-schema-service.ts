@@ -108,6 +108,16 @@ const goatFields: readonly DataFieldDefinition[] = [
 export class DataSchemaService {
   constructor(private readonly sources: SourceRepository) {}
 
+  async listSources() {
+    return (await this.sources.listEnabled()).map((source) => ({
+      sourceId: source.id,
+      code: source.code,
+      name: source.name,
+      adapterCode: source.adapterCode,
+      enabled: source.enabled,
+    }));
+  }
+
   async catalog() {
     const sources = await this.sources.listEnabled();
     return {

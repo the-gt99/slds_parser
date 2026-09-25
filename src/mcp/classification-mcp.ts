@@ -9,6 +9,7 @@ import type { McpConfig } from "../config/index.js";
 import type { RuleV2Draft } from "../repositories/index.js";
 import type {
   ExportControlService,
+  DataSchemaService,
   ProductAdminService,
   RulesV2Service,
   TargetDictionaryService,
@@ -17,6 +18,7 @@ import type {
 
 export interface ClassificationMcpDependencies {
   readonly config: McpConfig;
+  readonly dataSchema: DataSchemaService;
   readonly productAdmin: ProductAdminService;
   readonly rulesV2: RulesV2Service;
   readonly targetDictionaries: TargetDictionaryService;
@@ -114,7 +116,7 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       variants: z.enum(["with", "without", "all"]).default("all"),
       sort: z.enum(["latest", "title", "problems", "rule_gaps", "data_ready"]).default("rule_gaps"),
       productId: z.string().regex(/^\d+$/u).optional(),
-      limit: z.number().int().min(1).max(100).default(25),
+      limit: z.number().int().min(1).max(25).default(10),
       offset: z.number().int().min(0).max(1_000_000).default(0),
     },
   }, async (input) => textResult(await dependencies.rulesV2.workbench({
@@ -136,21 +138,41 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
   }, async ({ sourceProductId }) => textResult(await dependencies.productAdmin.getProduct(sourceProductId)));
 
   server.registerTool("list_classification_rules", {
-    description: "List Rules v2 configuration and confirm whether it is authoritative. Use this to inspect existing priorities and groups before proposing a rule.",
+    description: "List one small page of Rules v2 configuration and confirm whether it is authoritative. Use targetId, a narrow search and a small limit before proposing a rule.",
     inputSchema: {
       targetId: z.string().regex(/^\d+$/u).optional(),
       search: z.string().max(500).optional(),
+      limit: z.number().int().min(1).max(25).default(10),
       offset: z.number().int().min(0).max(1_000_000).default(0),
     },
-  }, async ({ targetId, search, offset }) => textResult(await dependencies.rulesV2.overview(
+  }, async ({ targetId, search, limit, offset }) => textResult(await dependencies.rulesV2.overview(
     targetId,
-    { ...(search === undefined ? {} : { search }), offset },
+    { ...(search === undefined ? {} : { search }), limit, offset },
   )));
 
-  server.registerTool("list_targets", {
-    description: "List configured targets and their classification capabilities. This tool does not enable or modify a target.",
+  server.registerTool("list_sources", {
+    description: "List enabled product sources and return their exact sourceId values for workbench and Rules v2 calls.",
     inputSchema: {},
-  }, async () => textResult({ items: await dependencies.targetDictionaries.listTargets() }));
+  }, async () => textResult({ items: await dependencies.dataSchema.listSources() }));
+
+  server.registerTool("list_targets", {
+    description: "List compact configured targets with exact targetId values and dictionary capabilities. This tool does not enable or modify a target.",
+    inputSchema: {},
+  }, async () => textResult({ items: (await dependencies.targetDictionaries.listTargets()).map((target) => ({
+    targetId: target.id,
+    code: target.code,
+    name: target.name,
+    exporterCode: target.exporterCode,
+    enabled: target.enabled,
+    dictionary: {
+      providerCode: target.dictionary.providerCode,
+      configured: target.dictionary.configured,
+      supportedEntityTypes: target.dictionary.supportedEntityTypes,
+      creatableEntityTypes: target.dictionary.creatableEntityTypes,
+      classificationCapabilities: target.dictionary.classificationCapabilities,
+      termRelationCapabilities: target.dictionary.termRelationCapabilities,
+    },
+  })) }));
 
   server.registerTool("search_target_dictionary", {
     description: "Search the locally synchronized dictionary for an exact target term. It never creates or changes remote terms.",
@@ -158,7 +180,7 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       targetId: z.string().regex(/^\d+$/u),
       entityType: z.string().min(1).max(200),
       search: z.string().max(500).optional(),
-      limit: z.number().int().min(1).max(200).default(50),
+      limit: z.number().int().min(1).max(100).default(20),
       offset: z.number().int().min(0).max(1_000_000).default(0),
     },
   }, async ({ targetId, entityType, search, limit, offset }) => textResult({

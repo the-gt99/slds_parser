@@ -5,7 +5,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createClassificationMcpServer, registerClassificationMcp } from "../../src/mcp/index.js";
-import type { ExportControlService, ProductAdminService, RulesV2Service, TargetDictionaryService, WordPressPreviewService } from "../../src/services/index.js";
+import type { DataSchemaService, ExportControlService, ProductAdminService, RulesV2Service, TargetDictionaryService, WordPressPreviewService } from "../../src/services/index.js";
 
 const closeCallbacks: Array<() => Promise<void>> = [];
 
@@ -15,11 +15,13 @@ afterEach(async () => {
 
 async function connectedClient(options: {
   readonly rulesV2?: Partial<RulesV2Service>;
+  readonly dataSchema?: Partial<DataSchemaService>;
   readonly targetDictionaries?: Partial<TargetDictionaryService>;
   readonly wordpressPreview?: Partial<WordPressPreviewService>;
 } = {}) {
   const server = createClassificationMcpServer({
     config: { token: "m".repeat(32) },
+    dataSchema: (options.dataSchema ?? { listSources: async () => [] }) as DataSchemaService,
     exportControl: {} as ExportControlService,
     productAdmin: {} as ProductAdminService,
     rulesV2: (options.rulesV2 ?? {}) as RulesV2Service,
@@ -52,6 +54,7 @@ describe("classification MCP", () => {
     const app = Fastify();
     registerClassificationMcp(app, {
       config: { token: "m".repeat(32) },
+      dataSchema: { listSources: async () => [] } as unknown as DataSchemaService,
       exportControl: {} as ExportControlService,
       productAdmin: {} as ProductAdminService,
       rulesV2: {} as RulesV2Service,
@@ -84,6 +87,7 @@ describe("classification MCP", () => {
       "list_classification_workbench",
       "get_product_context",
       "list_classification_rules",
+      "list_sources",
       "search_target_dictionary",
       "list_saved_preflights",
       "get_wordpress_preflight",
@@ -92,6 +96,23 @@ describe("classification MCP", () => {
       "create_classification_rule",
     ]));
     expect(tools.tools.map((tool) => tool.name)).not.toContain("execute_sql");
+  });
+
+  it("returns compact discoverable source and target identifiers", async () => {
+    const client = await connectedClient({
+      dataSchema: { listSources: vi.fn().mockResolvedValue([{ sourceId: "1", code: "goat", name: "GOAT", adapterCode: "goat", enabled: true }]) },
+      targetDictionaries: { listTargets: vi.fn().mockResolvedValue([{
+        id: "2", code: "slamdunk", name: "Slamdunk", exporterCode: "wordpress", enabled: false,
+        config: { secret: "must-not-leak" }, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+        dictionary: { providerCode: "wordpress", configured: true, supportedEntityTypes: ["brands"],
+          creatableEntityTypes: ["brands"], classificationCapabilities: [], termRelationCapabilities: [] },
+      }]) },
+    });
+    const sources = await client.callTool({ name: "list_sources", arguments: {} });
+    const targets = await client.callTool({ name: "list_targets", arguments: {} });
+    expect(sources.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"sourceId": "1"') })]);
+    expect(targets.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"targetId": "2"') })]);
+    expect(JSON.stringify(targets.content)).not.toContain("must-not-leak");
   });
 
   it("refuses a rule when the fresh preview count differs", async () => {
