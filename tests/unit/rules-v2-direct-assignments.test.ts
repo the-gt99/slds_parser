@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { UniversalProductDTO } from "../../src/contracts/index.js";
 import type { RuleV2Record } from "../../src/repositories/index.js";
 import { DirectRulesV2Assignments } from "../../src/services/rules-v2-direct-assignments.js";
@@ -19,6 +19,19 @@ function rule(overrides: Partial<RuleV2Record>): RuleV2Record {
 }
 
 describe("direct dependent assignments", () => {
+  it("checks ordinary preview conditions without resolving the complete rule catalogue", () => {
+    const assignment = rule({ id: "3", sourceId: "1", targetId: "5", originKind: "native", originId: null,
+      groupCode: "preview", priority: 100, conditionGroups: [{ conditions: [
+        { field: "candidate.model.sourceValue", operator: "equals", values: ["Samba"] },
+      ] }], actions: [{ targetScope: "product.model", dictionaryValueId: "50", externalValue: "50",
+        externalLabel: "Samba", mode: "add" }] });
+    const engine = new DirectRulesV2Assignments([assignment], "5");
+    const resolveTerms = vi.spyOn(engine, "resolveTerms");
+
+    expect(engine.matchesRule("3", product, source)).toBe(true);
+    expect(resolveTerms).not.toHaveBeenCalled();
+  });
+
   it("matches the WordPress model term rather than an internal reference ID", () => {
     const mapping = rule({ id: "2", sourceId: null, targetId: "5", originKind: "target_mapping", originId: "21",
       originPayload: { referenceValueId: "10" }, actions: [{ targetScope: "product.model", dictionaryValueId: "50",

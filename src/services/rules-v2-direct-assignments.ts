@@ -103,7 +103,10 @@ export class DirectRulesV2Assignments {
   matchesRule(ruleId: string, product: UniversalProductDTO, source: RulesV2ProductSource): boolean {
     const rule = this.assignments.find((item) => item.id === ruleId);
     if (rule === undefined) throw new IntegrationContractError(`Unknown direct assignment rule ${ruleId}`);
-    return resolveTargetAssignments(product, [rule], this.assignmentReader(product, source)).length > 0;
+    const needsAssignedTerms = rule.conditionGroups.some((group) =>
+      group.conditions.some((condition) => condition.field.startsWith("assigned.")));
+    const reader = needsAssignedTerms ? this.assignmentReader(product, source) : rulesV2FieldReader(product, source);
+    return resolveTargetAssignments(product, [rule], reader).length > 0;
   }
 
   resolve(product: UniversalProductDTO, source: RulesV2ProductSource): readonly TargetAssignmentDTO[] {
