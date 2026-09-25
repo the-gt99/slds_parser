@@ -98,6 +98,7 @@ PARSER_TRANSLATION_PROVIDER=openrouter
 PARSER_OPENROUTER_API_KEY=
 PARSER_OPENROUTER_MODEL=deepseek/deepseek-v3.2
 PARSER_OPENROUTER_PROXY_URL=
+PARSER_OPENROUTER_MIN_BALANCE_USD=3
 PARSER_DEEPL_API_KEY=
 PARSER_TRANSLATION_SOURCE=en
 PARSER_TRANSLATION_TARGET=ru
@@ -115,7 +116,7 @@ SHOE_HEIGHT_SOURCE_IMAGE_POSITION=0
 
 `PARSER_IMAGE_STORAGE=local` сохраняет прежнюю локальную публикацию. При `PARSER_IMAGE_STORAGE=s3` операция `publish-images` загружает готовый WebP в S3 под ключом `<PARSER_PUBLIC_PATH_PREFIX>/<source>/<product>/<image>.<sha256>.webp` и записывает в DTO URL CDN. Файл на диске служит временной копией для проверки и конвертации; после успешной загрузки с проверкой Content-MD5 он удаляется. При ошибке загрузки копия сохраняется. Повторное чтение опубликованного изображения идёт из S3 с проверкой хеша. Адрес включает хеш содержимого, поэтому новое фото не зависит от очистки кеша CDN. Старые локальные изображения автоматически не удаляются: для них необходим перенос и проверка ссылок. Для Yandex Object Storage используются endpoint `https://storage.yandexcloud.net` и регион `ru-central1`. Ключи задаются только через окружение runtime.
 
-Для нового перевода используется `PARSER_TRANSLATION_PROVIDER=openrouter` с явной моделью DeepSeek. Повторный перевод выполняется через `retranslate_product`, без processing и скачивания media. `RETRANSLATION_SCOPE=missing-provider` ограничивает CLI товарами без записанной идентичности переводчика, а `outdated` выбирает все несовпадающие версии. Настройка target `requiredTranslation` должна соответствовать новой модели; `acceptedTranslations` позволяет сохранить ранее проверенные переводы DeepL с теми же языками. Это список допустимых готовых переводов, а не переключение провайдера при ошибке.
+Для нового перевода используется `PARSER_TRANSLATION_PROVIDER=openrouter` с явной моделью DeepSeek. `PARSER_OPENROUTER_MIN_BALANCE_USD` проверяет перед каждым новым запросом общий остаток OpenRouter и доступный лимит ключа; при достижении резерва перевод останавливается без вызова модели. Повторный перевод выполняется через `retranslate_product`, без processing и скачивания media. `RETRANSLATION_SCOPE=missing-provider` ограничивает CLI товарами без записанной идентичности переводчика, а `outdated` выбирает все несовпадающие версии. Настройка target `requiredTranslation` должна соответствовать новой модели; `acceptedTranslations` позволяет сохранить ранее проверенные переводы DeepL с теми же языками. Это список допустимых готовых переводов, а не переключение провайдера при ошибке.
 
 `PARSER_OPENROUTER_PROXY_URL` задаёт отдельный HTTP(S)-прокси только для запросов перевода. При его настройке прямого повторного запроса после ошибки прокси нет; соединения GOAT, WordPress и S3 эта настройка не меняет. Адрес с credentials хранится только в защищённом окружении сервиса.
 

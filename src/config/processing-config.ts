@@ -15,6 +15,7 @@ export interface ProcessingEnvironment {
   readonly PARSER_OPENROUTER_API_KEY?: string;
   readonly PARSER_OPENROUTER_MODEL?: string;
   readonly PARSER_OPENROUTER_PROXY_URL?: string;
+  readonly PARSER_OPENROUTER_MIN_BALANCE_USD?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
   readonly PARSER_DEEPL_API_URL?: string;
   readonly PARSER_TRANSLATION_SOURCE?: string;
@@ -33,6 +34,13 @@ function integer(value: string | undefined, fallback: number, name: string, mini
   if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < minimum) throw new PermanentError(`${name} is invalid`, { code: "INVALID_PROCESSING_CONFIG" });
+  return parsed;
+}
+
+function nonNegativeNumber(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new PermanentError(`${name} is invalid`, { code: "INVALID_PROCESSING_CONFIG" });
   return parsed;
 }
 
@@ -150,6 +158,7 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
         ? { ...translationOptions, provider: "openrouter" as const,
           apiKey: openRouterApiKey,
           model: environment.PARSER_OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v3.2",
+          minBalanceUsd: nonNegativeNumber(environment.PARSER_OPENROUTER_MIN_BALANCE_USD, 0, "PARSER_OPENROUTER_MIN_BALANCE_USD"),
           proxyUrl: environment.PARSER_OPENROUTER_PROXY_URL?.trim() || undefined }
         : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {

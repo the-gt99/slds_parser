@@ -8,8 +8,12 @@ describe("processing config", () => {
     const environment = { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_TRANSLATION_PROVIDER: "openrouter" };
     expect(() => loadProcessingConfig(environment)).toThrow("PARSER_OPENROUTER_API_KEY");
     expect(loadProcessingConfig({ ...environment, PARSER_OPENROUTER_API_KEY: "test-key" }).translation).toMatchObject({
-      provider: "openrouter", model: "deepseek/deepseek-v3.2", timeoutMs: 60_000,
+      provider: "openrouter", model: "deepseek/deepseek-v3.2", timeoutMs: 60_000, minBalanceUsd: 0,
     });
+    expect(loadProcessingConfig({ ...environment, PARSER_OPENROUTER_API_KEY: "test-key", PARSER_OPENROUTER_MIN_BALANCE_USD: "3" }).translation)
+      .toMatchObject({ minBalanceUsd: 3 });
+    expect(() => loadProcessingConfig({ ...environment, PARSER_OPENROUTER_API_KEY: "test-key", PARSER_OPENROUTER_MIN_BALANCE_USD: "-1" }))
+      .toThrow("PARSER_OPENROUTER_MIN_BALANCE_USD");
   });
 
   it("uses the confirmed legacy processing defaults", () => {

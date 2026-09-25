@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenRouterTranslationProvider } from "../../src/infrastructure/translation/index.js";
 import { IntegrationContractError, PermanentError } from "../../src/core/errors/index.js";
 
-const options = { apiKey: "test-secret", model: "deepseek/deepseek-v3.2", timeoutMs: 1000, attempts: 2, retryDelayMs: 0 };
+const options = { apiKey: "test-secret", model: "deepseek/deepseek-v3.2", timeoutMs: 1000, attempts: 2, retryDelayMs: 0, minBalanceUsd: 0 };
 const success = () => new Response(JSON.stringify({ id: "request-1", choices: [{ finish_reason: "stop", message: { content: "Кожаный верх" } }], usage: { prompt_tokens: 70, completion_tokens: 5, cost: 0.00002 } }));
 
 describe("OpenRouter translation", () => {
@@ -46,6 +46,28 @@ describe("OpenRouter translation", () => {
     const request = vi.fn().mockResolvedValue(new Response("", { status: 402 }));
     await expect(new OpenRouterTranslationProvider(options, request).translate("Leather", "en", "ru")).rejects.toBeInstanceOf(PermanentError);
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("stops before translation when the account balance is below the configured reserve", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { total_credits: 10, total_usage: 7.01 } })));
+    const provider = new OpenRouterTranslationProvider({ ...options, minBalanceUsd: 3 }, request);
+    await expect(provider.translate("Leather", "en", "ru")).rejects.toThrow("balance reserve reached");
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("checks both account credit and the API key limit before calling the model", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { total_credits: 25, total_usage: 1 } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { limit_remaining: 4.25 } })))
+      .mockResolvedValueOnce(success());
+    const provider = new OpenRouterTranslationProvider({ ...options, minBalanceUsd: 3 }, request);
+    await expect(provider.translate("Leather upper", "en", "ru")).resolves.toBe("Кожаный верх");
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      "https://openrouter.ai/api/v1/credits",
+      "https://openrouter.ai/api/v1/key",
+      "https://openrouter.ai/api/v1/chat/completions",
+    ]);
   });
 
   it.each(["length", "content_filter", null])("rejects unfinished output (%s)", async (reason) => {
