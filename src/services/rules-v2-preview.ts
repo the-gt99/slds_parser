@@ -425,17 +425,20 @@ export class RulesV2PreviewService {
       const after = new DirectRulesV2Assignments([...replacing, preview], draft.targetId);
       const beforeRecords = new Map(snapshot.records.map((rule) => [ruleIdentity(rule), rule]));
       const afterRecords = new Map([...replacing.map((rule): [string, RuleV2Record] => [ruleIdentity(rule), rule]), ["0", preview] as [string, RuleV2Record]]);
+      const sweepMaxId = (await db.query<{ id: string | null }>(`SELECT MAX(product.id)::TEXT AS id
+        FROM internal_products internal JOIN source_products product ON product.id = internal.source_product_id
+        WHERE product.source_id = $1`, [draft.sourceId])).rows[0]?.id ?? "0";
       job.total = (await db.query<{ count: number }>(`SELECT COUNT(*)::INT AS count FROM internal_products internal
         JOIN source_products product ON product.id = internal.source_product_id
-        WHERE product.source_id = $1`, [draft.sourceId])).rows[0]?.count ?? 0;
+        WHERE product.source_id = $1 AND product.id <= $2`, [draft.sourceId, sweepMaxId])).rows[0]?.count ?? 0;
       let lastId = "0";
       while (true) {
         const rows = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT,
           product.source_key, product.external_id, source.code, internal.data, internal.updated_at::TEXT
           FROM source_products product JOIN sources source ON source.id = product.source_id
           JOIN internal_products internal ON internal.source_product_id = product.id
-          WHERE product.source_id = $1 AND product.id > $2
-          ORDER BY product.id LIMIT 1000`, [draft.sourceId, lastId])).rows;
+          WHERE product.source_id = $1 AND product.id > $2 AND product.id <= $3
+          ORDER BY product.id LIMIT 1000`, [draft.sourceId, lastId, sweepMaxId])).rows;
         if (!rows.length) break;
         for (const row of rows) {
           lastId = row.id; job.checked++;

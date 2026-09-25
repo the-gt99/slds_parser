@@ -93,7 +93,8 @@ describe("RulesV2PreviewService", () => {
     const query = async <Row extends Record<string, unknown>>(sql: string, values?: unknown[]): Promise<SqlResult<Row>> => {
       const rows = sql.includes("FROM target_dictionary_values")
         ? [{ id: "50", external_id: "500", name: "Nike Test", entity_type: "models" }]
-        : sql.includes("COUNT(*)::INT AS count") ? [{ count: 1 }]
+        : sql.includes("MAX(product.id)::TEXT AS id") ? [{ id: "2" }]
+          : sql.includes("COUNT(*)::INT AS count") ? [{ count: 1 }]
           : sql.includes("FROM source_products product") && values?.[1] === "0" ? [product] : [];
       return { rows: rows as unknown as Row[], rowCount: rows.length };
     };
