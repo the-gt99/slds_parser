@@ -28,6 +28,8 @@ export interface RetranslateProductPayload {
   readonly sourceProductId: string;
 }
 
+export interface ResolveShihuoProductPayload { readonly sourceProductId: string; }
+
 export interface ExportProductPayload {
   readonly internalProductId: string;
   readonly targetId: string;
@@ -154,6 +156,11 @@ export function parseRetranslateProductPayload(value: JsonValue): RetranslatePro
     return { sourceProductId: value.sourceProductId };
   }
   throw new InvalidJobPayloadError("retranslate_product");
+}
+
+export function parseResolveShihuoProductPayload(value: JsonValue): ResolveShihuoProductPayload {
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)) return { sourceProductId: value.sourceProductId };
+  throw new InvalidJobPayloadError("resolve_shihuo_product");
 }
 
 export function parseExportProductPayload(value: JsonValue): ExportProductPayload {

@@ -2,7 +2,7 @@ import { InvalidJobPayloadError } from "../core/errors/index.js";
 import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
-import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseCollectWordPressVariationSourcePayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseSubmitWordPressVariationPatchesPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
+import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseCollectWordPressVariationSourcePayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseResolveShihuoProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseSubmitWordPressVariationPatchesPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
 import type { ExportSourceRefreshRunner } from "./export-source-refresh-runner.js";
 import type { PreflightRunner } from "./preflight-runner.js";
 import type { ProcessingRunner } from "./processing-runner.js";
@@ -12,6 +12,7 @@ import type { TargetClassificationApplyRunner } from "./target-classification-ap
 import type { RunnerResult } from "./runner-result.js";
 import type { WordPressCatalogSyncRunner } from "./wordpress-catalog-sync-runner.js";
 import type { WordPressVariationPatchRunner } from "./wordpress-variation-patch-runner.js";
+import type { ShihuoResolutionRunner } from "./shihuo-resolution-runner.js";
 
 export interface JobHandler {
   dispatch(job: JobRecord): Promise<RunnerResult>;
@@ -28,7 +29,8 @@ export class JobDispatcher implements JobHandler {
     private readonly wordpressCatalogSync?: WordPressCatalogSyncRunner,
     private readonly wordpressVariationPatches?: WordPressVariationPatchRunner,
     private readonly retranslations?: RetranslationRunner,
-    private readonly exportSourceRefreshes?: ExportSourceRefreshRunner) {}
+    private readonly exportSourceRefreshes?: ExportSourceRefreshRunner,
+    private readonly shihuoResolutions?: ShihuoResolutionRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
@@ -80,6 +82,10 @@ export class JobDispatcher implements JobHandler {
       case "refresh_export_source": {
         if (this.exportSourceRefreshes === undefined) throw new InvalidJobPayloadError("refresh_export_source is not configured");
         return await this.exportSourceRefreshes.refresh(parseRefreshExportSourcePayload(job.payload));
+      }
+      case "resolve_shihuo_product": {
+        if (this.shihuoResolutions === undefined) throw new InvalidJobPayloadError("resolve_shihuo_product is not configured");
+        return await this.shihuoResolutions.resolve(parseResolveShihuoProductPayload(job.payload));
       }
       default: throw new InvalidJobPayloadError(String(job.jobType));
     }

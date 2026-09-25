@@ -1,7 +1,7 @@
-import { CollectionRunner, ExportRunner, ExportSourceRefresher, ExportSourceRefreshRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
-import { loadProcessingConfig, loadTelegramNotificationConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type TelegramNotificationEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
+import { CollectionRunner, ExportRunner, ExportSourceRefresher, ExportSourceRefreshRunner, JobDispatcher, PreflightRunner, ProcessingRunner, ProductOperationPipeline, RetranslationRunner, ShihuoResolutionRunner, TargetClassificationApplyRunner, TargetClassificationSyncRunner, Worker, WordPressCatalogSyncRunner, WordPressVariationPatchRunner } from "./application/index.js";
+import { loadProcessingConfig, loadShihuoConfig, loadTelegramNotificationConfig, loadWorkerConfig, loadWordPressTargetConfig, type ProcessingEnvironment, type ShihuoEnvironment, type TelegramNotificationEnvironment, type WorkerEnvironment, type WordPressTargetEnvironment } from "./config/index.js";
 import { ProductOperationRegistry, SourceAdapterRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "./core/registry/index.js";
-import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
+import { createPostgresPool, createPostgresRepositories, PostgresClassificationAdminRepository, PostgresExportControlRepository, PostgresGoatProxyRepository, PostgresProductOperationHistoryRepository, PostgresRuntimeWorkerSettingsRepository, PostgresShihuoProductLinkRepository, PostgresShihuoSessionRepository, PostgresTargetClassificationImportRepository, PostgresTargetDictionaryRepository, PostgresUnitOfWork, PostgresWordPressCatalogRepository, type PoolEnvironment } from "./infrastructure/db/index.js";
 import { LocalImageStore, S3ImageStore } from "./infrastructure/media/index.js";
 import { CachedTranslationProvider, createTranslationProvider, PostgresTranslationCacheRepository, type TranslationCacheRepository } from "./infrastructure/translation/index.js";
 import { ShoeHeightApiProvider } from "./infrastructure/vision/index.js";
@@ -9,9 +9,10 @@ import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProces
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 import { RulesExecution } from "./infrastructure/db/rules-execution.js";
+import { ShihuoGuestSessionPool, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
-export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment;
+export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
 
 export interface ApplicationOptions {
   readonly workerLogError?: (message: string) => void;
@@ -98,6 +99,12 @@ export function createApplication(environment: ApplicationEnvironment = process.
     rulesExecution,
   );
   const workerOptions = loadWorkerConfig(environment);
+  const shihuoConfig = loadShihuoConfig(environment);
+  const shihuoResolver = shihuoConfig === null ? undefined : new ShihuoProductResolver(
+    new ShihuoGuestSessionPool(new PostgresShihuoSessionRepository(pool), new ShihuoSecretCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY), shihuoConfig),
+    new ShihuoSearchClient({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
+    new ShihuoProductClient(), new PostgresShihuoProductLinkRepository(pool), repositories.internalProducts, shihuoConfig.betweenRequestsMs,
+  );
   const exportControl = new PostgresExportControlRepository(pool);
   const exportCampaigns = new ExportControlService(exportControl, repositories.jobs, workerOptions.exportConcurrency ?? 1);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
@@ -166,11 +173,12 @@ export function createApplication(environment: ApplicationEnvironment = process.
       })();
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
-    wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner);
+    wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner,
+    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver));
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
-    workerOptions,
+    { ...workerOptions, shihuoConcurrency: shihuoConfig?.concurrency ?? 0 },
     undefined,
     Date.now,
     options.workerLogError ?? console.error,
@@ -204,5 +212,5 @@ export function createApplication(environment: ApplicationEnvironment = process.
     wordpress === null ? undefined : wordpressCatalogService,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner, retranslationRunner,
-    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, dispatcher, worker, close: () => pool.end() };
+    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, shihuoResolver, dispatcher, worker, close: () => pool.end() };
 }

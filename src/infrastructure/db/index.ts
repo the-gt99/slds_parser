@@ -38,4 +38,6 @@ export {
   PostgresTargetClassificationImportRepository,
   PostgresWordPressCatalogRepository,
   PostgresShihuoDeviceRepository,
+  PostgresShihuoProductLinkRepository,
+  PostgresShihuoSessionRepository,
 } from "./repositories/index.js";

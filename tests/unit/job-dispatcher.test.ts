@@ -67,4 +67,12 @@ describe("JobDispatcher", () => {
     expect(classificationApply.fail).toHaveBeenCalledWith({ runId: "1", suggestionId: "2", actor: "admin" }, "failed");
   });
   it("rejects an invalid payload", async () => { const repositories = createMemoryRepositories(new MemoryStore()); const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns); await expect(dispatcher.dispatch(job("process_product", { sourceProductId: 1, force: false }))).rejects.toBeInstanceOf(InvalidJobPayloadError); });
+  it("routes Shihuo resolution jobs through the explicitly registered runner", async () => {
+    const repositories = createMemoryRepositories(new MemoryStore());
+    const shihuo = { resolve: vi.fn().mockResolvedValue({ status: "completed" }) };
+    const dispatcher = new JobDispatcher({} as never, {} as never, {} as never, repositories.sourceRuns,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, shihuo as never);
+    await dispatcher.dispatch(job("resolve_shihuo_product", { sourceProductId: "42" }));
+    expect(shihuo.resolve).toHaveBeenCalledWith({ sourceProductId: "42" });
+  });
 });

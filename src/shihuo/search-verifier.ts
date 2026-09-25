@@ -20,7 +20,7 @@ export interface ShihuoSignerConfig {
   readonly assetDirectory: string;
 }
 
-function signerHeaders(profile: ShihuoGuestProfile, config: ShihuoSignerConfig): Promise<Record<string, string>> {
+export function createShihuoSignedHeaders(profile: ShihuoGuestProfile, config: ShihuoSignerConfig): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     const child = spawn(config.python, [config.script], {
       env: { ...process.env, SHIHUO_SIGNER_ASSET_DIR: config.assetDirectory },
@@ -63,7 +63,7 @@ export class SignedShihuoSearchVerifier implements ShihuoSearchVerifier {
 
   async verify(profile: ShihuoGuestProfile, article: string): Promise<ShihuoSearchVerification> {
     const keyword = searchArticle(article);
-    const headers = await signerHeaders(profile, this.config);
+    const headers = await createShihuoSignedHeaders(profile, this.config);
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
       page_route: "homeSearchList", predictSex: "2", use_type: "2", user_input: keyword };
     const response = await this.fetchImpl(SEARCH_URL, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(25_000) });

@@ -29,6 +29,7 @@ export interface WorkerOptions {
   readonly inventoryRefreshConcurrency?: number;
   readonly inventoryPrepareConcurrency?: number;
   readonly inventorySubmitConcurrency?: number;
+  readonly shihuoConcurrency?: number;
 }
 
 export interface WorkerConcurrency {
@@ -260,6 +261,7 @@ export class Worker {
     const wordpressVariationCollectJobTypes = ["collect_wordpress_variation_source"] satisfies readonly JobType[];
     const wordpressVariationPrepareJobTypes = ["prepare_wordpress_variation_patch"] satisfies readonly JobType[];
     const wordpressVariationSubmitJobTypes = ["submit_wordpress_variation_patches"] satisfies readonly JobType[];
+    const shihuoJobTypes = ["resolve_shihuo_product"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
           processConcurrency: this.options.processConcurrency ?? 1,
@@ -294,6 +296,8 @@ export class Worker {
           this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export-${index + 1}`)),
         ...Array.from({ length: this.options.exportRefreshConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, exportRefreshJobTypes, `${this.options.workerId}:export-refresh-${index + 1}`)),
+        ...Array.from({ length: this.options.shihuoConcurrency ?? 0 }, (_, index) =>
+          this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:shihuo-${index + 1}`)),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
         ] : []),
         ...(runInventory ? [

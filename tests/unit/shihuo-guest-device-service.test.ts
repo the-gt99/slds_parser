@@ -5,7 +5,9 @@ const key = Buffer.alloc(32, 7).toString("base64");
 const config = { onboardingBaseUrl: "https://parser.example", endpoint: "parser.example:51820", serverPublicKey: "server-public",
   subnet: "10.77.0.0/24", dns: "1.1.1.1", caCertificatePath: "unused", onboardingTtlHours: 24, wgCommand: "wg",
   reconcileService: "", gatewayTokenHash: "961d5cf1ff56cd36374aee671429d741ba0b1207f6935d68e1df9f167e3c3d2e", iosAppUrl: "https://apps.apple.com/app/id875177200", androidAppUrl: "https://www.shihuo.cn/app/",
-  signerPython: "python", signerScript: "sign.py", signerAssetDirectory: "assets" };
+  signerPython: "python", signerScript: "sign.py", signerAssetDirectory: "assets",
+  sessionLeaseSeconds: 60, betweenRequestsMs: 1100, betweenProductsSeconds: 3,
+  failureCooldownSeconds: 30, riskCooldownSeconds: 1800, concurrency: 1 };
 const verifier = { verify: vi.fn().mockResolvedValue({ httpStatus: 200, goodsCount: 2 }) };
 
 function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord {
