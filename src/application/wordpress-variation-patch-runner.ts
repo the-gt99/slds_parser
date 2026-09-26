@@ -195,7 +195,12 @@ export class WordPressVariationPatchRunner {
         references: {
           resolveReference: (input) => resolveReference(candidate.target.id, input),
           resolveProjections: (inputs) => resolveProjections(candidate.target.id, inputs),
-          resolveAssignments,
+          resolveAssignments: async (product) => (await this.mappings.resolveDirectAssignments(
+            candidate.target.id, candidate.source, candidate.sourceProduct, product,
+          )) ?? resolveAssignments(product),
+          resolveDirect: (product) => this.mappings.resolveDirectTarget(
+            candidate.target.id, candidate.source, candidate.sourceProduct, product,
+          ),
         },
         contentTemplates: templates,
       } satisfies Parameters<WordPressExporter["previewPayload"]>[0];
@@ -431,7 +436,12 @@ export class WordPressVariationPatchRunner {
       references: {
         resolveReference,
         resolveProjections,
-        resolveAssignments,
+        resolveAssignments: async (product: typeof candidate.product) => (await this.mappings.resolveDirectAssignments(
+          candidate.target.id, candidate.source, candidate.sourceProduct, product,
+        )) ?? resolveAssignments(product),
+        resolveDirect: (product: typeof candidate.product) => this.mappings.resolveDirectTarget(
+          candidate.target.id, candidate.source, candidate.sourceProduct, product,
+        ),
       },
     };
     const goatDraft = await previewWordPressVariationPatchItems({ ...context, liveVariants }, this.converter);
