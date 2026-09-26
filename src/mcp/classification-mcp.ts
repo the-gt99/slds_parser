@@ -55,6 +55,100 @@ const ruleShape = {
   reason: z.string().min(1).max(1_000).optional(),
 };
 
+const serverInstructions = `Начинай работу с list_sources и list_targets. Для очереди классификации используй
+list_classification_workbench в compact-режиме и переходи по страницам через page.nextOffset, пока page.hasMore=true.
+Для одного товара используй get_product_classification_context. Полный get_product_context предназначен только для
+точечной диагностики и может превышать лимит клиента. Не используй preview правил для поиска или перечисления товаров.
+Ищи несколько терминов через search_target_dictionaries; продолжай конкретный запрос через его page.nextOffset.
+Отделяй classificationBlockers, которые можно устранить правилами, от dataBlockers, которые требуют исправления данных.
+Перед записью правила выполни preview_classification_rule или preview_classification_rules. Создание термина и правила
+разрешено только после явного подтверждения пользователя; эти операции не запускают экспорт.`;
+
+const classificationBlockerCodes = new Set([
+  "required_brand_missing",
+  "required_model_missing",
+  "required_category_missing",
+]);
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function compactIssue(value: unknown) {
+  const issue = objectValue(value);
+  return { code: String(issue.code ?? "unknown"), message: String(issue.message ?? "") };
+}
+
+function compactWorkbench(value: object) {
+  const result = objectValue(value);
+  const items = Array.isArray(result.items) ? result.items : [];
+  return {
+    mode: result.mode,
+    requiredTargetFields: result.requiredTargetFields,
+    counts: result.counts,
+    index: result.index,
+    filteredCount: result.filteredCount,
+    page: result.page,
+    items: items.map((rawItem) => {
+      const item = objectValue(rawItem);
+      const blockers = (Array.isArray(item.blockers) ? item.blockers : []).map(compactIssue);
+      const classificationBlockers = blockers.filter((blocker) => classificationBlockerCodes.has(blocker.code));
+      const dataBlockers = blockers.filter((blocker) => !classificationBlockerCodes.has(blocker.code));
+      const candidates = Object.fromEntries(Object.entries(objectValue(item.candidates)).map(([scope, rawCandidates]) => [
+        scope,
+        (Array.isArray(rawCandidates) ? rawCandidates : []).map((rawCandidate) => {
+          const candidate = objectValue(rawCandidate);
+          return { key: candidate.key, sourceValue: candidate.sourceValue, context: candidate.context };
+        }),
+      ]));
+      const targetResult = objectValue(item.result);
+      const trace = Array.isArray(item.trace) ? item.trace : [];
+      const conflicts = (Array.isArray(item.conflicts) ? item.conflicts : []).map(compactIssue);
+      return {
+        sourceProductId: item.sourceProductId,
+        sourceExternalId: item.sourceExternalId,
+        title: item.title,
+        sku: item.sku,
+        updatedAt: item.updatedAt,
+        status: item.status,
+        classificationBlockers,
+        dataBlockers,
+        conflicts,
+        canRulesResolveAllBlockers: dataBlockers.length === 0 && conflicts.length === 0,
+        candidates,
+        resultingTargetFields: targetResult.fields,
+        facts: {
+          imageCount: targetResult.imageCount,
+          variantCount: targetResult.variantCount,
+          descriptionPresent: targetResult.descriptionPresent,
+        },
+        appliedRules: trace.map((rawTrace) => {
+          const entry = objectValue(rawTrace);
+          return { kind: entry.kind, name: entry.name, ruleId: entry.ruleId, groupCode: entry.groupCode };
+        }),
+      };
+    }),
+  };
+}
+
+function compactPreview(value: object) {
+  const preview = objectValue(value);
+  const conflicts = Array.isArray(preview.conflicts) ? preview.conflicts : [];
+  const examples = Array.isArray(preview.examples) ? preview.examples : [];
+  return {
+    mode: preview.mode,
+    scope: preview.scope,
+    writes: preview.writes,
+    examined: preview.examined,
+    productCount: preview.productCount,
+    conflictCount: conflicts.length,
+    conflicts: conflicts.slice(0, 3),
+    examples: examples.slice(0, 3),
+  };
+}
+
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
@@ -103,10 +197,13 @@ function exactProductId(draft: RuleV2Draft): string | null {
 }
 
 export function createClassificationMcpServer(dependencies: ClassificationMcpDependencies): McpServer {
-  const server = new McpServer({ name: "slds-classification", version: "1.0.0" });
+  const server = new McpServer(
+    { name: "slds-classification", version: "1.1.0" },
+    { instructions: serverInstructions },
+  );
 
   server.registerTool("list_classification_workbench", {
-    description: "List products as evaluated by the currently active Rules v2 engine, including missing target fields, conflicts, candidates and rule trace.",
+    description: "List one deterministic page of products evaluated by active Rules v2. compact is the default and is safe for batches: it separates classificationBlockers from dataBlockers and omits verbose trace changes. Continue with offset=page.nextOffset while page.hasMore=true. Use full only for at most 3 products.",
     inputSchema: {
       sourceId: z.string().regex(/^\d+$/u),
       targetId: z.string().regex(/^\d+$/u),
@@ -116,29 +213,52 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       variants: z.enum(["with", "without", "all"]).default("all"),
       sort: z.enum(["latest", "title", "problems", "rule_gaps", "data_ready"]).default("rule_gaps"),
       productId: z.string().regex(/^\d+$/u).optional(),
+      detail: z.enum(["compact", "full"]).default("compact"),
       limit: z.number().int().min(1).max(25).default(10),
       offset: z.number().int().min(0).max(1_000_000).default(0),
     },
-  }, async (input) => textResult(await dependencies.rulesV2.workbench({
-    sourceId: input.sourceId,
-    targetId: input.targetId,
-    ...(input.search === undefined ? {} : { search: input.search }),
-    status: input.status,
-    ...(input.missingField === undefined ? {} : { missingField: input.missingField }),
-    variants: input.variants,
-    sort: input.sort,
-    ...(input.productId === undefined ? {} : { productId: input.productId }),
-    limit: input.limit,
-    offset: input.offset,
-  })));
+  }, async (input) => {
+    if (input.detail === "full" && input.limit > 3) throw new Error("Full workbench detail is limited to 3 products; use compact pagination for batches");
+    const result = await dependencies.rulesV2.workbench({
+      sourceId: input.sourceId,
+      targetId: input.targetId,
+      ...(input.search === undefined ? {} : { search: input.search }),
+      status: input.status,
+      ...(input.missingField === undefined ? {} : { missingField: input.missingField }),
+      variants: input.variants,
+      sort: input.sort,
+      ...(input.productId === undefined ? {} : { productId: input.productId }),
+      limit: input.limit,
+      offset: input.offset,
+    });
+    return textResult(input.detail === "compact" ? compactWorkbench(result) : result);
+  });
+
+  server.registerTool("get_product_classification_context", {
+    description: "Read compact Rules v2 classification context for exactly one product: blockers split by type, source candidates, resulting target terms and applied rules. Prefer this over get_product_context during classification.",
+    inputSchema: {
+      sourceId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      sourceProductId: z.string().regex(/^\d+$/u),
+    },
+  }, async ({ sourceId, targetId, sourceProductId }) => {
+    const compact = compactWorkbench(await dependencies.rulesV2.workbench({
+      sourceId, targetId, productId: sourceProductId, limit: 1, offset: 0,
+    }));
+    return textResult({
+      mode: compact.mode,
+      requiredTargetFields: compact.requiredTargetFields,
+      item: compact.items[0] ?? null,
+    });
+  });
 
   server.registerTool("get_product_context", {
-    description: "Read the saved source parts, processed DTO, candidate evidence, active classification state and jobs for one source product.",
+    description: "Read the full diagnostic product snapshot including raw parts, DTO, operation history and jobs. This response can exceed 50 KB. Do not use it for batch classification; use get_product_classification_context instead.",
     inputSchema: { sourceProductId: z.string().regex(/^\d+$/u) },
   }, async ({ sourceProductId }) => textResult(await dependencies.productAdmin.getProduct(sourceProductId)));
 
   server.registerTool("list_classification_rules", {
-    description: "List one small page of Rules v2 configuration and confirm whether it is authoritative. Use targetId, a narrow search and a small limit before proposing a rule.",
+    description: "List one Rules v2 page and confirm whether it is authoritative. Use targetId, a narrow search and a small limit. Continue with offset + page.limit while page.hasMore=true.",
     inputSchema: {
       targetId: z.string().regex(/^\d+$/u).optional(),
       search: z.string().max(500).optional(),
@@ -175,7 +295,7 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
   })) }));
 
   server.registerTool("search_target_dictionary", {
-    description: "Search the locally synchronized dictionary for an exact target term. It never creates or changes remote terms.",
+    description: "Search one page of the locally synchronized target dictionary. It never creates or changes terms. Continue with offset=page.nextOffset while page.hasMore=true.",
     inputSchema: {
       targetId: z.string().regex(/^\d+$/u),
       entityType: z.string().min(1).max(200),
@@ -183,14 +303,56 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       limit: z.number().int().min(1).max(100).default(20),
       offset: z.number().int().min(0).max(1_000_000).default(0),
     },
-  }, async ({ targetId, entityType, search, limit, offset }) => textResult({
-    items: await dependencies.targetDictionaries.listValues({
-      targetId, entityType, ...(search === undefined ? {} : { search }), limit, offset,
-    }),
+  }, async ({ targetId, entityType, search, limit, offset }) => {
+    const values = await dependencies.targetDictionaries.listValues({
+      targetId, entityType, ...(search === undefined ? {} : { search }), limit: limit + 1, offset,
+    });
+    const hasMore = values.length > limit;
+    return textResult({
+      items: values.slice(0, limit),
+      page: { offset, limit, hasMore, nextOffset: hasMore ? offset + limit : null },
+    });
+  });
+
+  server.registerTool("search_target_dictionaries", {
+    description: "Batch up to 20 narrow dictionary searches in one read-only call. Each query returns at most 5 items and its own page cursor; continue only queries whose page.hasMore=true using page.nextOffset.",
+    inputSchema: {
+      targetId: z.string().regex(/^\d+$/u),
+      queries: z.array(z.object({
+        requestId: z.string().min(1).max(100),
+        entityType: z.string().min(1).max(200),
+        search: z.string().min(1).max(500),
+        limit: z.number().int().min(1).max(5).default(5),
+        offset: z.number().int().min(0).max(1_000_000).default(0),
+      })).min(1).max(20),
+    },
+  }, async ({ targetId, queries }) => textResult({
+    results: await Promise.all(queries.map(async (query) => {
+      const values = await dependencies.targetDictionaries.listValues({
+        targetId,
+        entityType: query.entityType,
+        search: query.search,
+        limit: query.limit + 1,
+        offset: query.offset,
+      });
+      const hasMore = values.length > query.limit;
+      return {
+        requestId: query.requestId,
+        entityType: query.entityType,
+        search: query.search,
+        items: values.slice(0, query.limit),
+        page: {
+          offset: query.offset,
+          limit: query.limit,
+          hasMore,
+          nextOffset: hasMore ? query.offset + query.limit : null,
+        },
+      };
+    })),
   }));
 
   server.registerTool("list_saved_preflights", {
-    description: "List saved WordPress preflight results with readiness, blockers, risks and change summaries. This is read-only and never starts export.",
+    description: "List one cursor-based page of saved WordPress preflights. This is read-only. To continue, pass both cursorAt and cursorId returned by the previous response; never pass only one cursor field.",
     inputSchema: {
       targetId: z.string().regex(/^\d+$/u),
       status: z.enum(["checking", "ready", "blocked", "error", "stale"]).optional(),
@@ -282,6 +444,27 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
     description: "Preview a Rules v2 target classification rule on a read-only sample. For one product, use common.source.productId equals its ID. Always inspect conflicts and call this before create_classification_rule.",
     inputSchema: ruleShape,
   }, async (input) => textResult({ preview: await dependencies.rulesV2.preview(rule(input)) }));
+
+  server.registerTool("preview_classification_rules", {
+    description: "Preview up to 10 exact-product Rules v2 proposals in one read-only call. Every proposal must contain common.source.productId equals one ID. Returns compact counts, conflicts and examples; it never writes.",
+    inputSchema: {
+      rules: z.array(z.object({
+        requestId: z.string().min(1).max(100),
+        ...ruleShape,
+      })).min(1).max(10),
+    },
+  }, async ({ rules }) => {
+    const items = [];
+    for (const input of rules) {
+      const { requestId, ...ruleInput } = input;
+      const draft = rule(ruleInput);
+      const sourceProductId = exactProductId(draft);
+      if (sourceProductId === null) throw new Error(`Batch preview ${requestId} requires an exact common.source.productId equals condition`);
+      const preview = await dependencies.rulesV2.preview(draft);
+      items.push({ requestId, sourceProductId, preview: compactPreview(preview) });
+    }
+    return textResult({ items });
+  });
 
   server.registerTool("create_classification_rule", {
     description: "Create an active Rules v2 classification for exactly one product after explicit user confirmation. A standalone common.source.productId equals condition is mandatory; the fresh preview must match one product without conflicts.",

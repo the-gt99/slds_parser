@@ -9,6 +9,14 @@ import type { DataSchemaService, ExportControlService, ProductAdminService, Rule
 
 const closeCallbacks: Array<() => Promise<void>> = [];
 
+function resultText(value: unknown): string {
+  const content = (value as { readonly content?: unknown }).content;
+  if (!Array.isArray(content)) throw new Error("Tool result has no content array");
+  const first = content[0] as { readonly type?: unknown; readonly text?: unknown } | undefined;
+  if (first?.type !== "text" || typeof first.text !== "string") throw new Error("Tool result has no text content");
+  return first.text;
+}
+
 afterEach(async () => {
   await Promise.allSettled(closeCallbacks.splice(0).map((close) => close()));
 });
@@ -85,14 +93,17 @@ describe("classification MCP", () => {
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       "list_classification_workbench",
+      "get_product_classification_context",
       "get_product_context",
       "list_classification_rules",
       "list_sources",
       "search_target_dictionary",
+      "search_target_dictionaries",
       "list_saved_preflights",
       "get_wordpress_preflight",
       "create_target_term",
       "preview_classification_rule",
+      "preview_classification_rules",
       "create_classification_rule",
     ]));
     expect(tools.tools.map((tool) => tool.name)).not.toContain("execute_sql");
@@ -113,6 +124,90 @@ describe("classification MCP", () => {
     expect(sources.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"sourceId": "1"') })]);
     expect(targets.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"targetId": "2"') })]);
     expect(JSON.stringify(targets.content)).not.toContain("must-not-leak");
+  });
+
+  it("returns compact paginated workbench data and separates blocker types", async () => {
+    const workbench = vi.fn().mockResolvedValue({
+      mode: "resulting_target_dto",
+      requiredTargetFields: [{ scope: "product.brand" }],
+      counts: { ready: 0, incomplete: 1, conflict: 0 },
+      index: { complete: true, indexed: 1, total: 1 },
+      filteredCount: 1,
+      page: { offset: 0, limit: 10, hasMore: false, nextOffset: null },
+      items: [{
+        sourceProductId: "77", sourceExternalId: "goat-77", title: "Test", sku: null,
+        updatedAt: "2026-01-01", status: "incomplete",
+        blockers: [
+          { code: "required_brand_missing", message: "Brand" },
+          { code: "variants_missing", message: "Variants" },
+        ],
+        conflicts: [],
+        result: { fields: { "product.color": [{ id: "5", label: "Red" }] }, imageCount: 1, variantCount: 0, descriptionPresent: true },
+        candidates: { "product.brand": [{ key: "brand:1", sourceValue: "Nike", context: {} }] },
+        trace: [{ kind: "rule", name: "Brand rule", ruleId: "9", groupCode: "brand", changes: { verbose: true } }],
+      }],
+    });
+    const client = await connectedClient({ rulesV2: { workbench } });
+    const response = await client.callTool({
+      name: "list_classification_workbench",
+      arguments: { sourceId: "1", targetId: "10", limit: 10 },
+    });
+    const text = resultText(response);
+    const result = JSON.parse(text) as { items: Array<Record<string, unknown>>; page: { nextOffset: number | null } };
+    expect(result.items[0]?.classificationBlockers).toEqual([{ code: "required_brand_missing", message: "Brand" }]);
+    expect(result.items[0]?.dataBlockers).toEqual([{ code: "variants_missing", message: "Variants" }]);
+    expect(result.items[0]?.canRulesResolveAllBlockers).toBe(false);
+    expect(result.page.nextOffset).toBeNull();
+    expect(text).not.toContain("verbose");
+  });
+
+  it("paginates single and batch target dictionary searches", async () => {
+    const listValues = vi.fn().mockImplementation(async ({ search }: { search?: string }) => [
+      { id: `${search}-1`, name: "One" },
+      { id: `${search}-2`, name: "Two" },
+      { id: `${search}-3`, name: "Three" },
+    ]);
+    const client = await connectedClient({ targetDictionaries: { listValues } });
+    const single = await client.callTool({
+      name: "search_target_dictionary",
+      arguments: { targetId: "10", entityType: "brands", search: "Nike", limit: 2, offset: 0 },
+    });
+    const singleJson = JSON.parse(resultText(single)) as { items: unknown[]; page: { hasMore: boolean; nextOffset: number } };
+    expect(singleJson.items).toHaveLength(2);
+    expect(singleJson.page).toEqual(expect.objectContaining({ hasMore: true, nextOffset: 2 }));
+    expect(listValues).toHaveBeenCalledWith(expect.objectContaining({ limit: 3, offset: 0 }));
+
+    const batch = await client.callTool({
+      name: "search_target_dictionaries",
+      arguments: { targetId: "10", queries: [
+        { requestId: "brand", entityType: "brands", search: "Nike", limit: 2 },
+        { requestId: "model", entityType: "models", search: "Air Max", limit: 2 },
+      ] },
+    });
+    const batchJson = JSON.parse(resultText(batch)) as { results: Array<{ requestId: string; items: unknown[] }> };
+    expect(batchJson.results.map((item) => item.requestId)).toEqual(["brand", "model"]);
+    expect(batchJson.results.every((item) => item.items.length === 2)).toBe(true);
+  });
+
+  it("previews a compact batch of exact-product rules without writing", async () => {
+    const preview = vi.fn().mockResolvedValue({
+      mode: "active", scope: "sample", writes: false, examined: 1, productCount: 1,
+      examples: [{ sourceProductId: "77", title: "Test", actions: [] }], conflicts: [],
+    });
+    const client = await connectedClient({ rulesV2: { preview } });
+    const response = await client.callTool({
+      name: "preview_classification_rules",
+      arguments: { rules: [
+        { requestId: "first", ...ruleArguments },
+        { requestId: "second", ...ruleArguments, conditionGroups: [{ conditions: [{ field: "common.source.productId", operator: "equals", values: ["78"] }] }] },
+      ] },
+    });
+    const result = JSON.parse(resultText(response)) as { items: Array<{ requestId: string; sourceProductId: string }> };
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: "first", sourceProductId: "77" }),
+      expect.objectContaining({ requestId: "second", sourceProductId: "78" }),
+    ]));
+    expect(preview).toHaveBeenCalledTimes(2);
   });
 
   it("refuses a rule when the fresh preview count differs", async () => {
