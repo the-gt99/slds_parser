@@ -121,8 +121,8 @@ describe("classification MCP", () => {
     });
     const sources = await client.callTool({ name: "list_sources", arguments: {} });
     const targets = await client.callTool({ name: "list_targets", arguments: {} });
-    expect(sources.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"sourceId": "1"') })]);
-    expect(targets.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"targetId": "2"') })]);
+    expect(sources.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"sourceId":"1"') })]);
+    expect(targets.content).toEqual([expect.objectContaining({ type: "text", text: expect.stringContaining('"targetId":"2"') })]);
     expect(JSON.stringify(targets.content)).not.toContain("must-not-leak");
   });
 
@@ -154,8 +154,12 @@ describe("classification MCP", () => {
     });
     const text = resultText(response);
     const result = JSON.parse(text) as { items: Array<Record<string, unknown>>; page: { nextOffset: number | null } };
-    expect(result.items[0]?.classificationBlockers).toEqual([{ code: "required_brand_missing", message: "Brand" }]);
-    expect(result.items[0]?.dataBlockers).toEqual([{ code: "variants_missing", message: "Variants" }]);
+    expect(result.items[0]?.classificationBlockers).toEqual(["required_brand_missing"]);
+    expect(result.items[0]?.dataBlockers).toEqual(["variants_missing"]);
+    expect((result as unknown as { blockerDefinitions: Record<string, string> }).blockerDefinitions).toEqual({
+      required_brand_missing: "Brand",
+      variants_missing: "Variants",
+    });
     expect(result.items[0]?.canRulesResolveAllBlockers).toBe(false);
     expect(result.page.nextOffset).toBeNull();
     expect(text).not.toContain("verbose");

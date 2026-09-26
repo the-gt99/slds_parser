@@ -84,52 +84,56 @@ function compactIssue(value: unknown) {
 function compactWorkbench(value: object) {
   const result = objectValue(value);
   const items = Array.isArray(result.items) ? result.items : [];
+  const blockerDefinitions: Record<string, string> = {};
+  const compactItems = items.map((rawItem) => {
+    const item = objectValue(rawItem);
+    const blockers = (Array.isArray(item.blockers) ? item.blockers : []).map(compactIssue);
+    blockers.forEach((blocker) => { blockerDefinitions[blocker.code] = blocker.message; });
+    const classificationBlockers = blockers.filter((blocker) => classificationBlockerCodes.has(blocker.code));
+    const dataBlockers = blockers.filter((blocker) => !classificationBlockerCodes.has(blocker.code));
+    const candidates = Object.fromEntries(Object.entries(objectValue(item.candidates)).map(([scope, rawCandidates]) => [
+      scope,
+      (Array.isArray(rawCandidates) ? rawCandidates : []).map((rawCandidate) => {
+        const candidate = objectValue(rawCandidate);
+        return { key: candidate.key, sourceValue: candidate.sourceValue, context: candidate.context };
+      }),
+    ]));
+    const targetResult = objectValue(item.result);
+    const trace = Array.isArray(item.trace) ? item.trace : [];
+    const conflicts = (Array.isArray(item.conflicts) ? item.conflicts : []).map(compactIssue);
+    return {
+      sourceProductId: item.sourceProductId,
+      sourceExternalId: item.sourceExternalId,
+      title: item.title,
+      sku: item.sku,
+      updatedAt: item.updatedAt,
+      status: item.status,
+      classificationBlockers: classificationBlockers.map((blocker) => blocker.code),
+      dataBlockers: dataBlockers.map((blocker) => blocker.code),
+      conflicts,
+      canRulesResolveAllBlockers: dataBlockers.length === 0 && conflicts.length === 0,
+      candidates,
+      resultingTargetFields: targetResult.fields,
+      facts: {
+        imageCount: targetResult.imageCount,
+        variantCount: targetResult.variantCount,
+        descriptionPresent: targetResult.descriptionPresent,
+      },
+      appliedRules: trace.map((rawTrace) => {
+        const entry = objectValue(rawTrace);
+        return { kind: entry.kind, name: entry.name, ruleId: entry.ruleId, groupCode: entry.groupCode };
+      }),
+    };
+  });
   return {
     mode: result.mode,
     requiredTargetFields: result.requiredTargetFields,
+    blockerDefinitions,
     counts: result.counts,
     index: result.index,
     filteredCount: result.filteredCount,
     page: result.page,
-    items: items.map((rawItem) => {
-      const item = objectValue(rawItem);
-      const blockers = (Array.isArray(item.blockers) ? item.blockers : []).map(compactIssue);
-      const classificationBlockers = blockers.filter((blocker) => classificationBlockerCodes.has(blocker.code));
-      const dataBlockers = blockers.filter((blocker) => !classificationBlockerCodes.has(blocker.code));
-      const candidates = Object.fromEntries(Object.entries(objectValue(item.candidates)).map(([scope, rawCandidates]) => [
-        scope,
-        (Array.isArray(rawCandidates) ? rawCandidates : []).map((rawCandidate) => {
-          const candidate = objectValue(rawCandidate);
-          return { key: candidate.key, sourceValue: candidate.sourceValue, context: candidate.context };
-        }),
-      ]));
-      const targetResult = objectValue(item.result);
-      const trace = Array.isArray(item.trace) ? item.trace : [];
-      const conflicts = (Array.isArray(item.conflicts) ? item.conflicts : []).map(compactIssue);
-      return {
-        sourceProductId: item.sourceProductId,
-        sourceExternalId: item.sourceExternalId,
-        title: item.title,
-        sku: item.sku,
-        updatedAt: item.updatedAt,
-        status: item.status,
-        classificationBlockers,
-        dataBlockers,
-        conflicts,
-        canRulesResolveAllBlockers: dataBlockers.length === 0 && conflicts.length === 0,
-        candidates,
-        resultingTargetFields: targetResult.fields,
-        facts: {
-          imageCount: targetResult.imageCount,
-          variantCount: targetResult.variantCount,
-          descriptionPresent: targetResult.descriptionPresent,
-        },
-        appliedRules: trace.map((rawTrace) => {
-          const entry = objectValue(rawTrace);
-          return { kind: entry.kind, name: entry.name, ruleId: entry.ruleId, groupCode: entry.groupCode };
-        }),
-      };
-    }),
+    items: compactItems,
   };
 }
 
@@ -150,7 +154,7 @@ function compactPreview(value: object) {
 }
 
 function textResult(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
 }
 
 function rule(input: z.infer<z.ZodObject<typeof ruleShape>>): RuleV2Draft {
@@ -248,6 +252,7 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
     return textResult({
       mode: compact.mode,
       requiredTargetFields: compact.requiredTargetFields,
+      blockerDefinitions: compact.blockerDefinitions,
       item: compact.items[0] ?? null,
     });
   });
