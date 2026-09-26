@@ -310,14 +310,12 @@ export class TargetDictionaryService {
     });
     let remoteExternalId: string | undefined;
     try {
-      const stableReference = ["rules-v2", command.sourceId, command.entityType, command.slug ?? name]
-        .join(":").toLowerCase();
       const remoteResult = await provider.createTerm({
         entityType: command.entityType,
         name,
         sourceValue: name,
         sourceCode: source.code,
-        requestReference: stableReference,
+        requestReference: auditId,
         ...(command.slug === undefined ? {} : { slug: command.slug }),
         ...(command.parentExternalId === undefined ? {} : { parentExternalId: command.parentExternalId }),
         ...(command.relatedTerm === undefined ? {} : { relatedTerm: command.relatedTerm }),

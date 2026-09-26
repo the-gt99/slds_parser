@@ -44,7 +44,7 @@ function setup() {
       remoteUpdatedAt: null, syncCursor: null, metadata: {}, active: true,
       firstSeenAt: "2026-01-01", lastSeenAt: "2026-01-01",
     }),
-    startTermCreation: vi.fn().mockResolvedValue("audit-1"),
+    startTermCreation: vi.fn().mockResolvedValue("501"),
     completeTermCreation: vi.fn().mockResolvedValue(undefined),
     failTermCreation: vi.fn().mockResolvedValue(undefined),
   } satisfies TargetDictionaryRepository;
@@ -121,7 +121,7 @@ describe("TargetDictionaryService", () => {
     );
     expect(result.decision.mappingId).toBe("99");
     expect(repository.startTermCreation).toHaveBeenCalledWith(expect.objectContaining({ actor: "admin-api" }));
-    expect(repository.completeTermCreation).toHaveBeenCalledWith("audit-1", "77");
+    expect(repository.completeTermCreation).toHaveBeenCalledWith("501", "77");
   });
 
   it("passes an explicit slug and category parent through the audited creation flow", async () => {
@@ -167,7 +167,7 @@ describe("TargetDictionaryService", () => {
     expect(provider.createTerm).toHaveBeenCalledWith(expect.objectContaining({
       sourceCode: "goat",
       sourceValue: "Simone Rocha Peeling Waist Wide Leg Trousers",
-      requestReference: "rules-v2:1:models:simone-rocha-peeling-waist-wide-leg-trousers",
+      requestReference: "501",
     }));
     expect(repository.startTermCreation).toHaveBeenCalledWith(expect.objectContaining({
       sourceId: "1",
@@ -175,7 +175,7 @@ describe("TargetDictionaryService", () => {
       actor: "roman",
     }));
     expect(repository.upsertValue).toHaveBeenCalledWith("10", "models", expect.objectContaining({ externalId: "77" }));
-    expect(repository.completeTermCreation).toHaveBeenCalledWith("audit-1", "77");
+    expect(repository.completeTermCreation).toHaveBeenCalledWith("501", "77");
     expect(classifier.saveDecision).not.toHaveBeenCalled();
     expect(result.dictionaryValue.id).toBe("88");
   });
@@ -218,7 +218,7 @@ describe("TargetDictionaryService", () => {
       name: "New model",
     }, "roman")).rejects.toThrow("WordPress rejected the term");
 
-    expect(repository.failTermCreation).toHaveBeenCalledWith("audit-1", "WordPress rejected the term", undefined);
+    expect(repository.failTermCreation).toHaveBeenCalledWith("501", "WordPress rejected the term", undefined);
     expect(repository.completeTermCreation).not.toHaveBeenCalled();
   });
 
@@ -238,7 +238,7 @@ describe("TargetDictionaryService", () => {
       name: "New model",
     }, "roman")).rejects.toThrow("Local mapping failed");
 
-    expect(repository.failTermCreation).toHaveBeenCalledWith("audit-1", "Local mapping failed", "77");
+    expect(repository.failTermCreation).toHaveBeenCalledWith("501", "Local mapping failed", "77");
   });
 
   it("rejects a parent outside product categories", async () => {
