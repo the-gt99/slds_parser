@@ -15,6 +15,7 @@ import { buildWordPressCatalogAudit, type TargetReferenceMappingService } from "
 import type { CollectWordPressVariationSourcePayload, PollWordPressVariationPatchesPayload, PrepareWordPressVariationPatchPayload, PrepareWordPressVariationPatchesPayload, SubmitWordPressVariationPatchesPayload } from "./job-payloads.js";
 import type { ExportSourceRefresher } from "./export-source-refresher.js";
 import type { RunnerResult } from "./runner-result.js";
+import { mergeWordPressInventoryDrafts, type ShihuoInventoryService } from "../shihuo/index.js";
 
 function record(value: unknown): JsonObject {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -102,6 +103,7 @@ export class WordPressVariationPatchRunner {
     private readonly sourceRefresher: ExportSourceRefresher,
     private readonly client: WordPressCatalogClient,
     wordpressConfig: WordPressTargetConfig,
+    private readonly shihuoInventory?: ShihuoInventoryService,
     private readonly currentTime: () => number = Date.now,
   ) {
     this.converter = new WordPressSizeConverter(wordpressConfig);
@@ -236,7 +238,18 @@ export class WordPressVariationPatchRunner {
       if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
       const liveVariants = await this.sourceRefresher.refresh(source, sourceProduct);
       if (liveVariants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
-      const sourceHash = hashStableJson(liveVariants as unknown as JsonValue);
+      let shihuoCardHash: string | null = null;
+      if (this.shihuoInventory !== undefined) {
+        const shihuo = await this.shihuoInventory.refresh(sourceProduct.id);
+        if (shihuo.status !== "resolved") {
+          await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: [{
+            code: `shihuo_${shihuo.status}`, message: "Товар не подтверждён в Shihuo по точному артикулу; WordPress оставлен без изменений",
+          }], error: "Точное соответствие Shihuo не найдено" });
+          return { status: "completed" };
+        }
+        shihuoCardHash = shihuo.cardHash;
+      }
+      const sourceHash = hashStableJson({ goat: liveVariants, shihuoCardHash } as unknown as JsonValue);
       let unchanged = payload.force !== true && candidate.item.variationAppliedSourceHash === sourceHash;
       if (unchanged && liveVariants.length === 0) {
         const currentWordPress = await this.client.readProduct(payload.wordpressProductId);
@@ -365,7 +378,7 @@ export class WordPressVariationPatchRunner {
     liveVariants: readonly ProductVariantDTO[],
     targetSnapshotRefreshed = false,
   ): Promise<JsonObject | null> {
-    if (liveVariants.length === 0) {
+    if (liveVariants.length === 0 && this.shihuoInventory === undefined) {
       await this.repository.saveVariationPreparation({
         itemId: candidate.item.id,
         status: "skipped",
@@ -408,12 +421,11 @@ export class WordPressVariationPatchRunner {
       projectionCache.set(key, result);
       return result;
     })).then((items) => items.flat());
-    const draft = await previewWordPressVariationPatchItems({
+    const context = {
       source: candidate.source,
       sourceProduct: candidate.sourceProduct,
       target: candidate.target,
       product: await this.mappings.prepareProduct(candidate.source.id, candidate.product),
-      liveVariants,
       existingExternalId: candidate.item.wordpressProductId,
       existingTargetSnapshot: candidate.item.payload,
       references: {
@@ -421,7 +433,14 @@ export class WordPressVariationPatchRunner {
         resolveProjections,
         resolveAssignments,
       },
-    }, this.converter);
+    };
+    const goatDraft = await previewWordPressVariationPatchItems({ ...context, liveVariants }, this.converter);
+    const draft = this.shihuoInventory === undefined
+      ? goatDraft
+      : mergeWordPressInventoryDrafts(goatDraft, await previewWordPressVariationPatchItems({
+        ...context,
+        liveVariants: await this.shihuoInventory.variants(candidate.sourceProduct.id, liveVariants),
+      }, this.converter));
     const matched = matchExistingWordPressVariations(draft, candidate.item.payload);
     if (!targetSnapshotRefreshed && matched.items.some((item) => item.previous_size !== undefined)) {
       const currentWordPress = await this.client.readProduct(candidate.item.wordpressProductId);
@@ -458,7 +477,9 @@ export class WordPressVariationPatchRunner {
     await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "ready", payload: patchPayload,
       notices: [
         ...matched.ignored,
-        { code: "live_source_refresh", message: "Цены и наличие получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью" },
+        { code: "live_source_refresh", message: this.shihuoInventory === undefined
+          ? "Цены и наличие GOAT получены непосредственно перед постановкой WordPress job; WordPress повторно проверит identity и размер перед записью"
+          : "Цены и наличие GOAT и Shihuo получены непосредственно перед постановкой WordPress job; выбран меньший доступный источник для каждого точного размера" },
         ...(targetSnapshotRefreshed ? [{ code: freshTargetSnapshotNotice, message: "Вариации WordPress перечитаны после конфликта размеров или identity" }] : []),
       ] });
     return patchPayload;

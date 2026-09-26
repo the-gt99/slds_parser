@@ -21,6 +21,7 @@ export interface ShihuoEnvironment {
   readonly SHIHUO_FAILURE_COOLDOWN_SECONDS?: string;
   readonly SHIHUO_RISK_COOLDOWN_SECONDS?: string;
   readonly SHIHUO_CONCURRENCY?: string;
+  readonly SHIHUO_INVENTORY_ENABLED?: string;
 }
 
 export interface ShihuoConfig {
@@ -45,6 +46,7 @@ export interface ShihuoConfig {
   readonly failureCooldownSeconds: number;
   readonly riskCooldownSeconds: number;
   readonly concurrency: number;
+  readonly inventoryEnabled: boolean;
 }
 
 export function loadShihuoConfig(environment: ShihuoEnvironment = process.env): ShihuoConfig | null {
@@ -66,6 +68,10 @@ export function loadShihuoConfig(environment: ShihuoEnvironment = process.env): 
     if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
     return value;
   };
+  const inventoryEnabled = environment.SHIHUO_INVENTORY_ENABLED?.trim().toLowerCase();
+  if (inventoryEnabled !== undefined && inventoryEnabled !== "true" && inventoryEnabled !== "false" && inventoryEnabled !== "1" && inventoryEnabled !== "0") {
+    throw new Error("SHIHUO_INVENTORY_ENABLED must be true or false");
+  }
   return {
     onboardingBaseUrl: url.toString().replace(/\/$/u, ""), endpoint: required("SHIHUO_WIREGUARD_ENDPOINT"),
     serverPublicKey: required("SHIHUO_WIREGUARD_SERVER_PUBLIC_KEY"), subnet: environment.SHIHUO_WIREGUARD_SUBNET?.trim() || "10.77.0.0/24",
@@ -83,5 +89,6 @@ export function loadShihuoConfig(environment: ShihuoEnvironment = process.env): 
     failureCooldownSeconds: integer("SHIHUO_FAILURE_COOLDOWN_SECONDS", 30, 3, 3600),
     riskCooldownSeconds: integer("SHIHUO_RISK_COOLDOWN_SECONDS", 1800, 60, 86_400),
     concurrency: integer("SHIHUO_CONCURRENCY", 1, 1, 32),
+    inventoryEnabled: inventoryEnabled === "true" || inventoryEnabled === "1",
   };
 }

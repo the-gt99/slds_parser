@@ -7,7 +7,7 @@ const config = { onboardingBaseUrl: "https://parser.example", endpoint: "parser.
   reconcileService: "", gatewayTokenHash: "961d5cf1ff56cd36374aee671429d741ba0b1207f6935d68e1df9f167e3c3d2e", iosAppUrl: "https://apps.apple.com/app/id875177200", androidAppUrl: "https://www.shihuo.cn/app/",
   signerPython: "python", signerScript: "sign.py", signerAssetDirectory: "assets",
   sessionLeaseSeconds: 60, betweenRequestsMs: 1100, betweenProductsSeconds: 3,
-  failureCooldownSeconds: 30, riskCooldownSeconds: 1800, concurrency: 1 };
+  failureCooldownSeconds: 30, riskCooldownSeconds: 1800, concurrency: 1, inventoryEnabled: false };
 const verifier = { verify: vi.fn().mockResolvedValue({ httpStatus: 200, goodsCount: 2 }) };
 
 function record(overrides: Partial<ShihuoDeviceRecord> = {}): ShihuoDeviceRecord {

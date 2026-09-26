@@ -1,4 +1,6 @@
-import type { ShihuoLeasedSession, ShihuoProductLink, ShihuoProductLinkRepository, ShihuoResolutionStatus, ShihuoSessionRepository } from "../../../shihuo/index.js";
+import type { ShihuoLeasedSession, ShihuoProductCard, ShihuoProductLink, ShihuoProductLinkRepository, ShihuoResolutionStatus, ShihuoSessionRepository } from "../../../shihuo/index.js";
+import { hashStableJson } from "../../../core/utils/index.js";
+import type { JsonValue } from "../../../contracts/index.js";
 import type { SqlExecutor } from "../sql-executor.js";
 import type { DatabaseRow } from "./row-mappers.js";
 import { requireRow } from "./repository-utils.js";
@@ -28,4 +30,16 @@ export class PostgresShihuoProductLinkRepository implements ShihuoProductLinkRep
   async saveResolved(input: Parameters<ShihuoProductLinkRepository["saveResolved"]>[0]): Promise<ShihuoProductLink> { const result = await this.executor.query<DatabaseRow>(`INSERT INTO shihuo_product_links(source_product_id,source_article,normalized_article,goods_id,style_id,status,confirmation_method,confirmed_article,confirmed_at,last_card_loaded_at) VALUES($1,$2,$3,$4,$5,'resolved','exact_article',$6,$7,$7) ON CONFLICT(source_product_id) DO UPDATE SET source_article=EXCLUDED.source_article,normalized_article=EXCLUDED.normalized_article,goods_id=EXCLUDED.goods_id,style_id=EXCLUDED.style_id,status='resolved',confirmation_method='exact_article',confirmed_article=EXCLUDED.confirmed_article,confirmed_at=EXCLUDED.confirmed_at,last_card_loaded_at=EXCLUDED.last_card_loaded_at,last_error_code=NULL,updated_at=NOW() RETURNING *`, [input.sourceProductId,input.article,input.normalizedArticle,input.goodsId,input.styleId,input.confirmedArticle,input.loadedAt]); return link(requireRow(result.rows,"Shihuo product link",input.sourceProductId)); }
   async saveOutcome(sourceProductId: string, status: Exclude<ShihuoResolutionStatus,"pending"|"resolved">, errorCode: string | null): Promise<ShihuoProductLink> { const result = await this.executor.query<DatabaseRow>(`UPDATE shihuo_product_links SET status=$2,goods_id=NULL,style_id=NULL,confirmation_method=NULL,confirmed_article=NULL,confirmed_at=NULL,last_error_code=$3,updated_at=NOW() WHERE source_product_id=$1 RETURNING *`, [sourceProductId,status,errorCode]); return link(requireRow(result.rows,"Shihuo product link",sourceProductId)); }
   async touchCard(sourceProductId: string, loadedAt: string): Promise<void> { await this.executor.query("UPDATE shihuo_product_links SET last_card_loaded_at=$2::timestamptz,last_error_code=NULL,updated_at=NOW() WHERE source_product_id=$1 AND status='resolved'", [sourceProductId,loadedAt]); }
+  async saveCard(sourceProductId: string, card: ShihuoProductCard, loadedAt: string): Promise<void> {
+    const contentHash = hashStableJson(card as unknown as JsonValue);
+    await this.executor.query(`INSERT INTO shihuo_product_cards(source_product_id,payload,content_hash,loaded_at)
+      VALUES($1,$2::jsonb,$3,$4::timestamptz) ON CONFLICT(source_product_id) DO UPDATE SET
+      payload=EXCLUDED.payload,content_hash=EXCLUDED.content_hash,loaded_at=EXCLUDED.loaded_at,updated_at=NOW()`,
+    [sourceProductId, JSON.stringify(card), contentHash, loadedAt]);
+  }
+  async getCard(sourceProductId: string): Promise<{ readonly card: ShihuoProductCard; readonly contentHash: string; readonly loadedAt: string } | null> {
+    const result = await this.executor.query<DatabaseRow>("SELECT payload,content_hash,loaded_at FROM shihuo_product_cards WHERE source_product_id=$1", [sourceProductId]);
+    const row = result.rows[0];
+    return row ? { card: row.payload as ShihuoProductCard, contentHash: String(row.content_hash), loadedAt: stamp(row.loaded_at)! } : null;
+  }
 }

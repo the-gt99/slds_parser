@@ -76,4 +76,6 @@ export interface ShihuoProductLinkRepository {
   saveResolved(input: { readonly sourceProductId: EntityId; readonly article: string; readonly normalizedArticle: string; readonly confirmedArticle: string; readonly goodsId: string; readonly styleId: string; readonly loadedAt: string }): Promise<ShihuoProductLink>;
   saveOutcome(sourceProductId: EntityId, status: Exclude<ShihuoResolutionStatus, "pending" | "resolved">, errorCode: string | null): Promise<ShihuoProductLink>;
   touchCard(sourceProductId: EntityId, loadedAt: string): Promise<void>;
+  saveCard(sourceProductId: EntityId, card: ShihuoProductCard, loadedAt: string): Promise<void>;
+  getCard(sourceProductId: EntityId): Promise<{ readonly card: ShihuoProductCard; readonly contentHash: string; readonly loadedAt: string } | null>;
 }

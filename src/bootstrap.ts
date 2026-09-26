@@ -9,7 +9,7 @@ import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProces
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 import { RulesExecution } from "./infrastructure/db/rules-execution.js";
-import { ShihuoGuestSessionPool, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
+import { EcbShihuoCurrencyConverter, ShihuoGuestSessionPool, ShihuoInventoryService, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
@@ -105,6 +105,9 @@ export function createApplication(environment: ApplicationEnvironment = process.
     new ShihuoSearchClient({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
     new ShihuoProductClient(), new PostgresShihuoProductLinkRepository(pool), repositories.internalProducts, shihuoConfig.betweenRequestsMs,
   );
+  const shihuoInventory = shihuoResolver === undefined || shihuoConfig?.inventoryEnabled !== true ? undefined : new ShihuoInventoryService(
+    shihuoResolver, new PostgresShihuoProductLinkRepository(pool), new EcbShihuoCurrencyConverter(),
+  );
   const exportControl = new PostgresExportControlRepository(pool);
   const exportCampaigns = new ExportControlService(exportControl, repositories.jobs, workerOptions.exportConcurrency ?? 1);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
@@ -140,7 +143,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const wordpressVariationPatches = wordpress === null
     ? undefined
     : new WordPressVariationPatchRunner(wordpressCatalog, repositories.jobs, targetMappings, repositories.contentTemplates,
-      repositories.sources, repositories.sourceProducts, sourceRefresher, new WordPressCatalogClient(wordpress), wordpress);
+      repositories.sources, repositories.sourceProducts, sourceRefresher, new WordPressCatalogClient(wordpress), wordpress, shihuoInventory);
   const preflightRunner = wordpress === null
     ? undefined
     : new PreflightRunner(new WordPressPreviewService(

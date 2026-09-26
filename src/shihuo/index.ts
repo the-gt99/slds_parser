@@ -8,3 +8,4 @@ export * from "./product-parser.js";
 export * from "./product-clients.js";
 export * from "./guest-session-pool.js";
 export * from "./product-resolver.js";
+export * from "./inventory-service.js";

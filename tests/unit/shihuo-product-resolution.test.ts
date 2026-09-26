@@ -28,7 +28,7 @@ describe("Shihuo product resolution", () => {
 
   it("does not save candidate ids before exact card verification", async () => {
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
-    const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), touchCard: vi.fn() };
+    const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), touchCard: vi.fn(), saveCard: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
       { searchFirst: vi.fn().mockResolvedValue({ goodsId: "10", styleId: "20" }) } as never,
       { fetch: vi.fn().mockResolvedValue(card("OTHER-001")) } as never, links as never, {} as never, 1100, vi.fn());
@@ -46,10 +46,10 @@ describe("Shihuo product resolution", () => {
 
   it("fetches a saved card without repeating search", async () => {
     const search = { searchFirst: vi.fn() }; const products = { fetch: vi.fn().mockResolvedValue(card()) };
-    const lease = { success: vi.fn(), fail: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn() };
+    const lease = { success: vi.fn(), fail: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn(), saveCard: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never, search as never, products as never, links as never, {} as never, 1100);
     await resolver.fetchResolvedProductCard({ sourceProductId: "1" });
-    expect(products.fetch).toHaveBeenCalledWith("10", "20"); expect(search.searchFirst).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce();
+    expect(products.fetch).toHaveBeenCalledWith("10", "20"); expect(search.searchFirst).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce(); expect(links.saveCard).toHaveBeenCalledOnce();
   });
 
   it("puts only the leased device into risk cooldown", async () => {
