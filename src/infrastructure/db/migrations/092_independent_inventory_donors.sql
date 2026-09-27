@@ -5,7 +5,8 @@ ALTER TABLE jobs ADD CONSTRAINT jobs_job_type_check CHECK (
     'sync_target_classifications', 'apply_target_classification_suggestion', 'preflight_product',
     'sync_wordpress_catalog', 'prepare_wordpress_variation_patches', 'collect_wordpress_variation_source',
     'collect_wordpress_goat_inventory', 'collect_wordpress_shihuo_inventory',
-    'prepare_wordpress_variation_patch', 'submit_wordpress_variation_patches', 'poll_wordpress_variation_patches',
+    'prepare_wordpress_variation_patch', 'refresh_wordpress_variation_patch',
+    'submit_wordpress_variation_patches', 'poll_wordpress_variation_patches',
     'refresh_export_source', 'resolve_shihuo_product', 'export_product'
   )
 );
