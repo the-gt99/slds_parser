@@ -25,7 +25,7 @@ export interface ShihuoSearchCandidate { readonly goodsId: string; readonly styl
 
 export class ShihuoSearchClient {
   constructor(private readonly signer: ShihuoSignerConfig, private readonly fetchImpl: typeof fetch = fetch) {}
-  async searchFirst(profile: ShihuoGuestProfile, article: string): Promise<ShihuoSearchCandidate | null> {
+  async searchAll(profile: ShihuoGuestProfile, article: string): Promise<readonly ShihuoSearchCandidate[]> {
     const headers = await createShihuoSignedHeaders(profile, this.signer);
     const keyword = article.trim().replace(/^([A-Za-z0-9]+)\s+([A-Za-z0-9]{3})$/u, "$1-$2");
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
@@ -39,13 +39,21 @@ export class ShihuoSearchClient {
     let body: JsonRecord = {}; try { body = object(await response.json()); } catch { /* classified below */ }
     const risk = riskCode(response.status, body); if (risk) throw new ShihuoRiskError(risk);
     if (!response.ok || (body.status ?? body.code) !== 0) throw new Error(`Shihuo search failed with safe status ${response.status}`);
+    const candidates: ShihuoSearchCandidate[] = [];
+    const seen = new Set<string>();
     for (const raw of Array.isArray(object(body.data).lists) ? object(body.data).lists as unknown[] : []) {
       const item = object(raw); const goodsId = item.goods_id; const styleId = item.style_id;
       if ((typeof goodsId === "string" || typeof goodsId === "number") && (typeof styleId === "string" || typeof styleId === "number")) {
-        return { goodsId: String(goodsId), styleId: String(styleId) };
+        const candidate = { goodsId: String(goodsId), styleId: String(styleId) };
+        const key = `${candidate.goodsId}:${candidate.styleId}`;
+        if (!seen.has(key)) { seen.add(key); candidates.push(candidate); }
       }
     }
-    return null;
+    return candidates;
+  }
+
+  async searchFirst(profile: ShihuoGuestProfile, article: string): Promise<ShihuoSearchCandidate | null> {
+    return (await this.searchAll(profile, article))[0] ?? null;
   }
 }
 

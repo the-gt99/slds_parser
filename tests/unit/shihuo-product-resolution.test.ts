@@ -56,7 +56,7 @@ describe("Shihuo product resolution", () => {
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), touchCard: vi.fn(), saveCard: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
-      { searchFirst: vi.fn().mockResolvedValue({ goodsId: "10", styleId: "20" }) } as never,
+      { searchAll: vi.fn().mockResolvedValue([{ goodsId: "10", styleId: "20" }]) } as never,
       { fetch: vi.fn().mockResolvedValue(card("OTHER-001")) } as never, links as never, {} as never, 1100, vi.fn());
     const result = await resolver.resolveProductByArticle({ sourceProductId: "1", article: "DR0092-001" });
     expect(result.status).toBe("article_mismatch"); expect(links.saveResolved).not.toHaveBeenCalled();
@@ -64,29 +64,46 @@ describe("Shihuo product resolution", () => {
   });
 
   it("is idempotent for an already confirmed article", async () => {
-    const search = { searchFirst: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()) };
+    const search = { searchAll: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()) };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn() } as never, search as never, {} as never, links as never, {} as never, 1100);
     await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "dr0092 001" })).resolves.toMatchObject({ status: "resolved", goodsId: "10" });
-    expect(search.searchFirst).not.toHaveBeenCalled();
+    expect(search.searchAll).not.toHaveBeenCalled();
   });
 
   it("fetches a saved card without repeating search", async () => {
-    const search = { searchFirst: vi.fn() }; const products = { fetch: vi.fn().mockResolvedValue(card()) };
+    const search = { searchAll: vi.fn() }; const products = { fetch: vi.fn().mockResolvedValue(card()) };
     const lease = { success: vi.fn(), fail: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn(), saveCard: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never, search as never, products as never, links as never, {} as never, 1100);
     await resolver.fetchResolvedProductCard({ sourceProductId: "1" });
-    expect(products.fetch).toHaveBeenCalledWith("10", "20"); expect(search.searchFirst).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce(); expect(links.saveCard).toHaveBeenCalledOnce();
+    expect(products.fetch).toHaveBeenCalledWith("10", "20"); expect(search.searchAll).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce(); expect(links.saveCard).toHaveBeenCalledOnce();
   });
 
   it("puts only the leased device into risk cooldown", async () => {
     const risk = new ShihuoRiskError("SHIHUO_API_7999"); const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveOutcome: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
-      { searchFirst: vi.fn().mockRejectedValue(risk) } as never, {} as never, links as never, {} as never, 1100);
+      { searchAll: vi.fn().mockRejectedValue(risk) } as never, {} as never, links as never, {} as never, 1100);
     await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "DR0092-001" })).rejects.toBe(risk);
     expect(lease.fail).toHaveBeenCalledWith("SHIHUO_API_7999", true);
     expect(links.saveOutcome).toHaveBeenCalledWith("1", "temporarily_blocked", "SHIHUO_API_7999");
     expect(JSON.stringify(risk)).not.toMatch(/token|sign|device/iu);
+  });
+
+  it("checks later search candidates until the exact article is confirmed", async () => {
+    const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
+    const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), saveCard: vi.fn() };
+    const products = { fetch: vi.fn()
+      .mockResolvedValueOnce(card("OTHER-001"))
+      .mockResolvedValueOnce(card("DQ0665-300")) };
+    const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
+      { searchAll: vi.fn().mockResolvedValue([{ goodsId: "wrong", styleId: "1" }, { goodsId: "exact", styleId: "2" }]) } as never,
+      products as never, links as never, {} as never, 1100, vi.fn());
+
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "DQ0665 300" }))
+      .resolves.toMatchObject({ status: "resolved", goodsId: "10", styleId: "20" });
+    expect(products.fetch).toHaveBeenNthCalledWith(1, "wrong", "1");
+    expect(products.fetch).toHaveBeenNthCalledWith(2, "exact", "2");
+    expect(links.saveResolved).toHaveBeenCalledOnce();
   });
 
   it("uses one atomic SKIP LOCKED statement and permits expired leases", async () => {
