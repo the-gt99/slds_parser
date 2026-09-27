@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { PermanentError } from "../core/errors/index.js";
+import { PermanentError, RetryableError } from "../core/errors/index.js";
 import type { ShihuoGuestProfile } from "./types.js";
 
 const SEARCH_URL = "https://sh-gateway.shihuo.cn/v3/sh-api/daga/search/goods/v1";
@@ -20,9 +20,14 @@ export interface ShihuoSignerConfig {
   readonly assetDirectory: string;
 }
 
-export function createShihuoSignedHeaders(profile: ShihuoGuestProfile, config: ShihuoSignerConfig): Promise<Record<string, string>> {
+export function createShihuoSignedHeaders(
+  profile: ShihuoGuestProfile,
+  config: ShihuoSignerConfig,
+  spawnImpl: typeof spawn = spawn,
+  timeoutMs = 30_000,
+): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
-    const child = spawn(config.python, [config.script], {
+    const child = spawnImpl(config.python, [config.script], {
       env: { ...process.env, SHIHUO_SIGNER_ASSET_DIR: config.assetDirectory },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -34,13 +39,21 @@ export function createShihuoSignedHeaders(profile: ShihuoGuestProfile, config: S
       clearTimeout(timeout);
       if (error) reject(error);
     };
-    const timeout = setTimeout(() => { child.kill("SIGKILL"); finish(new Error("Shihuo signer timed out")); }, 30_000);
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new RetryableError("Shihuo signer timed out", { code: "SHIHUO_SIGNER_TIMEOUT" }));
+    }, timeoutMs);
     child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
     child.stdout.on("data", (value: string) => { if (stdout.length < 65_536) stdout += value; });
     child.stderr.on("data", (value: string) => { if (stderr.length < 4_096) stderr += value; });
     child.on("error", finish);
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (settled) return;
+      if (code === null) {
+        return finish(new RetryableError(`Shihuo signer was interrupted by ${signal ?? "unknown signal"}`, {
+          code: "SHIHUO_SIGNER_INTERRUPTED",
+        }));
+      }
       if (code !== 0) return finish(new Error(`Shihuo signer failed (${code}): ${stderr.trim().slice(0, 200)}`));
       try {
         const value: unknown = JSON.parse(stdout);
