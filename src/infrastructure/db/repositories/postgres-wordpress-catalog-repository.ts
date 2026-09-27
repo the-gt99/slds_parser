@@ -601,14 +601,14 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       const selected = await client.query<DatabaseRow>(
         `WITH active_items AS MATERIALIZED (
            SELECT payload->>'itemId' AS id FROM jobs WHERE status IN ('pending','running','retry')
-             AND payload->>'runId'=$1::TEXT AND job_type IN ('collect_wordpress_variation_source','prepare_wordpress_variation_patch','refresh_wordpress_variation_patch')
+             AND payload->>'runId'=$1::TEXT AND job_type IN ('collect_wordpress_goat_inventory','collect_wordpress_shihuo_inventory','prepare_wordpress_variation_patch','refresh_wordpress_variation_patch')
            UNION ALL SELECT JSONB_ARRAY_ELEMENTS_TEXT(payload->'itemIds') FROM jobs
              WHERE status IN ('pending','running','retry') AND payload->>'runId'=$1::TEXT AND job_type='submit_wordpress_variation_patches'
          ), active_polls AS MATERIALIZED (
            SELECT JSONB_ARRAY_ELEMENTS_TEXT(payload->'jobIds') AS id FROM jobs
            WHERE status IN ('pending','running','retry') AND payload->>'runId'=$1::TEXT AND job_type='poll_wordpress_variation_patches'
          )
-         SELECT item.id,item.wordpress_product_id,item.wordpress_job_id,item.variation_status
+         SELECT item.id,item.wordpress_product_id,item.wordpress_job_id,item.variation_status,item.variation_source_hash
          FROM wordpress_catalog_run_items item
          JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.variation_auto_status='running'
          WHERE item.run_id=$1::BIGINT AND item.variation_status IN ('pending','refreshing','submitted')
@@ -623,12 +623,16 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             VALUES('poll_wordpress_variation_patches',JSONB_BUILD_OBJECT('runId',$1::TEXT,'jobIds',JSONB_BUILD_ARRAY($2::TEXT),'poll',0),'pending',$3)
             ON CONFLICT(job_type,unique_key) WHERE status IN ('pending','running','retry') DO NOTHING`,
             [runId,text(row,"wordpress_job_id"),`wordpress-inventory-recover-poll:${runId}:${id}`]);
-        } else {
-          await client.query("UPDATE wordpress_catalog_run_items SET variation_status='pending',updated_at=NOW() WHERE id=$1", [id]);
+        } else if (text(row,"variation_status") === "refreshing" && nullableText(row,"variation_source_hash") !== null) {
           await client.query(`INSERT INTO jobs(job_type,payload,status,unique_key)
-            VALUES('collect_wordpress_variation_source',JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',$2::TEXT,'wordpressProductId',$3::TEXT,'force',TRUE),'pending',$4)
+            VALUES('prepare_wordpress_variation_patch',JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',$2::TEXT,'wordpressProductId',$3::TEXT,'force',TRUE),'pending',$4)
             ON CONFLICT(job_type,unique_key) WHERE status IN ('pending','running','retry') DO NOTHING`,
-            [runId,id,text(row,"wordpress_product_id"),`wordpress-variation-collect:${runId}:${id}`]);
+            [runId,id,text(row,"wordpress_product_id"),`wordpress-variation-prepare-item:${runId}:${id}`]);
+        } else {
+          await client.query(`UPDATE wordpress_catalog_run_items
+            SET variation_status='skipped',variation_payload=NULL,variation_error=NULL,
+                variation_notices='[]'::JSONB,wordpress_job_id=NULL,updated_at=NOW()
+            WHERE id=$1`, [id]);
         }
       }
       return selected.rows.length;
