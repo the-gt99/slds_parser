@@ -265,7 +265,6 @@ export class Worker {
     const classificationApplyJobTypes = ["apply_target_classification_suggestion"] satisfies readonly JobType[];
     const wordpressCatalogJobTypes = ["sync_wordpress_catalog"] satisfies readonly JobType[];
     const wordpressVariationJobTypes = ["prepare_wordpress_variation_patches"] satisfies readonly JobType[];
-    const wordpressVariationCollectJobTypes = ["collect_wordpress_variation_source"] satisfies readonly JobType[];
     const wordpressGoatInventoryJobTypes = ["collect_wordpress_goat_inventory"] satisfies readonly JobType[];
     const wordpressVariationPrepareJobTypes = ["prepare_wordpress_variation_patch"] satisfies readonly JobType[];
     const wordpressVariationSubmitJobTypes = ["submit_wordpress_variation_patches"] satisfies readonly JobType[];
@@ -314,7 +313,6 @@ export class Worker {
             this.runLane(controller.signal, wordpressGoatInventoryJobTypes, `${this.options.workerId}:inventory-goat-${index + 1}`)),
           ...Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
             this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:inventory-shihuo-${index + 1}`)),
-          this.runLane(controller.signal, wordpressVariationCollectJobTypes, `${this.options.workerId}:inventory-legacy-collect`),
           ...Array.from({ length: this.options.inventoryPrepareConcurrency ?? 4 }, (_, index) =>
             this.runLane(controller.signal, wordpressVariationPrepareJobTypes, `${this.options.workerId}:inventory-prepare-${index + 1}`)),
           ...Array.from({ length: this.options.inventorySubmitConcurrency ?? 2 }, (_, index) =>
