@@ -24,9 +24,10 @@ function riskCode(responseStatus: number, body?: JsonRecord): string | null {
 export interface ShihuoSearchCandidate { readonly goodsId: string; readonly styleId: string; }
 
 export class ShihuoSearchClient {
-  constructor(private readonly signer: ShihuoSignerConfig, private readonly fetchImpl: typeof fetch = fetch) {}
+  constructor(private readonly signer: ShihuoSignerConfig, private readonly fetchImpl: typeof fetch = fetch,
+    private readonly createHeaders: typeof createShihuoSignedHeaders = createShihuoSignedHeaders) {}
   async searchAll(profile: ShihuoGuestProfile, article: string): Promise<readonly ShihuoSearchCandidate[]> {
-    const headers = await createShihuoSignedHeaders(profile, this.signer);
+    const headers = await this.createHeaders(profile, this.signer);
     const keyword = article.trim().replace(/^([A-Za-z0-9]+)\s+([A-Za-z0-9]{3})$/u, "$1-$2");
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
       page_route: "homeSearchList", predictSex: "2", use_type: "2", user_input: keyword };
@@ -38,7 +39,18 @@ export class ShihuoSearchClient {
     }
     let body: JsonRecord = {}; try { body = object(await response.json()); } catch { /* classified below */ }
     const risk = riskCode(response.status, body); if (risk) throw new ShihuoRiskError(risk);
-    if (!response.ok || (body.status ?? body.code) !== 0) throw new Error(`Shihuo search failed with safe status ${response.status}`);
+    if (!response.ok) {
+      if (response.status >= 500) {
+        throw new RetryableError(`Shihuo search returned HTTP ${response.status}`, { code: "SHIHUO_SEARCH_HTTP_FAILED" });
+      }
+      throw new Error(`Shihuo search failed with safe status ${response.status}`);
+    }
+    const apiStatus = body.status ?? body.code;
+    if (apiStatus !== 0) {
+      throw new RetryableError(`Shihuo search returned API status ${String(apiStatus)}`, {
+        code: "SHIHUO_SEARCH_RESPONSE_FAILED",
+      });
+    }
     const candidates: ShihuoSearchCandidate[] = [];
     const seen = new Set<string>();
     for (const raw of Array.isArray(object(body.data).lists) ? object(body.data).lists as unknown[] : []) {

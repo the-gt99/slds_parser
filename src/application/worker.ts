@@ -173,6 +173,13 @@ export class Worker {
     const retryMaxMs = wordpressPolicy
       ? (this.options.wordpressRetryMaxMs ?? this.options.retryMaxMs)
       : this.options.retryMaxMs;
+    if (error instanceof RetryableError && error.code === "SHIHUO_NO_SESSION") {
+      await this.jobs.retry(job.id, {
+        error: errorText(error),
+        availableAt: new Date(this.currentTime() + retryMaxMs).toISOString(),
+      });
+      return;
+    }
     if (error instanceof RetryableError && job.attempts < maxAttempts) {
       const delay = Math.min(retryMaxMs, retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
       await this.jobs.retry(job.id, { error: errorText(error), availableAt: new Date(this.currentTime() + delay).toISOString() });

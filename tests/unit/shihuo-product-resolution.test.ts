@@ -105,6 +105,21 @@ describe("Shihuo product resolution", () => {
     expect(JSON.stringify(risk)).not.toMatch(/token|sign|device/iu);
   });
 
+  it("classifies an aborted Shihuo request as retryable", async () => {
+    const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
+    const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveOutcome: vi.fn() };
+    const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
+      { searchAll: vi.fn().mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError")) } as never,
+      {} as never, links as never, {} as never, 1100);
+
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "DR0092-001" })).rejects.toMatchObject({
+      name: "RetryableError",
+      code: "SHIHUO_REQUEST_TIMEOUT",
+    });
+    expect(lease.fail).toHaveBeenCalledWith("SHIHUO_REQUEST_TIMEOUT", false);
+    expect(links.saveOutcome).toHaveBeenCalledWith("1", "failed", "SHIHUO_REQUEST_TIMEOUT");
+  });
+
   it("checks later search candidates until the exact article is confirmed", async () => {
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), saveCard: vi.fn() };

@@ -13,6 +13,17 @@ async function setup(error?: unknown, attempts = 0) {
 describe("Worker", () => {
   it("completes a successful job", async () => { const value = await setup(); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("completed"); });
   it("retries only RetryableError with exponential capped backoff", async () => { const value = await setup(new RetryableError("later", { code: "LATER" }), 2); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" }); const retry = await setup(new RetryableError("later", { code: "LATER" }), 1); await retry.worker.processNext(); expect(retry.store.jobs.get(retry.job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:00:02.000Z" }); });
+  it("keeps a job waiting when the Shihuo session pool is temporarily busy", async () => {
+    const value = await setup(new RetryableError("No Shihuo guest session is available", { code: "SHIHUO_NO_SESSION" }), 3);
+
+    await value.worker.processNext();
+
+    expect(value.store.jobs.get(value.job.id)).toMatchObject({
+      status: "retry",
+      availableAt: "2026-01-01T00:00:02.500Z",
+    });
+    expect(value.handler.handleTerminalFailure).not.toHaveBeenCalled();
+  });
   it("pauses a translation queue at the configured balance reserve without failing queued jobs", async () => {
     const value = await setup(new PermanentError("reserve reached", { code: "TRANSLATION_QUOTA" }), 3);
     const next = await value.jobs.enqueue({
