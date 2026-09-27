@@ -177,6 +177,7 @@ export class Worker {
       await this.jobs.retry(job.id, {
         error: errorText(error),
         availableAt: new Date(this.currentTime() + retryMaxMs).toISOString(),
+        consumeAttempt: false,
       });
       return;
     }

@@ -749,6 +749,7 @@ export interface EnqueueJobInput {
 export interface RetryJobInput {
   readonly error: string;
   readonly availableAt: Timestamp;
+  readonly consumeAttempt?: boolean;
 }
 
 export type ClassificationReviewStatus = "unresolved" | "ambiguous" | "waiting_apply";

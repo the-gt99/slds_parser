@@ -189,7 +189,10 @@ export class PostgresJobRepository implements JobRepository {
   }
 
   async retry(id: EntityId, input: RetryJobInput): Promise<void> {
-    const result = await this.executor.query<DatabaseRow>(`UPDATE jobs SET status = 'retry', available_at = $2, last_error = $3, locked_at = NULL, locked_by = NULL, finished_at = NULL, updated_at = NOW() WHERE id = $1 RETURNING id`, [id, input.availableAt, input.error]);
+    const result = await this.executor.query<DatabaseRow>(`UPDATE jobs SET status = 'retry', available_at = $2, last_error = $3,
+      attempts = CASE WHEN $4::BOOLEAN THEN attempts ELSE GREATEST(0, attempts - 1) END,
+      locked_at = NULL, locked_by = NULL, finished_at = NULL, updated_at = NOW() WHERE id = $1 RETURNING id`,
+    [id, input.availableAt, input.error, input.consumeAttempt !== false]);
     requireRow(result.rows, "job", id);
   }
 

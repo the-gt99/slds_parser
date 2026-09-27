@@ -20,6 +20,7 @@ describe("Worker", () => {
 
     expect(value.store.jobs.get(value.job.id)).toMatchObject({
       status: "retry",
+      attempts: 3,
       availableAt: "2026-01-01T00:00:02.500Z",
     });
     expect(value.handler.handleTerminalFailure).not.toHaveBeenCalled();
