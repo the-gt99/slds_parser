@@ -26,6 +26,32 @@ describe("Shihuo product resolution", () => {
     expect(value.variants[0]).toMatchObject({ size: "42", price: null, available: false, quantity: null });
   });
 
+  it("keeps SKU variants when the optional supplier block rejects an absent SkuId", () => {
+    const next = { props: { pageProps: {
+      styleBaseData: { status: 0, data: { style_id: 20, title: "Nike product" } },
+      goodsBaseData: { status: 0, data: {} },
+      skuBaseData: { status: 0, data: { goods_attr: [{ name: "货号", value: ["DQ0665-300"] }] } },
+      skuListData: { status: 0, data: { list: [{ style_id: 20, sku_list: [{ sku_id: 1, price: "500", attrs: [{ spec_name: "尺码", name: "7" }] }] }] } },
+      supplierListData: { status: 90000, msg: "Key: 'Request.SkuId' Error:Field validation for 'SkuId' failed on the 'required' tag", data: {} },
+    } } };
+
+    const value = parseShihuoProductCard(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(next)}</script>`, "https://www.shihuo.cn/page/pcGoodsDetail?goodsId=10&styleId=20", 200);
+
+    expect(value).toMatchObject({ article: "DQ0665-300", minPrice: "500", suppliers: [] });
+    expect(value.variants).toHaveLength(1);
+  });
+
+  it("still rejects unrelated supplier block failures", () => {
+    const next = { props: { pageProps: {
+      styleBaseData: { status: 0, data: { style_id: 20 } }, goodsBaseData: { status: 0, data: {} },
+      skuBaseData: { status: 0, data: { goods_attr: [] } }, skuListData: { status: 0, data: { list: [] } },
+      supplierListData: { status: 500, msg: "upstream failed", data: {} },
+    } } };
+
+    expect(() => parseShihuoProductCard(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(next)}</script>`, "https://www.shihuo.cn/page/pcGoodsDetail?goodsId=10&styleId=20", 200))
+      .toThrow("Shihuo card block failed: supplierListData (500: upstream failed)");
+  });
+
   it("does not save candidate ids before exact card verification", async () => {
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), touchCard: vi.fn(), saveCard: vi.fn() };

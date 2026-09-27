@@ -17,8 +17,19 @@ export function shihuoArticlesMatch(left: string, right: string): boolean {
 function unwrap(props: JsonRecord, key: string): JsonRecord {
   const block = object(props[key]);
   const status = block.status;
-  if (status !== undefined && status !== null && status !== 0) throw new Error(`Shihuo card block failed: ${key}`);
+  if (status !== undefined && status !== null && status !== 0) {
+    const message = text(block.msg ?? block.message);
+    throw new Error(`Shihuo card block failed: ${key} (${String(status)}${message ? `: ${message}` : ""})`);
+  }
   return object(block.data);
+}
+
+function unwrapSuppliers(props: JsonRecord): JsonRecord {
+  const block = object(props.supplierListData);
+  const status = block.status;
+  const message = text(block.msg ?? block.message) ?? "";
+  if (String(status) === "90000" && /SkuId[\s\S]*required/iu.test(message)) return {};
+  return unwrap(props, "supplierListData");
 }
 
 export function parseShihuoProductCard(document: string, detailUrl: string, httpStatus: number): ShihuoProductCard {
@@ -30,7 +41,7 @@ export function parseShihuoProductCard(document: string, detailUrl: string, http
   unwrap(props, "goodsBaseData");
   const skuBase = unwrap(props, "skuBaseData");
   const skuData = unwrap(props, "skuListData");
-  const supplierData = unwrap(props, "supplierListData");
+  const supplierData = unwrapSuppliers(props);
   const url = new URL(detailUrl);
   const goodsId = url.searchParams.get("goodsId") ?? "";
   const styleId = text(style.style_id) ?? url.searchParams.get("styleId") ?? "";
