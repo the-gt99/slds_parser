@@ -1,4 +1,5 @@
 import { RetryableError } from "../core/errors/index.js";
+import { fetch as undiciFetch, ProxyAgent } from "undici";
 import { createShihuoSignedHeaders, type ShihuoSignerConfig } from "./search-verifier.js";
 import type { ShihuoGuestProfile } from "./types.js";
 import { parseShihuoProductCard } from "./product-parser.js";
@@ -6,6 +7,7 @@ import type { ShihuoProductCard } from "./product-types.js";
 
 const SEARCH_URL = "https://sh-gateway.shihuo.cn/v3/sh-api/daga/search/goods/v1";
 const RISK_CODES = new Set(["7999", "90485", "90406"]);
+const proxyAgents = new Map<string, ProxyAgent>();
 type JsonRecord = Record<string, unknown>;
 const object = (value: unknown): JsonRecord => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 
@@ -21,19 +23,29 @@ function riskCode(responseStatus: number, body?: JsonRecord): string | null {
   return message.includes("captcha") ? "SHIHUO_CAPTCHA" : null;
 }
 
+async function request(fetchImpl: typeof fetch, url: string, init: RequestInit, outboundProxyUrl?: string | null): Promise<Response> {
+  if (!outboundProxyUrl) return fetchImpl(url, init);
+  let dispatcher = proxyAgents.get(outboundProxyUrl);
+  if (dispatcher === undefined) {
+    dispatcher = new ProxyAgent(outboundProxyUrl);
+    proxyAgents.set(outboundProxyUrl, dispatcher);
+  }
+  return undiciFetch(url, { ...init, dispatcher } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>;
+}
+
 export interface ShihuoSearchCandidate { readonly goodsId: string; readonly styleId: string; }
 
 export class ShihuoSearchClient {
   constructor(private readonly signer: ShihuoSignerConfig, private readonly fetchImpl: typeof fetch = fetch,
     private readonly createHeaders: typeof createShihuoSignedHeaders = createShihuoSignedHeaders) {}
-  async searchAll(profile: ShihuoGuestProfile, article: string): Promise<readonly ShihuoSearchCandidate[]> {
+  async searchAll(profile: ShihuoGuestProfile, article: string, outboundProxyUrl?: string | null): Promise<readonly ShihuoSearchCandidate[]> {
     const headers = await this.createHeaders(profile, this.signer);
     const keyword = article.trim().replace(/^([A-Za-z0-9]+)\s+([A-Za-z0-9]{3})$/u, "$1-$2");
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
       page_route: "homeSearchList", predictSex: "2", use_type: "2", user_input: keyword };
     let response: Response;
     try {
-      response = await this.fetchImpl(SEARCH_URL, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(25_000) });
+      response = await request(this.fetchImpl, SEARCH_URL, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(25_000) }, outboundProxyUrl);
     } catch (cause) {
       throw new RetryableError("Shihuo search request failed", { code: "SHIHUO_SEARCH_REQUEST_FAILED", cause });
     }
@@ -64,18 +76,18 @@ export class ShihuoSearchClient {
     return candidates;
   }
 
-  async searchFirst(profile: ShihuoGuestProfile, article: string): Promise<ShihuoSearchCandidate | null> {
-    return (await this.searchAll(profile, article))[0] ?? null;
+  async searchFirst(profile: ShihuoGuestProfile, article: string, outboundProxyUrl?: string | null): Promise<ShihuoSearchCandidate | null> {
+    return (await this.searchAll(profile, article, outboundProxyUrl))[0] ?? null;
   }
 }
 
 export class ShihuoProductClient {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
-  async fetch(goodsId: string, styleId: string): Promise<ShihuoProductCard> {
+  async fetch(goodsId: string, styleId: string, outboundProxyUrl?: string | null): Promise<ShihuoProductCard> {
     const url = `https://www.shihuo.cn/page/pcGoodsDetail?goodsId=${encodeURIComponent(goodsId)}&styleId=${encodeURIComponent(styleId)}`;
     let response: Response;
     try {
-      response = await this.fetchImpl(url, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36", "accept-language": "zh-CN,zh;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(25_000) });
+      response = await request(this.fetchImpl, url, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36", "accept-language": "zh-CN,zh;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(25_000) }, outboundProxyUrl);
     } catch (cause) {
       throw new RetryableError("Shihuo product-card request failed", { code: "SHIHUO_PRODUCT_CARD_REQUEST_FAILED", cause });
     }

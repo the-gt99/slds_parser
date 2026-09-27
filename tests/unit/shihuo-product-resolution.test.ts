@@ -91,7 +91,7 @@ describe("Shihuo product resolution", () => {
     const lease = { success: vi.fn(), fail: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn(), saveCard: vi.fn() };
     const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never, search as never, products as never, links as never, {} as never, 1100);
     await resolver.fetchResolvedProductCard({ sourceProductId: "1" });
-    expect(products.fetch).toHaveBeenCalledWith("10", "20"); expect(search.searchAll).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce(); expect(links.saveCard).toHaveBeenCalledOnce();
+    expect(products.fetch).toHaveBeenCalledWith("10", "20", null); expect(search.searchAll).not.toHaveBeenCalled(); expect(links.touchCard).toHaveBeenCalledOnce(); expect(links.saveCard).toHaveBeenCalledOnce();
   });
 
   it("puts only the leased device into risk cooldown", async () => {
@@ -132,13 +132,13 @@ describe("Shihuo product resolution", () => {
 
     await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "DQ0665 300" }))
       .resolves.toMatchObject({ status: "resolved", goodsId: "10", styleId: "20" });
-    expect(products.fetch).toHaveBeenNthCalledWith(1, "wrong", "1");
-    expect(products.fetch).toHaveBeenNthCalledWith(2, "exact", "2");
+    expect(products.fetch).toHaveBeenNthCalledWith(1, "wrong", "1", null);
+    expect(products.fetch).toHaveBeenNthCalledWith(2, "exact", "2", null);
     expect(links.saveResolved).toHaveBeenCalledOnce();
   });
 
   it("uses one atomic SKIP LOCKED statement and permits expired leases", async () => {
-    const executor = { query: vi.fn().mockResolvedValue({ rows: [{ id: 1, guest_profile_ciphertext: "cipher" }], rowCount: 1 }) };
+    const executor = { query: vi.fn().mockResolvedValue({ rows: [{ id: 1, guest_profile_ciphertext: "cipher", outbound_proxy_ciphertext: null }], rowCount: 1 }) };
     const repository = new PostgresShihuoSessionRepository(executor as never);
     await expect(repository.acquire("worker-1", 60)).resolves.toMatchObject({ deviceId: "1", leaseOwner: "worker-1" });
     const sql = executor.query.mock.calls[0]?.[0] as string;
@@ -147,7 +147,7 @@ describe("Shihuo product resolution", () => {
 
   it("reserves a session before the job and passes it to the resolver without a second lease", async () => {
     const repository = {
-      acquire: vi.fn().mockResolvedValue({ deviceId: "7", leaseOwner: "owner", profileCiphertext: "cipher" }),
+      acquire: vi.fn().mockResolvedValue({ deviceId: "7", leaseOwner: "owner", profileCiphertext: "cipher", outboundProxyCiphertext: null }),
       releaseUnused: vi.fn(), releaseSuccess: vi.fn(), releaseFailure: vi.fn(),
     };
     const pool = new ShihuoGuestSessionPool(repository as never,
@@ -164,13 +164,13 @@ describe("Shihuo product resolution", () => {
     });
 
     expect(repository.acquire).toHaveBeenCalledOnce();
-    expect(repository.releaseSuccess).toHaveBeenCalledWith("7", expect.any(String), "2026-09-27T12:00:03.000Z");
+    expect(repository.releaseSuccess).toHaveBeenCalledWith("7", expect.any(String), "2026-09-27T12:00:03.000Z", 0);
     expect(repository.releaseUnused).not.toHaveBeenCalled();
   });
 
   it("releases a reserved session immediately when no job was claimed", async () => {
     const repository = {
-      acquire: vi.fn().mockResolvedValue({ deviceId: "7", leaseOwner: "owner", profileCiphertext: "cipher" }),
+      acquire: vi.fn().mockResolvedValue({ deviceId: "7", leaseOwner: "owner", profileCiphertext: "cipher", outboundProxyCiphertext: null }),
       releaseUnused: vi.fn(), releaseSuccess: vi.fn(), releaseFailure: vi.fn(),
     };
     const pool = new ShihuoGuestSessionPool(repository as never,
@@ -184,13 +184,29 @@ describe("Shihuo product resolution", () => {
     expect(repository.releaseSuccess).not.toHaveBeenCalled();
   });
 
+  it("keeps an outbound proxy bound to the leased device", async () => {
+    const repository = {
+      acquire: vi.fn().mockResolvedValue({ deviceId: "7", leaseOwner: "owner", profileCiphertext: "profile", outboundProxyCiphertext: "proxy" }),
+      releaseUnused: vi.fn(), releaseSuccess: vi.fn(), releaseFailure: vi.fn(),
+    };
+    const crypto = { decrypt: vi.fn((value: string) => value === "profile" ? "{}" : "http://user:password@proxy.test:3128") };
+    const pool = new ShihuoGuestSessionPool(repository as never, crypto as never,
+      { sessionLeaseSeconds: 120, betweenProductsSeconds: 3, failureCooldownSeconds: 30, riskCooldownSeconds: 1800 } as never);
+
+    const lease = await pool.acquire();
+
+    expect(lease).toMatchObject({ deviceId: "7", outboundProxyUrl: "http://user:password@proxy.test:3128" });
+    expect(crypto.decrypt).toHaveBeenNthCalledWith(1, "profile");
+    expect(crypto.decrypt).toHaveBeenNthCalledWith(2, "proxy");
+  });
+
   it("releases a lease with cooldown and clears its owner", async () => {
     const executor = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 1 }) };
     const repository = new PostgresShihuoSessionRepository(executor as never);
-    await repository.releaseFailure("7", "worker-1", "2026-09-25T12:00:00Z", "SHIHUO_API_7999", false);
+    await repository.releaseFailure("7", "worker-1", "2026-09-25T12:00:00Z", "SHIHUO_API_7999", false, 1500);
     const [sql, values] = executor.query.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain("lease_owner=NULL"); expect(sql).toContain("next_available_at=$3");
-    expect(values).toEqual(["7", "worker-1", "2026-09-25T12:00:00Z", "SHIHUO_API_7999", false]);
+    expect(values).toEqual(["7", "worker-1", "2026-09-25T12:00:00Z", "SHIHUO_API_7999", false, 1500]);
   });
 
   it("releases an unused lease without applying a product cooldown", async () => {

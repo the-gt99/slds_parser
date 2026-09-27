@@ -30,11 +30,11 @@ export class ShihuoProductResolver {
     const lease = await this.sessions.acquire();
     if (!lease) { await this.links.saveOutcome(input.sourceProductId, "temporarily_blocked", "SHIHUO_NO_SESSION"); throw new RetryableError("No Shihuo guest session is available", { code: "SHIHUO_NO_SESSION" }); }
     try {
-      const candidates = await this.search.searchAll(lease.profile, input.article);
+      const candidates = await this.search.searchAll(lease.profile, input.article, lease.outboundProxyUrl ?? null);
       if (candidates.length === 0) { await lease.success(); await this.links.saveOutcome(input.sourceProductId, "not_found", null); return { status: "not_found", sourceProductId: input.sourceProductId, article: input.article }; }
       for (const candidate of candidates) {
         await this.sleep(this.betweenRequestsMs);
-        const loadedCard = await this.products.fetch(candidate.goodsId, candidate.styleId);
+        const loadedCard = await this.products.fetch(candidate.goodsId, candidate.styleId, lease.outboundProxyUrl ?? null);
         const confirmedArticle = loadedCard.attributes["货号"]?.find((value) => shihuoArticlesMatch(input.article, value));
         if (!confirmedArticle) continue;
         const card = { ...loadedCard, article: confirmedArticle };
@@ -59,7 +59,7 @@ export class ShihuoProductResolver {
   async fetchResolvedProductCard(input: { readonly sourceProductId: EntityId }): Promise<ShihuoProductCard> {
     const link = await this.links.get(input.sourceProductId); if (!link || link.status !== "resolved" || !link.goodsId || !link.styleId) throw new EntityNotFoundError("Resolved Shihuo product", input.sourceProductId);
     const lease = await this.sessions.acquire(); if (!lease) throw new RetryableError("No Shihuo guest session is available", { code: "SHIHUO_NO_SESSION" });
-    try { const loadedCard = await this.products.fetch(link.goodsId, link.styleId); const confirmedArticle = loadedCard.attributes["货号"]?.find((value) => shihuoArticlesMatch(link.sourceArticle, value)); if (!confirmedArticle) throw new Error("Stored Shihuo product article no longer matches"); const card = { ...loadedCard, article: confirmedArticle }; const now = new Date().toISOString(); await this.links.touchCard(input.sourceProductId, now); await this.links.saveCard(input.sourceProductId, card, now); await lease.success(); return card; }
+    try { const loadedCard = await this.products.fetch(link.goodsId, link.styleId, lease.outboundProxyUrl ?? null); const confirmedArticle = loadedCard.attributes["货号"]?.find((value) => shihuoArticlesMatch(link.sourceArticle, value)); if (!confirmedArticle) throw new Error("Stored Shihuo product article no longer matches"); const card = { ...loadedCard, article: confirmedArticle }; const now = new Date().toISOString(); await this.links.touchCard(input.sourceProductId, now); await this.links.saveCard(input.sourceProductId, card, now); await lease.success(); return card; }
     catch (error) { const failure = normalizeShihuoRequestError(error); const risk = failure instanceof ShihuoRiskError; const code = failure instanceof Error && "code" in failure ? String(failure.code) : "SHIHUO_REQUEST_FAILED"; await lease.fail(code, risk); throw failure; }
   }
 }

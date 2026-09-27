@@ -8,6 +8,7 @@ import { ShihuoSecretCrypto } from "./secret-crypto.js";
 export interface ShihuoGuestSessionLease {
   readonly deviceId: string;
   readonly profile: ShihuoGuestProfile;
+  readonly outboundProxyUrl: string | null;
   success(): Promise<void>;
   fail(reason: string, risk?: boolean): Promise<void>;
 }
@@ -58,9 +59,12 @@ export class ShihuoGuestSessionPool {
   private async acquireDirect(): Promise<(ShihuoGuestSessionLease & { readonly owner: string }) | null> {
     const owner = randomUUID(); const leased = await this.repository.acquire(owner, this.config.sessionLeaseSeconds); if (!leased) return null;
     const profile = JSON.parse(this.crypto.decrypt(leased.profileCiphertext)) as ShihuoGuestProfile;
+    const outboundProxyUrl = leased.outboundProxyCiphertext === null ? null : this.crypto.decrypt(leased.outboundProxyCiphertext);
+    const startedAt = this.now();
     const releaseAt = (seconds: number) => new Date(this.now() + seconds * 1000).toISOString();
-    return { deviceId: leased.deviceId, owner, profile,
-      success: () => this.repository.releaseSuccess(leased.deviceId, owner, releaseAt(this.config.betweenProductsSeconds)),
-      fail: (reason, risk = false) => this.repository.releaseFailure(leased.deviceId, owner, releaseAt(risk ? this.config.riskCooldownSeconds : this.config.failureCooldownSeconds), reason, false) };
+    const duration = () => Math.max(0, this.now() - startedAt);
+    return { deviceId: leased.deviceId, owner, profile, outboundProxyUrl,
+      success: () => this.repository.releaseSuccess(leased.deviceId, owner, releaseAt(this.config.betweenProductsSeconds), duration()),
+      fail: (reason, risk = false) => this.repository.releaseFailure(leased.deviceId, owner, releaseAt(risk ? this.config.riskCooldownSeconds : this.config.failureCooldownSeconds), reason, false, duration()) };
   }
 }

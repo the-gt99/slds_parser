@@ -62,13 +62,14 @@ export interface ShihuoLeasedSession {
   readonly deviceId: EntityId;
   readonly leaseOwner: string;
   readonly profileCiphertext: string;
+  readonly outboundProxyCiphertext: string | null;
 }
 
 export interface ShihuoSessionRepository {
   acquire(owner: string, leaseSeconds: number): Promise<ShihuoLeasedSession | null>;
   releaseUnused(deviceId: EntityId, owner: string): Promise<void>;
-  releaseSuccess(deviceId: EntityId, owner: string, nextAvailableAt: string): Promise<void>;
-  releaseFailure(deviceId: EntityId, owner: string, nextAvailableAt: string, reason: string, pause: boolean): Promise<void>;
+  releaseSuccess(deviceId: EntityId, owner: string, nextAvailableAt: string, durationMs: number): Promise<void>;
+  releaseFailure(deviceId: EntityId, owner: string, nextAvailableAt: string, reason: string, pause: boolean, durationMs: number): Promise<void>;
 }
 
 export interface ShihuoProductLinkRepository {

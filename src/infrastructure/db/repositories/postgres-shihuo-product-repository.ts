@@ -16,12 +16,15 @@ export class PostgresShihuoSessionRepository implements ShihuoSessionRepository 
         AND next_available_at <= NOW() AND (leased_until IS NULL OR leased_until <= NOW())
       ORDER BY last_used_at NULLS FIRST, id FOR UPDATE SKIP LOCKED LIMIT 1
     ) UPDATE shihuo_guest_devices device SET lease_owner=$1, leased_until=NOW()+($2::INTEGER*INTERVAL '1 second'), updated_at=NOW()
-      FROM candidate WHERE device.id=candidate.id RETURNING device.id, device.guest_profile_ciphertext`, [owner, leaseSeconds]);
-    const row = result.rows[0]; return row ? { deviceId: String(row.id), leaseOwner: owner, profileCiphertext: String(row.guest_profile_ciphertext) } : null;
+      FROM candidate WHERE device.id=candidate.id
+      RETURNING device.id, device.guest_profile_ciphertext, device.outbound_proxy_ciphertext`, [owner, leaseSeconds]);
+    const row = result.rows[0]; return row ? { deviceId: String(row.id), leaseOwner: owner,
+      profileCiphertext: String(row.guest_profile_ciphertext),
+      outboundProxyCiphertext: row.outbound_proxy_ciphertext == null ? null : String(row.outbound_proxy_ciphertext) } : null;
   }
   async releaseUnused(deviceId: string, owner: string): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner]); }
-  async releaseSuccess(deviceId: string, owner: string, nextAvailableAt: string): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=0,cooldown_reason=NULL,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt]); }
-  async releaseFailure(deviceId: string, owner: string, nextAvailableAt: string, reason: string, pause: boolean): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=consecutive_errors+1,cooldown_reason=$4,status=CASE WHEN $5 THEN 'paused' ELSE status END,diagnostic_stage=CASE WHEN $5 THEN 'paused' ELSE diagnostic_stage END,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt, reason, pause]); }
+  async releaseSuccess(deviceId: string, owner: string, nextAvailableAt: string, durationMs: number): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=0,cooldown_reason=NULL,inventory_success_count=inventory_success_count+1,inventory_total_duration_ms=inventory_total_duration_ms+$4::BIGINT,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt, durationMs]); }
+  async releaseFailure(deviceId: string, owner: string, nextAvailableAt: string, reason: string, pause: boolean, durationMs: number): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=consecutive_errors+1,cooldown_reason=$4,status=CASE WHEN $5 THEN 'paused' ELSE status END,diagnostic_stage=CASE WHEN $5 THEN 'paused' ELSE diagnostic_stage END,inventory_failure_count=inventory_failure_count+1,inventory_total_duration_ms=inventory_total_duration_ms+$6::BIGINT,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt, reason, pause, durationMs]); }
 }
 
 export class PostgresShihuoProductLinkRepository implements ShihuoProductLinkRepository {
