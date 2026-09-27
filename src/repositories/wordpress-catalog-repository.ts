@@ -160,6 +160,45 @@ export interface WordPressInventoryDonorState {
   readonly checkedAt: string;
 }
 
+export interface WordPressInventoryLastProduct {
+  readonly itemId: EntityId;
+  readonly wordpressProductId: string;
+  readonly sourceExternalId: string | null;
+  readonly sku: string | null;
+  readonly title: string;
+  readonly wordpressSlug: string | null;
+  readonly sourceUrl: string | null;
+  readonly outcome: string;
+  readonly checkedAt: string;
+}
+
+export interface WordPressInventoryPipelineHealth {
+  readonly processedTotal: number;
+  readonly processed1m: number;
+  readonly processed5m: number;
+  readonly processed15m: number;
+  readonly lastCheckedAt: string | null;
+  readonly lastProduct: WordPressInventoryLastProduct | null;
+}
+
+export interface WordPressInventoryHealthRecord {
+  readonly runId: string;
+  readonly status: string;
+  readonly products: number;
+  readonly overdue: number;
+  readonly failed: number;
+  readonly lastCheckedAt: string | null;
+  readonly goat: WordPressInventoryPipelineHealth;
+  readonly shihuo: WordPressInventoryPipelineHealth & {
+    readonly sessions: {
+      readonly ready: number;
+      readonly leased: number;
+      readonly onboarding: number;
+    };
+  };
+  readonly wordpress: WordPressInventoryPipelineHealth;
+}
+
 export interface WordPressCatalogRepository {
   createRun(input: {
     readonly targetId: EntityId;
@@ -198,10 +237,7 @@ export interface WordPressCatalogRepository {
   }[]>;
   enqueueInventoryReconciliation(runId: EntityId, cursor?: string): Promise<void>;
   recoverOrphanedVariationItems(runId: EntityId): Promise<number>;
-  getInventoryHealth(): Promise<readonly {
-    readonly runId: string; readonly status: string; readonly products: number;
-    readonly overdue: number; readonly failed: number; readonly lastCheckedAt: string | null;
-  }[]>;
+  getInventoryHealth(): Promise<readonly WordPressInventoryHealthRecord[]>;
   failRun(runId: EntityId, error: string): Promise<void>;
   listVariationCandidates(input: {
     readonly runId: EntityId;

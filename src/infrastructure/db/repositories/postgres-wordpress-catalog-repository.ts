@@ -4,6 +4,7 @@ import type {
   WordPressCatalogRunItemRecord,
   WordPressCatalogRunItemSummaryRecord,
   WordPressCatalogRunRecord,
+  WordPressInventoryLastProduct,
   WordPressVariationAutoSyncState,
   WordPressVariationAutoTickOutcome,
 } from "../../../repositories/index.js";
@@ -28,6 +29,23 @@ function timestamp(row: DatabaseRow, key: string): string {
 
 function nullableTimestamp(row: DatabaseRow, key: string): string | null {
   return row[key] === null || row[key] === undefined ? null : timestamp(row, key);
+}
+
+function mapInventoryLastProduct(row: DatabaseRow, prefix: string): WordPressInventoryLastProduct | null {
+  const itemId = nullableText(row, `${prefix}_item_id`);
+  const checkedAt = nullableTimestamp(row, `${prefix}_checked_at`);
+  if (itemId === null || checkedAt === null) return null;
+  return {
+    itemId,
+    wordpressProductId: text(row, `${prefix}_wordpress_product_id`),
+    sourceExternalId: nullableText(row, `${prefix}_source_external_id`),
+    sku: nullableText(row, `${prefix}_sku`),
+    title: text(row, `${prefix}_title`),
+    wordpressSlug: nullableText(row, `${prefix}_wordpress_slug`),
+    sourceUrl: nullableText(row, `${prefix}_source_url`),
+    outcome: text(row, `${prefix}_outcome`),
+    checkedAt,
+  };
 }
 
 async function transaction<Result>(pool: SqlPool, callback: (client: SqlClient) => Promise<Result>): Promise<Result> {
@@ -585,15 +603,139 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
 
   async getInventoryHealth() {
     const result = await queryPool<DatabaseRow>(this.pool,
-      `SELECT run.id, run.variation_auto_status, COUNT(item.id) AS products,
-              COUNT(item.id) FILTER (WHERE item.variation_checked_at IS NULL OR item.variation_checked_at < NOW()-INTERVAL '25 hours') AS overdue,
-              COUNT(item.id) FILTER (WHERE item.variation_status='failed') AS failed,
-              MAX(item.variation_checked_at) AS last_checked_at
-       FROM wordpress_catalog_runs run LEFT JOIN wordpress_catalog_run_items item
-         ON item.run_id=run.id AND item.match_status='matched' AND item.internal_product_id IS NOT NULL
-       WHERE run.variation_auto_status IN ('running','paused') GROUP BY run.id`);
-    return result.rows.map((row) => ({ runId: text(row,"id"), status: text(row,"variation_auto_status"),
-      products: Number(row.products), overdue: Number(row.overdue), failed: Number(row.failed), lastCheckedAt: nullableTimestamp(row,"last_checked_at") }));
+      `WITH active_runs AS MATERIALIZED (
+         SELECT id, variation_auto_status FROM wordpress_catalog_runs
+         WHERE variation_auto_status IN ('running','paused')
+       ), item_stats AS MATERIALIZED (
+         SELECT item.run_id, COUNT(*) AS products,
+                COUNT(*) FILTER (WHERE item.variation_checked_at IS NULL OR item.variation_checked_at < NOW()-INTERVAL '25 hours') AS overdue,
+                COUNT(*) FILTER (WHERE item.variation_status='failed') AS failed,
+                COUNT(*) FILTER (WHERE item.variation_checked_at IS NOT NULL) AS wordpress_total,
+                COUNT(*) FILTER (WHERE item.variation_checked_at >= NOW()-INTERVAL '1 minute') AS wordpress_1m,
+                COUNT(*) FILTER (WHERE item.variation_checked_at >= NOW()-INTERVAL '5 minutes') AS wordpress_5m,
+                COUNT(*) FILTER (WHERE item.variation_checked_at >= NOW()-INTERVAL '15 minutes') AS wordpress_15m,
+                MAX(item.variation_checked_at) AS wordpress_last_checked_at
+         FROM wordpress_catalog_run_items item JOIN active_runs run ON run.id=item.run_id
+         WHERE item.match_status='matched' AND item.internal_product_id IS NOT NULL
+         GROUP BY item.run_id
+       ), donor_stats AS MATERIALIZED (
+         SELECT state.run_id, state.donor_code, COUNT(*) AS processed_total,
+                COUNT(*) FILTER (WHERE state.checked_at >= NOW()-INTERVAL '1 minute') AS processed_1m,
+                COUNT(*) FILTER (WHERE state.checked_at >= NOW()-INTERVAL '5 minutes') AS processed_5m,
+                COUNT(*) FILTER (WHERE state.checked_at >= NOW()-INTERVAL '15 minutes') AS processed_15m,
+                MAX(state.checked_at) AS last_checked_at
+         FROM wordpress_inventory_donor_states state JOIN active_runs run ON run.id=state.run_id
+         GROUP BY state.run_id, state.donor_code
+       ), session_stats AS MATERIALIZED (
+         SELECT COUNT(*) FILTER (WHERE status='ready') AS ready,
+                COUNT(*) FILTER (WHERE status='ready' AND leased_until > NOW()) AS leased,
+                COUNT(*) FILTER (WHERE status='onboarding') AS onboarding
+         FROM shihuo_guest_devices
+       )
+       SELECT run.id, run.variation_auto_status,
+              COALESCE(items.products,0) AS products, COALESCE(items.overdue,0) AS overdue,
+              COALESCE(items.failed,0) AS failed, items.wordpress_last_checked_at AS last_checked_at,
+              COALESCE(goat_stats.processed_total,0) AS goat_total,
+              COALESCE(goat_stats.processed_1m,0) AS goat_1m,
+              COALESCE(goat_stats.processed_5m,0) AS goat_5m,
+              COALESCE(goat_stats.processed_15m,0) AS goat_15m,
+              goat_stats.last_checked_at AS goat_last_checked_at,
+              goat_latest.item_id AS goat_item_id, goat_latest.wordpress_product_id AS goat_wordpress_product_id,
+              goat_latest.source_external_id AS goat_source_external_id, goat_latest.sku AS goat_sku,
+              goat_latest.title AS goat_title, goat_latest.wordpress_slug AS goat_wordpress_slug,
+              goat_latest.source_url AS goat_source_url, goat_latest.outcome AS goat_outcome,
+              goat_latest.checked_at AS goat_checked_at,
+              COALESCE(shihuo_stats.processed_total,0) AS shihuo_total,
+              COALESCE(shihuo_stats.processed_1m,0) AS shihuo_1m,
+              COALESCE(shihuo_stats.processed_5m,0) AS shihuo_5m,
+              COALESCE(shihuo_stats.processed_15m,0) AS shihuo_15m,
+              shihuo_stats.last_checked_at AS shihuo_last_checked_at,
+              shihuo_latest.item_id AS shihuo_item_id, shihuo_latest.wordpress_product_id AS shihuo_wordpress_product_id,
+              shihuo_latest.source_external_id AS shihuo_source_external_id, shihuo_latest.sku AS shihuo_sku,
+              shihuo_latest.title AS shihuo_title, shihuo_latest.wordpress_slug AS shihuo_wordpress_slug,
+              shihuo_latest.source_url AS shihuo_source_url, shihuo_latest.outcome AS shihuo_outcome,
+              shihuo_latest.checked_at AS shihuo_checked_at,
+              COALESCE(items.wordpress_total,0) AS wordpress_total,
+              COALESCE(items.wordpress_1m,0) AS wordpress_1m,
+              COALESCE(items.wordpress_5m,0) AS wordpress_5m,
+              COALESCE(items.wordpress_15m,0) AS wordpress_15m,
+              wordpress_latest.item_id AS wordpress_item_id,
+              wordpress_latest.wordpress_product_id AS wordpress_wordpress_product_id,
+              wordpress_latest.source_external_id AS wordpress_source_external_id,
+              wordpress_latest.sku AS wordpress_sku, wordpress_latest.title AS wordpress_title,
+              wordpress_latest.wordpress_slug AS wordpress_wordpress_slug,
+              wordpress_latest.source_url AS wordpress_source_url,
+              wordpress_latest.outcome AS wordpress_outcome,
+              wordpress_latest.checked_at AS wordpress_checked_at,
+              sessions.ready AS shihuo_sessions_ready, sessions.leased AS shihuo_sessions_leased,
+              sessions.onboarding AS shihuo_sessions_onboarding
+       FROM active_runs run
+       LEFT JOIN item_stats items ON items.run_id=run.id
+       LEFT JOIN donor_stats goat_stats ON goat_stats.run_id=run.id AND goat_stats.donor_code='goat'
+       LEFT JOIN donor_stats shihuo_stats ON shihuo_stats.run_id=run.id AND shihuo_stats.donor_code='shihuo'
+       CROSS JOIN session_stats sessions
+       LEFT JOIN LATERAL (
+         SELECT item.id AS item_id, item.wordpress_product_id, item.source_external_id, item.sku,
+                COALESCE(read_model.title, snapshot.payload->'product'->>'title', '') AS title,
+                NULLIF(snapshot.payload->'product'->>'slug','') AS wordpress_slug,
+                source_product.url AS source_url, state.outcome, state.checked_at
+         FROM wordpress_inventory_donor_states state
+         JOIN wordpress_catalog_run_items item ON item.id=state.item_id
+         JOIN wordpress_catalog_snapshots snapshot ON snapshot.id=item.snapshot_id
+         LEFT JOIN wordpress_catalog_item_read_models read_model ON read_model.item_id=item.id
+         LEFT JOIN source_products source_product ON source_product.id=item.source_product_id
+         WHERE state.run_id=run.id AND state.donor_code='goat'
+         ORDER BY state.checked_at DESC, state.item_id DESC LIMIT 1
+       ) goat_latest ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT item.id AS item_id, item.wordpress_product_id, item.source_external_id, item.sku,
+                COALESCE(read_model.title, snapshot.payload->'product'->>'title', '') AS title,
+                NULLIF(snapshot.payload->'product'->>'slug','') AS wordpress_slug,
+                source_product.url AS source_url, state.outcome, state.checked_at
+         FROM wordpress_inventory_donor_states state
+         JOIN wordpress_catalog_run_items item ON item.id=state.item_id
+         JOIN wordpress_catalog_snapshots snapshot ON snapshot.id=item.snapshot_id
+         LEFT JOIN wordpress_catalog_item_read_models read_model ON read_model.item_id=item.id
+         LEFT JOIN source_products source_product ON source_product.id=item.source_product_id
+         WHERE state.run_id=run.id AND state.donor_code='shihuo'
+         ORDER BY state.checked_at DESC, state.item_id DESC LIMIT 1
+       ) shihuo_latest ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT item.id AS item_id, item.wordpress_product_id, item.source_external_id, item.sku,
+                COALESCE(read_model.title, snapshot.payload->'product'->>'title', '') AS title,
+                NULLIF(snapshot.payload->'product'->>'slug','') AS wordpress_slug,
+                source_product.url AS source_url, item.variation_status AS outcome,
+                item.variation_checked_at AS checked_at
+         FROM wordpress_catalog_run_items item
+         JOIN wordpress_catalog_snapshots snapshot ON snapshot.id=item.snapshot_id
+         LEFT JOIN wordpress_catalog_item_read_models read_model ON read_model.item_id=item.id
+         LEFT JOIN source_products source_product ON source_product.id=item.source_product_id
+         WHERE item.run_id=run.id AND item.match_status='matched' AND item.internal_product_id IS NOT NULL
+           AND item.variation_checked_at IS NOT NULL
+         ORDER BY item.variation_checked_at DESC, item.id DESC LIMIT 1
+       ) wordpress_latest ON TRUE
+       ORDER BY run.id DESC`);
+    return result.rows.map((row) => ({
+      runId: text(row,"id"), status: text(row,"variation_auto_status"),
+      products: Number(row.products), overdue: Number(row.overdue), failed: Number(row.failed),
+      lastCheckedAt: nullableTimestamp(row,"last_checked_at"),
+      goat: {
+        processedTotal: Number(row.goat_total), processed1m: Number(row.goat_1m),
+        processed5m: Number(row.goat_5m), processed15m: Number(row.goat_15m),
+        lastCheckedAt: nullableTimestamp(row,"goat_last_checked_at"), lastProduct: mapInventoryLastProduct(row,"goat"),
+      },
+      shihuo: {
+        processedTotal: Number(row.shihuo_total), processed1m: Number(row.shihuo_1m),
+        processed5m: Number(row.shihuo_5m), processed15m: Number(row.shihuo_15m),
+        lastCheckedAt: nullableTimestamp(row,"shihuo_last_checked_at"), lastProduct: mapInventoryLastProduct(row,"shihuo"),
+        sessions: { ready: Number(row.shihuo_sessions_ready), leased: Number(row.shihuo_sessions_leased), onboarding: Number(row.shihuo_sessions_onboarding) },
+      },
+      wordpress: {
+        processedTotal: Number(row.wordpress_total), processed1m: Number(row.wordpress_1m),
+        processed5m: Number(row.wordpress_5m), processed15m: Number(row.wordpress_15m),
+        lastCheckedAt: nullableTimestamp(row,"last_checked_at"), lastProduct: mapInventoryLastProduct(row,"wordpress"),
+      },
+    }));
   }
 
   async recoverOrphanedVariationItems(runId: string): Promise<number> {

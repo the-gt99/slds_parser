@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SourceRepository, TargetRepository, WordPressCatalogRepository, WordPressCatalogRunRecord } from "../../src/repositories/index.js";
+import type { SourceRepository, TargetRepository, WordPressCatalogRepository, WordPressCatalogRunRecord, WordPressInventoryHealthRecord } from "../../src/repositories/index.js";
 import { WordPressCatalogService } from "../../src/services/index.js";
 
 function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatalogRunRecord {
@@ -18,6 +18,17 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
     variationCompletedCount: 987, variationSkippedCount: 13, variationFailedCount: 0,
     variationEligibleCount: 9_000, variationCheckedCycleCount: 1_000, variationDueCount: 4_000, variationChangedCount: 500,
     auditPendingCount: 0, auditReadyCount: 7_000, auditBlockedCount: 2_000, auditErrorCount: 0,
+    ...overrides,
+  };
+}
+
+function inventoryHealth(overrides: Partial<WordPressInventoryHealthRecord> = {}): WordPressInventoryHealthRecord {
+  const pipeline = { processedTotal: 10, processed1m: 1, processed5m: 5, processed15m: 10, lastCheckedAt: "2026-09-14T00:00:00Z", lastProduct: null };
+  return {
+    runId: "1", status: "running", products: 10, overdue: 0, failed: 0,
+    lastCheckedAt: "2026-09-14T00:00:00Z", goat: pipeline,
+    shihuo: { ...pipeline, sessions: { ready: 8, leased: 8, onboarding: 0 } },
+    wordpress: pipeline,
     ...overrides,
   };
 }
@@ -55,11 +66,11 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
 describe("WordPressCatalogService variation auto-sync", () => {
   it("reports an operationally stopped inventory even when the database responds", async () => {
     const value = setup(run());
-    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "paused", products: 10, overdue: 0, failed: 0, lastCheckedAt: null }]);
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([inventoryHealth({ status: "paused", lastCheckedAt: null })]);
     await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "degraded" });
-    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "running", products: 10, overdue: 1, failed: 0, lastCheckedAt: null }]);
-    await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "degraded" });
-    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([{ runId: "1", status: "running", products: 10, overdue: 0, failed: 0, lastCheckedAt: "2026-09-14T00:00:00Z" }]);
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([inventoryHealth({ overdue: 1, lastCheckedAt: null })]);
+    await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "ok" });
+    value.repository.getInventoryHealth = vi.fn().mockResolvedValue([inventoryHealth()]);
     await expect(value.service.inventoryHealth()).resolves.toMatchObject({ status: "ok" });
   });
 

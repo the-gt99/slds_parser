@@ -207,7 +207,7 @@ export class WordPressCatalogService {
 
   async inventoryHealth() {
     const runs = await this.repository.getInventoryHealth();
-    return { status: runs.length > 0 && runs.every((run) => run.status === "running" && run.overdue === 0 && run.failed === 0)
+    return { status: runs.length > 0 && runs.every((run) => run.status === "running" && run.failed === 0)
       ? "ok" : "degraded", runs };
   }
 

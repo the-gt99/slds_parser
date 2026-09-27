@@ -193,6 +193,36 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["1", 1]);
   });
 
+  it("reports inventory throughput, sessions and the latest donor product", async () => {
+    const executor = new FakeExecutor([[{
+      id: "4", variation_auto_status: "running", products: "240623", overdue: "230000", failed: "0",
+      last_checked_at: "2026-09-27T10:00:00.000Z",
+      goat_total: "1200", goat_1m: "240", goat_5m: "1180", goat_15m: "1200",
+      goat_last_checked_at: "2026-09-27T10:00:01.000Z", goat_item_id: "7",
+      goat_wordpress_product_id: "900", goat_source_external_id: "goat-1", goat_sku: "FJ0332-100",
+      goat_title: "Nike Air Zoom", goat_wordpress_slug: "nike-air-zoom", goat_source_url: "https://goat.example/item",
+      goat_outcome: "resolved", goat_checked_at: "2026-09-27T10:00:01.000Z",
+      shihuo_total: "70", shihuo_1m: "14", shihuo_5m: "68", shihuo_15m: "70",
+      shihuo_last_checked_at: "2026-09-27T10:00:02.000Z", shihuo_item_id: null, shihuo_checked_at: null,
+      wordpress_total: "68", wordpress_1m: "13", wordpress_5m: "65", wordpress_15m: "68",
+      wordpress_item_id: null, wordpress_checked_at: null,
+      shihuo_sessions_ready: "11", shihuo_sessions_leased: "8", shihuo_sessions_onboarding: "1",
+    }]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    const result = await repository.getInventoryHealth();
+
+    expect(result[0]).toMatchObject({
+      runId: "4", products: 240623,
+      goat: { processed5m: 1180, lastProduct: { sku: "FJ0332-100", outcome: "resolved" } },
+      shihuo: { processed1m: 14, sessions: { ready: 11, leased: 8, onboarding: 1 } },
+      wordpress: { processedTotal: 68 },
+    });
+    expect(executor.calls[0]?.text).toContain("wordpress_inventory_donor_states");
+    expect(executor.calls[0]?.text).toContain("shihuo_guest_devices");
+    expect(executor.calls[0]?.text).toContain("LEFT JOIN LATERAL");
+  });
+
   it("returns locally stored proposed images with WordPress catalog item details", async () => {
     const executor = new FakeExecutor([[]]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
