@@ -17,8 +17,9 @@ describe("worker config", () => {
     expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "pipeline" }).role).toBe("pipeline");
     expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "inventory", WORKER_INVENTORY_REFRESH_CONCURRENCY: "3" }))
       .toMatchObject({ role: "inventory", inventoryRefreshConcurrency: 3 });
+    expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "shihuo-resolution" }).role).toBe("shihuo-resolution");
     expect(() => loadWorkerConfig({ ...environment, WORKER_ROLE: "unknown" })).toThrow(
-      "WORKER_ROLE must be all, pipeline or inventory",
+      "WORKER_ROLE must be all, pipeline, inventory or shihuo-resolution",
     );
   });
   it("uses one dedicated processing lane by default", () => {

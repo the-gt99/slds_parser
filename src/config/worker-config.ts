@@ -23,10 +23,10 @@ export interface WorkerEnvironment {
   readonly WORDPRESS_RETRY_MAX_MS?: string;
 }
 
-function workerRole(value: string | undefined): "all" | "pipeline" | "inventory" {
+function workerRole(value: string | undefined): "all" | "pipeline" | "inventory" | "shihuo-resolution" {
   const normalized = value?.trim().toLocaleLowerCase("en-US") || "all";
-  if (normalized !== "all" && normalized !== "pipeline" && normalized !== "inventory") {
-    throw new Error("WORKER_ROLE must be all, pipeline or inventory");
+  if (normalized !== "all" && normalized !== "pipeline" && normalized !== "inventory" && normalized !== "shihuo-resolution") {
+    throw new Error("WORKER_ROLE must be all, pipeline, inventory or shihuo-resolution");
   }
   return normalized;
 }

@@ -10,7 +10,7 @@ export interface WorkerClaimPermit {
 
 export interface WorkerOptions {
   readonly workerId: string;
-  readonly role?: "all" | "pipeline" | "inventory";
+  readonly role?: "all" | "pipeline" | "inventory" | "shihuo-resolution";
   readonly pollIntervalMs: number;
   readonly lockTimeoutMs: number;
   readonly maxJobAttempts: number;
@@ -264,6 +264,7 @@ export class Worker {
     const role = this.options.role ?? "all";
     const runPipeline = role === "all" || role === "pipeline";
     const runInventory = role === "all" || role === "inventory";
+    const runShihuoResolution = role === "shihuo-resolution";
     const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const retranslationJobTypes = ["retranslate_product"] satisfies readonly JobType[];
@@ -328,6 +329,10 @@ export class Worker {
             this.runLane(controller.signal, wordpressVariationSubmitJobTypes, `${this.options.workerId}:inventory-submit-${index + 1}`)),
           ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
         ] : []),
+        ...(runShihuoResolution
+          ? Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
+              this.runLane(controller.signal, ["resolve_shihuo_product"], `${this.options.workerId}:shihuo-resolution-${index + 1}`))
+          : []),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);

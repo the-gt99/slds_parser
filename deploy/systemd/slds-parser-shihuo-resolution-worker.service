@@ -1,0 +1,22 @@
+[Unit]
+Description=SLDS Parser Shihuo product resolution worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+Environment=WORKER_ROLE=shihuo-resolution
+Environment=WORKER_ID=shihuo-resolution-worker
+ExecStart=/usr/local/bin/node dist/src/cli/worker.js
+Restart=always
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
