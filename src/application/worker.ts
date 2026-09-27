@@ -181,6 +181,14 @@ export class Worker {
       });
       return;
     }
+    if (error instanceof RetryableError && error.code === "SHIHUO_SUPPLIER_TIMEOUT" && job.attempts < 3) {
+      const delay = job.attempts === 1 ? 60_000 : 300_000;
+      await this.jobs.retry(job.id, {
+        error: errorText(error),
+        availableAt: new Date(this.currentTime() + delay).toISOString(),
+      });
+      return;
+    }
     if (error instanceof RetryableError && job.attempts < maxAttempts) {
       const delay = Math.min(retryMaxMs, retryBaseMs * (2 ** Math.max(0, job.attempts - 1)));
       await this.jobs.retry(job.id, { error: errorText(error), availableAt: new Date(this.currentTime() + delay).toISOString() });

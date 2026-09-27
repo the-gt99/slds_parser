@@ -25,6 +25,29 @@ describe("Worker", () => {
     });
     expect(value.handler.handleTerminalFailure).not.toHaveBeenCalled();
   });
+  it.each([
+    { attempts: 0, availableAt: "2026-01-01T00:01:00.000Z" },
+    { attempts: 1, availableAt: "2026-01-01T00:05:00.000Z" },
+  ])("retries a Shihuo supplier timeout on its explicit schedule %#", async ({ attempts, availableAt }) => {
+    const value = await setup(new RetryableError("Shihuo supplier data timed out", {
+      code: "SHIHUO_SUPPLIER_TIMEOUT",
+    }), attempts);
+
+    await value.worker.processNext();
+
+    expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "retry", availableAt });
+    expect(value.handler.handleTerminalFailure).not.toHaveBeenCalled();
+  });
+  it("fails a Shihuo supplier timeout after the third attempt", async () => {
+    const value = await setup(new RetryableError("Shihuo supplier data timed out", {
+      code: "SHIHUO_SUPPLIER_TIMEOUT",
+    }), 2);
+
+    await value.worker.processNext();
+
+    expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" });
+    expect(value.handler.handleTerminalFailure).toHaveBeenCalledOnce();
+  });
   it("pauses a translation queue at the configured balance reserve without failing queued jobs", async () => {
     const value = await setup(new PermanentError("reserve reached", { code: "TRANSLATION_QUOTA" }), 3);
     const next = await value.jobs.enqueue({

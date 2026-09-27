@@ -8,6 +8,14 @@ import type { ShihuoProductCard, ShihuoProductLinkRepository, ShihuoResolutionRe
 
 function normalizeShihuoRequestError(error: unknown): unknown {
   if (error instanceof RetryableError) return error;
+  if (error instanceof Error
+    && /^Shihuo card block failed: supplierListData/iu.test(error.message)
+    && /(timeout|context deadline exceeded|"code"\s*:\s*408)/iu.test(error.message)) {
+    return new RetryableError("Shihuo supplier data timed out", {
+      code: "SHIHUO_SUPPLIER_TIMEOUT",
+      cause: error,
+    });
+  }
   if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
     return new RetryableError("Shihuo request timed out", { code: "SHIHUO_REQUEST_TIMEOUT", cause: error });
   }

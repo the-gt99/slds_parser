@@ -120,6 +120,22 @@ describe("Shihuo product resolution", () => {
     expect(links.saveOutcome).toHaveBeenCalledWith("1", "failed", "SHIHUO_REQUEST_TIMEOUT");
   });
 
+  it("classifies a supplier block timeout as retryable", async () => {
+    const lease = { success: vi.fn(), fail: vi.fn() };
+    const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn(), saveCard: vi.fn() };
+    const products = { fetch: vi.fn().mockRejectedValue(new Error(
+      "Shihuo card block failed: supplierListData (90000: context deadline exceeded, code: 408)",
+    )) };
+    const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
+      {} as never, products as never, links as never, {} as never, 1100);
+
+    await expect(resolver.fetchResolvedProductCard({ sourceProductId: "1" })).rejects.toMatchObject({
+      name: "RetryableError",
+      code: "SHIHUO_SUPPLIER_TIMEOUT",
+    });
+    expect(lease.fail).toHaveBeenCalledWith("SHIHUO_SUPPLIER_TIMEOUT", false);
+  });
+
   it("checks later search candidates until the exact article is confirmed", async () => {
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const links = { get: vi.fn().mockResolvedValue(null), savePending: vi.fn(), saveResolved: vi.fn(), saveOutcome: vi.fn(), saveCard: vi.fn() };
