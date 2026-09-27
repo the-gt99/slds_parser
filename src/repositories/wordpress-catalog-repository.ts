@@ -151,6 +151,15 @@ export interface WordPressCatalogVariationCandidate {
   readonly internalContentHash: string;
 }
 
+export type WordPressInventoryDonorCode = "goat" | "shihuo";
+export interface WordPressInventoryDonorState {
+  readonly donorCode: WordPressInventoryDonorCode;
+  readonly outcome: "resolved" | "not_found" | "article_mismatch";
+  readonly contentHash: string;
+  readonly variants: readonly ProductVariantDTO[];
+  readonly checkedAt: string;
+}
+
 export interface WordPressCatalogRepository {
   createRun(input: {
     readonly targetId: EntityId;
@@ -216,6 +225,22 @@ export interface WordPressCatalogRepository {
     readonly unchanged: boolean;
     readonly force?: boolean;
   }): Promise<void>;
+  saveInventoryDonorState(input: {
+    readonly runId: EntityId;
+    readonly itemId: EntityId;
+    readonly donorCode: WordPressInventoryDonorCode;
+    readonly outcome: WordPressInventoryDonorState["outcome"];
+    readonly contentHash: string;
+    readonly variants: readonly ProductVariantDTO[];
+    readonly checkedAt: string;
+  }): Promise<void>;
+  listInventoryDonorStates(itemId: EntityId): Promise<readonly WordPressInventoryDonorState[]>;
+  enqueueDueInventoryDonorJobs(input: {
+    readonly runId: EntityId;
+    readonly donorCode: WordPressInventoryDonorCode;
+    readonly limit: number;
+    readonly intervalMinutes: number;
+  }): Promise<number>;
   listVariationSubmissionItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<readonly WordPressCatalogRunItemRecord[]>;
   saveVariationSubmission(input: {
     readonly itemId: EntityId;

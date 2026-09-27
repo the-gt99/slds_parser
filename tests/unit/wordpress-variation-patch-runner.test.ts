@@ -1,7 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../../src/core/errors/index.js";
 import { parseCollectWordPressVariationSourcePayload, parsePrepareWordPressVariationPatchPayload } from "../../src/application/job-payloads.js";
-import { WordPressVariationPatchRunner, buildWordPressVariationPatchIdentity, shouldRefreshWordPressVariationSnapshot, shouldRefreshWordPressVariationSnapshotBeforeSubmit, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+import { WordPressVariationPatchRunner, buildWordPressVariationPatchIdentity, combineFreshInventoryDonors, shouldRefreshWordPressVariationSnapshot, shouldRefreshWordPressVariationSnapshotBeforeSubmit, wordpressCatalogItemError, wordpressVariationJobOutcome } from "../../src/application/wordpress-variation-patch-runner.js";
+
+describe("inventory donor barrier", () => {
+  const variant = { sourceVariantKey: "goat:1", sku: "SKU-1", size: { sourceValue: "8", displayValue: "8" }, inventory: { availability: "available" } } as const;
+
+  it("treats a Shihuo not-found result as a completed check and keeps GOAT inventory", () => {
+    const combined = combineFreshInventoryDonors([
+      { donorCode: "goat", outcome: "resolved", contentHash: "g", variants: [variant] as never, checkedAt: "2026-09-27T10:00:00.000Z" },
+      { donorCode: "shihuo", outcome: "not_found", contentHash: "s", variants: [], checkedAt: "2026-09-27T10:00:01.000Z" },
+    ], "2026-09-27T09:00:00.000Z");
+    expect(combined?.variants).toEqual([variant]);
+  });
+
+  it("waits until both donors were checked after the last WordPress update", () => {
+    expect(combineFreshInventoryDonors([
+      { donorCode: "goat", outcome: "resolved", contentHash: "g", variants: [variant] as never, checkedAt: "2026-09-27T08:00:00.000Z" },
+      { donorCode: "shihuo", outcome: "not_found", contentHash: "s", variants: [], checkedAt: "2026-09-27T10:00:01.000Z" },
+    ], "2026-09-27T09:00:00.000Z")).toBeNull();
+  });
+});
 
 describe("WordPressVariationPatchRunner preparation safety", () => {
   it("does not interpret a cleared refresh state as sold-out GOAT offers", async () => {

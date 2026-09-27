@@ -36,6 +36,7 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
       nextCycleAt: current.variationSyncNextCycleAt,
     }),
     enqueueReadyVariationBatches: vi.fn().mockResolvedValue(0),
+    enqueueDueInventoryDonorJobs: vi.fn().mockResolvedValue(outcome === "queued" || outcome === "cycle_completed" ? 10 : 0),
     enqueueInventoryReconciliation: vi.fn().mockResolvedValue(undefined),
     recoverOrphanedVariationItems: vi.fn().mockResolvedValue(0),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
@@ -95,7 +96,7 @@ describe("WordPressCatalogService variation auto-sync", () => {
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
 
-    expect(value.repository.replenishVariationAutoSync).toHaveBeenCalledOnce();
+    expect(value.repository.enqueueDueInventoryDonorJobs).toHaveBeenCalledTimes(2);
   });
 
   it("submits ready variation patches in full API batches", async () => {
@@ -119,12 +120,13 @@ describe("WordPressCatalogService variation auto-sync", () => {
     const value = setup(current, "paused");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
-    expect(value.pauseNotifier.notify).toHaveBeenCalledWith({ runId: "1", failedCount: 3, error: "new failures" });
+    expect(value.pauseNotifier.notify).toHaveBeenCalledWith({ runId: "1", failedCount: 3,
+      error: "Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную." });
   });
 
   it("keeps the auto-sync paused when Telegram notification fails", async () => {
     const logError = vi.fn();
-    const value = setup(run(), "paused");
+    const value = setup(run({ variationFailedCount: 1 }), "paused");
     value.pauseNotifier.notify.mockRejectedValue(new Error("network unavailable"));
     const service = new WordPressCatalogService(
       value.repository,

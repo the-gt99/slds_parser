@@ -266,9 +266,10 @@ export class Worker {
     const wordpressCatalogJobTypes = ["sync_wordpress_catalog"] satisfies readonly JobType[];
     const wordpressVariationJobTypes = ["prepare_wordpress_variation_patches"] satisfies readonly JobType[];
     const wordpressVariationCollectJobTypes = ["collect_wordpress_variation_source"] satisfies readonly JobType[];
+    const wordpressGoatInventoryJobTypes = ["collect_wordpress_goat_inventory"] satisfies readonly JobType[];
     const wordpressVariationPrepareJobTypes = ["prepare_wordpress_variation_patch"] satisfies readonly JobType[];
     const wordpressVariationSubmitJobTypes = ["submit_wordpress_variation_patches"] satisfies readonly JobType[];
-    const shihuoJobTypes = ["resolve_shihuo_product"] satisfies readonly JobType[];
+    const shihuoJobTypes = ["resolve_shihuo_product", "collect_wordpress_shihuo_inventory"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
           processConcurrency: this.options.processConcurrency ?? 1,
@@ -303,14 +304,17 @@ export class Worker {
           this.runLane(controller.signal, exportJobTypes, `${this.options.workerId}:export-${index + 1}`)),
         ...Array.from({ length: this.options.exportRefreshConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, exportRefreshJobTypes, `${this.options.workerId}:export-refresh-${index + 1}`)),
-        ...Array.from({ length: this.options.shihuoConcurrency ?? 0 }, (_, index) =>
-          this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:shihuo-${index + 1}`)),
+        ...(runInventory ? [] : Array.from({ length: this.options.shihuoConcurrency ?? 0 }, (_, index) =>
+          this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:shihuo-${index + 1}`))),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
         ] : []),
         ...(runInventory ? [
           this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:inventory-poll`),
           ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
-            this.runLane(controller.signal, wordpressVariationCollectJobTypes, `${this.options.workerId}:inventory-collect-${index + 1}`)),
+            this.runLane(controller.signal, wordpressGoatInventoryJobTypes, `${this.options.workerId}:inventory-goat-${index + 1}`)),
+          ...Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
+            this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:inventory-shihuo-${index + 1}`)),
+          this.runLane(controller.signal, wordpressVariationCollectJobTypes, `${this.options.workerId}:inventory-legacy-collect`),
           ...Array.from({ length: this.options.inventoryPrepareConcurrency ?? 4 }, (_, index) =>
             this.runLane(controller.signal, wordpressVariationPrepareJobTypes, `${this.options.workerId}:inventory-prepare-${index + 1}`)),
           ...Array.from({ length: this.options.inventorySubmitConcurrency ?? 2 }, (_, index) =>

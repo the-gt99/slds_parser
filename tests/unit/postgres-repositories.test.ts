@@ -263,7 +263,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(executor.calls).toHaveLength(4);
     expect(executor.calls[1]?.text).toContain("variation_source_hash = $4");
-    expect(executor.calls[1]?.text).toContain("AND variation_status = 'pending'");
+    expect(executor.calls[1]?.text).toContain("AND variation_status NOT IN ('refreshing', 'ready', 'submitted')");
     expect(executor.calls[1]?.text).toContain("variation_next_check_at");
     expect(executor.calls[1]?.text).toContain("INTERVAL '24 hours'");
     expect(executor.calls[1]?.text).toContain("variation_unchanged_streak");

@@ -66,6 +66,14 @@ export class JobDispatcher implements JobHandler {
         if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("collect_wordpress_variation_source is not configured");
         return await this.wordpressVariationPatches.collect(parseCollectWordPressVariationSourcePayload(job.payload));
       }
+      case "collect_wordpress_goat_inventory": {
+        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("collect_wordpress_goat_inventory is not configured");
+        return await this.wordpressVariationPatches.collectGoat(parseCollectWordPressVariationSourcePayload(job.payload));
+      }
+      case "collect_wordpress_shihuo_inventory": {
+        if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("collect_wordpress_shihuo_inventory is not configured");
+        return await this.wordpressVariationPatches.collectShihuo(parseCollectWordPressVariationSourcePayload(job.payload));
+      }
       case "prepare_wordpress_variation_patch": {
         if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("prepare_wordpress_variation_patch is not configured");
         return await this.wordpressVariationPatches.preparePatch(parsePrepareWordPressVariationPatchPayload(job.payload));
@@ -122,9 +130,10 @@ export class JobDispatcher implements JobHandler {
       if (payload.mode !== "inventory") await this.wordpressCatalogSync.fail(payload.runId, message);
       return;
     }
-    if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "prepare_wordpress_variation_patch")
+    if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "collect_wordpress_goat_inventory"
+      || job.jobType === "collect_wordpress_shihuo_inventory" || job.jobType === "prepare_wordpress_variation_patch")
       && this.wordpressVariationPatches !== undefined) {
-      const payload = job.jobType === "collect_wordpress_variation_source"
+      const payload = job.jobType !== "prepare_wordpress_variation_patch"
         ? parseCollectWordPressVariationSourcePayload(job.payload)
         : parsePrepareWordPressVariationPatchPayload(job.payload);
       await this.wordpressVariationPatches.failItem(payload.itemId, message);

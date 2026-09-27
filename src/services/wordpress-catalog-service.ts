@@ -175,27 +175,33 @@ export class WordPressCatalogService {
 
   async tickVariationAutoSync(): Promise<boolean> {
     const active = await this.repository.getActiveVariationSync();
+    const activeRun = active === null ? null : await this.repository.getRun(active.runId);
+    const running = activeRun?.variationAutoStatus === "running";
     if (active !== null && Date.now() >= this.nextCoverageCheckAt) {
       await this.repository.recoverOrphanedVariationItems(active.runId);
-      await this.repository.enqueueInventoryReconciliation(active.runId);
       this.nextCoverageCheckAt = Date.now() + 60_000;
     }
-    if (active !== null && await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize) > 0) return true;
-    const outcome = await this.repository.replenishVariationAutoSync();
-    if (outcome === "paused" && active !== null && this.pauseNotifier !== undefined) {
-      try {
-        const pausedRun = await this.repository.getRun(active.runId);
-        if (pausedRun !== null) {
-          await this.pauseNotifier.notify({
-            runId: pausedRun.id,
-            failedCount: pausedRun.variationFailedCount,
-            error: pausedRun.variationAutoError,
-          });
-        }
-      } catch (error) {
-        this.logError(`Failed to send variation auto-sync pause notification: ${error instanceof Error ? error.message : "Unknown error"}`);
+    if (active !== null && running && active.failedCount > active.acknowledgedFailedCount) {
+      const error = "Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную.";
+      await this.repository.setVariationAutoSyncStatus({ runId: active.runId, status: "paused", error });
+      if (this.pauseNotifier !== undefined) {
+        try { await this.pauseNotifier.notify({ runId: active.runId, failedCount: active.failedCount, error }); }
+        catch (notifyError) { this.logError(`Failed to send variation auto-sync pause notification: ${notifyError instanceof Error ? notifyError.message : "Unknown error"}`); }
       }
+      return true;
     }
+    if (active !== null && running) {
+      const ready = await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize);
+      const [goat, shihuo] = await Promise.all([
+        this.repository.enqueueDueInventoryDonorJobs({ runId: active.runId, donorCode: "goat",
+          limit: active.window, intervalMinutes: active.intervalMinutes }),
+        this.repository.enqueueDueInventoryDonorJobs({ runId: active.runId, donorCode: "shihuo",
+          limit: active.window, intervalMinutes: active.intervalMinutes }),
+      ]);
+      return ready + goat + shihuo > 0;
+    }
+    if (active !== null) return false;
+    const outcome = await this.repository.replenishVariationAutoSync();
     return outcome !== "idle" && outcome !== "waiting";
   }
 

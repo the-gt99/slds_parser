@@ -715,11 +715,11 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              variation_last_changed_at = CASE WHEN $6 THEN variation_last_changed_at ELSE NOW() END,
              variation_error = NULL,
              variation_notices = CASE WHEN $6
-               THEN JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT('code', 'unchanged_source', 'message', 'Данные GOAT не изменились'))
+               THEN JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT('code', 'unchanged_source', 'message', 'Данные GOAT и Shihuo не изменились'))
                ELSE '[]'::JSONB END,
              updated_at = NOW()
          WHERE run_id = $1 AND id = $2 AND wordpress_product_id = $3::BIGINT
-           AND variation_status = 'pending'
+           AND variation_status NOT IN ('refreshing', 'ready', 'submitted')
          RETURNING id`,
         [input.runId, input.itemId, input.wordpressProductId, input.sourceHash, JSON.stringify(input.variants), input.unchanged],
       );
@@ -734,6 +734,69 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
           [input.runId, input.itemId, input.wordpressProductId, input.force === true],
         );
       }
+    });
+  }
+
+  async saveInventoryDonorState(input: Parameters<WordPressCatalogRepository["saveInventoryDonorState"]>[0]): Promise<void> {
+    await queryPool(this.pool,
+      `INSERT INTO wordpress_inventory_donor_states
+         (run_id, item_id, donor_code, outcome, content_hash, variants, checked_at)
+       VALUES ($1, $2, $3, $4, $5, $6::JSONB, $7::TIMESTAMPTZ)
+       ON CONFLICT (item_id, donor_code) DO UPDATE SET
+         run_id = EXCLUDED.run_id, outcome = EXCLUDED.outcome, content_hash = EXCLUDED.content_hash,
+         variants = EXCLUDED.variants, checked_at = EXCLUDED.checked_at, updated_at = NOW()`,
+      [input.runId, input.itemId, input.donorCode, input.outcome, input.contentHash,
+        JSON.stringify(input.variants), input.checkedAt]);
+  }
+
+  async listInventoryDonorStates(itemId: string) {
+    const result = await queryPool<DatabaseRow>(this.pool,
+      `SELECT donor_code, outcome, content_hash, variants, checked_at
+       FROM wordpress_inventory_donor_states WHERE item_id = $1 ORDER BY donor_code`, [itemId]);
+    return result.rows.map((row) => ({
+      donorCode: text(row, "donor_code") as "goat" | "shihuo",
+      outcome: text(row, "outcome") as "resolved" | "not_found" | "article_mismatch",
+      contentHash: text(row, "content_hash"),
+      variants: Array.isArray(row.variants) ? row.variants as unknown as import("../../../contracts/index.js").ProductVariantDTO[] : [],
+      checkedAt: timestamp(row, "checked_at"),
+    }));
+  }
+
+  async enqueueDueInventoryDonorJobs(input: Parameters<WordPressCatalogRepository["enqueueDueInventoryDonorJobs"]>[0]): Promise<number> {
+    return transaction(this.pool, async (client) => {
+      const jobType = input.donorCode === "goat" ? "collect_wordpress_goat_inventory" : "collect_wordpress_shihuo_inventory";
+      const active = await client.query<DatabaseRow>(
+        `SELECT COUNT(*) AS count FROM jobs
+         WHERE job_type = $1 AND status IN ('pending','running','retry') AND payload->>'runId' = $2`,
+        [jobType, input.runId]);
+      const available = Math.max(0, input.limit - Number(active.rows[0]?.count ?? 0));
+      if (available === 0) return 0;
+      const inserted = await client.query<DatabaseRow>(
+        `WITH selected AS (
+           SELECT item.id, item.wordpress_product_id
+           FROM wordpress_catalog_run_items item
+           JOIN wordpress_catalog_runs run ON run.id = item.run_id AND run.variation_auto_status = 'running'
+           LEFT JOIN wordpress_inventory_donor_states state
+             ON state.item_id = item.id AND state.donor_code = $3
+           WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+             AND (state.checked_at IS NULL OR state.checked_at <= NOW() - ($4::INTEGER * INTERVAL '1 minute'))
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs active_job
+               WHERE active_job.job_type = $5 AND active_job.status IN ('pending','running','retry')
+                 AND active_job.payload->>'itemId' = item.id::TEXT
+             )
+           ORDER BY state.checked_at NULLS FIRST, item.id
+           LIMIT $2 FOR UPDATE OF item SKIP LOCKED
+         )
+         INSERT INTO jobs (job_type, payload, status, unique_key)
+         SELECT $5, JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',selected.id::TEXT,
+                    'wordpressProductId',selected.wordpress_product_id::TEXT),
+                'pending', 'wordpress-inventory-' || $3 || ':' || $1::TEXT || ':' || selected.id::TEXT
+         FROM selected
+         ON CONFLICT (job_type, unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
+         RETURNING id`,
+        [input.runId, available, input.donorCode, input.intervalMinutes, jobType]);
+      return inserted.rows.length;
     });
   }
 

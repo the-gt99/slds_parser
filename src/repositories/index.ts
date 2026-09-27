@@ -18,6 +18,8 @@ export type {
   WordPressCatalogRunStatus,
   WordPressCatalogRiskFilter,
   WordPressCatalogVariationCandidate,
+  WordPressInventoryDonorCode,
+  WordPressInventoryDonorState,
   WordPressCatalogVariationFilter,
   WordPressVariationAutoStatus,
   WordPressVariationAutoSyncState,
