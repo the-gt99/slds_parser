@@ -197,6 +197,7 @@ interface ExportControlBody {
 }
 interface ExportCampaignParams { readonly campaignId: string }
 interface WordPressCatalogRunParams { readonly runId: string }
+interface WordPressInventoryComponentParams { readonly runId: string; readonly component: string }
 interface WordPressCatalogQuery { readonly targetId?: string; readonly limit?: string }
 interface WordPressCatalogItemsQuery {
   readonly search?: string;
@@ -1914,6 +1915,22 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       ),
     }),
   );
+
+  for (const status of ["running", "paused", "inactive"] as const) {
+    server.post<{ Params: WordPressInventoryComponentParams }>(
+      `/api/wordpress-catalog/runs/:runId/inventory-components/:component/${status}`,
+      { preHandler: [requireAdmin, requireMutationAccess] },
+      async (request) => {
+        const component = request.params.component;
+        if (component !== "goat" && component !== "shihuo" && component !== "wordpress") {
+          throw new HttpInputError("component must be goat, shihuo or wordpress");
+        }
+        return { result: await wordpressCatalogService().setInventoryComponentStatus(
+          entityId(request.params.runId, "runId"), component, status,
+        ) };
+      },
+    );
+  }
 
   server.post<{ Params: TargetParams }>(
     "/api/targets/:targetId/dictionary/terms/rules-v2",

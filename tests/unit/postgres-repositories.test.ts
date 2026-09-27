@@ -195,7 +195,9 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
   it("reports inventory throughput, sessions and the latest donor product", async () => {
     const executor = new FakeExecutor([[{
-      id: "4", variation_auto_status: "running", products: "240623", overdue: "230000", failed: "0",
+      id: "4", variation_auto_status: "running",
+      goat_inventory_status: "running", shihuo_inventory_status: "running", wordpress_inventory_status: "paused",
+      products: "240623", overdue: "230000", failed: "0",
       last_checked_at: "2026-09-27T10:00:00.000Z",
       goat_total: "1200", goat_1m: "240", goat_5m: "1180", goat_15m: "1200",
       goat_last_checked_at: "2026-09-27T10:00:01.000Z", goat_item_id: "7",
@@ -214,9 +216,9 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(result[0]).toMatchObject({
       runId: "4", products: 240623,
-      goat: { processed5m: 1180, lastProduct: { sku: "FJ0332-100", outcome: "resolved" } },
-      shihuo: { processed1m: 14, sessions: { ready: 11, leased: 8, onboarding: 1 } },
-      wordpress: { processedTotal: 68 },
+      goat: { status: "running", processed5m: 1180, lastProduct: { sku: "FJ0332-100", outcome: "resolved" } },
+      shihuo: { status: "running", processed1m: 14, sessions: { ready: 11, leased: 8, onboarding: 1 } },
+      wordpress: { status: "paused", processedTotal: 68 },
     });
     expect(executor.calls[0]?.text).toContain("wordpress_inventory_donor_states");
     expect(executor.calls[0]?.text).toContain("shihuo_guest_devices");

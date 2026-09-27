@@ -155,7 +155,7 @@ describe("Worker", () => {
     expect(store.jobs.get(pipeline.id)?.status).toBe("completed");
     expect(store.jobs.get(inventory.id)?.status).toBe("pending");
   });
-  it("runs only Shihuo resolution jobs in the dedicated worker", async () => {
+  it("runs only Shihuo inventory jobs in the dedicated worker", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
     const resolution = await jobs.enqueue({ jobType: "resolve_shihuo_product", payload: { sourceProductId: "1" }, uniqueKey: "resolution" });
@@ -168,12 +168,14 @@ describe("Worker", () => {
     const sleep = async (_milliseconds: number, signal: AbortSignal) => {
       if (!signal.aborted) await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
     };
-    const worker = new Worker(jobs, handler, { ...options, role: "shihuo-resolution", shihuoConcurrency: 1 }, sleep);
+    const coordinator = { tickVariationAutoSync: vi.fn().mockResolvedValue(false), tickInventoryComponent: vi.fn().mockResolvedValue(false) };
+    const worker = new Worker(jobs, handler, { ...options, role: "inventory-shihuo", shihuoConcurrency: 1 }, sleep,
+      Date.now, vi.fn(), undefined, undefined, undefined, coordinator);
 
     await worker.run(controller.signal);
 
-    expect(store.jobs.get(resolution.id)?.status).toBe("completed");
-    expect(store.jobs.get(inventory.id)?.status).toBe("pending");
+    expect(store.jobs.get(resolution.id)?.status).toBe("pending");
+    expect(store.jobs.get(inventory.id)?.status).toBe("completed");
   });
   it("claims only the job types assigned to a lane", async () => {
     const value = await setup();

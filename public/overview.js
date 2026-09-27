@@ -98,7 +98,7 @@ function inventoryOutcome(value) {
 }
 
 function inventoryWorkerState(run, pipeline, queue) {
-  if (run?.status !== "running") return { label: "На паузе", kind: "status-retry" };
+  if (pipeline?.status !== "running") return { label: "На паузе", kind: "status-retry" };
   const lastCheckedAt = pipeline?.lastCheckedAt ? new Date(pipeline.lastCheckedAt).getTime() : 0;
   if (queue.running > 0 || Date.now() - lastCheckedAt < 5 * 60_000) return { label: "Работает", kind: "status-completed" };
   if (queue.waiting > 0) return { label: "Ожидает воркер", kind: "status-retry" };
@@ -202,7 +202,7 @@ function renderInventory(health, runtime) {
   const queue = runtime?.queue || [];
   const goatQueue = inventoryQueue(queue, ["collect_wordpress_goat_inventory"]);
   const shihuoQueue = inventoryQueue(queue, ["collect_wordpress_shihuo_inventory"]);
-  const wordpressQueue = inventoryQueue(queue, ["prepare_wordpress_variation_patch", "refresh_wordpress_variation_patch", "submit_wordpress_variation_patches", "poll_wordpress_variation_patches"]);
+  const wordpressQueue = inventoryQueue(queue, ["combine_wordpress_inventory", "prepare_wordpress_variation_patch", "refresh_wordpress_variation_patch", "submit_wordpress_variation_patches", "poll_wordpress_variation_patches"]);
   byId("inventory-products").textContent = count(products);
   byId("inventory-metrics").replaceChildren(
     metric("проверено GOAT", run?.goat?.processedTotal),

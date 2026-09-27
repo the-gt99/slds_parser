@@ -7,6 +7,7 @@ export type WordPressCatalogAuditFilter = "ready" | "blocked" | "error";
 export type WordPressCatalogRiskFilter = "safe" | "review" | "danger" | "blocked";
 export type WordPressCatalogOperationFilter = "update" | "new" | "unmatched";
 export type WordPressVariationAutoStatus = "inactive" | "running" | "paused" | "completed";
+export type WordPressInventoryComponent = "goat" | "shihuo" | "wordpress";
 export type WordPressVariationAutoTickOutcome = "idle" | "waiting" | "queued" | "paused" | "cycle_completed" | "cycle_started";
 
 export interface WordPressCatalogAuditSaveInput {
@@ -25,6 +26,7 @@ export interface WordPressVariationAutoSyncState {
   readonly intervalMinutes: number;
   readonly cycle: number;
   readonly nextCycleAt: string | null;
+  readonly componentStatuses: Readonly<Record<WordPressInventoryComponent, WordPressVariationAutoStatus>>;
 }
 
 export interface WordPressCatalogRunRecord {
@@ -38,6 +40,9 @@ export interface WordPressCatalogRunRecord {
   readonly auditRequested: boolean;
   readonly variationSyncRequested: boolean;
   readonly variationAutoStatus: WordPressVariationAutoStatus;
+  readonly goatInventoryStatus: WordPressVariationAutoStatus;
+  readonly shihuoInventoryStatus: WordPressVariationAutoStatus;
+  readonly wordpressInventoryStatus: WordPressVariationAutoStatus;
   readonly variationAutoWindow: number;
   readonly variationAutoAcknowledgedFailedCount: number;
   readonly variationAutoError: string | null;
@@ -173,6 +178,7 @@ export interface WordPressInventoryLastProduct {
 }
 
 export interface WordPressInventoryPipelineHealth {
+  readonly status: WordPressVariationAutoStatus;
   readonly processedTotal: number;
   readonly processed1m: number;
   readonly processed5m: number;
@@ -277,6 +283,7 @@ export interface WordPressCatalogRepository {
     readonly limit: number;
     readonly intervalMinutes: number;
   }): Promise<number>;
+  enqueueReadyInventoryMergeJobs(runId: EntityId, limit: number): Promise<number>;
   listVariationSubmissionItems(runId: EntityId, itemIds: readonly EntityId[]): Promise<readonly WordPressCatalogRunItemRecord[]>;
   saveVariationSubmission(input: {
     readonly itemId: EntityId;
@@ -306,5 +313,10 @@ export interface WordPressCatalogRepository {
     readonly status: "running" | "paused" | "inactive";
     readonly error?: string;
     readonly acknowledgeFailures?: number;
+  }): Promise<void>;
+  setInventoryComponentStatus(input: {
+    readonly runId: EntityId;
+    readonly component: WordPressInventoryComponent;
+    readonly status: "running" | "paused" | "inactive";
   }): Promise<void>;
 }

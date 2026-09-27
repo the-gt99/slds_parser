@@ -19,6 +19,7 @@ export type {
   WordPressCatalogRiskFilter,
   WordPressCatalogVariationCandidate,
   WordPressInventoryDonorCode,
+  WordPressInventoryComponent,
   WordPressInventoryDonorState,
   WordPressInventoryHealthRecord,
   WordPressInventoryLastProduct,

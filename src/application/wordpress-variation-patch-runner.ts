@@ -287,7 +287,6 @@ export class WordPressVariationPatchRunner {
           donorCode, outcome: result.status, contentHash: result.status === "resolved" ? result.cardHash
             : hashStableJson({ status: result.status } as unknown as JsonValue), variants, checkedAt });
       }
-      await this.promoteDonorBarrier(payload);
       return { status: "completed" };
     } catch (error) {
       const message = wordpressCatalogItemError(error);
@@ -297,17 +296,18 @@ export class WordPressVariationPatchRunner {
     }
   }
 
-  private async promoteDonorBarrier(payload: CollectWordPressVariationSourcePayload): Promise<void> {
+  async combineInventory(payload: CollectWordPressVariationSourcePayload): Promise<RunnerResult> {
     const [item, states] = await Promise.all([
       this.repository.getItem(payload.runId, payload.itemId),
       this.repository.listInventoryDonorStates(payload.itemId),
     ]);
-    if (item === null) return;
+    if (item === null) return { status: "skipped" };
     const combined = combineFreshInventoryDonors(states, item.variationCheckedAt);
-    if (combined === null) return;
+    if (combined === null) return { status: "skipped" };
     await this.repository.saveVariationSource({ runId: payload.runId, itemId: payload.itemId,
       wordpressProductId: payload.wordpressProductId, sourceHash: combined.sourceHash, variants: combined.variants,
       unchanged: payload.force !== true && item.variationAppliedSourceHash === combined.sourceHash, force: payload.force === true });
+    return { status: "completed" };
   }
 
   async preparePatch(payload: PrepareWordPressVariationPatchPayload): Promise<RunnerResult> {

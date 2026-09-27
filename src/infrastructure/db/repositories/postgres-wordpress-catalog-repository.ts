@@ -86,6 +86,9 @@ function mapRun(row: DatabaseRow): WordPressCatalogRunRecord {
     auditRequested: row.audit_requested === true,
     variationSyncRequested: row.variation_sync_requested === true,
     variationAutoStatus: text(row, "variation_auto_status") as WordPressCatalogRunRecord["variationAutoStatus"],
+    goatInventoryStatus: text(row, "goat_inventory_status") as WordPressCatalogRunRecord["goatInventoryStatus"],
+    shihuoInventoryStatus: text(row, "shihuo_inventory_status") as WordPressCatalogRunRecord["shihuoInventoryStatus"],
+    wordpressInventoryStatus: text(row, "wordpress_inventory_status") as WordPressCatalogRunRecord["wordpressInventoryStatus"],
     variationAutoWindow: Number(row.variation_auto_window),
     variationAutoAcknowledgedFailedCount: Number(row.variation_auto_acknowledged_failed_count),
     variationAutoError: nullableText(row, "variation_auto_error"),
@@ -604,8 +607,11 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   async getInventoryHealth() {
     const result = await queryPool<DatabaseRow>(this.pool,
       `WITH active_runs AS MATERIALIZED (
-         SELECT id, variation_auto_status FROM wordpress_catalog_runs
-         WHERE variation_auto_status IN ('running','paused')
+         SELECT id, variation_auto_status, goat_inventory_status, shihuo_inventory_status, wordpress_inventory_status
+         FROM wordpress_catalog_runs
+         WHERE goat_inventory_status IN ('running','paused')
+            OR shihuo_inventory_status IN ('running','paused')
+            OR wordpress_inventory_status IN ('running','paused')
        ), item_stats AS MATERIALIZED (
          SELECT item.run_id, COUNT(*) AS products,
                 COUNT(*) FILTER (WHERE item.variation_checked_at IS NULL OR item.variation_checked_at < NOW()-INTERVAL '25 hours') AS overdue,
@@ -632,7 +638,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                 COUNT(*) FILTER (WHERE status='onboarding') AS onboarding
          FROM shihuo_guest_devices
        )
-       SELECT run.id, run.variation_auto_status,
+       SELECT run.id, run.variation_auto_status, run.goat_inventory_status,
+              run.shihuo_inventory_status, run.wordpress_inventory_status,
               COALESCE(items.products,0) AS products, COALESCE(items.overdue,0) AS overdue,
               COALESCE(items.failed,0) AS failed, items.wordpress_last_checked_at AS last_checked_at,
               COALESCE(goat_stats.processed_total,0) AS goat_total,
@@ -720,17 +727,20 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       products: Number(row.products), overdue: Number(row.overdue), failed: Number(row.failed),
       lastCheckedAt: nullableTimestamp(row,"last_checked_at"),
       goat: {
+        status: text(row,"goat_inventory_status") as WordPressCatalogRunRecord["goatInventoryStatus"],
         processedTotal: Number(row.goat_total), processed1m: Number(row.goat_1m),
         processed5m: Number(row.goat_5m), processed15m: Number(row.goat_15m),
         lastCheckedAt: nullableTimestamp(row,"goat_last_checked_at"), lastProduct: mapInventoryLastProduct(row,"goat"),
       },
       shihuo: {
+        status: text(row,"shihuo_inventory_status") as WordPressCatalogRunRecord["shihuoInventoryStatus"],
         processedTotal: Number(row.shihuo_total), processed1m: Number(row.shihuo_1m),
         processed5m: Number(row.shihuo_5m), processed15m: Number(row.shihuo_15m),
         lastCheckedAt: nullableTimestamp(row,"shihuo_last_checked_at"), lastProduct: mapInventoryLastProduct(row,"shihuo"),
         sessions: { ready: Number(row.shihuo_sessions_ready), leased: Number(row.shihuo_sessions_leased), onboarding: Number(row.shihuo_sessions_onboarding) },
       },
       wordpress: {
+        status: text(row,"wordpress_inventory_status") as WordPressCatalogRunRecord["wordpressInventoryStatus"],
         processedTotal: Number(row.wordpress_total), processed1m: Number(row.wordpress_1m),
         processed5m: Number(row.wordpress_5m), processed15m: Number(row.wordpress_15m),
         lastCheckedAt: nullableTimestamp(row,"last_checked_at"), lastProduct: mapInventoryLastProduct(row,"wordpress"),
@@ -921,10 +931,11 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         `WITH selected AS (
            SELECT item.id, item.wordpress_product_id
            FROM wordpress_catalog_run_items item
-           JOIN wordpress_catalog_runs run ON run.id = item.run_id AND run.variation_auto_status = 'running'
+           JOIN wordpress_catalog_runs run ON run.id = item.run_id
            LEFT JOIN wordpress_inventory_donor_states state
              ON state.item_id = item.id AND state.donor_code = $3
            WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+             AND CASE $3 WHEN 'goat' THEN run.goat_inventory_status ELSE run.shihuo_inventory_status END = 'running'
              AND (state.checked_at IS NULL OR state.checked_at <= NOW() - ($4::INTEGER * INTERVAL '1 minute'))
              AND NOT EXISTS (
                SELECT 1 FROM jobs active_job
@@ -942,6 +953,48 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
          ON CONFLICT (job_type, unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
          RETURNING id`,
         [input.runId, available, input.donorCode, input.intervalMinutes, jobType]);
+      return inserted.rows.length;
+    });
+  }
+
+  async enqueueReadyInventoryMergeJobs(runId: string, limit: number): Promise<number> {
+    return transaction(this.pool, async (client) => {
+      const active = await client.query<DatabaseRow>(
+        `SELECT COUNT(*) AS count FROM jobs
+         WHERE job_type = 'combine_wordpress_inventory' AND status IN ('pending','running','retry')
+           AND payload->>'runId' = $1`, [runId]);
+      const available = Math.max(0, limit - Number(active.rows[0]?.count ?? 0));
+      if (available === 0) return 0;
+      const inserted = await client.query<DatabaseRow>(
+        `WITH selected AS (
+           SELECT item.id, item.wordpress_product_id
+           FROM wordpress_catalog_run_items item
+           JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.wordpress_inventory_status='running'
+           JOIN wordpress_inventory_donor_states goat
+             ON goat.item_id=item.id AND goat.donor_code='goat'
+           JOIN wordpress_inventory_donor_states shihuo
+             ON shihuo.item_id=item.id AND shihuo.donor_code='shihuo'
+           WHERE item.run_id=$1 AND item.match_status='matched' AND item.internal_product_id IS NOT NULL
+             AND goat.checked_at > COALESCE(item.variation_checked_at,'-infinity'::TIMESTAMPTZ)
+             AND shihuo.checked_at > COALESCE(item.variation_checked_at,'-infinity'::TIMESTAMPTZ)
+             AND item.variation_status NOT IN ('refreshing','ready','submitted')
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs active_job
+               WHERE active_job.job_type IN ('combine_wordpress_inventory','prepare_wordpress_variation_patch')
+                 AND active_job.status IN ('pending','running','retry')
+                 AND active_job.payload->>'itemId'=item.id::TEXT
+             )
+           ORDER BY GREATEST(goat.checked_at,shihuo.checked_at),item.id
+           LIMIT $2 FOR UPDATE OF item SKIP LOCKED
+         )
+         INSERT INTO jobs(job_type,payload,status,unique_key)
+         SELECT 'combine_wordpress_inventory',
+                JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',selected.id::TEXT,
+                  'wordpressProductId',selected.wordpress_product_id::TEXT),
+                'pending','wordpress-inventory-combine:'||$1::TEXT||':'||selected.id::TEXT
+         FROM selected
+         ON CONFLICT(job_type,unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
+         RETURNING id`, [runId, available]);
       return inserted.rows.length;
     });
   }
@@ -1205,7 +1258,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
 
   async isVariationAutoSyncRunning(runId: string): Promise<boolean> {
     const result = await queryPool<DatabaseRow>(this.pool,
-      "SELECT variation_auto_status = 'running' AS is_running FROM wordpress_catalog_runs WHERE id = $1",
+      "SELECT wordpress_inventory_status = 'running' AS is_running FROM wordpress_catalog_runs WHERE id = $1",
       [runId]);
     return result.rows[0]?.is_running === true;
   }
@@ -1215,7 +1268,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       `SELECT run.id AS run_id, run.variation_auto_window,
               run.variation_auto_acknowledged_failed_count,
               run.variation_sync_interval_minutes, run.variation_sync_cycle,
-              run.variation_sync_next_cycle_at,
+              run.variation_sync_next_cycle_at, run.goat_inventory_status,
+              run.shihuo_inventory_status, run.wordpress_inventory_status,
                (SELECT COUNT(*) FROM wordpress_catalog_run_items item
                 WHERE item.run_id = run.id AND item.variation_sync_cycle = run.variation_sync_cycle
                   AND item.variation_status IN ('pending', 'refreshing', 'ready', 'submitted')) AS active_count,
@@ -1223,7 +1277,9 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                 WHERE item.run_id = run.id AND item.variation_sync_cycle = run.variation_sync_cycle
                   AND item.variation_status = 'failed') AS failed_count
        FROM wordpress_catalog_runs run
-       WHERE run.variation_auto_status IN ('running', 'paused')
+       WHERE run.goat_inventory_status IN ('running','paused')
+          OR run.shihuo_inventory_status IN ('running','paused')
+          OR run.wordpress_inventory_status IN ('running','paused')
        LIMIT 1`);
     const row = result.rows[0];
     return row === undefined ? null : {
@@ -1235,6 +1291,11 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       intervalMinutes: Number(row.variation_sync_interval_minutes),
       cycle: Number(row.variation_sync_cycle),
       nextCycleAt: nullableTimestamp(row, "variation_sync_next_cycle_at"),
+      componentStatuses: {
+        goat: text(row,"goat_inventory_status") as WordPressCatalogRunRecord["goatInventoryStatus"],
+        shihuo: text(row,"shihuo_inventory_status") as WordPressCatalogRunRecord["shihuoInventoryStatus"],
+        wordpress: text(row,"wordpress_inventory_status") as WordPressCatalogRunRecord["wordpressInventoryStatus"],
+      },
     };
   }
 
@@ -1244,6 +1305,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         `UPDATE wordpress_catalog_runs AS run
          SET variation_sync_requested = TRUE,
              variation_auto_status = 'running', variation_auto_window = $2,
+             goat_inventory_status = 'running', shihuo_inventory_status = 'running', wordpress_inventory_status = 'running',
              variation_sync_interval_minutes = $3,
              variation_auto_acknowledged_failed_count = 0,
              variation_auto_error = NULL,
@@ -1429,6 +1491,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       const result = await client.query<DatabaseRow>(
         `UPDATE wordpress_catalog_runs
          SET variation_auto_status = $2,
+             goat_inventory_status = $2, shihuo_inventory_status = $2, wordpress_inventory_status = $2,
              variation_auto_error = $3,
              variation_auto_acknowledged_failed_count = COALESCE($4, variation_auto_acknowledged_failed_count),
              variation_auto_completed_at = CASE WHEN $2 = 'inactive' THEN NOW() ELSE NULL END,
@@ -1449,6 +1512,28 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
           [input.runId],
         );
       }
+    });
+  }
+
+  async setInventoryComponentStatus(input: {
+    readonly runId: string;
+    readonly component: "goat" | "shihuo" | "wordpress";
+    readonly status: "running" | "paused" | "inactive";
+  }): Promise<void> {
+    const column = `${input.component}_inventory_status`;
+    await transaction(this.pool, async (client) => {
+      const result = await client.query<DatabaseRow>(
+        `UPDATE wordpress_catalog_runs SET ${column}=$2, updated_at=NOW() WHERE id=$1 RETURNING id`,
+        [input.runId,input.status]);
+      if (result.rows[0] === undefined) throw new Error(`WordPress catalog run not found: ${input.runId}`);
+      await client.query(
+        `UPDATE wordpress_catalog_runs
+         SET variation_auto_status = CASE
+           WHEN goat_inventory_status='running' OR shihuo_inventory_status='running' OR wordpress_inventory_status='running' THEN 'running'
+           WHEN goat_inventory_status='paused' OR shihuo_inventory_status='paused' OR wordpress_inventory_status='paused' THEN 'paused'
+           ELSE 'inactive' END,
+           updated_at=NOW()
+         WHERE id=$1`, [input.runId]);
     });
   }
 

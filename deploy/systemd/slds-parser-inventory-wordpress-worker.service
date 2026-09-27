@@ -1,0 +1,24 @@
+[Unit]
+Description=SLDS Parser WordPress inventory worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+Environment=WORKER_ROLE=inventory-wordpress
+Environment=WORKER_ID=inventory-wordpress-worker
+Environment=WORKER_INVENTORY_PREPARE_CONCURRENCY=16
+Environment=WORKER_INVENTORY_SUBMIT_CONCURRENCY=2
+ExecStart=/usr/local/bin/node dist/src/cli/worker.js
+Restart=always
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

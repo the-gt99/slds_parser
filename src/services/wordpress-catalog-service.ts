@@ -6,6 +6,7 @@ import type {
   WordPressCatalogMatchStatus,
   WordPressCatalogOperationFilter,
   WordPressCatalogRepository,
+  WordPressInventoryComponent,
   WordPressCatalogRiskFilter,
   WordPressCatalogVariationFilter,
 } from "../repositories/index.js";
@@ -174,16 +175,30 @@ export class WordPressCatalogService {
   }
 
   async tickVariationAutoSync(): Promise<boolean> {
+    const outcomes = await Promise.all([
+      this.tickInventoryComponent("goat"),
+      this.tickInventoryComponent("shihuo"),
+      this.tickInventoryComponent("wordpress"),
+    ]);
+    return outcomes.some(Boolean);
+  }
+
+  async setInventoryComponentStatus(runId: string, component: WordPressInventoryComponent, status: "running" | "paused" | "inactive") {
+    await this.getRun(runId);
+    await this.repository.setInventoryComponentStatus({ runId, component, status });
+    return this.getRun(runId);
+  }
+
+  async tickInventoryComponent(component: WordPressInventoryComponent): Promise<boolean> {
     const active = await this.repository.getActiveVariationSync();
-    const activeRun = active === null ? null : await this.repository.getRun(active.runId);
-    const running = activeRun?.variationAutoStatus === "running";
-    if (active !== null && Date.now() >= this.nextCoverageCheckAt) {
+    const running = active?.componentStatuses[component] === "running";
+    if (active !== null && component === "wordpress" && Date.now() >= this.nextCoverageCheckAt) {
       await this.repository.recoverOrphanedVariationItems(active.runId);
       this.nextCoverageCheckAt = Date.now() + 60_000;
     }
-    if (active !== null && running && active.failedCount > active.acknowledgedFailedCount) {
+    if (active !== null && component === "wordpress" && running && active.failedCount > active.acknowledgedFailedCount) {
       const error = "Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную.";
-      await this.repository.setVariationAutoSyncStatus({ runId: active.runId, status: "paused", error });
+      await this.repository.setInventoryComponentStatus({ runId: active.runId, component: "wordpress", status: "paused" });
       if (this.pauseNotifier !== undefined) {
         try { await this.pauseNotifier.notify({ runId: active.runId, failedCount: active.failedCount, error }); }
         catch (notifyError) { this.logError(`Failed to send variation auto-sync pause notification: ${notifyError instanceof Error ? notifyError.message : "Unknown error"}`); }
@@ -191,18 +206,18 @@ export class WordPressCatalogService {
       return true;
     }
     if (active !== null && running) {
-      const ready = await this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize);
-      const [goat, shihuo] = await Promise.all([
-        this.repository.enqueueDueInventoryDonorJobs({ runId: active.runId, donorCode: "goat",
-          limit: active.window, intervalMinutes: active.intervalMinutes }),
-        this.repository.enqueueDueInventoryDonorJobs({ runId: active.runId, donorCode: "shihuo",
-          limit: active.window, intervalMinutes: active.intervalMinutes }),
+      if (component === "goat" || component === "shihuo") {
+        return (await this.repository.enqueueDueInventoryDonorJobs({ runId: active.runId, donorCode: component,
+          limit: active.window, intervalMinutes: active.intervalMinutes })) > 0;
+      }
+      const [ready, merged] = await Promise.all([
+        this.repository.enqueueReadyVariationBatches(active.runId, WordPressCatalogService.variationSubmitBatchSize),
+        this.repository.enqueueReadyInventoryMergeJobs(active.runId, active.window),
       ]);
-      return ready + goat + shihuo > 0;
+      return ready + merged > 0;
     }
     if (active !== null) return false;
-    const outcome = await this.repository.replenishVariationAutoSync();
-    return outcome !== "idle" && outcome !== "waiting";
+    return false;
   }
 
   async inventoryHealth() {

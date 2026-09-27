@@ -10,7 +10,7 @@ export interface WorkerClaimPermit {
 
 export interface WorkerOptions {
   readonly workerId: string;
-  readonly role?: "all" | "pipeline" | "inventory" | "shihuo-resolution";
+  readonly role?: "all" | "pipeline" | "inventory" | "inventory-goat" | "inventory-shihuo" | "inventory-wordpress";
   readonly pollIntervalMs: number;
   readonly lockTimeoutMs: number;
   readonly maxJobAttempts: number;
@@ -44,7 +44,10 @@ export type WorkerLogger = (message: string) => void;
 export type WorkerClaimPermitProvider = (jobTypes: readonly JobType[]) => Promise<WorkerClaimPermit | null>;
 export type WorkerConcurrencyProvider = () => Promise<WorkerConcurrency>;
 export interface ExportCampaignCoordinator { tickCampaign(): Promise<boolean> }
-export interface WordPressVariationAutoCoordinator { tickVariationAutoSync(): Promise<boolean> }
+export interface WordPressVariationAutoCoordinator {
+  tickVariationAutoSync(): Promise<boolean>;
+  tickInventoryComponent(component: "goat" | "shihuo" | "wordpress"): Promise<boolean>;
+}
 
 export function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -264,7 +267,9 @@ export class Worker {
     const role = this.options.role ?? "all";
     const runPipeline = role === "all" || role === "pipeline";
     const runInventory = role === "all" || role === "inventory";
-    const runShihuoResolution = role === "shihuo-resolution";
+    const runGoatInventory = runInventory || role === "inventory-goat";
+    const runShihuoInventory = runInventory || role === "inventory-shihuo";
+    const runWordpressInventory = runInventory || role === "inventory-wordpress";
     const discoveryJobTypes = ["discover_source"] satisfies readonly JobType[];
     const collectionJobTypes = ["collect_product"] satisfies readonly JobType[];
     const retranslationJobTypes = ["retranslate_product"] satisfies readonly JobType[];
@@ -276,9 +281,11 @@ export class Worker {
     const wordpressCatalogJobTypes = ["sync_wordpress_catalog"] satisfies readonly JobType[];
     const wordpressVariationJobTypes = ["prepare_wordpress_variation_patches"] satisfies readonly JobType[];
     const wordpressGoatInventoryJobTypes = ["collect_wordpress_goat_inventory"] satisfies readonly JobType[];
+    const wordpressShihuoInventoryJobTypes = ["collect_wordpress_shihuo_inventory"] satisfies readonly JobType[];
+    const wordpressInventoryCombineJobTypes = ["combine_wordpress_inventory"] satisfies readonly JobType[];
     const wordpressVariationPrepareJobTypes = ["prepare_wordpress_variation_patch"] satisfies readonly JobType[];
     const wordpressVariationSubmitJobTypes = ["submit_wordpress_variation_patches"] satisfies readonly JobType[];
-    const shihuoJobTypes = ["resolve_shihuo_product", "collect_wordpress_shihuo_inventory"] satisfies readonly JobType[];
+    const shihuoResolutionJobTypes = ["resolve_shihuo_product"] satisfies readonly JobType[];
     const configuredConcurrency = this.concurrencyProvider === undefined
       ? {
           processConcurrency: this.options.processConcurrency ?? 1,
@@ -314,25 +321,29 @@ export class Worker {
         ...Array.from({ length: this.options.exportRefreshConcurrency ?? 1 }, (_, index) =>
           this.runLane(controller.signal, exportRefreshJobTypes, `${this.options.workerId}:export-refresh-${index + 1}`)),
         ...(runInventory ? [] : Array.from({ length: this.options.shihuoConcurrency ?? 0 }, (_, index) =>
-          this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:shihuo-${index + 1}`))),
+          this.runLane(controller.signal, shihuoResolutionJobTypes, `${this.options.workerId}:shihuo-resolution-${index + 1}`))),
         ...(this.exportCampaigns === undefined ? [] : [this.runExportCampaignLane(controller.signal)]),
         ] : []),
-        ...(runInventory ? [
+        ...(runWordpressInventory ? [
           this.runWordPressVariationPollLane(controller.signal, `${this.options.workerId}:inventory-poll`),
-          ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
-            this.runLane(controller.signal, wordpressGoatInventoryJobTypes, `${this.options.workerId}:inventory-goat-${index + 1}`)),
-          ...Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
-            this.runLane(controller.signal, shihuoJobTypes, `${this.options.workerId}:inventory-shihuo-${index + 1}`)),
+          ...Array.from({ length: this.options.inventoryPrepareConcurrency ?? 4 }, (_, index) =>
+            this.runLane(controller.signal, wordpressInventoryCombineJobTypes, `${this.options.workerId}:inventory-combine-${index + 1}`)),
           ...Array.from({ length: this.options.inventoryPrepareConcurrency ?? 4 }, (_, index) =>
             this.runLane(controller.signal, wordpressVariationPrepareJobTypes, `${this.options.workerId}:inventory-prepare-${index + 1}`)),
           ...Array.from({ length: this.options.inventorySubmitConcurrency ?? 2 }, (_, index) =>
             this.runLane(controller.signal, wordpressVariationSubmitJobTypes, `${this.options.workerId}:inventory-submit-${index + 1}`)),
-          ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal)]),
+          ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal, runInventory ? undefined : "wordpress")]),
         ] : []),
-        ...(runShihuoResolution
-          ? Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
-              this.runLane(controller.signal, ["resolve_shihuo_product"], `${this.options.workerId}:shihuo-resolution-${index + 1}`))
-          : []),
+        ...(runGoatInventory ? [
+          ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
+            this.runLane(controller.signal, wordpressGoatInventoryJobTypes, `${this.options.workerId}:inventory-goat-${index + 1}`)),
+          ...(this.wordpressVariationAuto === undefined || runInventory ? [] : [this.runWordPressVariationAutoLane(controller.signal, "goat")]),
+        ] : []),
+        ...(runShihuoInventory ? [
+          ...Array.from({ length: this.options.shihuoConcurrency ?? 1 }, (_, index) =>
+            this.runLane(controller.signal, wordpressShihuoInventoryJobTypes, `${this.options.workerId}:inventory-shihuo-${index + 1}`)),
+          ...(this.wordpressVariationAuto === undefined || runInventory ? [] : [this.runWordPressVariationAutoLane(controller.signal, "shihuo")]),
+        ] : []),
       ]);
     } finally {
       signal.removeEventListener("abort", stop);
@@ -351,10 +362,11 @@ export class Worker {
     }
   }
 
-  private async runWordPressVariationAutoLane(signal: AbortSignal): Promise<void> {
+  private async runWordPressVariationAutoLane(signal: AbortSignal, component?: "goat" | "shihuo" | "wordpress"): Promise<void> {
     while (!signal.aborted) {
       try {
-        await this.wordpressVariationAuto!.tickVariationAutoSync();
+        if (component === undefined) await this.wordpressVariationAuto!.tickVariationAutoSync();
+        else await this.wordpressVariationAuto!.tickInventoryComponent(component);
       } catch (error) {
         this.logError(`WordPress variation auto-sync tick failed: ${errorText(error)}`);
       }

@@ -1,5 +1,5 @@
 [Unit]
-Description=SLDS Parser Shihuo product resolution worker
+Description=SLDS Parser Shihuo inventory worker
 After=network-online.target
 Wants=network-online.target
 
@@ -9,8 +9,8 @@ User=slds-parser
 Group=slds-parser
 WorkingDirectory=/srv/slds-parser/app
 EnvironmentFile=/srv/slds-parser/app/.env
-Environment=WORKER_ROLE=shihuo-resolution
-Environment=WORKER_ID=shihuo-resolution-worker
+Environment=WORKER_ROLE=inventory-shihuo
+Environment=WORKER_ID=inventory-shihuo-worker
 ExecStart=/usr/local/bin/node dist/src/cli/worker.js
 Restart=always
 RestartSec=5

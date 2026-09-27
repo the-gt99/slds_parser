@@ -27,6 +27,7 @@ export type JobType =
   | "collect_wordpress_variation_source"
   | "collect_wordpress_goat_inventory"
   | "collect_wordpress_shihuo_inventory"
+  | "combine_wordpress_inventory"
   | "prepare_wordpress_variation_patch"
   | "submit_wordpress_variation_patches"
   | "poll_wordpress_variation_patches"

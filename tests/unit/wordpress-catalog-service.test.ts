@@ -6,7 +6,8 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
   return {
     id: "1", targetId: "2", targetName: "WordPress", sourceCode: "goat", status: "completed",
     catalogCursor: "100", catalogComplete: true, auditRequested: true, variationSyncRequested: true,
-    variationAutoStatus: "running", variationAutoWindow: 5_000, variationAutoAcknowledgedFailedCount: 0,
+    variationAutoStatus: "running", goatInventoryStatus: "running", shihuoInventoryStatus: "running",
+    wordpressInventoryStatus: "running", variationAutoWindow: 5_000, variationAutoAcknowledgedFailedCount: 0,
     variationAutoError: null, variationAutoStartedAt: "2026-08-13T00:00:00.000Z", variationAutoCompletedAt: null,
     variationSyncIntervalMinutes: 360, variationSyncCycle: 2,
     variationSyncLastCycleStartedAt: "2026-08-13T00:00:00.000Z",
@@ -23,7 +24,7 @@ function run(overrides: Partial<WordPressCatalogRunRecord> = {}): WordPressCatal
 }
 
 function inventoryHealth(overrides: Partial<WordPressInventoryHealthRecord> = {}): WordPressInventoryHealthRecord {
-  const pipeline = { processedTotal: 10, processed1m: 1, processed5m: 5, processed15m: 10, lastCheckedAt: "2026-09-14T00:00:00Z", lastProduct: null };
+  const pipeline = { status: "running" as const, processedTotal: 10, processed1m: 1, processed5m: 5, processed15m: 10, lastCheckedAt: "2026-09-14T00:00:00Z", lastProduct: null };
   return {
     runId: "1", status: "running", products: 10, overdue: 0, failed: 0,
     lastCheckedAt: "2026-09-14T00:00:00Z", goat: pipeline,
@@ -45,14 +46,17 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
       intervalMinutes: current.variationSyncIntervalMinutes,
       cycle: current.variationSyncCycle,
       nextCycleAt: current.variationSyncNextCycleAt,
+      componentStatuses: { goat: current.goatInventoryStatus, shihuo: current.shihuoInventoryStatus, wordpress: current.wordpressInventoryStatus },
     }),
     enqueueReadyVariationBatches: vi.fn().mockResolvedValue(0),
+    enqueueReadyInventoryMergeJobs: vi.fn().mockResolvedValue(0),
     enqueueDueInventoryDonorJobs: vi.fn().mockResolvedValue(outcome === "queued" || outcome === "cycle_completed" ? 10 : 0),
     enqueueInventoryReconciliation: vi.fn().mockResolvedValue(undefined),
     recoverOrphanedVariationItems: vi.fn().mockResolvedValue(0),
     replenishVariationAutoSync: vi.fn().mockResolvedValue(outcome),
     getRun: vi.fn().mockResolvedValue(current),
     setVariationAutoSyncStatus: vi.fn().mockResolvedValue(undefined),
+    setInventoryComponentStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as WordPressCatalogRepository;
   const service = new WordPressCatalogService(
     repository,
@@ -117,7 +121,7 @@ describe("WordPressCatalogService variation auto-sync", () => {
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
 
     expect(value.repository.enqueueReadyVariationBatches).toHaveBeenCalledWith("1", 100);
-    expect(value.repository.replenishVariationAutoSync).not.toHaveBeenCalled();
+    expect(value.repository.enqueueReadyInventoryMergeJobs).toHaveBeenCalledWith("1", 5_000);
   });
 
   it("reports a full window as waiting", async () => {
