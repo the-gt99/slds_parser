@@ -341,28 +341,43 @@ export class Worker {
 
   private async runWordPressVariationPollLane(signal: AbortSignal, workerId: string): Promise<void> {
     while (!signal.aborted) {
-      const processed = await this.processWordPressVariationPollBatch(workerId);
-      if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      try {
+        const processed = await this.processWordPressVariationPollBatch(workerId);
+        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      } catch (error) {
+        this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      }
     }
   }
 
   private async runLane(signal: AbortSignal, jobTypes: readonly JobType[], workerId: string): Promise<void> {
     while (!signal.aborted) {
-      const processed = await this.processNext(jobTypes, workerId);
-      if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      try {
+        const processed = await this.processNext(jobTypes, workerId);
+        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      } catch (error) {
+        this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      }
     }
   }
 
   private async runProcessingLane(signal: AbortSignal, workerId: string): Promise<void> {
     while (!signal.aborted) {
-      const processedProduct = await this.processNext(["process_product"], workerId);
-      const reclassifiedProducts = await this.processMany(
-        "reclassify_product",
-        workerId,
-        Worker.reclassificationBatchSize,
-      );
-      const processed = processedProduct || reclassifiedProducts;
-      if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      try {
+        const processedProduct = await this.processNext(["process_product"], workerId);
+        const reclassifiedProducts = await this.processMany(
+          "reclassify_product",
+          workerId,
+          Worker.reclassificationBatchSize,
+        );
+        const processed = processedProduct || reclassifiedProducts;
+        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      } catch (error) {
+        this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+      }
     }
   }
 }

@@ -16,6 +16,11 @@ export function createPostgresPool(
   }
 
   const pool = new Pool({ connectionString });
+  pool.on("connect", (client) => {
+    client.on("error", (error) => {
+      console.error(`PostgreSQL active client error: ${error.message}`);
+    });
+  });
   pool.on("error", (error) => {
     console.error(`PostgreSQL idle client error: ${error.message}`);
   });

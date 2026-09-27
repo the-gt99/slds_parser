@@ -85,6 +85,21 @@ describe("Worker", () => {
     );
   });
   it("stops all lanes through AbortSignal", async () => { const value = await setup(); value.store.jobs.clear(); const controller = new AbortController(); const sleep = vi.fn(async (_ms: number, signal: AbortSignal) => { controller.abort(); expect(signal.aborted).toBe(true); }); const worker = new Worker(value.jobs, value.handler, options, sleep); await worker.run(controller.signal); expect(sleep).toHaveBeenCalledOnce(); });
+  it("keeps running after a database claim failure", async () => {
+    const value = await setup();
+    value.store.jobs.clear();
+    const controller = new AbortController();
+    const claim = vi.spyOn(value.jobs, "claimNext").mockRejectedValue(new Error("database system is in recovery mode"));
+    const log = vi.fn();
+    const sleep = vi.fn(async () => { controller.abort(); });
+    const worker = new Worker(value.jobs, value.handler, { ...options, role: "inventory",
+      inventoryRefreshConcurrency: 1, inventoryPrepareConcurrency: 1, inventorySubmitConcurrency: 1 }, sleep, Date.now, log);
+
+    await worker.run(controller.signal);
+
+    expect(claim).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("database system is in recovery mode"));
+  });
   it("keeps inventory jobs out of the pipeline worker", async () => {
     const store = new MemoryStore();
     const jobs = new MemoryJobRepository(store);
