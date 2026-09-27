@@ -5,6 +5,7 @@ import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, sanitizeCurlErro
 import { PostgresGoatProxyRepository } from "../../src/infrastructure/db/index.js";
 import { ProxyCredentialsCrypto, type ProxyRecord, type ProxyRepository, type ProxyTestResult } from "../../src/proxies/index.js";
 import { ProxyAdminService, type ProxyTester } from "../../src/services/index.js";
+import { ShihuoSecretCrypto } from "../../src/shihuo/index.js";
 import { MemoryJobRepository, MemoryStore, sourceRecord } from "../support/in-memory.js";
 
 const key = Buffer.alloc(32, 7).toString("base64");
@@ -17,6 +18,10 @@ function proxy(overrides: Partial<ProxyRecord> = {}): ProxyRecord {
     protocol: "http",
     host: "proxy-one.test",
     port: 8080,
+    serviceCode: "goat",
+    countryCode: "UN",
+    shihuoDeviceId: null,
+    shihuoDeviceName: null,
     credentialsCiphertext: null,
     enabled: true,
     healthStatus: "healthy",
@@ -36,6 +41,7 @@ class MemoryProxyRepository implements ProxyRepository {
   readonly records = new Map<string, ProxyRecord>();
   readonly audits: unknown[] = [];
   readonly useRecords: { id: string; success: boolean }[] = [];
+  readonly shihuoRoutes: { id: string; ciphertext: string | null | undefined }[] = [];
   id = 0;
   constructor(records: readonly ProxyRecord[] = []) {
     for (const record of records) this.records.set(record.id, record);
@@ -56,7 +62,7 @@ class MemoryProxyRepository implements ProxyRepository {
     this.records.set(id, record);
     return record;
   }
-  async setEnabled(id: string, enabled: boolean) { const record = { ...this.records.get(id)!, enabled }; this.records.set(id, record); return record; }
+  async setEnabled(id: string, enabled: boolean, ciphertext?: string | null) { this.shihuoRoutes.push({ id, ciphertext }); const record = { ...this.records.get(id)!, enabled }; this.records.set(id, record); return record; }
   async recordTest(id: string, result: ProxyTestResult) { const record = { ...this.records.get(id)!, healthStatus: result.healthy ? "healthy" as const : "unhealthy" as const, lastTestLatencyMs: result.latencyMs, lastTestError: result.error, lastTestedAt: timestamp }; this.records.set(id, record); return record; }
   async recordUse(id: string, input: { success: boolean; latencyMs: number | null }) { this.useRecords.push({ id, success: input.success }); }
   async audit(input: Parameters<ProxyRepository["audit"]>[0]) { this.audits.push(input); }
@@ -105,6 +111,25 @@ describe("proxy credentials and admin service", () => {
 
     expect(tested).toMatchObject({ enabled: false, healthStatus: "unhealthy", lastTestError: "curl failed" });
     await expect(service.enable("9", "admin")).rejects.toThrow("Proxy must pass test");
+  });
+
+  it("routes a tested Shihuo proxy to one selected device", async () => {
+    const repository = new MemoryProxyRepository();
+    const goatTester: ProxyTester = { test: vi.fn() };
+    const shihuoTester: ProxyTester = { test: vi.fn().mockResolvedValue({ healthy: true, latencyMs: 15, error: null }) };
+    const service = new ProxyAdminService(repository, new ProxyCredentialsCrypto(key), goatTester,
+      shihuoTester, new ShihuoSecretCrypto(key));
+
+    const created = await service.create({ name: "cn-1", serviceCode: "shihuo", countryCode: "CN",
+      shihuoDeviceId: "7", protocol: "http", host: "cn-proxy.test", port: 7328, username: "u", password: "p" }, "admin");
+    await service.test(created.id, "admin");
+    const enabled = await service.enable(created.id, "admin");
+
+    expect(enabled).toMatchObject({ serviceCode: "shihuo", countryCode: "CN", shihuoDeviceId: "7", enabled: true });
+    expect(goatTester.test).not.toHaveBeenCalled();
+    expect(shihuoTester.test).toHaveBeenCalledOnce();
+    const route = repository.shihuoRoutes.at(-1)?.ciphertext;
+    expect(new ShihuoSecretCrypto(key).decrypt(route!)).toBe("http://u:p@cn-proxy.test:7328");
   });
 });
 
@@ -278,6 +303,7 @@ describe("PostgresGoatProxyRepository", () => {
     await repository.audit({ proxyId: "1", action: "test", actor: "admin", payload: { healthy: true } });
 
     expect(calls[0]?.text).toContain("enabled = TRUE AND health_status = 'healthy'");
+    expect(calls[0]?.text).toContain("service_code='goat'");
     expect(calls[1]?.text).toContain("goat_proxy_audit");
     expect(calls[1]?.values?.[3]).toBe("{\"healthy\":true}");
   });

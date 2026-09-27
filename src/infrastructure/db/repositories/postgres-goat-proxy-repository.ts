@@ -34,6 +34,10 @@ function mapProxy(row: DatabaseRow): ProxyRecord {
     protocol: row.protocol as ProxyRecord["protocol"],
     host: text(row, "host"),
     port: integer(row, "port"),
+    serviceCode: row.service_code as ProxyRecord["serviceCode"],
+    countryCode: text(row, "country_code"),
+    shihuoDeviceId: nullableText(row, "shihuo_device_id"),
+    shihuoDeviceName: nullableText(row, "shihuo_device_name"),
     credentialsCiphertext: nullableText(row, "credentials_ciphertext"),
     enabled: Boolean(row.enabled),
     healthStatus: row.health_status as ProxyRecord["healthStatus"],
@@ -52,12 +56,13 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
   constructor(private readonly executor: SqlExecutor) {}
 
   async list(): Promise<readonly ProxyRecord[]> {
-    const result = await this.executor.query<DatabaseRow>("SELECT * FROM goat_proxies ORDER BY id");
+    const result = await this.executor.query<DatabaseRow>(`SELECT proxy.*, device.name AS shihuo_device_name
+      FROM goat_proxies proxy LEFT JOIN shihuo_guest_devices device ON device.id=proxy.shihuo_device_id ORDER BY proxy.id`);
     return result.rows.map(mapProxy);
   }
 
   async listAvailable(): Promise<readonly ProxyRecord[]> {
-    const result = await this.executor.query<DatabaseRow>("SELECT * FROM goat_proxies WHERE enabled = TRUE AND health_status = 'healthy' ORDER BY id");
+    const result = await this.executor.query<DatabaseRow>("SELECT *, NULL::TEXT AS shihuo_device_name FROM goat_proxies WHERE service_code='goat' AND enabled = TRUE AND health_status = 'healthy' ORDER BY id");
     return result.rows.map(mapProxy);
   }
 
@@ -65,7 +70,7 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
     const result = await this.executor.query<DatabaseRow>(
       `WITH capacity AS (
          SELECT COUNT(*)::INTEGER * $2::INTEGER AS total_slots
-         FROM goat_proxies WHERE enabled = TRUE AND health_status = 'healthy'
+         FROM goat_proxies WHERE service_code='goat' AND enabled = TRUE AND health_status = 'healthy'
        ), active AS (
          SELECT COUNT(*)::INTEGER AS active_slots FROM goat_proxy_session_leases WHERE leased_until > NOW()
        ), candidate AS (
@@ -76,7 +81,7 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
          CROSS JOIN active
          LEFT JOIN goat_proxy_session_leases lease
            ON lease.proxy_id = proxy.id AND lease.session_slot = slot.session_slot AND lease.leased_until > NOW()
-         WHERE proxy.enabled = TRUE AND proxy.health_status = 'healthy' AND lease.proxy_id IS NULL
+         WHERE proxy.service_code='goat' AND proxy.enabled = TRUE AND proxy.health_status = 'healthy' AND lease.proxy_id IS NULL
            AND capacity.total_slots - active.active_slots > $3::INTEGER
          ORDER BY proxy.last_used_at NULLS FIRST, proxy.id, slot.session_slot
          LIMIT 1
@@ -88,7 +93,7 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
            WHERE goat_proxy_session_leases.leased_until <= NOW()
          RETURNING proxy_id, session_slot
        )
-       SELECT proxy.*, leased.session_slot
+       SELECT proxy.*, NULL::TEXT AS shihuo_device_name, leased.session_slot
        FROM leased JOIN goat_proxies proxy ON proxy.id = leased.proxy_id`,
       [input.ownerId, input.concurrencyPerProxy, input.headroom, input.ttlMs],
     );
@@ -105,41 +110,55 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
   }
 
   async getById(id: EntityId): Promise<ProxyRecord | null> {
-    const result = await this.executor.query<DatabaseRow>("SELECT * FROM goat_proxies WHERE id = $1", [id]);
+    const result = await this.executor.query<DatabaseRow>(`SELECT proxy.*, device.name AS shihuo_device_name
+      FROM goat_proxies proxy LEFT JOIN shihuo_guest_devices device ON device.id=proxy.shihuo_device_id WHERE proxy.id=$1`, [id]);
     return result.rows[0] ? mapProxy(result.rows[0]) : null;
   }
 
   async findByName(name: string): Promise<ProxyRecord | null> {
-    const result = await this.executor.query<DatabaseRow>("SELECT * FROM goat_proxies WHERE name = $1", [name]);
+    const result = await this.executor.query<DatabaseRow>(`SELECT proxy.*, device.name AS shihuo_device_name
+      FROM goat_proxies proxy LEFT JOIN shihuo_guest_devices device ON device.id=proxy.shihuo_device_id WHERE proxy.name=$1`, [name]);
     return result.rows[0] ? mapProxy(result.rows[0]) : null;
   }
 
   async create(input: SaveProxyInput): Promise<ProxyRecord> {
     const result = await this.executor.query<DatabaseRow>(
-      `INSERT INTO goat_proxies (name, protocol, host, port, credentials_ciphertext, enabled)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [input.name, input.protocol, input.host, input.port, input.credentialsCiphertext ?? null, input.enabled],
+      `WITH inserted AS (
+         INSERT INTO goat_proxies (name, protocol, host, port, credentials_ciphertext, enabled, service_code, country_code, shihuo_device_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *
+       ) SELECT inserted.*, device.name AS shihuo_device_name FROM inserted
+       LEFT JOIN shihuo_guest_devices device ON device.id=inserted.shihuo_device_id`,
+      [input.name, input.protocol, input.host, input.port, input.credentialsCiphertext ?? null, input.enabled,
+        input.serviceCode, input.countryCode, input.shihuoDeviceId],
     );
     return mapProxy(requireRow(result.rows, "proxy", input.name));
   }
 
   async update(id: EntityId, input: UpdateProxyInput): Promise<ProxyRecord> {
     const result = await this.executor.query<DatabaseRow>(
-      `UPDATE goat_proxies
+      `WITH previous AS (SELECT service_code, shihuo_device_id FROM goat_proxies WHERE id=$1 FOR UPDATE),
+       cleared AS (
+         UPDATE shihuo_guest_devices device SET outbound_proxy_ciphertext=NULL, updated_at=NOW()
+         FROM previous WHERE $12::BOOLEAN AND previous.service_code='shihuo' AND device.id=previous.shihuo_device_id
+         RETURNING device.id
+       ), updated AS (UPDATE goat_proxies
        SET name = COALESCE($2, name),
            protocol = COALESCE($3, protocol),
            host = COALESCE($4, host),
            port = COALESCE($5, port),
            credentials_ciphertext = CASE WHEN $6::BOOLEAN THEN $7 ELSE credentials_ciphertext END,
-           health_status = CASE WHEN $3::TEXT IS NOT NULL OR $4::TEXT IS NOT NULL OR $5::INTEGER IS NOT NULL OR $6::BOOLEAN THEN 'untested' ELSE health_status END,
-           last_tested_at = CASE WHEN $3::TEXT IS NOT NULL OR $4::TEXT IS NOT NULL OR $5::INTEGER IS NOT NULL OR $6::BOOLEAN THEN NULL ELSE last_tested_at END,
-           last_test_latency_ms = CASE WHEN $3::TEXT IS NOT NULL OR $4::TEXT IS NOT NULL OR $5::INTEGER IS NOT NULL OR $6::BOOLEAN THEN NULL ELSE last_test_latency_ms END,
-           last_test_error = CASE WHEN $3::TEXT IS NOT NULL OR $4::TEXT IS NOT NULL OR $5::INTEGER IS NOT NULL OR $6::BOOLEAN THEN NULL ELSE last_test_error END,
-           enabled = CASE WHEN $3::TEXT IS NOT NULL OR $4::TEXT IS NOT NULL OR $5::INTEGER IS NOT NULL OR $6::BOOLEAN THEN FALSE ELSE enabled END,
+           service_code = COALESCE($8, service_code), country_code = COALESCE($9, country_code),
+           shihuo_device_id = CASE WHEN $10::BOOLEAN THEN $11 ELSE shihuo_device_id END,
+           health_status = CASE WHEN $12::BOOLEAN THEN 'untested' ELSE health_status END,
+           last_tested_at = CASE WHEN $12::BOOLEAN THEN NULL ELSE last_tested_at END,
+           last_test_latency_ms = CASE WHEN $12::BOOLEAN THEN NULL ELSE last_test_latency_ms END,
+           last_test_error = CASE WHEN $12::BOOLEAN THEN NULL ELSE last_test_error END,
+           enabled = CASE WHEN $12::BOOLEAN THEN FALSE ELSE enabled END,
            updated_at = NOW()
        WHERE id = $1
-       RETURNING *`,
+       RETURNING *) SELECT updated.*, device.name AS shihuo_device_name,
+         (SELECT COUNT(*) FROM cleared) AS cleared_count FROM updated
+       LEFT JOIN shihuo_guest_devices device ON device.id=updated.shihuo_device_id`,
       [
         id,
         input.name ?? null,
@@ -148,15 +167,30 @@ export class PostgresGoatProxyRepository implements ProxyRepository {
         input.port ?? null,
         Object.prototype.hasOwnProperty.call(input, "credentialsCiphertext"),
         input.credentialsCiphertext ?? null,
+        input.serviceCode ?? null,
+        input.countryCode ?? null,
+        Object.prototype.hasOwnProperty.call(input, "shihuoDeviceId"),
+        input.shihuoDeviceId ?? null,
+        input.protocol !== undefined || input.host !== undefined || input.port !== undefined
+          || Object.prototype.hasOwnProperty.call(input, "credentialsCiphertext")
+          || input.serviceCode !== undefined || Object.prototype.hasOwnProperty.call(input, "shihuoDeviceId"),
       ],
     );
     return mapProxy(requireRow(result.rows, "proxy", id));
   }
 
-  async setEnabled(id: EntityId, enabled: boolean): Promise<ProxyRecord> {
+  async setEnabled(id: EntityId, enabled: boolean, shihuoOutboundProxyCiphertext?: string | null): Promise<ProxyRecord> {
     const result = await this.executor.query<DatabaseRow>(
-      "UPDATE goat_proxies SET enabled = $2, updated_at = NOW() WHERE id = $1 RETURNING *",
-      [id, enabled],
+      `WITH updated AS (
+         UPDATE goat_proxies SET enabled=$2, updated_at=NOW() WHERE id=$1 RETURNING *
+       ), assigned AS (
+         UPDATE shihuo_guest_devices device SET
+           outbound_proxy_ciphertext=CASE WHEN $2 THEN $3 ELSE NULL END, updated_at=NOW()
+         FROM updated WHERE updated.service_code='shihuo' AND device.id=updated.shihuo_device_id RETURNING device.id
+       ) SELECT updated.*, device.name AS shihuo_device_name,
+         (SELECT COUNT(*) FROM assigned) AS assigned_count FROM updated
+       LEFT JOIN shihuo_guest_devices device ON device.id=updated.shihuo_device_id`,
+      [id, enabled, shihuoOutboundProxyCiphertext ?? null],
     );
     return mapProxy(requireRow(result.rows, "proxy", id));
   }

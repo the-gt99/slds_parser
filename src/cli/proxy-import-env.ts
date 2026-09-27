@@ -39,7 +39,8 @@ try {
   const ciphertext = parsed.username === undefined ? null : crypto.encrypt({ username: parsed.username, password: parsed.password ?? "" });
   const existing = await repository.findByName(name);
   const record = existing === null
-    ? await repository.create({ name, protocol: imported.protocol, host: parsed.host, port: parsed.port, credentialsCiphertext: ciphertext, enabled: false })
+    ? await repository.create({ name, protocol: imported.protocol, host: parsed.host, port: parsed.port,
+      credentialsCiphertext: ciphertext, enabled: false, serviceCode: "goat", countryCode: "UN", shihuoDeviceId: null })
     : await repository.update(existing.id, { protocol: imported.protocol, host: parsed.host, port: parsed.port, credentialsCiphertext: ciphertext });
   await repository.audit({ proxyId: record.id, action: existing === null ? "create" : "update", actor: "proxy-import-env", payload: { name: record.name, protocol: record.protocol, host: record.host, port: record.port, hasCredentials: record.credentialsCiphertext !== null } });
   console.info(`Imported GOAT proxy record ${record.id}; enabled=false`);

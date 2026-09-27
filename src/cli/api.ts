@@ -25,7 +25,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ShihuoGuestDeviceService, ShihuoSecretCrypto, SignedShihuoSearchVerifier, SystemWireGuardManager } from "../shihuo/index.js";
+import { ShihuoGuestDeviceService, ShihuoProxyTester, ShihuoSecretCrypto, SignedShihuoSearchVerifier, SystemWireGuardManager } from "../shihuo/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
@@ -134,7 +134,8 @@ async function main(): Promise<void> {
       ? undefined
       : new ContentTemplateAdminService(repositories.contentTemplates, repositories.targets, wordpressPreview, new PostgresUnitOfWork(pool));
     const proxies = process.env.PARSER_PROXY_ENCRYPTION_KEY?.trim()
-      ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY), new GoatProxyTester())
+      ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
+        new GoatProxyTester(), new ShihuoProxyTester(), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY))
       : undefined;
     const shihuo = shihuoConfig === null ? undefined : new ShihuoGuestDeviceService(
       new PostgresShihuoDeviceRepository(pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),

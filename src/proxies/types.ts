@@ -1,6 +1,7 @@
 import type { EntityId } from "../contracts/index.js";
 
 export type ProxyProtocol = "http" | "socks5";
+export type ProxyServiceCode = "goat" | "shihuo";
 export type ProxyHealthStatus = "untested" | "healthy" | "unhealthy";
 export type ProxyAuditAction = "create" | "update" | "test" | "enable" | "disable";
 
@@ -15,6 +16,10 @@ export interface ProxyRecord {
   readonly protocol: ProxyProtocol;
   readonly host: string;
   readonly port: number;
+  readonly serviceCode: ProxyServiceCode;
+  readonly countryCode: string;
+  readonly shihuoDeviceId: EntityId | null;
+  readonly shihuoDeviceName: string | null;
   readonly credentialsCiphertext: string | null;
   readonly enabled: boolean;
   readonly healthStatus: ProxyHealthStatus;
@@ -35,6 +40,10 @@ export interface ProxyPublicDTO {
   readonly address: string;
   readonly host: string;
   readonly port: number;
+  readonly serviceCode: ProxyServiceCode;
+  readonly countryCode: string;
+  readonly shihuoDeviceId: EntityId | null;
+  readonly shihuoDeviceName: string | null;
   readonly hasCredentials: boolean;
   readonly enabled: boolean;
   readonly healthStatus: ProxyHealthStatus;
@@ -51,6 +60,9 @@ export interface SaveProxyInput {
   readonly protocol: ProxyProtocol;
   readonly host: string;
   readonly port: number;
+  readonly serviceCode: ProxyServiceCode;
+  readonly countryCode: string;
+  readonly shihuoDeviceId: EntityId | null;
   readonly credentialsCiphertext?: string | null;
   readonly enabled: boolean;
 }
@@ -60,6 +72,9 @@ export interface UpdateProxyInput {
   readonly protocol?: ProxyProtocol;
   readonly host?: string;
   readonly port?: number;
+  readonly serviceCode?: ProxyServiceCode;
+  readonly countryCode?: string;
+  readonly shihuoDeviceId?: EntityId | null;
   readonly credentialsCiphertext?: string | null;
 }
 
@@ -76,7 +91,7 @@ export interface ProxyRepository {
   findByName(name: string): Promise<ProxyRecord | null>;
   create(input: SaveProxyInput): Promise<ProxyRecord>;
   update(id: EntityId, input: UpdateProxyInput): Promise<ProxyRecord>;
-  setEnabled(id: EntityId, enabled: boolean): Promise<ProxyRecord>;
+  setEnabled(id: EntityId, enabled: boolean, shihuoOutboundProxyCiphertext?: string | null): Promise<ProxyRecord>;
   recordTest(id: EntityId, result: ProxyTestResult): Promise<ProxyRecord>;
   recordUse(id: EntityId, input: { readonly success: boolean; readonly latencyMs: number | null }): Promise<void>;
   audit(input: { readonly proxyId: EntityId | null; readonly action: ProxyAuditAction; readonly actor: string; readonly payload: Record<string, unknown> }): Promise<void>;

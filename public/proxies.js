@@ -1,4 +1,4 @@
-const state = { session: null, items: [], editing: null };
+const state = { session: null, items: [], devices: [], editing: null };
 const byId = (id) => document.getElementById(id);
 async function api(url, options = {}) {
   const headers = { Accept: "application/json" };
@@ -12,11 +12,12 @@ async function api(url, options = {}) {
 function toast(message) { byId("toast").textContent = message; byId("toast").hidden = false; setTimeout(() => { byId("toast").hidden = true; }, 2600); }
 function formatDate(value) { return value ? new Date(value).toLocaleString("ru-RU") : "—"; }
 function statusBadge(value) { const label = { healthy: "healthy", unhealthy: "unhealthy", untested: "untested" }[value] || value; return `<span class="badge status-${value === "healthy" ? "completed" : value === "unhealthy" ? "failed" : "pending"}">${label}</span>`; }
+function countryFlag(code) { return /^[A-Z]{2}$/.test(code) && code !== "UN" ? String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0))) : "🌐"; }
 function render() {
   const body = byId("table-body"); body.replaceChildren();
   for (const item of state.items) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td><strong>${escapeHtml(item.name)}</strong><br><span class="muted">ID ${item.id}</span></td><td>${item.protocol.toUpperCase()}<br><span class="muted">${escapeHtml(item.address)}</span>${item.hasCredentials ? '<br><span class="badge">auth</span>' : ""}</td><td>${item.enabled ? '<span class="badge status-completed">enabled</span>' : '<span class="badge status-pending">disabled</span>'}<br>${statusBadge(item.healthStatus)}</td><td>${item.lastTestLatencyMs == null ? "—" : `${item.lastTestLatencyMs} ms`}<br><span class="muted">${formatDate(item.lastTestedAt)}</span>${item.lastTestError ? `<br><span class="pipeline-error">${escapeHtml(item.lastTestError)}</span>` : ""}</td><td>${item.successCount} ok / ${item.failureCount} fail<br><span class="muted">${formatDate(item.lastUsedAt)}</span></td><td><div class="compact-links"><button class="button quiet small-button" data-action="edit" data-id="${item.id}">Править</button><button class="button secondary small-button" data-action="test" data-id="${item.id}">Проверить</button><button class="button ${item.enabled ? "danger-quiet" : "primary"} small-button" data-action="${item.enabled ? "disable" : "enable"}" data-id="${item.id}">${item.enabled ? "Выключить" : "Включить"}</button></div></td>`;
+    row.innerHTML = `<td><strong>${escapeHtml(item.name)}</strong><br><span class="muted">ID ${item.id}</span></td><td><span class="badge">${item.serviceCode === "shihuo" ? "Shihuo" : "GOAT"}</span>${item.shihuoDeviceName ? `<br><span class="muted">${escapeHtml(item.shihuoDeviceName)}</span>` : ""}</td><td><span style="font-size:1.35rem">${countryFlag(item.countryCode)}</span><br><span class="muted">${escapeHtml(item.countryCode)}</span></td><td>${item.protocol.toUpperCase()}<br><span class="muted">${escapeHtml(item.address)}</span>${item.hasCredentials ? '<br><span class="badge">auth</span>' : ""}</td><td>${item.enabled ? '<span class="badge status-completed">enabled</span>' : '<span class="badge status-pending">disabled</span>'}<br>${statusBadge(item.healthStatus)}</td><td>${item.lastTestLatencyMs == null ? "—" : `${item.lastTestLatencyMs} ms`}<br><span class="muted">${formatDate(item.lastTestedAt)}</span>${item.lastTestError ? `<br><span class="pipeline-error">${escapeHtml(item.lastTestError)}</span>` : ""}</td><td>${item.successCount} ok / ${item.failureCount} fail<br><span class="muted">${formatDate(item.lastUsedAt)}</span></td><td><div class="compact-links"><button class="button quiet small-button" data-action="edit" data-id="${item.id}">Править</button><button class="button secondary small-button" data-action="test" data-id="${item.id}">Проверить</button><button class="button ${item.enabled ? "danger-quiet" : "primary"} small-button" data-action="${item.enabled ? "disable" : "enable"}" data-id="${item.id}">${item.enabled ? "Выключить" : "Включить"}</button></div></td>`;
     body.append(row);
   }
   byId("empty").hidden = state.items.length !== 0;
@@ -25,7 +26,7 @@ function render() {
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
 async function load() {
   byId("loading").hidden = false; byId("error").hidden = true;
-  try { const data = await api("/api/proxies"); state.items = data.items || []; render(); }
+  try { const [data, devices] = await Promise.all([api("/api/proxies"), api("/api/shihuo/devices")]); state.items = data.items || []; state.devices = devices.items || []; render(); }
   catch (error) { byId("error").textContent = error.message; byId("error").hidden = false; }
   finally { byId("loading").hidden = true; }
 }
@@ -33,17 +34,38 @@ function openDialog(item = null) {
   state.editing = item;
   byId("dialog-title").textContent = item ? "Редактировать прокси" : "Добавить прокси";
   byId("proxy-name").value = item?.name || "";
+  byId("proxy-service").value = item?.serviceCode || "goat";
+  byId("proxy-country").value = item?.countryCode || "UN";
   byId("proxy-protocol").value = item?.protocol || "http";
   byId("proxy-host").value = item?.host || "";
   byId("proxy-port").value = item?.port || "";
   byId("proxy-username").value = "";
   byId("proxy-password").value = "";
+  renderDeviceOptions(item?.shihuoDeviceId || "");
+  updateRoutingFields();
   byId("form-error").hidden = true;
   byId("proxy-dialog").showModal();
 }
+function renderDeviceOptions(selected) {
+  const select = byId("proxy-shihuo-device"); select.replaceChildren();
+  const used = new Map(state.items.filter((item) => item.serviceCode === "shihuo" && item.id !== state.editing?.id).map((item) => [item.shihuoDeviceId, item.name]));
+  for (const device of state.devices.filter((device) => device.status === "ready" || device.id === selected)) {
+    const option = document.createElement("option"); option.value = device.id; option.textContent = `${device.name} · ID ${device.id}`;
+    if (used.has(device.id)) { option.disabled = true; option.textContent += ` · занят: ${used.get(device.id)}`; }
+    option.selected = device.id === selected; select.append(option);
+  }
+}
+function updateRoutingFields() {
+  const shihuo = byId("proxy-service").value === "shihuo";
+  byId("shihuo-device-field").hidden = !shihuo;
+  byId("proxy-shihuo-device").required = shihuo;
+  const socks = byId("proxy-protocol").querySelector('option[value="socks5"]'); socks.disabled = shihuo;
+  if (shihuo && byId("proxy-protocol").value === "socks5") byId("proxy-protocol").value = "http";
+}
 async function save(event) {
   event.preventDefault();
-  const body = { name: byId("proxy-name").value, protocol: byId("proxy-protocol").value, host: byId("proxy-host").value, port: byId("proxy-port").value };
+  const serviceCode = byId("proxy-service").value;
+  const body = { name: byId("proxy-name").value, serviceCode, countryCode: byId("proxy-country").value, protocol: byId("proxy-protocol").value, host: byId("proxy-host").value, port: byId("proxy-port").value, shihuoDeviceId: serviceCode === "shihuo" ? byId("proxy-shihuo-device").value : null };
   if (byId("proxy-username").value || byId("proxy-password").value) { body.username = byId("proxy-username").value; body.password = byId("proxy-password").value; }
   try {
     if (state.editing) await api(`/api/proxies/${state.editing.id}`, { method: "PATCH", body });
@@ -73,5 +95,6 @@ byId("create-button").addEventListener("click", () => openDialog());
 byId("dialog-close").addEventListener("click", () => byId("proxy-dialog").close());
 byId("cancel-button").addEventListener("click", () => byId("proxy-dialog").close());
 byId("proxy-form").addEventListener("submit", save);
+byId("proxy-service").addEventListener("change", updateRoutingFields);
 byId("table-body").addEventListener("click", action);
 await session();

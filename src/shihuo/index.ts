@@ -4,6 +4,7 @@ export * from "./wireguard-manager.js";
 export * from "./guest-device-service.js";
 export * from "./search-verifier.js";
 export * from "./product-types.js";
+export * from "./proxy-tester.js";
 export * from "./product-parser.js";
 export * from "./product-clients.js";
 export * from "./guest-session-pool.js";
