@@ -49,7 +49,8 @@ export function parseShihuoProductCard(document: string, detailUrl: string, http
   const attributes: Record<string, string[]> = {};
   for (const raw of array(skuBase.goods_attr)) {
     const item = object(raw); const name = text(item.name); if (!name) continue;
-    attributes[name] = array(item.value).map(text).filter((value): value is string => value !== null);
+    const values = array(item.value).map(text).filter((value): value is string => value !== null);
+    attributes[name] = [...new Set([...(attributes[name] ?? []), ...values])];
   }
   const groups = array(skuData.list).map(object);
   const group = groups.find((item) => text(item.style_id) === styleId) ?? groups[0] ?? {};

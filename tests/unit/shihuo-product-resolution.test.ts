@@ -41,6 +41,22 @@ describe("Shihuo product resolution", () => {
     expect(value.variants).toHaveLength(1);
   });
 
+  it("preserves exact articles from duplicate attribute groups", () => {
+    const next = { props: { pageProps: {
+      styleBaseData: { status: 0, data: { style_id: 20 } }, goodsBaseData: { status: 0, data: {} },
+      skuBaseData: { status: 0, data: { goods_attr: [
+        { name: "货号", value: ["DQ0665-300"] },
+        { name: "货号", value: ["DH8053,DH8054"] },
+      ] } },
+      skuListData: { status: 0, data: { list: [] } }, supplierListData: { status: 0, data: { list: [] } },
+    } } };
+
+    const value = parseShihuoProductCard(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(next)}</script>`, "https://www.shihuo.cn/page/pcGoodsDetail?goodsId=10&styleId=20", 200);
+
+    expect(value.attributes["货号"]).toEqual(["DQ0665-300", "DH8053,DH8054"]);
+    expect(value.article).toBe("DQ0665-300");
+  });
+
   it("still rejects unrelated supplier block failures", () => {
     const next = { props: { pageProps: {
       styleBaseData: { status: 0, data: { style_id: 20 } }, goodsBaseData: { status: 0, data: {} },
