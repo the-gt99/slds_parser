@@ -15,5 +15,9 @@ export function createPostgresPool(
     );
   }
 
-  return new Pool({ connectionString });
+  const pool = new Pool({ connectionString });
+  pool.on("error", (error) => {
+    console.error(`PostgreSQL idle client error: ${error.message}`);
+  });
+  return pool;
 }

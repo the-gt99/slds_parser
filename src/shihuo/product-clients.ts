@@ -30,7 +30,12 @@ export class ShihuoSearchClient {
     const keyword = article.trim().replace(/^([A-Za-z0-9]+)\s+([A-Za-z0-9]{3})$/u, "$1-$2");
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
       page_route: "homeSearchList", predictSex: "2", use_type: "2", user_input: keyword };
-    const response = await this.fetchImpl(SEARCH_URL, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(25_000) });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(SEARCH_URL, { method: "POST", headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(25_000) });
+    } catch (cause) {
+      throw new RetryableError("Shihuo search request failed", { code: "SHIHUO_SEARCH_REQUEST_FAILED", cause });
+    }
     let body: JsonRecord = {}; try { body = object(await response.json()); } catch { /* classified below */ }
     const risk = riskCode(response.status, body); if (risk) throw new ShihuoRiskError(risk);
     if (!response.ok || (body.status ?? body.code) !== 0) throw new Error(`Shihuo search failed with safe status ${response.status}`);
@@ -48,7 +53,12 @@ export class ShihuoProductClient {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
   async fetch(goodsId: string, styleId: string): Promise<ShihuoProductCard> {
     const url = `https://www.shihuo.cn/page/pcGoodsDetail?goodsId=${encodeURIComponent(goodsId)}&styleId=${encodeURIComponent(styleId)}`;
-    const response = await this.fetchImpl(url, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36", "accept-language": "zh-CN,zh;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(25_000) });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36", "accept-language": "zh-CN,zh;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(25_000) });
+    } catch (cause) {
+      throw new RetryableError("Shihuo product-card request failed", { code: "SHIHUO_PRODUCT_CARD_REQUEST_FAILED", cause });
+    }
     if (response.status === 429) throw new ShihuoRiskError("SHIHUO_HTTP_429");
     const document = await response.text();
     if (/captcha/iu.test(document)) throw new ShihuoRiskError("SHIHUO_CAPTCHA");
