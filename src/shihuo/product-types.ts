@@ -66,6 +66,7 @@ export interface ShihuoLeasedSession {
 
 export interface ShihuoSessionRepository {
   acquire(owner: string, leaseSeconds: number): Promise<ShihuoLeasedSession | null>;
+  releaseUnused(deviceId: EntityId, owner: string): Promise<void>;
   releaseSuccess(deviceId: EntityId, owner: string, nextAvailableAt: string): Promise<void>;
   releaseFailure(deviceId: EntityId, owner: string, nextAvailableAt: string, reason: string, pause: boolean): Promise<void>;
 }

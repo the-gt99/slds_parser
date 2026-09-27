@@ -19,6 +19,7 @@ export class PostgresShihuoSessionRepository implements ShihuoSessionRepository 
       FROM candidate WHERE device.id=candidate.id RETURNING device.id, device.guest_profile_ciphertext`, [owner, leaseSeconds]);
     const row = result.rows[0]; return row ? { deviceId: String(row.id), leaseOwner: owner, profileCiphertext: String(row.guest_profile_ciphertext) } : null;
   }
+  async releaseUnused(deviceId: string, owner: string): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner]); }
   async releaseSuccess(deviceId: string, owner: string, nextAvailableAt: string): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=0,cooldown_reason=NULL,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt]); }
   async releaseFailure(deviceId: string, owner: string, nextAvailableAt: string, reason: string, pause: boolean): Promise<void> { await this.executor.query(`UPDATE shihuo_guest_devices SET lease_owner=NULL,leased_until=NULL,last_used_at=NOW(),next_available_at=$3::timestamptz,consecutive_errors=consecutive_errors+1,cooldown_reason=$4,status=CASE WHEN $5 THEN 'paused' ELSE status END,diagnostic_stage=CASE WHEN $5 THEN 'paused' ELSE diagnostic_stage END,updated_at=NOW() WHERE id=$1 AND lease_owner=$2`, [deviceId, owner, nextAvailableAt, reason, pause]); }
 }

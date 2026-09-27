@@ -100,8 +100,13 @@ export function createApplication(environment: ApplicationEnvironment = process.
   );
   const workerOptions = loadWorkerConfig(environment);
   const shihuoConfig = loadShihuoConfig(environment);
+  const shihuoSessions = shihuoConfig === null ? undefined : new ShihuoGuestSessionPool(
+    new PostgresShihuoSessionRepository(pool),
+    new ShihuoSecretCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY),
+    shihuoConfig,
+  );
   const shihuoResolver = shihuoConfig === null ? undefined : new ShihuoProductResolver(
-    new ShihuoGuestSessionPool(new PostgresShihuoSessionRepository(pool), new ShihuoSecretCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY), shihuoConfig),
+    shihuoSessions!,
     new ShihuoSearchClient({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
     new ShihuoProductClient(), new PostgresShihuoProductLinkRepository(pool), repositories.internalProducts, shihuoConfig.betweenRequestsMs,
   );
@@ -185,14 +190,16 @@ export function createApplication(environment: ApplicationEnvironment = process.
     undefined,
     Date.now,
     options.workerLogError ?? console.error,
-    proxyPool === undefined
-      ? undefined
-      : async (jobTypes) => {
+    async (jobTypes) => {
+        const needsShihuoSession = jobTypes.length === 2
+          ? jobTypes.includes("resolve_shihuo_product") && jobTypes.includes("collect_wordpress_shihuo_inventory")
+          : jobTypes.length === 1 && (jobTypes[0] === "resolve_shihuo_product" || jobTypes[0] === "collect_wordpress_shihuo_inventory");
+        if (needsShihuoSession) return shihuoSessions?.reserveClaim() ?? null;
         const needsGoatProxy = jobTypes.length === 1
           && (jobTypes[0] === "collect_product" || jobTypes[0] === "collect_wordpress_variation_source"
             || jobTypes[0] === "collect_wordpress_goat_inventory"
             || jobTypes[0] === "refresh_export_source");
-        return needsGoatProxy
+        return needsGoatProxy && proxyPool !== undefined
           ? proxyPool.reserveClaim(jobTypes[0] === "collect_wordpress_variation_source" || jobTypes[0] === "collect_wordpress_goat_inventory"
             ? 0 : inventoryProxyHeadroom(environment))
           : { run: async (callback) => callback(), releaseUnused: async () => {} };
