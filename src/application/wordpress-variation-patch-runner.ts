@@ -266,34 +266,27 @@ export class WordPressVariationPatchRunner {
     });
     const candidate = candidates.find((item) => item.item.id === payload.itemId);
     if (candidate === undefined) return { status: "skipped" };
-    try {
-      const checkedAt = new Date(this.currentTime()).toISOString();
-      if (donorCode === "goat") {
-        const sourceProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
-        if (sourceProduct === null) throw new IntegrationContractError(`Source product not found: ${candidate.sourceProduct.id}`);
-        const source = await this.sources.getById(sourceProduct.sourceId);
-        if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
-        const variants = await this.sourceRefresher.refresh(source, sourceProduct);
-        if (variants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
-        await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
-          donorCode, outcome: "resolved", contentHash: hashStableJson(variants as unknown as JsonValue), variants, checkedAt });
-      } else {
-        if (this.shihuoInventory === undefined) throw new IntegrationContractError("Shihuo inventory is not configured");
-        const result = await this.shihuoInventory.refresh(candidate.sourceProduct.id);
-        const variants = result.status === "resolved"
-          ? await this.shihuoInventory.variants(candidate.sourceProduct.id, candidate.product.variants)
-          : [];
-        await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
-          donorCode, outcome: result.status, contentHash: result.status === "resolved" ? result.cardHash
-            : hashStableJson({ status: result.status } as unknown as JsonValue), variants, checkedAt });
-      }
-      return { status: "completed" };
-    } catch (error) {
-      const message = wordpressCatalogItemError(error);
-      if (message === null) throw error;
-      await this.repository.saveVariationPreparation({ itemId: candidate.item.id, status: "skipped", notices: [], error: message });
-      return { status: "completed" };
+    const checkedAt = new Date(this.currentTime()).toISOString();
+    if (donorCode === "goat") {
+      const sourceProduct = await this.sourceProducts.getById(candidate.sourceProduct.id);
+      if (sourceProduct === null) throw new IntegrationContractError(`Source product not found: ${candidate.sourceProduct.id}`);
+      const source = await this.sources.getById(sourceProduct.sourceId);
+      if (source === null) throw new IntegrationContractError(`Source not found: ${sourceProduct.sourceId}`);
+      const variants = await this.sourceRefresher.refresh(source, sourceProduct);
+      if (variants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
+      await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
+        donorCode, outcome: "resolved", contentHash: hashStableJson(variants as unknown as JsonValue), variants, checkedAt });
+    } else {
+      if (this.shihuoInventory === undefined) throw new IntegrationContractError("Shihuo inventory is not configured");
+      const result = await this.shihuoInventory.refresh(candidate.sourceProduct.id);
+      const variants = result.status === "resolved"
+        ? await this.shihuoInventory.variants(candidate.sourceProduct.id, candidate.product.variants)
+        : [];
+      await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
+        donorCode, outcome: result.status, contentHash: result.status === "resolved" ? result.cardHash
+          : hashStableJson({ status: result.status } as unknown as JsonValue), variants, checkedAt });
     }
+    return { status: "completed" };
   }
 
   async combineInventory(payload: CollectWordPressVariationSourcePayload): Promise<RunnerResult> {

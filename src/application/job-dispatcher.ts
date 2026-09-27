@@ -134,8 +134,7 @@ export class JobDispatcher implements JobHandler {
       if (payload.mode !== "inventory") await this.wordpressCatalogSync.fail(payload.runId, message);
       return;
     }
-    if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "collect_wordpress_goat_inventory"
-      || job.jobType === "collect_wordpress_shihuo_inventory" || job.jobType === "combine_wordpress_inventory"
+    if ((job.jobType === "collect_wordpress_variation_source" || job.jobType === "combine_wordpress_inventory"
       || job.jobType === "prepare_wordpress_variation_patch")
       && this.wordpressVariationPatches !== undefined) {
       const payload = job.jobType !== "prepare_wordpress_variation_patch"
