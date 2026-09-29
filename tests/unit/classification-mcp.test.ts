@@ -187,6 +187,7 @@ describe("classification MCP", () => {
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       "list_classification_workbench",
+      "find_similar_products",
       "get_product_classification_context",
       "get_product_context",
       "list_classification_rules",
@@ -198,7 +199,10 @@ describe("classification MCP", () => {
       "create_target_term",
       "preview_classification_rule",
       "preview_classification_rules",
+      "preview_generalized_rule",
       "create_classification_rule",
+      "create_generalized_rule",
+      "apply_classification_plan",
     ]));
     expect(tools.tools.map((tool) => tool.name)).not.toContain("execute_sql");
   });
@@ -287,6 +291,22 @@ describe("classification MCP", () => {
     expect(batchJson.results.every((item) => item.items.length === 2)).toBe(true);
   });
 
+  it("finds similar products through compact indexed workbench search", async () => {
+    const workbench = vi.fn().mockResolvedValue({
+      mode: "resulting_target_dto", requiredTargetFields: [], counts: {}, index: {}, filteredCount: 0,
+      page: { offset: 0, limit: 10, hasMore: false, nextOffset: null }, items: [],
+    });
+    const client = await connectedClient({ rulesV2: { workbench } });
+    const result = await client.callTool({
+      name: "find_similar_products",
+      arguments: { sourceId: "1", targetId: "10", query: "Air Max", limit: 10 },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(workbench).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "1", targetId: "10", search: "Air Max", status: "all", limit: 10,
+    }));
+  });
+
   it("previews a compact batch of exact-product rules without writing", async () => {
     const preview = vi.fn().mockResolvedValue({
       mode: "active", scope: "sample", writes: false, examined: 1, productCount: 1,
@@ -334,6 +354,105 @@ describe("classification MCP", () => {
     });
     expect(result.isError).not.toBe(true);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ status: "shadow", targetId: "10" }), "mcp-genspark");
+  });
+
+  it("rejects free-text fields in generalized rules", async () => {
+    const preview = vi.fn();
+    const client = await connectedClient({ rulesV2: { preview } });
+    const result = await client.callTool({
+      name: "preview_generalized_rule",
+      arguments: {
+        ...ruleArguments,
+        conditionGroups: [{ conditions: [{ field: "product.title", operator: "contains_phrase", values: ["Air Max"] }] }],
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it("creates a generalized rule only after a bounded conflict-free preview", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "12", revision: "1" });
+    const client = await connectedClient({ rulesV2: {
+      preview: vi.fn().mockResolvedValue({ productCount: 3, conflicts: [], examined: 20, examples: [] }),
+      create,
+    } });
+    const result = await client.callTool({
+      name: "create_generalized_rule",
+      arguments: {
+        ...ruleArguments,
+        name: "Цвет по структурированному кандидату",
+        conditionGroups: [{ conditions: [{ field: "candidate.color.sourceValue", operator: "equals", values: ["Red"] }] }],
+        expectedSampleProductCount: 3,
+        expectedSampleConflictCount: 0,
+        maxSampleProductCount: 10,
+        confirmed: true,
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      conditionGroups: [{ conditions: [expect.objectContaining({ field: "candidate.color.sourceValue" })] }],
+    }), "mcp-genspark");
+  });
+
+  it("applies a bounded plan by reusing terms and creating missing dependencies before rules", async () => {
+    const createTermForRulesV2 = vi.fn().mockResolvedValue({
+      dictionaryValue: { id: "22", externalId: "202", entityType: "models", name: "Air Max 90" },
+      relatedDictionaryValues: [],
+    });
+    const create = vi.fn().mockResolvedValue({ id: "31", revision: "1" });
+    const client = await connectedClient({
+      targetDictionaries: {
+        listValues: vi.fn().mockImplementation(async ({ entityType }: { entityType: string }) => entityType === "brands"
+          ? [{ id: "11", externalId: "101", entityType: "brands", name: "Nike", slug: "nike" }]
+          : []),
+        createTermForRulesV2,
+      },
+      rulesV2: {
+        preview: vi.fn().mockResolvedValue({ productCount: 2, conflicts: [], examined: 20, examples: [] }),
+        overview: vi.fn().mockResolvedValue({ items: [] }),
+        create,
+      },
+    });
+    const result = await client.callTool({
+      name: "apply_classification_plan",
+      arguments: {
+        sourceId: "1",
+        targetId: "10",
+        terms: [
+          { requestId: "brand", entityType: "brands", name: "Nike" },
+          { requestId: "model", entityType: "models", name: "Air Max 90", slug: "air-max-90" },
+        ],
+        rules: [{
+          requestId: "model-rule",
+          name: "Модель Nike Air Max 90",
+          groupCode: "model_nike_air_max_90",
+          priority: 100,
+          status: "shadow",
+          conditionGroups: [
+            { conditions: [{ field: "candidate.model.sourceValue", operator: "equals", values: ["Air Max 90"] }] },
+            { conditions: [{ field: "candidate.brand.sourceValue", operator: "equals", values: ["Nike"] }] },
+          ],
+          actions: [{ targetScope: "product.model", termRequestId: "model", mode: "replace" }],
+          maxSampleProductCount: 10,
+        }],
+        policy: {
+          maxNewTerms: 1,
+          maxRules: 1,
+          allowedEntityTypes: ["brands", "models"],
+          allowGeneralizedRules: true,
+          allowProductOverrides: false,
+        },
+        confirmed: true,
+      },
+    });
+    const response = JSON.parse(resultText(result)) as { status: string; reusedTerms: unknown[]; createdTerms: unknown[] };
+    expect(response).toMatchObject({ status: "complete" });
+    expect(response.reusedTerms).toHaveLength(1);
+    expect(response.createdTerms).toHaveLength(1);
+    expect(createTermForRulesV2).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ dictionaryValueId: "22", targetScope: "product.model" })],
+    }), "mcp-genspark");
   });
 
   it("returns a real WordPress preflight without exporting", async () => {

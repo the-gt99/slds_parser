@@ -57,14 +57,53 @@ const ruleShape = {
   reason: z.string().min(1).max(1_000).optional(),
 };
 
+const planActionSchema = z.object({
+  targetScope: z.string().min(1),
+  dictionaryValueId: z.string().regex(/^\d+$/u).optional(),
+  termRequestId: z.string().min(1).max(100).optional(),
+  mode: z.enum(["add", "replace"]),
+  primarySourceBrand: z.boolean().optional(),
+}).refine((action) => (action.dictionaryValueId === undefined) !== (action.termRequestId === undefined), {
+  message: "Exactly one of dictionaryValueId or termRequestId is required",
+});
+
+const planRuleSchema = z.object({
+  requestId: z.string().min(1).max(100),
+  name: ruleShape.name,
+  groupCode: ruleShape.groupCode,
+  priority: ruleShape.priority,
+  status: z.literal("shadow"),
+  conditionGroups: ruleShape.conditionGroups,
+  actions: z.array(planActionSchema).min(1).max(20),
+  reason: ruleShape.reason,
+  maxSampleProductCount: z.number().int().min(1).max(200).default(100),
+});
+
+const planTermSchema = z.object({
+  requestId: z.string().min(1).max(100),
+  entityType: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).optional(),
+  parentExternalId: z.string().regex(/^\d+$/u).optional(),
+  relatedTerm: z.object({
+    relationCode: z.string().min(1).max(200),
+    entityType: z.string().min(1).max(200),
+    mode: z.enum(["create", "existing", "none"]),
+    externalId: z.string().regex(/^\d+$/u).optional(),
+  }).optional(),
+});
+
 const serverInstructions = `Начинай работу с list_sources и list_targets. Для очереди классификации используй
 list_classification_workbench в compact-режиме и переходи по страницам через page.nextOffset, пока page.hasMore=true.
 Для одного товара используй get_product_classification_context. Полный get_product_context предназначен только для
 точечной диагностики и может превышать лимит клиента. Не используй preview правил для поиска или перечисления товаров.
 Ищи несколько терминов через search_target_dictionaries; продолжай конкретный запрос через его page.nextOffset.
 Отделяй classificationBlockers, которые можно устранить правилами, от dataBlockers, которые требуют исправления данных.
-Перед записью правила выполни preview_classification_rule или preview_classification_rules. Создание термина и правила
-разрешено только после явного подтверждения пользователя; эти операции не запускают экспорт.`;
+Перед записью правила выполни preview_classification_rule, preview_classification_rules или preview_generalized_rule.
+Обобщённые правила должны опираться только на устойчивые структурированные признаки и покрывать не менее двух товаров.
+Для автономной пакетной работы используй apply_classification_plan: он повторно использует существующие термины, создаёт
+только явно разрешённые типы терминов, проверяет каждое правило свежим preview и не запускает экспорт. Одно подтверждение
+разрешает весь ограниченный план; не запрашивай отдельное подтверждение для каждого его шага.`;
 
 const classificationBlockerCodes = new Set([
   "required_brand_missing",
@@ -202,9 +241,116 @@ function exactProductId(draft: RuleV2Draft): string | null {
   return null;
 }
 
+function normalizeTerm(value: string, locale = "ru-RU"): string {
+  return value.trim().normalize("NFKC").toLocaleLowerCase(locale);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function allConditionFields(draft: RuleV2Draft): string[] {
+  return draft.conditionGroups.flatMap((group) => group.conditions.map((condition) => condition.field));
+}
+
+function isStableGeneralizedField(field: string): boolean {
+  return /^candidate\.[a-z][a-z0-9_]*\.(?:sourceValue|(?:context|evidence)\.[a-zA-Z][a-zA-Z0-9_-]*)$/u.test(field)
+    || /^common\.characteristics\.[a-zA-Z][a-zA-Z0-9_-]*$/u.test(field)
+    || /^product\.(?:attribute|metadata|fact)\.[a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]*)*$/u.test(field)
+    || /^resolved\.[a-z][a-z0-9_]*$/u.test(field);
+}
+
+function isBrandField(field: string): boolean {
+  return field === "candidate.brand.sourceValue"
+    || field === "common.characteristics.brand"
+    || /^(?:product\.(?:attribute|metadata|fact)\.)brand(?:\.|$)/u.test(field)
+    || field === "resolved.brand";
+}
+
+function validateGeneralizedRule(draft: RuleV2Draft): void {
+  if (exactProductId(draft) !== null || allConditionFields(draft).includes("common.source.productId")) {
+    throw new Error("Generalized rules cannot contain common.source.productId; use an exact product rule for an exception");
+  }
+  for (const group of draft.conditionGroups) for (const condition of group.conditions) {
+    if (!isStableGeneralizedField(condition.field)) {
+      throw new Error(`Generalized rules require structured candidate, characteristic, fact or resolved fields: ${condition.field}`);
+    }
+    if (condition.operator !== "equals" && condition.operator !== "one_of") {
+      throw new Error(`Generalized rules allow only equals or one_of conditions: ${condition.field}`);
+    }
+    if (condition.values.length > 20) throw new Error(`Generalized condition has too many values: ${condition.field}`);
+  }
+  if (draft.actions.some((action) => action.targetScope === "product.model")
+    && !draft.conditionGroups.some((group) => group.conditions.every((condition) => isBrandField(condition.field)))) {
+    throw new Error("A generalized model rule requires a separate brand condition group");
+  }
+}
+
+async function findExistingTerm(dependencies: ClassificationMcpDependencies, input: {
+  readonly targetId: string;
+  readonly entityType: string;
+  readonly name: string;
+  readonly slug?: string;
+}) {
+  const existing = await dependencies.targetDictionaries.listValues({
+    targetId: input.targetId,
+    entityType: input.entityType,
+    search: input.name,
+    limit: 200,
+    offset: 0,
+  });
+  const normalizedName = normalizeTerm(input.name);
+  const normalizedSlug = input.slug === undefined ? undefined : normalizeTerm(input.slug, "en-US");
+  return existing.find((item) => normalizeTerm(item.name) === normalizedName
+    || (normalizedSlug !== undefined && item.slug != null && normalizeTerm(item.slug, "en-US") === normalizedSlug));
+}
+
+function assertUniqueRequestIds(items: readonly { readonly requestId: string }[], kind: string): void {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.requestId)) throw new Error(`Duplicate ${kind} requestId: ${item.requestId}`);
+    seen.add(item.requestId);
+  }
+}
+
+function comparableRule(value: unknown): string {
+  const item = objectValue(value);
+  const conditionGroups = (Array.isArray(item.conditionGroups) ? item.conditionGroups : []).map((rawGroup) => {
+    const group = objectValue(rawGroup);
+    return { conditions: (Array.isArray(group.conditions) ? group.conditions : []).map((rawCondition) => {
+      const condition = objectValue(rawCondition);
+      return {
+        field: condition.field,
+        operator: condition.operator,
+        values: condition.values,
+        ...(condition.matchSetId === undefined ? {} : { matchSetId: condition.matchSetId }),
+      };
+    }) };
+  });
+  const actions = (Array.isArray(item.actions) ? item.actions : []).map((rawAction) => {
+    const action = objectValue(rawAction);
+    return {
+      targetScope: action.targetScope,
+      dictionaryValueId: action.dictionaryValueId,
+      mode: action.mode,
+      ...(action.primarySourceBrand === undefined ? {} : { primarySourceBrand: action.primarySourceBrand }),
+    };
+  });
+  return JSON.stringify({
+    sourceId: item.sourceId,
+    targetId: item.targetId,
+    name: item.name,
+    groupCode: item.groupCode,
+    priority: item.priority,
+    status: item.status,
+    conditionGroups,
+    actions,
+  });
+}
+
 export function createClassificationMcpServer(dependencies: ClassificationMcpDependencies): McpServer {
   const server = new McpServer(
-    { name: "slds-classification", version: "1.1.0" },
+    { name: "slds-classification", version: "1.2.0" },
     { instructions: serverInstructions },
   );
 
@@ -239,6 +385,24 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
     });
     return textResult(input.detail === "compact" ? compactWorkbench(result) : result);
   });
+
+  server.registerTool("find_similar_products", {
+    title: "Найти похожие товары",
+    description: "Search indexed products by title, SKU, external identifier and classification candidates. Returns a compact Rules v2 workbench page for comparing repeated structured signals; this is lexical indexed search, not vector similarity.",
+    inputSchema: {
+      sourceId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      query: z.string().min(2).max(500),
+      status: z.enum(["incomplete", "conflict", "ready", "all"]).default("all"),
+      limit: z.number().int().min(1).max(25).default(10),
+      offset: z.number().int().min(0).max(1_000_000).default(0),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, async ({ sourceId, targetId, query, status, limit, offset }) => textResult(compactWorkbench(
+    await dependencies.rulesV2.workbench({
+      sourceId, targetId, search: query, status, variants: "all", sort: "rule_gaps", limit, offset,
+    }),
+  )));
 
   server.registerTool("get_product_classification_context", {
     description: "Read compact Rules v2 classification context for exactly one product: blockers split by type, source candidates, resulting target terms and applied rules. Prefer this over get_product_context during classification.",
@@ -416,17 +580,12 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       confirmed: z.literal(true).describe("Must be true only after the user explicitly approved creating the WordPress term"),
     },
   }, async ({ confirmed: _confirmed, ...input }) => {
-    const existing = await dependencies.targetDictionaries.listValues({
+    const duplicate = await findExistingTerm(dependencies, {
       targetId: input.targetId,
       entityType: input.entityType,
-      search: input.name,
-      limit: 200,
-      offset: 0,
+      name: input.name,
+      ...(input.slug === undefined ? {} : { slug: input.slug }),
     });
-    const normalizedName = input.name.trim().normalize("NFKC").toLocaleLowerCase("ru-RU");
-    const normalizedSlug = input.slug?.trim().toLocaleLowerCase("en-US");
-    const duplicate = existing.find((item) => item.name.trim().normalize("NFKC").toLocaleLowerCase("ru-RU") === normalizedName
-      || (normalizedSlug !== undefined && item.slug?.trim().toLocaleLowerCase("en-US") === normalizedSlug));
     if (duplicate !== undefined) {
       throw new Error(`Target term already exists in the synchronized dictionary: ${duplicate.id}/${duplicate.externalId}`);
     }
@@ -471,6 +630,240 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
       items.push({ requestId, sourceProductId, preview: compactPreview(preview) });
     }
     return textResult({ items });
+  });
+
+  server.registerTool("preview_generalized_rule", {
+    title: "Проверить обобщённое правило",
+    description: "Preview a reusable Rules v2 rule on the current sample. The rule may use only exact structured candidate, characteristic, fact or resolved values; free-text title matching, regexes and product IDs are rejected.",
+    inputSchema: ruleShape,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, async (input) => {
+    const draft = rule(input);
+    validateGeneralizedRule(draft);
+    return textResult({ preview: compactPreview(await dependencies.rulesV2.preview(draft)) });
+  });
+
+  server.registerTool("create_generalized_rule", {
+    title: "Создать обобщённое правило",
+    description: "Create one reusable shadow rule after a fresh sample preview. It must match at least two products, stay within maxSampleProductCount and have no preview conflicts. This changes classification rules but never starts export.",
+    inputSchema: {
+      ...ruleShape,
+      expectedSampleProductCount: z.number().int().min(2).max(200),
+      expectedSampleConflictCount: z.literal(0),
+      maxSampleProductCount: z.number().int().min(2).max(200).default(100),
+      confirmed: z.literal(true),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, async ({ expectedSampleProductCount, expectedSampleConflictCount, maxSampleProductCount, confirmed: _confirmed, ...input }) => {
+    const draft = rule(input);
+    if (draft.status !== "shadow") throw new Error("Generalized classification rules must use shadow status");
+    validateGeneralizedRule(draft);
+    const preview = await dependencies.rulesV2.preview(draft);
+    const productCount = previewCount(preview, "productCount");
+    const conflictCount = previewCount(preview, "conflicts");
+    if (productCount !== expectedSampleProductCount || conflictCount !== expectedSampleConflictCount) {
+      throw new Error("Rule preview changed; preview it again before creating the rule");
+    }
+    if (productCount < 2) throw new Error("A generalized rule must match at least two products in the current sample");
+    if (productCount > maxSampleProductCount) throw new Error(`Generalized rule exceeds the sample impact limit: ${productCount}/${maxSampleProductCount}`);
+    if (conflictCount > 0) throw new Error("A rule with preview conflicts cannot be created through MCP");
+    const result = await dependencies.rulesV2.create(draft, "mcp-genspark");
+    return textResult({ preview: compactPreview(preview), rule: result, exportStarted: false });
+  });
+
+  server.registerTool("apply_classification_plan", {
+    title: "Применить план классификации",
+    description: "Apply one bounded classification plan. Existing exact-name terms are reused, missing allowed terms are created, every rule receives a fresh preview, and rules are written only after all previews pass. Generalized rules must cover at least two sample products; exact product overrides require an explicit policy flag. Export is never started.",
+    inputSchema: {
+      sourceId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      terms: z.array(planTermSchema).max(20).default([]),
+      rules: z.array(planRuleSchema).min(1).max(20),
+      policy: z.object({
+        maxNewTerms: z.number().int().min(0).max(20).default(5),
+        maxRules: z.number().int().min(1).max(20).default(10),
+        allowedEntityTypes: z.array(z.string().min(1).max(200)).min(1).max(20),
+        allowGeneralizedRules: z.boolean().default(true),
+        allowProductOverrides: z.boolean().default(false),
+      }),
+      confirmed: z.literal(true).describe("One confirmation covers this entire bounded plan"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, async ({ sourceId, targetId, terms, rules, policy, confirmed: _confirmed }) => {
+    assertUniqueRequestIds(terms, "term");
+    assertUniqueRequestIds(rules, "rule");
+    const normalizedRuleNames = rules.map((item) => normalizeTerm(item.name));
+    if (new Set(normalizedRuleNames).size !== normalizedRuleNames.length) throw new Error("Plan contains duplicate rule names");
+    if (rules.length > policy.maxRules) throw new Error(`Plan exceeds maxRules: ${rules.length}/${policy.maxRules}`);
+    const allowedEntityTypes = new Set(policy.allowedEntityTypes);
+    for (const term of terms) if (!allowedEntityTypes.has(term.entityType)) {
+      throw new Error(`Term type is not allowed by this plan: ${term.entityType}`);
+    }
+    const termRequests = new Map(terms.map((term) => [term.requestId, term]));
+    for (const proposedRule of rules) for (const action of proposedRule.actions) {
+      if (action.termRequestId !== undefined && !termRequests.has(action.termRequestId)) {
+        throw new Error(`Unknown termRequestId in rule ${proposedRule.requestId}: ${action.termRequestId}`);
+      }
+    }
+    for (const proposedRule of rules) {
+      const structuralDraft: RuleV2Draft = {
+        sourceId,
+        targetId,
+        name: proposedRule.name,
+        groupCode: proposedRule.groupCode,
+        priority: proposedRule.priority,
+        status: proposedRule.status,
+        conditionGroups: proposedRule.conditionGroups.map((group) => ({
+          conditions: group.conditions.map((condition) => ({
+            field: condition.field,
+            operator: condition.operator,
+            values: condition.values,
+            ...(condition.matchSetId === undefined ? {} : { matchSetId: condition.matchSetId }),
+          })),
+        })),
+        actions: proposedRule.actions.map((action) => ({
+          targetScope: action.targetScope,
+          dictionaryValueId: action.dictionaryValueId ?? "1",
+          mode: action.mode,
+          ...(action.primarySourceBrand === undefined ? {} : { primarySourceBrand: action.primarySourceBrand }),
+        })),
+      };
+      const sourceProductId = exactProductId(structuralDraft);
+      if (sourceProductId === null) {
+        if (!policy.allowGeneralizedRules) throw new Error(`Generalized rules are disabled by policy: ${proposedRule.requestId}`);
+        validateGeneralizedRule(structuralDraft);
+      } else if (!policy.allowProductOverrides) {
+        throw new Error(`Exact product overrides are disabled by policy: ${proposedRule.requestId}`);
+      }
+    }
+
+    const resolvedTerms = new Map<string, string>();
+    const reusedTerms: Array<{ requestId: string; dictionaryValue: unknown }> = [];
+    const pendingTerms = [];
+    for (const term of terms) {
+      const existing = await findExistingTerm(dependencies, {
+        targetId,
+        entityType: term.entityType,
+        name: term.name,
+        ...(term.slug === undefined ? {} : { slug: term.slug }),
+      });
+      if (existing === undefined) pendingTerms.push(term);
+      else {
+        resolvedTerms.set(term.requestId, existing.id);
+        reusedTerms.push({ requestId: term.requestId, dictionaryValue: existing });
+      }
+    }
+    if (pendingTerms.length > policy.maxNewTerms) {
+      throw new Error(`Plan exceeds maxNewTerms after duplicate reuse: ${pendingTerms.length}/${policy.maxNewTerms}`);
+    }
+
+    const createdTerms: Array<{ requestId: string; result: unknown }> = [];
+    const createdRules: Array<{ requestId: string; rule: unknown }> = [];
+    const reusedRules: Array<{ requestId: string; rule: unknown }> = [];
+    const previews: Array<{ requestId: string; sourceProductId: string | null; preview: unknown }> = [];
+    try {
+      for (const term of pendingTerms) {
+        const result = await dependencies.targetDictionaries.createTermForRulesV2({
+          sourceId,
+          targetId,
+          entityType: term.entityType,
+          name: term.name,
+          ...(term.slug === undefined ? {} : { slug: term.slug }),
+          ...(term.parentExternalId === undefined ? {} : { parentExternalId: term.parentExternalId }),
+          ...(term.relatedTerm === undefined ? {} : { relatedTerm: {
+            relationCode: term.relatedTerm.relationCode,
+            entityType: term.relatedTerm.entityType,
+            mode: term.relatedTerm.mode,
+            ...(term.relatedTerm.externalId === undefined ? {} : { externalId: term.relatedTerm.externalId }),
+          } }),
+        }, "mcp-genspark");
+        resolvedTerms.set(term.requestId, result.dictionaryValue.id);
+        createdTerms.push({ requestId: term.requestId, result });
+      }
+
+      const preparedRules: Array<{ requestId: string; draft: RuleV2Draft; maxSampleProductCount: number }> = [];
+      for (const proposedRule of rules) {
+        const draft: RuleV2Draft = {
+          sourceId,
+          targetId,
+          name: proposedRule.name,
+          groupCode: proposedRule.groupCode,
+          priority: proposedRule.priority,
+          status: proposedRule.status,
+          conditionGroups: proposedRule.conditionGroups.map((group) => ({
+            conditions: group.conditions.map((condition) => ({
+              field: condition.field,
+              operator: condition.operator,
+              values: condition.values,
+              ...(condition.matchSetId === undefined ? {} : { matchSetId: condition.matchSetId }),
+            })),
+          })),
+          actions: proposedRule.actions.map((action) => ({
+            targetScope: action.targetScope,
+            dictionaryValueId: action.dictionaryValueId ?? resolvedTerms.get(action.termRequestId!)!,
+            mode: action.mode,
+            ...(action.primarySourceBrand === undefined ? {} : { primarySourceBrand: action.primarySourceBrand }),
+          })),
+          ...(proposedRule.reason === undefined ? {} : { reason: proposedRule.reason }),
+        };
+        const sourceProductId = exactProductId(draft);
+        if (sourceProductId === null) {
+          if (!policy.allowGeneralizedRules) throw new Error(`Generalized rules are disabled by policy: ${proposedRule.requestId}`);
+          validateGeneralizedRule(draft);
+        } else if (!policy.allowProductOverrides) {
+          throw new Error(`Exact product overrides are disabled by policy: ${proposedRule.requestId}`);
+        }
+        const preview = await dependencies.rulesV2.preview(draft);
+        const productCount = previewCount(preview, "productCount");
+        const conflictCount = previewCount(preview, "conflicts");
+        if (conflictCount > 0) throw new Error(`Rule ${proposedRule.requestId} has ${conflictCount} preview conflicts`);
+        if (sourceProductId === null && productCount < 2) {
+          throw new Error(`Generalized rule ${proposedRule.requestId} must match at least two products in the current sample`);
+        }
+        if (sourceProductId !== null && productCount !== 1) {
+          throw new Error(`Exact rule ${proposedRule.requestId} must match one product, matched ${productCount}`);
+        }
+        if (productCount > proposedRule.maxSampleProductCount) {
+          throw new Error(`Rule ${proposedRule.requestId} exceeds its sample impact limit: ${productCount}/${proposedRule.maxSampleProductCount}`);
+        }
+        previews.push({ requestId: proposedRule.requestId, sourceProductId, preview: compactPreview(preview) });
+        const existingPage = objectValue(await dependencies.rulesV2.overview(targetId, {
+          search: proposedRule.name,
+          limit: 25,
+          offset: 0,
+        }));
+        const sameName = (Array.isArray(existingPage.items) ? existingPage.items : []).filter((item) => {
+          const existing = objectValue(item);
+          return typeof existing.name === "string" && normalizeTerm(existing.name) === normalizeTerm(proposedRule.name);
+        });
+        const equivalent = sameName.find((item) => comparableRule(item) === comparableRule(draft));
+        if (equivalent !== undefined) {
+          reusedRules.push({ requestId: proposedRule.requestId, rule: equivalent });
+          continue;
+        }
+        if (sameName.length > 0) throw new Error(`Rule name already exists with different semantics: ${proposedRule.name}`);
+        preparedRules.push({ requestId: proposedRule.requestId, draft, maxSampleProductCount: proposedRule.maxSampleProductCount });
+      }
+
+      for (const prepared of preparedRules) {
+        const created = await dependencies.rulesV2.create(prepared.draft, "mcp-genspark");
+        createdRules.push({ requestId: prepared.requestId, rule: created });
+      }
+      return textResult({ status: "complete", reusedTerms, createdTerms, reusedRules, previews, createdRules, exportStarted: false });
+    } catch (error) {
+      if (createdTerms.length === 0 && createdRules.length === 0) throw error;
+      return textResult({
+        status: "partial",
+        error: errorMessage(error),
+        reusedTerms,
+        createdTerms,
+        reusedRules,
+        previews,
+        createdRules,
+        exportStarted: false,
+        recovery: "Created remote terms are retained; correct the failed step and retry with the same names so they are reused.",
+      });
+    }
   });
 
   server.registerTool("create_classification_rule", {
@@ -531,8 +924,14 @@ export function registerClassificationMcp(
   const requireMcp = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const body = objectValue(request.body);
     const params = objectValue(body.params);
+    const writeTools = new Set([
+      "create_target_term",
+      "create_classification_rule",
+      "create_generalized_rule",
+      "apply_classification_plan",
+    ]);
     const requiredScope = body.method === "tools/call"
-      && (params.name === "create_target_term" || params.name === "create_classification_rule")
+      && typeof params.name === "string" && writeTools.has(params.name)
       ? mcpWriteScope
       : mcpReadScope;
     if (oauth !== null) {
