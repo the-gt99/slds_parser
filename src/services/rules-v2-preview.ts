@@ -14,7 +14,7 @@ const requiredTargetFields = [
   { scope: "product.category", label: "Категория", candidateType: "category" },
 ] as const;
 
-function exactSourceProductId(draft: RuleV2Draft): string | null {
+function exactSourceProductId(draft: Pick<RuleV2Draft, "conditionGroups">): string | null {
   for (const group of draft.conditionGroups) {
     if (group.conditions.length !== 1) continue;
     const condition = group.conditions[0]!;
@@ -77,6 +77,69 @@ function ruleIdentity(rule: RuleV2Record): string {
   return rule.originId ?? rule.id;
 }
 
+function compatibleWorkbenchRevision(stored: string | undefined, current: string): boolean {
+  return stored === current || stored?.startsWith(`${current}:`) === true;
+}
+
+function normalizedRuleValues(values: readonly string[]): string[] {
+  return values.map((value) => value.trim().normalize("NFKC").toLocaleLowerCase("en-US"));
+}
+
+function selectiveConditionSql(condition: RuleV2Record["conditionGroups"][number]["conditions"][number],
+  parameters: unknown[]): string | null {
+  if (!(["equals", "one_of"] as readonly string[]).includes(condition.operator) || condition.values.length === 0) return null;
+  const expected = normalizedRuleValues(condition.values);
+  const parameter = (value: unknown): string => { parameters.push(value); return `$${parameters.length}`; };
+  const candidate = /^candidate\.([a-z][a-z0-9_]*)\.(sourceValue|(?:context|evidence)\.([a-zA-Z][a-zA-Z0-9_-]*))$/u.exec(condition.field);
+  const characteristicCandidates: Readonly<Record<string, string>> = {
+    brand: "brand", model: "model", category: "category", color: "color", material: "material",
+    shoeHeight: "shoe_height", activities: "activity", tags: "tag",
+  };
+  const characteristic = /^common\.characteristics\.([a-zA-Z][a-zA-Z0-9_-]*)$/u.exec(condition.field);
+  const candidateType = candidate?.[1] ?? (characteristic === null ? undefined : characteristicCandidates[characteristic[1]!]);
+  if (candidateType !== undefined) {
+    const valueExpression = candidate === null || candidate[2] === "sourceValue" ? "candidate->>'sourceValue'"
+      : `candidate->${parameter(candidate[2]!.split(".")[0]!)}->>${parameter(candidate[3]!)}`;
+    return `EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(COALESCE(internal.data->'referenceCandidates', '[]'::JSONB)) candidate
+      WHERE candidate->>'typeCode' = ${parameter(candidateType)}
+        AND LOWER(BTRIM(${valueExpression})) = ANY(${parameter(expected)}::TEXT[]))`;
+  }
+  let path: string[] | null = null;
+  if (characteristic?.[1] === "family") path = ["attributes", "family"];
+  else if (characteristic?.[1] === "audience") {
+    const values = parameter(expected);
+    return `(LOWER(BTRIM(internal.data#>>'{attributes,audience}')) = ANY(${values}::TEXT[])
+      OR LOWER(BTRIM(internal.data#>>'{attributes,gender}')) = ANY(${values}::TEXT[]))`;
+  } else if (characteristic?.[1] === "ageGroups") path = ["attributes", "ageGroups"];
+  else {
+    const structured = /^product\.(attribute|metadata|fact)\.([a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]*)*)$/u.exec(condition.field);
+    if (structured !== null) path = [{ attribute: "attributes", metadata: "metadata", fact: "sourceFacts" }[structured[1]!]!,
+      ...structured[2]!.split(".")];
+  }
+  if (path === null) return null;
+  const extracted = `JSONB_EXTRACT_PATH(internal.data, VARIADIC ${parameter(path)}::TEXT[])`;
+  const values = parameter(expected);
+  return `(LOWER(BTRIM(${extracted}#>>'{}')) = ANY(${values}::TEXT[])
+    OR (JSONB_TYPEOF(${extracted}) = 'array' AND EXISTS (
+      SELECT 1 FROM JSONB_ARRAY_ELEMENTS(${extracted}) element
+      WHERE LOWER(BTRIM(element#>>'{}')) = ANY(${values}::TEXT[]))))`;
+}
+
+function selectiveRuleSql(rule: RuleV2Record, parameters: unknown[]): string | null {
+  const exact = exactSourceProductId(rule);
+  if (exact !== null) {
+    parameters.push(exact);
+    return `product.id = $${parameters.length}`;
+  }
+  const group = rule.conditionGroups.find((candidate) => candidate.conditions.length > 0
+    && candidate.conditions.every((condition) => (condition.operator === "equals" || condition.operator === "one_of")
+      && condition.values.length > 0 && (condition.field.startsWith("candidate.")
+        || condition.field.startsWith("common.characteristics.") || /^product\.(?:attribute|metadata|fact)\./u.test(condition.field))));
+  if (group === undefined) return null;
+  const predicates = group.conditions.map((condition) => selectiveConditionSql(condition, parameters));
+  return predicates.some((predicate) => predicate === null) ? null : `(${predicates.join(" OR ")})`;
+}
+
 /** Read-only workbench index and rule impact previews using the active V2 evaluator. */
 export class RulesV2PreviewService {
   private readonly indexing = new Map<string, string>();
@@ -90,9 +153,9 @@ export class RulesV2PreviewService {
       beforeFields: Record<string, string[]>; afterFields: Record<string, string[]> }[]; error: string | undefined }>();
   constructor(private readonly pool: SqlPool) {}
 
-  private async rulesSnapshot(db: SqlExecutor, revision?: string): Promise<RulesV2Snapshot> {
-    if (revision !== undefined && this.cachedSnapshot?.revision === revision) return this.cachedSnapshot;
+  private async rulesSnapshot(db: SqlExecutor): Promise<RulesV2Snapshot> {
     const snapshot = await new RulesV2Runtime(db, () => 0).snapshot();
+    if (this.cachedSnapshot?.revision === snapshot.revision) return this.cachedSnapshot;
     this.cachedSnapshot = snapshot;
     return snapshot;
   }
@@ -111,9 +174,9 @@ export class RulesV2PreviewService {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const runtime = new RulesV2Runtime(client, () => 0);
-      const revision = await runtime.revision();
+      const revision = await runtime.rulesRevision();
       if (query.productId !== undefined) {
-        const snapshot = await this.rulesSnapshot(client, revision);
+        const snapshot = await this.rulesSnapshot(client);
         const rows = (await client.query<WorkbenchRow>(`
         SELECT product.id::TEXT, product.source_id::TEXT, product.source_key, product.external_id,
                source.code, internal.data, internal.updated_at::TEXT
@@ -128,7 +191,7 @@ export class RulesV2PreviewService {
           "SELECT rules_revision, complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2",
           [query.sourceId, query.targetId])).rows[0];
         await client.query("COMMIT");
-        if (state?.rules_revision !== revision || !state.complete) {
+        if (compatibleWorkbenchRevision(state?.rules_revision, revision) && state?.complete === false) {
           this.startIndexing(query.sourceId, query.targetId, revision, snapshot.records);
         }
         return { mode: "resulting_target_dto" as const, requiredTargetFields, items, scannedCount: items.length,
@@ -141,7 +204,7 @@ export class RulesV2PreviewService {
       const state = (await client.query<{ rules_revision: string; complete: boolean }>(
         "SELECT rules_revision, complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2",
         [query.sourceId, query.targetId])).rows[0];
-      const complete = state?.rules_revision === revision && state.complete;
+      const complete = compatibleWorkbenchRevision(state?.rules_revision, revision) && state?.complete === true;
       const search = query.search?.trim() ?? "";
       const missing = query.missingField === undefined ? "" : `required_${query.missingField}_missing`;
       const variants = query.variants ?? "all";
@@ -154,8 +217,8 @@ export class RulesV2PreviewService {
             : query.sort === "data_ready" ? `(item.issue_count - ${ruleGapCount}) ASC, ${ruleGapCount} DESC,
               item.product_updated_at DESC, item.source_product_id DESC`
           : "item.product_updated_at DESC, item.source_product_id DESC";
-      const values: unknown[] = [query.sourceId, query.targetId, revision];
-      const clauses = ["item.source_id = $1", "item.target_id = $2", "item.rules_revision = $3", "item.product_updated_at IS NOT NULL"];
+      const values: unknown[] = [query.sourceId, query.targetId];
+      const clauses = ["item.source_id = $1", "item.target_id = $2", "item.product_updated_at IS NOT NULL"];
       const parameter = (value: unknown): string => { values.push(value); return `$${values.length}`; };
       if (search !== "") clauses.push(`item.search_text ILIKE '%' || ${parameter(search)} || '%'`);
       if (missing !== "") clauses.push(`${parameter(missing)} = ANY(item.issue_codes)`);
@@ -171,15 +234,18 @@ export class RulesV2PreviewService {
         WHERE ${filter}`, filterValues)).rows[0]?.total ?? 0;
       const counts = (await client.query<{ status: string; count: number }>(`SELECT item.status, COUNT(*)::INT AS count
         FROM rules_v2_workbench_items item
-        WHERE item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
-        AND item.product_updated_at IS NOT NULL GROUP BY item.status`, [query.sourceId, query.targetId, revision])).rows;
+        WHERE item.source_id = $1 AND item.target_id = $2
+        AND item.product_updated_at IS NOT NULL GROUP BY item.status`, [query.sourceId, query.targetId])).rows;
       const indexed = counts.reduce((sum, row) => sum + row.count, 0);
       const total = complete ? indexed : (await client.query<{ count: number }>(`SELECT COUNT(*)::INT AS count FROM internal_products internal
         JOIN source_products product ON product.id = internal.source_product_id WHERE product.source_id = $1`, [query.sourceId])).rows[0]?.count ?? 0;
       const indexComplete = complete && indexed === total;
-      const indexSnapshot = indexComplete ? undefined : await this.rulesSnapshot(client, revision);
+      const indexSnapshot = state === undefined || compatibleWorkbenchRevision(state.rules_revision, revision)
+        ? (indexComplete ? undefined : await this.rulesSnapshot(client)) : undefined;
       await client.query("COMMIT");
-      const indexError = this.indexErrors.get(`${query.sourceId}:${query.targetId}`) ?? null;
+      const revisionError = state !== undefined && !compatibleWorkbenchRevision(state.rules_revision, revision)
+        ? "Правила изменились вне управляемой очереди. Запустите явное полное перестроение индекса." : null;
+      const indexError = revisionError ?? this.indexErrors.get(`${query.sourceId}:${query.targetId}`) ?? null;
       if (indexSnapshot !== undefined) this.startIndexing(query.sourceId, query.targetId, revision, indexSnapshot.records);
       const items = rows.slice(0, limit).map((row) => ({ sourceProductId: String(row.source_product_id),
         sourceExternalId: row.source_external_id, title: row.title, sku: row.sku, updatedAt: row.updated_at,
@@ -197,7 +263,15 @@ export class RulesV2PreviewService {
 
   private startIndexing(sourceId: string, targetId: string, revision: string, records: readonly RuleV2Record[]): void {
     const key = `${sourceId}:${targetId}`;
-    if (this.indexing.has(key)) { this.indexing.set(key, revision); return; }
+    if (this.indexing.has(key)) {
+      this.indexing.set(key, revision);
+      const resume = async () => {
+        while (this.indexing.has(key)) await new Promise((resolve) => setTimeout(resolve, 25));
+        this.startIndexing(sourceId, targetId, revision, records);
+      };
+      void resume();
+      return;
+    }
     this.indexing.set(key, revision);
     this.indexErrors.delete(key);
     const direct = new DirectRulesV2Assignments(records, targetId);
@@ -215,6 +289,93 @@ export class RulesV2PreviewService {
     });
   }
 
+  async invalidateRuleChange(previous: RuleV2Record | undefined, current: RuleV2Record): Promise<void> {
+    const db = await this.pool.connect();
+    try {
+      const runtime = new RulesV2Runtime(db, () => 0);
+      const [revision, snapshot] = await Promise.all([runtime.rulesRevision(), runtime.snapshot()]);
+      const pairs = new Map<string, { sourceId: string; targetId: string }>();
+      for (const rule of [previous, current]) if (rule !== undefined && rule.sourceId !== null && rule.targetId !== null) {
+        pairs.set(`${rule.sourceId}:${rule.targetId}`, { sourceId: rule.sourceId, targetId: rule.targetId });
+      }
+      for (const { sourceId, targetId } of pairs.values()) {
+        const state = (await db.query<{ complete: boolean }>(
+          "SELECT complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2",
+          [sourceId, targetId])).rows[0];
+        if (state === undefined) continue;
+        const currentRecords = snapshot.records;
+        const previousRecords = previous === undefined ? currentRecords.filter((rule) => rule.id !== current.id)
+          : [...currentRecords.filter((rule) => rule.id !== current.id && rule.id !== previous.id), previous];
+        const before = new DirectRulesV2Assignments(previousRecords, targetId);
+        const after = new DirectRulesV2Assignments(currentRecords, targetId);
+        const activeFor = (rule: RuleV2Record | undefined) => rule !== undefined && rule.status === "shadow"
+          && rule.sourceId === sourceId && rule.targetId === targetId
+          && (rule.originKind === "native" || rule.originKind === "target_assignment_rule");
+        const oldActive = activeFor(previous);
+        const newActive = activeFor(current);
+        let cursor = "0";
+        let dirty = 0;
+        while (true) {
+          const parameters: unknown[] = [sourceId, cursor];
+          const predicates = [oldActive ? selectiveRuleSql(previous!, parameters) : null,
+            newActive ? selectiveRuleSql(current, parameters) : null];
+          const canNarrow = (!oldActive || predicates[0] !== null) && (!newActive || predicates[1] !== null);
+          const activePredicates = predicates.filter((predicate): predicate is string => predicate !== null);
+          const candidateFilter = canNarrow && activePredicates.length > 0 ? `AND (${activePredicates.join(" OR ")})` : "";
+          const rows = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT,
+            product.source_key, product.external_id, source.code, internal.data, internal.updated_at::TEXT
+            FROM source_products product JOIN sources source ON source.id = product.source_id
+            JOIN internal_products internal ON internal.source_product_id = product.id
+            WHERE product.source_id = $1 AND product.id > $2 ${candidateFilter}
+            ORDER BY product.id LIMIT 2000`, parameters)).rows;
+          if (rows.length === 0) break;
+          const matched: string[] = [];
+          for (const row of rows) {
+            cursor = row.id;
+            const source = { id: row.source_id, code: row.code, productId: row.id,
+              sourceKey: row.source_key, externalId: row.external_id };
+            const oldMatch = oldActive && before.matchesRule(ruleIdentity(previous!), row.data, source);
+            const newMatch = newActive && after.matchesRule(ruleIdentity(current), row.data, source);
+            if (oldMatch || newMatch) matched.push(row.id);
+          }
+          if (matched.length > 0) {
+            const result = await db.query(`UPDATE rules_v2_workbench_items SET product_updated_at = NULL
+              WHERE target_id = $1 AND source_product_id = ANY($2::BIGINT[])`, [targetId, matched]);
+            dirty += result.rowCount ?? 0;
+          }
+        }
+        await db.query(`UPDATE rules_v2_workbench_state SET rules_revision = $3,
+          complete = CASE WHEN $4::INTEGER > 0 THEN FALSE ELSE complete END, updated_at = NOW()
+          WHERE source_id = $1 AND target_id = $2`, [sourceId, targetId, revision, dirty]);
+        if (dirty > 0 || !state.complete) this.startIndexing(sourceId, targetId, revision, currentRecords);
+      }
+    } finally { db.release(); }
+  }
+
+  async rebuildIndex(sourceId: string, targetId: string) {
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      const runtime = new RulesV2Runtime(db, () => 0);
+      const [revision, snapshot] = await Promise.all([runtime.rulesRevision(), runtime.snapshot()]);
+      await db.query("DELETE FROM rules_v2_workbench_items WHERE source_id = $1 AND target_id = $2", [sourceId, targetId]);
+      const state = await db.query(`INSERT INTO rules_v2_workbench_state
+        (source_id, target_id, rules_revision, cursor_id, sweep_max_id, floor_id, complete, updated_at)
+        SELECT $1, $2, $3, MAX(product.id), MAX(product.id), 0, FALSE, NOW()
+        FROM source_products product JOIN internal_products internal ON internal.source_product_id = product.id
+        WHERE product.source_id = $1
+        ON CONFLICT (source_id, target_id) DO UPDATE SET rules_revision = EXCLUDED.rules_revision,
+          cursor_id = EXCLUDED.cursor_id, sweep_max_id = EXCLUDED.sweep_max_id, floor_id = 0,
+          complete = FALSE, updated_at = NOW()`, [sourceId, targetId, revision]);
+      await db.query("COMMIT");
+      this.startIndexing(sourceId, targetId, revision, snapshot.records);
+      return { started: true, sourceId, targetId, revision, stateUpdated: (state.rowCount ?? 0) > 0 };
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally { db.release(); }
+  }
+
   private async indexBatch(sourceId: string, targetId: string, revision: string, direct: DirectRulesV2Assignments,
     records: ReadonlyMap<string, RuleV2Record>): Promise<boolean> {
     const db = await this.pool.connect();
@@ -230,23 +391,20 @@ export class RulesV2PreviewService {
         `SELECT rules_revision, cursor_id::TEXT, sweep_max_id::TEXT, floor_id::TEXT, complete FROM rules_v2_workbench_state
          WHERE source_id = $1 AND target_id = $2 FOR UPDATE`, [sourceId, targetId])).rows[0]!;
       if (state.rules_revision !== revision) {
-        await db.query(`UPDATE rules_v2_workbench_state SET rules_revision = $3, floor_id = 0, complete = FALSE,
-          cursor_id = (SELECT MAX(product.id) FROM source_products product JOIN internal_products internal
-            ON internal.source_product_id = product.id WHERE product.source_id = $1),
-          sweep_max_id = (SELECT MAX(product.id) FROM source_products product JOIN internal_products internal
-            ON internal.source_product_id = product.id WHERE product.source_id = $1), updated_at = NOW()
+        if (!compatibleWorkbenchRevision(state.rules_revision, revision)) {
+          throw new IntegrationContractError("Workbench rule revision changed without a selective invalidation");
+        }
+        await db.query(`UPDATE rules_v2_workbench_state SET rules_revision = $3, updated_at = NOW()
           WHERE source_id = $1 AND target_id = $2`, [sourceId, targetId, revision]);
-        state = (await db.query<{ rules_revision: string; cursor_id: string | null; sweep_max_id: string | null; floor_id: string; complete: boolean }>(
-          `SELECT rules_revision, cursor_id::TEXT, sweep_max_id::TEXT, floor_id::TEXT, complete
-           FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2`, [sourceId, targetId])).rows[0]!;
+        state = { ...state, rules_revision: revision };
       }
       const dirty = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT, product.source_key,
         product.external_id, source.code, internal.data, internal.updated_at::TEXT
         FROM rules_v2_workbench_items item JOIN source_products product ON product.id = item.source_product_id
         JOIN sources source ON source.id = product.source_id JOIN internal_products internal ON internal.source_product_id = product.id
-        WHERE item.source_id = $1 AND item.target_id = $2 AND item.rules_revision = $3
+        WHERE item.source_id = $1 AND item.target_id = $2
           AND item.product_updated_at IS DISTINCT FROM internal.updated_at
-        ORDER BY product.id DESC LIMIT 500`, [sourceId, targetId, revision])).rows;
+        ORDER BY product.id DESC LIMIT 500`, [sourceId, targetId])).rows;
       let rows = dirty;
       if (rows.length === 0 && state.cursor_id !== null) {
         rows = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT, product.source_key,

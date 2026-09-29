@@ -24,6 +24,16 @@ describe("RulesV2Service", () => {
     const service = new RulesV2Service({} as RulesV2Repository, evaluator);
     await expect(service.create({ ...draft, status: "active" } as unknown as RuleV2Draft, "admin")).rejects.toThrow();
   });
+  it("invalidates the workbench after creating a rule", async () => {
+    const created = { ...draft, id: "7", sourceCode: "goat", targetCode: "slamdunk", originKind: "native",
+      originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "" };
+    const create = vi.fn().mockResolvedValue(created);
+    const invalidateRuleChange = vi.fn().mockResolvedValue(undefined);
+    const service = new RulesV2Service({ create } as unknown as RulesV2Repository, { preview: async () => ({}), invalidateRuleChange });
+
+    await expect(service.create(draft, "admin")).resolves.toEqual(created);
+    expect(invalidateRuleChange).toHaveBeenCalledWith(undefined, created);
+  });
   it("reports the selected engine in previews", async () => {
     const service = new RulesV2Service({} as RulesV2Repository,
       { preview: async () => ({ productCount: 1 }) }, async () => ({ mode: "v2" }));

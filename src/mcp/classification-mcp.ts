@@ -868,6 +868,20 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
     }
   });
 
+  server.registerTool("rebuild_classification_index", {
+    title: "Полностью перестроить индекс классификации",
+    description: "Explicitly discard and rebuild the complete Rules v2 workbench index for one source and target. Use only on a separate user request; normal term and rule changes are processed selectively.",
+    inputSchema: {
+      sourceId: z.string().regex(/^\d+$/u),
+      targetId: z.string().regex(/^\d+$/u),
+      confirmed: z.literal(true),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  }, async ({ sourceId, targetId, confirmed: _confirmed }) => textResult({
+    result: await dependencies.rulesV2.rebuildIndex(sourceId, targetId),
+    exportStarted: false,
+  }));
+
   server.registerTool("create_classification_rule", {
     description: "Create an active Rules v2 classification for exactly one product after explicit user confirmation. A standalone common.source.productId equals condition is mandatory; the fresh preview must match one product without conflicts.",
     inputSchema: {
@@ -931,6 +945,7 @@ export function registerClassificationMcp(
       "create_classification_rule",
       "create_generalized_rule",
       "apply_classification_plan",
+      "rebuild_classification_index",
     ]);
     const requiredScope = body.method === "tools/call"
       && typeof params.name === "string" && writeTools.has(params.name)

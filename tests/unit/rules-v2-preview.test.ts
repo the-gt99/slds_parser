@@ -41,7 +41,7 @@ describe("RulesV2PreviewService", () => {
       actions: [{ targetScope: scope, dictionaryValueId: id, externalValue: id, externalLabel: label, mode: "add" }],
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "",
     });
-    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
+    vi.spyOn(RulesV2Runtime.prototype, "rulesRevision").mockResolvedValue("1");
     vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", [
       rule("31", "product.brand", "Nike"), rule("32", "product.brand", "Jordan Brand"),
       rule("41", "product.category", "Кроссовки"),
@@ -102,7 +102,7 @@ describe("RulesV2PreviewService", () => {
       actions: [{ targetScope: scope, dictionaryValueId: id, externalValue: id, externalLabel: scope, mode: "add" }],
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "",
     });
-    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
+    vi.spyOn(RulesV2Runtime.prototype, "rulesRevision").mockResolvedValue("1");
     vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", [
       existing("31", "product.brand"), existing("41", "product.category"),
     ]));
@@ -135,7 +135,7 @@ describe("RulesV2PreviewService", () => {
   });
 
   it("filters and sorts the indexed catalogue before pagination", async () => {
-    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("revision-1");
+    vi.spyOn(RulesV2Runtime.prototype, "rulesRevision").mockResolvedValue("revision-1");
     const snapshot = vi.spyOn(RulesV2Runtime.prototype, "snapshot");
     const statements: { sql: string; values: unknown[] | undefined }[] = [];
     const query = async <Row extends Record<string, unknown>>(sql: string, values?: unknown[]): Promise<SqlResult<Row>> => {
@@ -159,7 +159,40 @@ describe("RulesV2PreviewService", () => {
     expect(list?.sql).toContain("NOT ('variants_missing' = ANY(item.issue_codes))");
     expect(list?.sql).toContain("item.product_updated_at IS NOT NULL");
     expect(list?.sql).not.toContain("JOIN internal_products");
-    expect(list?.values).toEqual(["1", "10", "revision-1", "сандали", "required_model_missing", 41, 0]);
+    expect(list?.values).toEqual(["1", "10", "сандали", "required_model_missing", 41, 0]);
     expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it("invalidates only products matched by a newly created rule", async () => {
+    const rule: RuleV2Record = {
+      id: "77", sourceId: "1", sourceCode: "goat", targetId: "10", targetCode: "slamdunk",
+      name: "Nike", groupCode: "brand", priority: 100, status: "shadow",
+      conditionGroups: [{ conditions: [{ field: "candidate.brand.sourceValue", operator: "equals", values: ["Nike"] }] }],
+      actions: [{ targetScope: "product.brand", dictionaryValueId: "31", externalValue: "31", externalLabel: "Nike", mode: "add" }],
+      originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1",
+      createdAt: "2026-09-30", updatedAt: "2026-09-30",
+    };
+    const product = (id: string, brand: string) => ({ id, source_id: "1", source_key: id, external_id: id,
+      code: "goat", updated_at: "2026-09-30", data: { sourceProductId: id, title: brand, description: "",
+        sku: id, images: [], variants: [], attributes: {}, metadata: {}, referenceCandidates: [{ key: `brand:${id}`,
+          typeCode: "brand", scope: "product.brand", subjectKind: "product", sourceValue: brand, context: {}, evidence: {} }] } });
+    vi.spyOn(RulesV2Runtime.prototype, "rulesRevision").mockResolvedValue("rules-2");
+    vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("snapshot-2", [rule]));
+    let invalidated: unknown[] = [];
+    const query = async <Row extends Record<string, unknown>>(sql: string, values: unknown[] = []): Promise<SqlResult<Row>> => {
+      const rows = sql.includes("SELECT complete FROM rules_v2_workbench_state") ? [{ complete: true }]
+        : sql.includes("FROM source_products product") && values[1] === "0" ? [product("2", "Nike"), product("3", "Adidas")]
+          : [];
+      if (sql.includes("UPDATE rules_v2_workbench_items")) invalidated = values[1] as unknown[];
+      return { rows: rows as unknown as Row[], rowCount: sql.includes("UPDATE rules_v2_workbench_items") ? 1 : rows.length };
+    };
+    const pool = { connect: async () => ({ query, release() {} }), async end() {} } as SqlPool;
+    const service = new RulesV2PreviewService(pool);
+    const start = vi.spyOn(service as unknown as { startIndexing(): void }, "startIndexing").mockImplementation(() => {});
+
+    await service.invalidateRuleChange(undefined, rule);
+
+    expect(invalidated).toEqual(["2"]);
+    expect(start).toHaveBeenCalledWith("1", "10", "rules-2", [rule]);
   });
 });

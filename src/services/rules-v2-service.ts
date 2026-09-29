@@ -1,5 +1,5 @@
 import { IntegrationContractError } from "../core/errors/index.js";
-import type { RuleV2Draft, RuleV2ImportedDraft, RulesV2Repository } from "../repositories/index.js";
+import type { RuleV2Draft, RuleV2ImportedDraft, RuleV2Record, RulesV2Repository } from "../repositories/index.js";
 import { compileTargetAssignmentRegex } from "./target-assignment-rule-matcher.js";
 import { validateRulesV2Field } from "./rules-v2-fields.js";
 import type { RulesV2WorkbenchQuery } from "./rules-v2-preview.js";
@@ -34,6 +34,8 @@ export class RulesV2Service {
       workbench?(query: RulesV2WorkbenchQuery): Promise<object>;
       startFullPreview?(draft: RuleV2Draft): { id: string };
       fullPreviewStatus?(id: string): object;
+      invalidateRuleChange?(previous: RuleV2Record | undefined, current: RuleV2Record): Promise<void>;
+      rebuildIndex?(sourceId: string, targetId: string): Promise<object>;
     },
     private readonly executionState?: () => Promise<{ mode: "v1" | "v2" }>) {}
 
@@ -110,6 +112,27 @@ export class RulesV2Service {
     return this.evaluator.fullPreviewStatus(id);
   }
 
-  async create(draft: RuleV2Draft, actor: string) { validate(draft); return this.repository.create(draft, actor); }
-  async update(id: string, draft: RuleV2Draft, revision: string, actor: string) { validate(draft); return this.repository.update(id, draft, revision, actor); }
+  async rebuildIndex(sourceId: string, targetId: string) {
+    if (this.evaluator.rebuildIndex === undefined) throw new IntegrationContractError("Workbench index rebuild is unavailable");
+    if (!/^\d+$/u.test(sourceId) || !/^\d+$/u.test(targetId)) throw new IntegrationContractError("Invalid source or target ID");
+    return this.evaluator.rebuildIndex(sourceId, targetId);
+  }
+
+  private async findRule(id: string): Promise<RuleV2Record | undefined> {
+    return (await this.repository.list(undefined, { search: id, limit: 100, offset: 0 })).find((rule) => rule.id === id);
+  }
+
+  async create(draft: RuleV2Draft, actor: string) {
+    validate(draft);
+    const current = await this.repository.create(draft, actor);
+    await this.evaluator.invalidateRuleChange?.(undefined, current);
+    return current;
+  }
+  async update(id: string, draft: RuleV2Draft, revision: string, actor: string) {
+    validate(draft);
+    const previous = await this.findRule(id);
+    const current = await this.repository.update(id, draft, revision, actor);
+    await this.evaluator.invalidateRuleChange?.(previous, current);
+    return current;
+  }
 }

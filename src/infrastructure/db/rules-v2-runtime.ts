@@ -28,11 +28,16 @@ export class RulesV2Runtime {
   }
 
   async revision(): Promise<string> {
+    const rulesRevision = await this.rulesRevision();
+    const dictionaryStamp = await this.db.query<DatabaseRow>(`SELECT COALESCE(SUM(revision), 0)::TEXT AS revision FROM target_export_revisions`);
+    return `${rulesRevision}:${dictionaryStamp.rows[0]!.revision}`;
+  }
+
+  async rulesRevision(): Promise<string> {
     const stamp = await this.db.query<DatabaseRow>(`SELECT
       COALESCE(SUM(revision), 0)::TEXT || ':' || COUNT(*)::TEXT || ':' || COALESCE(MAX(updated_at)::TEXT, '') AS revision
       FROM rules_v2`);
-    const dictionaryStamp = await this.db.query<DatabaseRow>(`SELECT COALESCE(SUM(revision), 0)::TEXT AS revision FROM target_export_revisions`);
-    return `${stamp.rows[0]!.revision}:${dictionaryStamp.rows[0]!.revision}`;
+    return String(stamp.rows[0]!.revision);
   }
 
   private async load(): Promise<RulesV2Snapshot> {
