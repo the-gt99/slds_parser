@@ -102,8 +102,9 @@ list_classification_workbench в compact-режиме и переходи по �
 Перед записью правила выполни preview_classification_rule, preview_classification_rules или preview_generalized_rule.
 Обобщённые правила должны опираться только на устойчивые структурированные признаки и покрывать не менее двух товаров.
 Для автономной пакетной работы используй apply_classification_plan: он повторно использует существующие термины, создаёт
-только явно разрешённые типы терминов, проверяет каждое правило свежим preview и не запускает экспорт. Одно подтверждение
-разрешает весь ограниченный план; не запрашивай отдельное подтверждение для каждого его шага.`;
+только явно разрешённые типы терминов, проверяет каждое правило свежим preview и не запускает экспорт. План может содержать
+только термины: используй это для безопасной последовательности «создать термины, выполнить preview с их реальными ID,
+затем применить правила». Одно подтверждение разрешает весь ограниченный план; не запрашивай отдельное подтверждение.`;
 
 const classificationBlockerCodes = new Set([
   "required_brand_missing",
@@ -673,15 +674,15 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
 
   server.registerTool("apply_classification_plan", {
     title: "Применить план классификации",
-    description: "Apply one bounded classification plan. Existing exact-name terms are reused, missing allowed terms are created, every rule receives a fresh preview, and rules are written only after all previews pass. Generalized rules must cover at least two sample products; exact product overrides require an explicit policy flag. Export is never started.",
+    description: "Apply one bounded classification plan containing terms, rules, or both. A terms-only plan is supported so new terms can receive real dictionary IDs before a separate rule preview. Existing exact-name terms are reused, missing allowed terms are created, every proposed rule receives a fresh preview, and rules are written only after all previews pass. Export is never started.",
     inputSchema: {
       sourceId: z.string().regex(/^\d+$/u),
       targetId: z.string().regex(/^\d+$/u),
       terms: z.array(planTermSchema).max(20).default([]),
-      rules: z.array(planRuleSchema).min(1).max(20),
+      rules: z.array(planRuleSchema).max(20).default([]),
       policy: z.object({
         maxNewTerms: z.number().int().min(0).max(20).default(5),
-        maxRules: z.number().int().min(1).max(20).default(10),
+        maxRules: z.number().int().min(0).max(20).default(10),
         allowedEntityTypes: z.array(z.string().min(1).max(200)).min(1).max(20),
         allowGeneralizedRules: z.boolean().default(true),
         allowProductOverrides: z.boolean().default(false),
@@ -690,6 +691,7 @@ export function createClassificationMcpServer(dependencies: ClassificationMcpDep
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   }, async ({ sourceId, targetId, terms, rules, policy, confirmed: _confirmed }) => {
+    if (terms.length === 0 && rules.length === 0) throw new Error("Classification plan must contain at least one term or rule");
     assertUniqueRequestIds(terms, "term");
     assertUniqueRequestIds(rules, "rule");
     const normalizedRuleNames = rules.map((item) => normalizeTerm(item.name));

@@ -455,6 +455,39 @@ describe("classification MCP", () => {
     }), "mcp-genspark");
   });
 
+  it("applies a terms-only plan before rules can be previewed with real dictionary IDs", async () => {
+    const createTermForRulesV2 = vi.fn().mockResolvedValue({
+      dictionaryValue: { id: "44", externalId: "404", entityType: "brands", name: "Phaidon" },
+      relatedDictionaryValues: [],
+    });
+    const client = await connectedClient({ targetDictionaries: {
+      listValues: vi.fn().mockResolvedValue([]),
+      createTermForRulesV2,
+    } });
+    const result = await client.callTool({
+      name: "apply_classification_plan",
+      arguments: {
+        sourceId: "1",
+        targetId: "1",
+        terms: [{ requestId: "brand-phaidon", entityType: "brands", name: "Phaidon", slug: "phaidon" }],
+        rules: [],
+        policy: {
+          maxNewTerms: 1,
+          maxRules: 0,
+          allowedEntityTypes: ["brands"],
+          allowGeneralizedRules: true,
+          allowProductOverrides: false,
+        },
+        confirmed: true,
+      },
+    });
+    const response = JSON.parse(resultText(result)) as { status: string; createdTerms: unknown[]; createdRules: unknown[] };
+    expect(response).toMatchObject({ status: "complete" });
+    expect(response.createdTerms).toHaveLength(1);
+    expect(response.createdRules).toHaveLength(0);
+    expect(createTermForRulesV2).toHaveBeenCalledTimes(1);
+  });
+
   it("returns a real WordPress preflight without exporting", async () => {
     const preview = vi.fn().mockResolvedValue({ readiness: { ready: false }, payload: { name: "Test" } });
     const client = await connectedClient({ wordpressPreview: { preview } });
