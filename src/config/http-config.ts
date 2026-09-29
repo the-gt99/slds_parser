@@ -6,6 +6,8 @@ export interface HttpEnvironment {
   readonly PARSER_ADMIN_PASSWORD?: string;
   readonly PARSER_SESSION_SECRET?: string;
   readonly PARSER_MCP_TOKEN?: string;
+  readonly PARSER_MCP_PUBLIC_BASE_URL?: string;
+  readonly PARSER_MCP_OAUTH_REDIRECT_URI?: string;
 }
 
 export interface HttpConfig {
@@ -22,6 +24,8 @@ export interface AdminApiConfig {
 
 export interface McpConfig {
   readonly token: string;
+  readonly publicBaseUrl?: string;
+  readonly oauthRedirectUri?: string;
 }
 
 export function loadHttpConfig(
@@ -73,5 +77,27 @@ export function loadMcpConfig(
   if (token.length < 32) {
     throw new Error("PARSER_MCP_TOKEN must contain at least 32 characters");
   }
-  return { token };
+  const rawBaseUrl = environment.PARSER_MCP_PUBLIC_BASE_URL?.trim();
+  if (rawBaseUrl === undefined || rawBaseUrl === "") return { token };
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(rawBaseUrl);
+  } catch {
+    throw new Error("PARSER_MCP_PUBLIC_BASE_URL must be a valid HTTPS origin");
+  }
+  if (baseUrl.protocol !== "https:" || baseUrl.username !== "" || baseUrl.password !== ""
+    || baseUrl.pathname !== "/" || baseUrl.search !== "" || baseUrl.hash !== "") {
+    throw new Error("PARSER_MCP_PUBLIC_BASE_URL must be an HTTPS origin without path, query or credentials");
+  }
+  const rawRedirectUri = environment.PARSER_MCP_OAUTH_REDIRECT_URI?.trim() ?? "";
+  let redirectUri: URL;
+  try {
+    redirectUri = new URL(rawRedirectUri);
+  } catch {
+    throw new Error("PARSER_MCP_OAUTH_REDIRECT_URI must be a valid HTTPS URL");
+  }
+  if (redirectUri.protocol !== "https:" || redirectUri.username !== "" || redirectUri.password !== "") {
+    throw new Error("PARSER_MCP_OAUTH_REDIRECT_URI must be an HTTPS URL without credentials");
+  }
+  return { token, publicBaseUrl: baseUrl.origin, oauthRedirectUri: redirectUri.toString() };
 }

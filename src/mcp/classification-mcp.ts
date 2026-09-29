@@ -15,6 +15,8 @@ import type {
   TargetDictionaryService,
   WordPressPreviewService,
 } from "../services/index.js";
+import { mcpReadScope, mcpWriteScope, registerMcpOauth } from "./oauth.js";
+import type { AdminApiConfig } from "../config/index.js";
 
 export interface ClassificationMcpDependencies {
   readonly config: McpConfig;
@@ -521,8 +523,22 @@ function methodNotAllowed(reply: FastifyReply) {
 export function registerClassificationMcp(
   app: FastifyInstance,
   dependencies: ClassificationMcpDependencies,
+  options?: { readonly admin: AdminApiConfig },
 ): void {
+  const oauth = dependencies.config.publicBaseUrl === undefined || options === undefined
+    ? null
+    : registerMcpOauth(app, { mcp: dependencies.config, admin: options.admin });
   const requireMcp = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const body = objectValue(request.body);
+    const params = objectValue(body.params);
+    const requiredScope = body.method === "tools/call"
+      && (params.name === "create_target_term" || params.name === "create_classification_rule")
+      ? mcpWriteScope
+      : mcpReadScope;
+    if (oauth !== null) {
+      if (!oauth.authenticate(request, requiredScope)) await oauth.challenge(reply, requiredScope);
+      return;
+    }
     if (!authorized(request, dependencies.config.token)) await reply.code(401).send({ error: "unauthorized" });
   };
 

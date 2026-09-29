@@ -88,6 +88,100 @@ describe("classification MCP", () => {
     expect(authorized.body).toContain("slds-classification");
   });
 
+  it("supports authorization code with PKCE while preserving the bearer token", async () => {
+    const app = Fastify();
+    const token = "m".repeat(32);
+    const baseUrl = "https://server.example";
+    const redirectUri = "https://client.example/callback";
+    registerClassificationMcp(app, {
+      config: { token, publicBaseUrl: baseUrl, oauthRedirectUri: redirectUri },
+      dataSchema: { listSources: async () => [] } as unknown as DataSchemaService,
+      exportControl: {} as ExportControlService,
+      productAdmin: {} as ProductAdminService,
+      rulesV2: {} as RulesV2Service,
+      targetDictionaries: {} as TargetDictionaryService,
+      wordpressPreview: {} as WordPressPreviewService,
+    }, { admin: { token: "a".repeat(32), username: "operator", password: "password-long-enough", sessionSecret: "s".repeat(32) } });
+    closeCallbacks.push(() => app.close());
+
+    const metadata = await app.inject({ method: "GET", url: "/.well-known/oauth-protected-resource" });
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json()).toMatchObject({ resource: `${baseUrl}/mcp`, authorization_servers: [baseUrl] });
+
+    const verifier = "v".repeat(64);
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const authorization = new URLSearchParams({
+      response_type: "code",
+      client_id: "slds-work",
+      redirect_uri: redirectUri,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      resource: `${baseUrl}/mcp`,
+      scope: "slds.read",
+      state: "state-1",
+      username: "operator",
+      password: "password-long-enough",
+    });
+    const approved = await app.inject({
+      method: "POST",
+      url: "/oauth/authorize",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: authorization.toString(),
+    });
+    expect(approved.statusCode).toBe(302);
+    const location = new URL(approved.headers.location!);
+    expect(location.searchParams.get("state")).toBe("state-1");
+
+    const exchange = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: "slds-work",
+      client_secret: token,
+      code: location.searchParams.get("code")!,
+      redirect_uri: redirectUri,
+      code_verifier: verifier,
+      resource: `${baseUrl}/mcp`,
+    });
+    const issued = await app.inject({
+      method: "POST",
+      url: "/oauth/token",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: exchange.toString(),
+    });
+    expect(issued.statusCode).toBe(200);
+    const accessToken = issued.json<{ access_token: string }>().access_token;
+    const payload = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } },
+    };
+    const connected = await app.inject({
+      method: "POST",
+      url: "/mcp",
+      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json, text/event-stream" },
+      payload,
+    });
+    expect(connected.statusCode).toBe(200);
+    expect(connected.body).toContain("slds-classification");
+
+    const deniedWrite = await app.inject({
+      method: "POST",
+      url: "/mcp",
+      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json, text/event-stream" },
+      payload: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "create_classification_rule", arguments: {} } },
+    });
+    expect(deniedWrite.statusCode).toBe(401);
+    expect(deniedWrite.headers["www-authenticate"]).toContain("slds.write");
+
+    const legacy = await app.inject({
+      method: "POST",
+      url: "/mcp",
+      headers: { authorization: `Bearer ${token}`, accept: "application/json, text/event-stream" },
+      payload,
+    });
+    expect(legacy.statusCode).toBe(200);
+  });
+
   it("publishes focused active-engine classification tools", async () => {
     const client = await connectedClient({});
     const tools = await client.listTools();
@@ -267,3 +361,4 @@ describe("classification MCP", () => {
     expect(createTermForRulesV2).not.toHaveBeenCalled();
   });
 });
+import { createHash } from "node:crypto";

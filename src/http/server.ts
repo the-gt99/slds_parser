@@ -859,7 +859,7 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       rulesV2: dependencies.rulesV2,
       targetDictionaries: dependencies.targetDictionaries,
       wordpressPreview: dependencies.wordpressPreview,
-    });
+    }, { admin: dependencies.auth });
   }
 
   server.setErrorHandler((error, request, reply) => {

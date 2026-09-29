@@ -33,6 +33,13 @@ describe("HTTP config", () => {
     expect(loadMcpConfig({})).toBeNull();
     expect(() => loadMcpConfig({ PARSER_MCP_TOKEN: "short" })).toThrow("PARSER_MCP_TOKEN");
     expect(loadMcpConfig({ PARSER_MCP_TOKEN: "m".repeat(32) })).toEqual({ token: "m".repeat(32) });
+    expect(loadMcpConfig({ PARSER_MCP_TOKEN: "m".repeat(32), PARSER_MCP_PUBLIC_BASE_URL: "https://example.com",
+      PARSER_MCP_OAUTH_REDIRECT_URI: "https://client.example/callback" }))
+      .toEqual({ token: "m".repeat(32), publicBaseUrl: "https://example.com", oauthRedirectUri: "https://client.example/callback" });
+    expect(() => loadMcpConfig({ PARSER_MCP_TOKEN: "m".repeat(32), PARSER_MCP_PUBLIC_BASE_URL: "http://example.com/path" }))
+      .toThrow("PARSER_MCP_PUBLIC_BASE_URL");
+    expect(() => loadMcpConfig({ PARSER_MCP_TOKEN: "m".repeat(32), PARSER_MCP_PUBLIC_BASE_URL: "https://example.com" }))
+      .toThrow("PARSER_MCP_OAUTH_REDIRECT_URI");
   });
 
   it("keeps WordPress integration disabled unless its complete configuration is present", () => {
