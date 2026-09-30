@@ -112,6 +112,7 @@ describe("RulesV2PreviewService", () => {
       const rows = sql.includes("FROM target_dictionary_values")
         ? [{ id: "145296", external_id: "145296", name: "Phaidon", entity_type: "brands" },
           { id: "145297", external_id: "145297", name: "Books", entity_type: "product_categories" }]
+        : sql.includes("FROM rules_v2_workbench_state") ? [{ complete: true }]
         : sql.includes("FROM source_products product") ? products : [];
       if (sql.includes("FROM source_products product")) { candidateSql = sql; candidateParameters = parameters; }
       return { rows: rows as unknown as Row[], rowCount: rows.length };
@@ -127,8 +128,9 @@ describe("RulesV2PreviewService", () => {
       ] };
 
     await expect(new RulesV2PreviewService(pool).preview(draft)).resolves.toMatchObject({ examined: 12, productCount: 12 });
-    expect(candidateSql).toContain("JSONB_ARRAY_ELEMENTS");
-    expect(candidateParameters).toEqual(["1", "brand", ["phaidon"]]);
+    expect(candidateSql).toContain("JOIN rules_v2_workbench_items item");
+    expect(candidateSql).toContain("item.search_text ILIKE");
+    expect(candidateParameters).toEqual(["1", "1", "Phaidon"]);
   });
 
   it("counts the effect of a rule across the complete product scan", async () => {

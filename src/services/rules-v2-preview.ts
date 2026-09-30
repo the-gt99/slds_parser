@@ -140,6 +140,14 @@ function selectiveRuleSql(rule: RuleV2Record, parameters: unknown[]): string | n
   return predicates.some((predicate) => predicate === null) ? null : `(${predicates.join(" OR ")})`;
 }
 
+function selectiveSearchValues(rule: RuleV2Record): string[] {
+  const group = rule.conditionGroups.find((candidate) => candidate.conditions.length > 0
+    && candidate.conditions.every((condition) => (condition.operator === "equals" || condition.operator === "one_of")
+      && condition.values.length > 0 && (condition.field.startsWith("candidate.")
+        || condition.field.startsWith("common.characteristics.") || /^product\.(?:attribute|metadata|fact)\./u.test(condition.field))));
+  return group === undefined ? [] : [...new Set(group.conditions.flatMap((condition) => condition.values))];
+}
+
 /** Read-only workbench index and rule impact previews using the active V2 evaluator. */
 export class RulesV2PreviewService {
   private readonly indexing = new Map<string, string>();
@@ -685,10 +693,19 @@ export class RulesV2PreviewService {
     const conflicts: { sourceProductId: string; message: string }[] = [];
     let cursor: string | null = null;
     const batchSize = productId === null ? 500 : 1;
+    const searchValues = productId === null ? selectiveSearchValues(preview) : [];
+    const workbenchReady = searchValues.length > 0 && (await db.query<{ complete: boolean }>(
+      `SELECT complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2`,
+      [draft.sourceId, draft.targetId])).rows[0]?.complete === true;
     while (productCount < 201) {
-      const parameters: unknown[] = [draft.sourceId];
-      const selector = selectiveRuleSql(preview, parameters);
-      const selectorFilter = selector === null ? "" : `AND ${selector}`;
+      const parameters: unknown[] = workbenchReady ? [draft.sourceId, draft.targetId] : [draft.sourceId];
+      const selector = workbenchReady ? null : selectiveRuleSql(preview, parameters);
+      const selectorFilter = workbenchReady
+        ? `AND (${searchValues.map((value) => {
+          parameters.push(value);
+          return `item.search_text ILIKE '%' || $${parameters.length} || '%'`;
+        }).join(" OR ")})`
+        : selector === null ? "" : `AND ${selector}`;
       const cursorFilter: string = cursor === null ? "" : (() => {
         parameters.push(cursor);
         return `AND product.id < $${parameters.length}`;
@@ -698,6 +715,8 @@ export class RulesV2PreviewService {
         SELECT product.id::TEXT, product.source_key, product.external_id, source.code, internal.data
         FROM source_products product JOIN sources source ON source.id = product.source_id
         JOIN internal_products internal ON internal.source_product_id = product.id
+        ${workbenchReady ? `JOIN rules_v2_workbench_items item ON item.source_product_id = product.id
+          AND item.target_id = $2 AND item.product_updated_at IS NOT NULL` : ""}
         WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates'
         ${selectorFilter} ${cursorFilter}
         ORDER BY product.id DESC LIMIT ${batchSize}`, parameters)).rows;
