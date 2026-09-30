@@ -94,6 +94,43 @@ describe("RulesV2PreviewService", () => {
     expect(productParameters).toEqual(["1", "2"]);
   });
 
+  it("selects generalized preview candidates from the rule conditions", async () => {
+    vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", []));
+    let candidateSql = "";
+    let candidateParameters: readonly unknown[] = [];
+    const products = Array.from({ length: 12 }, (_, index) => ({
+      id: String(index + 1), source_key: `book-${index + 1}`, external_id: String(index + 1), code: "goat",
+      data: { sourceProductId: String(index + 1), title: `Phaidon Book ${index + 1}`, description: "", sku: "",
+        images: [], variants: [], attributes: {}, metadata: {}, referenceCandidates: [
+          { key: `brand-${index}`, typeCode: "brand", scope: "product.brand", subjectKind: "product",
+            sourceValue: "Phaidon", context: {}, evidence: {} },
+          { key: `category-${index}`, typeCode: "category", scope: "product.category", subjectKind: "product",
+            sourceValue: "books", context: {}, evidence: {} },
+        ] },
+    }));
+    const query = async <Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<SqlResult<Row>> => {
+      const rows = sql.includes("FROM target_dictionary_values")
+        ? [{ id: "145296", external_id: "145296", name: "Phaidon", entity_type: "brands" },
+          { id: "145297", external_id: "145297", name: "Books", entity_type: "product_categories" }]
+        : sql.includes("FROM source_products product") ? products : [];
+      if (sql.includes("FROM source_products product")) { candidateSql = sql; candidateParameters = parameters; }
+      return { rows: rows as unknown as Row[], rowCount: rows.length };
+    };
+    const pool = { connect: async () => ({ query, release() {} }), async end() {} } as SqlPool;
+    const draft: RuleV2Draft = { sourceId: "1", targetId: "1", name: "Phaidon books", groupCode: "books",
+      priority: 100, status: "shadow", conditionGroups: [
+        { conditions: [{ field: "candidate.brand.sourceValue", operator: "equals", values: ["Phaidon"] }] },
+        { conditions: [{ field: "candidate.category.sourceValue", operator: "equals", values: ["books"] }] },
+      ], actions: [
+        { targetScope: "product.brand", dictionaryValueId: "145296", mode: "add" },
+        { targetScope: "product.category", dictionaryValueId: "145297", mode: "add" },
+      ] };
+
+    await expect(new RulesV2PreviewService(pool).preview(draft)).resolves.toMatchObject({ examined: 12, productCount: 12 });
+    expect(candidateSql).toContain("JSONB_ARRAY_ELEMENTS");
+    expect(candidateParameters).toEqual(["1", "brand", ["phaidon"]]);
+  });
+
   it("counts the effect of a rule across the complete product scan", async () => {
     const existing = (id: string, scope: string): RuleV2Record => ({
       id, sourceId: "1", sourceCode: "goat", targetId: "10", targetCode: "slamdunk",

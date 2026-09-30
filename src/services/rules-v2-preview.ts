@@ -679,28 +679,46 @@ export class RulesV2PreviewService {
       originKind: "native", originId: null, originRevision: "1", originPayload: {}, revision: "1", createdAt: "", updatedAt: "" };
     const withDraft = new DirectRulesV2Assignments([...snapshot.records.filter((rule) => rule.id !== draft.previewRuleId), preview], draft.targetId);
     const productId = exactSourceProductId(draft);
-    const rows = (await db.query<{ id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }>(`
-      SELECT product.id::TEXT, product.source_key, product.external_id, source.code, internal.data
-      FROM source_products product JOIN sources source ON source.id = product.source_id
-      JOIN internal_products internal ON internal.source_product_id = product.id
-      WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates'
-      ${productId === null ? "" : "AND product.id = $2"}
-      ORDER BY product.id DESC LIMIT 200`, productId === null ? [draft.sourceId] : [draft.sourceId, productId])).rows;
     let productCount = 0;
+    let examined = 0;
     const examples: { sourceProductId: string; title: string; actions: typeof actions }[] = [];
     const conflicts: { sourceProductId: string; message: string }[] = [];
-    for (const row of rows) {
-      const source = { id: draft.sourceId, code: row.code, productId: row.id, sourceKey: row.source_key, externalId: row.external_id };
-      if (!withDraft.matchesRule(preview.id, row.data, source)) continue;
-      productCount++;
-      if (examples.length < 10) examples.push({ sourceProductId: row.id, title: row.data.title, actions });
-      try {
-        withDraft.resolve(row.data, source);
-      } catch (error) {
-        if (conflicts.length < 10) conflicts.push({ sourceProductId: row.id, message: error instanceof Error ? error.message : String(error) });
+    let cursor: string | null = null;
+    const batchSize = productId === null ? 500 : 1;
+    while (productCount < 201) {
+      const parameters: unknown[] = [draft.sourceId];
+      const selector = selectiveRuleSql(preview, parameters);
+      const selectorFilter = selector === null ? "" : `AND ${selector}`;
+      const cursorFilter: string = cursor === null ? "" : (() => {
+        parameters.push(cursor);
+        return `AND product.id < $${parameters.length}`;
+      })();
+      const rows: { id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }[] = (await db.query<{
+        id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }>(`
+        SELECT product.id::TEXT, product.source_key, product.external_id, source.code, internal.data
+        FROM source_products product JOIN sources source ON source.id = product.source_id
+        JOIN internal_products internal ON internal.source_product_id = product.id
+        WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates'
+        ${selectorFilter} ${cursorFilter}
+        ORDER BY product.id DESC LIMIT ${batchSize}`, parameters)).rows;
+      if (rows.length === 0) break;
+      examined += rows.length;
+      cursor = rows.at(-1)!.id;
+      for (const row of rows) {
+        const source = { id: draft.sourceId, code: row.code, productId: row.id, sourceKey: row.source_key, externalId: row.external_id };
+        if (!withDraft.matchesRule(preview.id, row.data, source)) continue;
+        productCount++;
+        if (examples.length < 10) examples.push({ sourceProductId: row.id, title: row.data.title, actions });
+        try {
+          withDraft.resolve(row.data, source);
+        } catch (error) {
+          if (conflicts.length < 10) conflicts.push({ sourceProductId: row.id, message: error instanceof Error ? error.message : String(error) });
+        }
+        if (productCount >= 201) break;
       }
+      if (productId !== null || rows.length < batchSize) break;
     }
-    return { scope: "sample" as const, examined: rows.length, productCount, examples, conflicts, writes: false };
+    return { scope: "sample" as const, examined, productCount, examples, conflicts, writes: false };
   }
 }
 
