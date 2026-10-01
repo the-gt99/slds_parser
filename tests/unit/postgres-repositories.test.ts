@@ -437,7 +437,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     });
     expect(executor.calls[1]?.values).toEqual([]);
     expect(executor.calls[1]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
-    expect(executor.calls[1]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
+    expect(executor.calls[1]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status') IN ('complete', 'partial')");
     expect(executor.calls[2]?.values).toEqual(["10", 12917]);
     expect(executor.calls[2]?.text).toContain("review_counts AS MATERIALIZED");
     expect(executor.calls[2]?.text).toContain("GROUP BY effective_status");
@@ -471,7 +471,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateExecutor.calls[0]?.text).not.toContain("source_refreshed_at");
     expect(candidateExecutor.calls[0]?.text).not.toContain("make_interval");
     expect(candidateExecutor.calls[0]?.text).toContain("internal.status IN ('classified', 'classification_pending')");
-    expect(candidateExecutor.calls[0]?.text).toContain("internal.data->'classification'->>'status' IN ('complete', 'partial')");
+    expect(candidateExecutor.calls[0]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status') IN ('complete', 'partial')");
   });
 
   it("walks campaign export candidates through bounded keyset pages", async () => {
@@ -583,6 +583,22 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateQuery).toContain("$5::TEXT = 'footwear_readiness'");
     expect(candidateQuery).toContain("target_export_campaign_preflight_items campaign_candidate");
     expect(executor.calls[3]?.values).toEqual(["10", null, 100, "4", "footwear_readiness", "90"]);
+  });
+
+  it("rescans new products after finishing a sweep and accepts workbench-ready products without legacy classification", async () => {
+    const executor = new FakeExecutor([
+      [], [{ id: "92", target_id: "10", mode: "new_products", catalog_run_id: null,
+        scan_before_internal_product_id: "31", scan_complete: true }],
+      [{ source_product_id: "21", internal_product_id: "31", scan_cursor_id: "31", refresh_wordpress: true }],
+      [], [],
+    ]);
+    const result = await new PostgresExportControlRepository(pool(executor))
+      .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
+    expect(result).toHaveLength(1);
+    expect(executor.calls[2]?.values).toEqual(["10", null, 4, null, "new_products"]);
+    expect(executor.calls[2]?.text).toContain("rules_v2_workbench_items workbench");
+    expect(executor.calls[2]?.text).toContain("target_product.external_id IS NOT NULL");
+    expect(executor.calls[2]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status')");
   });
 
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {

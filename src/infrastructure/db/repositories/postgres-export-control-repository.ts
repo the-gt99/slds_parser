@@ -132,7 +132,7 @@ END`;
 
 function exportEligibleInternalSql(alias: string): string {
   return `${alias}.status IN ('classified', 'classification_pending')
-    AND ${alias}.data->'classification'->>'status' IN ('complete', 'partial')`;
+    AND COALESCE(${alias}.data->'rulesV2'->>'status', ${alias}.data->'classification'->>'status') IN ('complete', 'partial')`;
 }
 
 function filterSql(
@@ -1169,7 +1169,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         [input.campaignId],
       );
       const state = campaign.rows[0];
-      if (state === undefined || state.scan_complete === true) return [];
+      if (state === undefined || (state.scan_complete === true && state.mode !== "new_products")) return [];
       const targetId = text(state, "target_id");
       const mode = text(state, "mode");
       const readinessOnly = mode === "footwear_readiness";
@@ -1193,7 +1193,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              SELECT $1, absent.source_product_id, absent.internal_product_id
              FROM absent
              JOIN internal_products internal ON internal.id = absent.internal_product_id
-             WHERE internal.data->'classification'->>'status' IN ('complete', 'partial')
+             WHERE ${exportEligibleInternalSql("internal")}
                AND JSONB_TYPEOF(internal.data->'images') = 'array'
                AND JSONB_ARRAY_LENGTH(internal.data->'images') > 0
                AND JSONB_TYPEOF(internal.data->'variants') = 'array'
@@ -1228,7 +1228,15 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND catalog_item.match_status = 'matched'
              ))
              AND ($5::TEXT <> 'new_products'
-               OR (review.id IS NOT NULL AND review.status = 'ready' AND review.will_create = TRUE))
+               OR ((review.will_create = TRUE OR EXISTS (
+                 SELECT 1 FROM rules_v2_workbench_items workbench
+                 WHERE workbench.target_id = $1 AND workbench.source_product_id = internal.source_product_id
+                   AND workbench.status = 'ready' AND workbench.product_updated_at IS NOT NULL
+               )) AND NOT EXISTS (
+                 SELECT 1 FROM target_products target_product
+                 WHERE target_product.target_id = $1 AND target_product.internal_product_id = internal.id
+                   AND target_product.external_id IS NOT NULL
+               )))
              AND (review.id IS NULL OR review.status IN ('stale', 'error')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)`;
@@ -1300,7 +1308,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                 NOT selected.use_cached_wordpress AS refresh_wordpress
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
-        [targetId, nullableText(state, "scan_before_internal_product_id"), input.limit,
+        [targetId, state.scan_complete === true ? null : nullableText(state, "scan_before_internal_product_id"), input.limit,
           nullableText(state, "catalog_run_id"), mode, ...(readinessOnly ? [input.campaignId] : [])],
       );
       const last = result.rows.at(-1);

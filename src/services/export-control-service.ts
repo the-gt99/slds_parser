@@ -7,6 +7,7 @@ const maximumExportBatch = 5_000;
 const maximumCampaignExports = 500_000;
 const sourceRefreshBufferPerExport = 8;
 const campaignExportQueueDepthMultiplier = 3;
+const newProductRescanIntervalMs = 60_000;
 
 function uniqueIds(values: readonly EntityId[] | undefined): readonly EntityId[] | undefined {
   return values === undefined ? undefined : [...new Set(values)];
@@ -24,6 +25,7 @@ function filterJson(filter: ExportControlFilter | undefined, sourceProductIds: r
 }
 
 export class ExportControlService {
+  private lastCompletedSweep: { campaignId: EntityId; checkedAt: number } | undefined;
   constructor(
     private readonly repository: ExportControlRepository,
     private readonly jobs: JobRepository,
@@ -274,11 +276,16 @@ export class ExportControlService {
 
     const activePreflights = await this.repository.countActivePreflights(campaign.targetId);
     let queuedPreflights = 0;
-    if (activePreflights < campaign.preflightWindow && !limitReached && !campaign.scanComplete) {
+    const rescanDue = campaign.mode === "new_products"
+      && (this.lastCompletedSweep?.campaignId !== campaign.id
+        || Date.now() - this.lastCompletedSweep.checkedAt >= newProductRescanIntervalMs);
+    if (activePreflights < campaign.preflightWindow && !limitReached
+      && (!campaign.scanComplete || rescanDue)) {
       const candidates = await this.repository.prepareCampaignPreflightCandidates({
         campaignId: campaign.id,
         limit: campaign.preflightWindow - activePreflights,
       });
+      if (campaign.scanComplete) this.lastCompletedSweep = { campaignId: campaign.id, checkedAt: Date.now() };
       try {
         const jobs = await this.jobs.enqueueMany(candidates.map((candidate) => ({
           jobType: "preflight_product" as const,
@@ -325,6 +332,7 @@ export class ExportControlService {
           excludeNoChanges: true,
         });
         if (remaining.length === 0
+          && (campaign.mode !== "new_products" || campaign.maxExports !== null)
           && refreshedCampaign?.id === campaign.id
           && refreshedCampaign.scanComplete
           && refreshedCampaign.pendingCount + refreshedCampaign.runningCount + refreshedCampaign.retryCount === 0) {

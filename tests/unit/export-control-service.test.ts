@@ -184,6 +184,20 @@ describe("ExportControlService", () => {
     }));
   });
 
+  it("keeps an unlimited new-product campaign alive and bounds empty rescans", async () => {
+    const { repository, service } = setup();
+    const campaign = await service.startCampaign({ targetId: "10", mode: "new_products" }, "admin");
+    vi.mocked(repository.getRunningCampaign).mockResolvedValue({ ...campaign, scanComplete: true });
+    vi.mocked(repository.listExportCandidates).mockResolvedValue([]);
+    vi.mocked(repository.prepareCampaignPreflightCandidates).mockResolvedValue([]);
+
+    await service.tickCampaign();
+    await service.tickCampaign();
+
+    expect(repository.prepareCampaignPreflightCandidates).toHaveBeenCalledTimes(1);
+    expect(repository.setCampaignStatus).not.toHaveBeenCalled();
+  });
+
   it("fills a queue three times as deep as the worker concurrency", async () => {
     const { repository, service } = setup(2);
     const secondCandidate = { ...candidate, reviewId: "12", sourceProductId: "22", internalProductId: "32", externalId: "42" };
