@@ -1627,30 +1627,21 @@ describe("WordPressExporter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("creates an explicit zero-stock shell for a new product without source variants", async () => {
+  it("blocks creating a product without source variants", async () => {
     const base = context();
-    const payload = await buildWordPressUpsertPayload({
+    await expect(buildWordPressUpsertPayload({
       ...base,
       product: { ...base.product, variants: [] },
-    });
-
-    expect(payload.variations).toEqual({ mode: "replace_active_set", missing_policy: "out_of_stock", items: [] });
-    expect(payload.creation_policy).toEqual({
-      allow_empty_variations: true,
-      stock_status: "outofstock",
-      stock_quantity: 0,
-    });
+    })).rejects.toThrow("WordPress export requires at least one source variant");
   });
 
-  it("uses an empty active set to mark an existing product sold out", async () => {
+  it("blocks a full update when freshly collected source variants are empty", async () => {
     const base = context();
-    const payload = await buildWordPressUpsertPayload({
+    await expect(buildWordPressUpsertPayload({
       ...base,
       existingExternalId: "321",
       liveVariants: [],
-    });
-
-    expect(payload.variations).toEqual({ mode: "replace_active_set", missing_policy: "out_of_stock", items: [] });
+    })).rejects.toThrow("WordPress export requires at least one source variant");
   });
 
   it("builds a sold-out variation patch without requiring size mappings", async () => {
