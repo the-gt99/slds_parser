@@ -9,7 +9,7 @@ import { GoatImageDownloader, GoatProxyPool, GoatSourceAdapter, GoatSourceProces
 import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImagesOperation, NormalizeProductOperation, PublishImagesOperation, TranslateContentOperation, ValidateProcessedProductOperation } from "./processing/index.js";
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 import { RulesExecution } from "./infrastructure/db/rules-execution.js";
-import { EcbShihuoCurrencyConverter, ShihuoGuestSessionPool, ShihuoInventoryService, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
+import { EcbShihuoCurrencyConverter, PersistentShihuoSigner, ShihuoGuestSessionPool, ShihuoInventoryService, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
@@ -100,6 +100,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   );
   const workerOptions = loadWorkerConfig(environment);
   const shihuoConfig = loadShihuoConfig(environment);
+  const shihuoSigner = shihuoConfig === null ? undefined : new PersistentShihuoSigner({
+    python: shihuoConfig.signerPython,
+    script: shihuoConfig.signerScript,
+    assetDirectory: shihuoConfig.signerAssetDirectory,
+  });
   const shihuoSessions = shihuoConfig === null ? undefined : new ShihuoGuestSessionPool(
     new PostgresShihuoSessionRepository(pool),
     new ShihuoSecretCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY),
@@ -107,7 +112,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   );
   const shihuoResolver = shihuoConfig === null ? undefined : new ShihuoProductResolver(
     shihuoSessions!,
-    new ShihuoSearchClient({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
+    new ShihuoSearchClient(shihuoSigner!),
     new ShihuoProductClient(), new PostgresShihuoProductLinkRepository(pool), repositories.internalProducts, shihuoConfig.betweenRequestsMs,
   );
   const shihuoInventory = shihuoResolver === undefined || shihuoConfig?.inventoryEnabled !== true ? undefined : new ShihuoInventoryService(
@@ -224,5 +229,6 @@ export function createApplication(environment: ApplicationEnvironment = process.
     wordpress === null ? undefined : wordpressCatalogService,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner, retranslationRunner,
-    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, shihuoResolver, dispatcher, worker, close: () => pool.end() };
+    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, shihuoResolver, dispatcher, worker,
+    close: async () => { shihuoSigner?.close(); await pool.end(); } };
 }

@@ -25,7 +25,7 @@ import {
 } from "../infrastructure/db/index.js";
 import { GoatProxyTester, TargetDictionaryProviderRegistry, TelegramVariationAutoPauseNotifier, WordPressDictionaryProvider, WordPressExporter, WordPressProductSnapshotReader, WordPressTitleBrandAssignmentResolver } from "../integrations/index.js";
 import { ProxyCredentialsCrypto } from "../proxies/index.js";
-import { ShihuoGuestDeviceService, ShihuoProxyTester, ShihuoSecretCrypto, SignedShihuoSearchVerifier, SystemWireGuardManager } from "../shihuo/index.js";
+import { PersistentShihuoSigner, ShihuoGuestDeviceService, ShihuoProxyTester, ShihuoSecretCrypto, SignedShihuoSearchVerifier, SystemWireGuardManager } from "../shihuo/index.js";
 import { ClassifierAdminService, ContentTemplateAdminService, DataSchemaService, ExportControlService, ProductAdminService, ProductClassifier, ProxyAdminService, RulesV2Service, RuntimeAdminService, TargetAssignmentAdminService, TargetClassificationImportService, TargetDictionaryService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "../services/index.js";
 
 function errorMessage(error: unknown): string {
@@ -36,6 +36,7 @@ async function main(): Promise<void> {
   let pool: Pool | undefined;
   let server: FastifyInstance | undefined;
   let runtime: RuntimeAdminService | undefined;
+  let shihuoSigner: PersistentShihuoSigner | undefined;
   let shuttingDown = false;
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
 
     try {
       if (server) await server.close();
+      shihuoSigner?.close();
       if (pool) await pool.end();
     } catch (error) {
       console.error(`Failed to stop API: ${errorMessage(error)}`);
@@ -137,10 +139,15 @@ async function main(): Promise<void> {
       ? new ProxyAdminService(new PostgresGoatProxyRepository(pool), new ProxyCredentialsCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
         new GoatProxyTester(), new ShihuoProxyTester(), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY))
       : undefined;
+    shihuoSigner = shihuoConfig === null ? undefined : new PersistentShihuoSigner({
+      python: shihuoConfig.signerPython,
+      script: shihuoConfig.signerScript,
+      assetDirectory: shihuoConfig.signerAssetDirectory,
+    });
     const shihuo = shihuoConfig === null ? undefined : new ShihuoGuestDeviceService(
       new PostgresShihuoDeviceRepository(pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
       new SystemWireGuardManager(shihuoConfig.wgCommand, shihuoConfig.reconcileService), shihuoConfig,
-      new SignedShihuoSearchVerifier({ python: shihuoConfig.signerPython, script: shihuoConfig.signerScript, assetDirectory: shihuoConfig.signerAssetDirectory }),
+      new SignedShihuoSearchVerifier(shihuoSigner!),
     );
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
@@ -154,6 +161,7 @@ async function main(): Promise<void> {
     await server.listen(config);
   } catch (error) {
     for (const signal of signals) process.removeAllListeners(signal);
+    shihuoSigner?.close();
     await Promise.allSettled([server?.close(), pool?.end()]);
     console.error(`Failed to start API: ${errorMessage(error)}`);
     process.exitCode = 1;

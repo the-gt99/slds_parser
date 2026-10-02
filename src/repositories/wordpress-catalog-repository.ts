@@ -21,7 +21,6 @@ export interface WordPressVariationAutoSyncState {
   readonly runId: EntityId;
   readonly window: number;
   readonly acknowledgedFailedCount: number;
-  readonly activeCount: number;
   readonly failedCount: number;
   readonly intervalMinutes: number;
   readonly cycle: number;

@@ -70,6 +70,10 @@ function errorText(error: unknown): string {
   return `${error.message} [${code}: ${cause.message}]`;
 }
 
+function nextIdlePollDelay(current: number, base: number): number {
+  return Math.min(Math.max(base, Math.min(base * 5, 30_000)), current * 2);
+}
+
 function usesWordPressRetryPolicy(job: JobRecord, error: unknown): boolean {
   return error instanceof RetryableError
     && error.code.startsWith("WORDPRESS_")
@@ -375,30 +379,43 @@ export class Worker {
   }
 
   private async runWordPressVariationPollLane(signal: AbortSignal, workerId: string): Promise<void> {
+    let idlePollDelay = this.options.pollIntervalMs;
     while (!signal.aborted) {
       try {
         const processed = await this.processWordPressVariationPollBatch(workerId);
-        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+        if (processed) idlePollDelay = this.options.pollIntervalMs;
+        else if (!signal.aborted) {
+          await this.sleep(idlePollDelay, signal);
+          idlePollDelay = nextIdlePollDelay(idlePollDelay, this.options.pollIntervalMs);
+        }
       } catch (error) {
         this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        idlePollDelay = this.options.pollIntervalMs;
         if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
       }
     }
   }
 
   private async runLane(signal: AbortSignal, jobTypes: readonly JobType[], workerId: string): Promise<void> {
+    let idlePollDelay = this.options.pollIntervalMs;
     while (!signal.aborted) {
       try {
         const processed = await this.processNext(jobTypes, workerId);
-        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+        if (processed) idlePollDelay = this.options.pollIntervalMs;
+        else if (!signal.aborted) {
+          await this.sleep(idlePollDelay, signal);
+          idlePollDelay = nextIdlePollDelay(idlePollDelay, this.options.pollIntervalMs);
+        }
       } catch (error) {
         this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        idlePollDelay = this.options.pollIntervalMs;
         if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
       }
     }
   }
 
   private async runProcessingLane(signal: AbortSignal, workerId: string): Promise<void> {
+    let idlePollDelay = this.options.pollIntervalMs;
     while (!signal.aborted) {
       try {
         const processedProduct = await this.processNext(["process_product"], workerId);
@@ -408,9 +425,14 @@ export class Worker {
           Worker.reclassificationBatchSize,
         );
         const processed = processedProduct || reclassifiedProducts;
-        if (!processed && !signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
+        if (processed) idlePollDelay = this.options.pollIntervalMs;
+        else if (!signal.aborted) {
+          await this.sleep(idlePollDelay, signal);
+          idlePollDelay = nextIdlePollDelay(idlePollDelay, this.options.pollIntervalMs);
+        }
       } catch (error) {
         this.logError(`Worker lane ${workerId} failed: ${errorText(error)}`);
+        idlePollDelay = this.options.pollIntervalMs;
         if (!signal.aborted) await this.sleep(this.options.pollIntervalMs, signal);
       }
     }

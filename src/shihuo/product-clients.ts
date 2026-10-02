@@ -1,6 +1,6 @@
 import { RetryableError } from "../core/errors/index.js";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
-import { createShihuoSignedHeaders, type ShihuoSignerConfig } from "./search-verifier.js";
+import type { ShihuoHeaderSigner } from "./search-verifier.js";
 import type { ShihuoGuestProfile } from "./types.js";
 import { parseShihuoProductCard } from "./product-parser.js";
 import type { ShihuoProductCard } from "./product-types.js";
@@ -36,10 +36,9 @@ async function request(fetchImpl: typeof fetch, url: string, init: RequestInit, 
 export interface ShihuoSearchCandidate { readonly goodsId: string; readonly styleId: string; }
 
 export class ShihuoSearchClient {
-  constructor(private readonly signer: ShihuoSignerConfig, private readonly fetchImpl: typeof fetch = fetch,
-    private readonly createHeaders: typeof createShihuoSignedHeaders = createShihuoSignedHeaders) {}
+  constructor(private readonly signer: ShihuoHeaderSigner, private readonly fetchImpl: typeof fetch = fetch) {}
   async searchAll(profile: ShihuoGuestProfile, article: string, outboundProxyUrl?: string | null): Promise<readonly ShihuoSearchCandidate[]> {
-    const headers = await this.createHeaders(profile, this.signer);
+    const headers = await this.signer.sign(profile);
     const keyword = article.trim().replace(/^([A-Za-z0-9]+)\s+([A-Za-z0-9]{3})$/u, "$1-$2");
     const payload = { from: "home", isHot: "false", keywords: keyword, needAttrs: 1, page: "1", pageSize: "20",
       page_route: "homeSearchList", predictSex: "2", use_type: "2", user_input: keyword };

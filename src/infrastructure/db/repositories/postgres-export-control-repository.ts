@@ -107,20 +107,32 @@ function mapCampaign(row: DatabaseRow): ExportCampaignRecord {
 
 const campaignProgressSql = `
   SELECT campaign.*,
-         COUNT(item.id)::INT AS item_count,
-         COUNT(item.id) FILTER (WHERE job.status = 'pending')::INT AS pending_count,
-         COUNT(item.id) FILTER (WHERE job.status = 'retry')::INT AS retry_count,
-         COUNT(item.id) FILTER (WHERE job.status = 'running')::INT AS running_count,
-         COUNT(item.id) FILTER (WHERE job.status = 'completed')::INT AS completed_count,
-         COUNT(item.id) FILTER (WHERE job.status = 'failed')::INT AS failed_count,
+         progress.item_count, progress.pending_count, progress.retry_count,
+         progress.running_count, progress.completed_count, progress.failed_count,
          (SELECT COUNT(*)::INT FROM jobs preflight
           WHERE preflight.job_type = 'preflight_product'
             AND preflight.status IN ('pending', 'running', 'retry')
             AND preflight.payload->>'targetId' = campaign.target_id::TEXT) AS active_preflight_count
   FROM target_export_campaigns campaign
-  LEFT JOIN target_export_batches batch ON batch.campaign_id = campaign.id
-  LEFT JOIN target_export_batch_items item ON item.batch_id = batch.id
-  LEFT JOIN jobs job ON job.id = item.job_id`;
+  CROSS JOIN LATERAL (
+    SELECT COUNT(scoped.id)::INT AS item_count,
+           COUNT(scoped.id) FILTER (WHERE scoped.status = 'pending')::INT AS pending_count,
+           COUNT(scoped.id) FILTER (WHERE scoped.status = 'retry')::INT AS retry_count,
+           COUNT(scoped.id) FILTER (WHERE scoped.status = 'running')::INT AS running_count,
+           COUNT(scoped.id) FILTER (WHERE scoped.status = 'completed')::INT AS completed_count,
+           COUNT(scoped.id) FILTER (WHERE scoped.status = 'failed')::INT AS failed_count
+    FROM target_export_batches batch
+    CROSS JOIN LATERAL (
+      SELECT item.id, job.status
+      FROM target_export_batch_items item
+      LEFT JOIN LATERAL (
+        SELECT status FROM jobs job WHERE job.id = item.job_id OFFSET 0
+      ) job ON TRUE
+      WHERE item.batch_id = batch.id
+      OFFSET 0
+    ) scoped
+    WHERE batch.campaign_id = campaign.id
+  ) progress`;
 
 const effectiveStatusSql = `CASE
   WHEN review.status = 'checking' THEN 'checking'
@@ -999,13 +1011,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            )
            RETURNING *
          )
-         ${campaignProgressSql.replace("FROM target_export_campaigns campaign", "FROM inserted campaign")}
-         GROUP BY campaign.id, campaign.target_id, campaign.status, campaign.actor, campaign.reason,
-                  campaign.mode, campaign.catalog_run_id,
-                  campaign.preflight_window, campaign.max_exports, campaign.acknowledged_failed_count, campaign.last_error,
-                  campaign.created_at, campaign.updated_at, campaign.paused_at, campaign.completed_at,
-                  campaign.scan_before_internal_product_id, campaign.scan_complete, campaign.scanned_count,
-                  campaign.candidates_prepared, campaign.candidate_count`,
+         ${campaignProgressSql.replace("FROM target_export_campaigns campaign", "FROM inserted campaign")}`,
         [input.targetId, input.actor, input.reason ?? null, input.mode, input.catalogRunId ?? null,
           input.preflightWindow, input.maxExports ?? null],
       );
@@ -1070,7 +1076,6 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     const result = await queryPool<DatabaseRow>(this.pool,
       `${campaignProgressSql}
        WHERE campaign.status = 'running'
-       GROUP BY campaign.id
        ORDER BY campaign.created_at, campaign.id
        LIMIT 1`,
     );
@@ -1111,8 +1116,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
       if (updated.rows[0] === undefined) throw new IntegrationContractError("Кампания выгрузки не найдена");
       const result = await client.query<DatabaseRow>(
         `${campaignProgressSql}
-         WHERE campaign.id = $1
-         GROUP BY campaign.id`,
+         WHERE campaign.id = $1`,
         [input.campaignId],
       );
       return mapCampaign(result.rows[0]!);

@@ -41,7 +41,6 @@ function setup(current: WordPressCatalogRunRecord | null, outcome: "idle" | "wai
       runId: current.id,
       window: current.variationAutoWindow,
       acknowledgedFailedCount: current.variationAutoAcknowledgedFailedCount,
-      activeCount: current.variationPendingCount + current.variationSubmittedCount,
       failedCount: current.variationFailedCount,
       intervalMinutes: current.variationSyncIntervalMinutes,
       cycle: current.variationSyncCycle,

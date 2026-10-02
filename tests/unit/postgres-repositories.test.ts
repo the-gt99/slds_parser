@@ -193,6 +193,34 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[0]?.values).toEqual(["1", 1]);
   });
 
+  it("selects inventory donors from bounded missing and stale queues", async () => {
+    const executor = new FakeExecutor([[], [{ count: "70" }], [{ id: "1" }, { id: "2" }], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+
+    await expect(repository.enqueueDueInventoryDonorJobs({
+      runId: "4", donorCode: "shihuo", limit: 100, intervalMinutes: 360,
+    })).resolves.toBe(2);
+
+    const insert = executor.calls.find((call) => call.text.includes("WITH active_run AS MATERIALIZED"))!;
+    expect(insert.text).toContain("missing AS MATERIALIZED");
+    expect(insert.text).toContain("stale AS MATERIALIZED");
+    expect(insert.text).toContain("blocked AS MATERIALIZED");
+    expect(insert.text).toContain("ORDER BY priority, id");
+    expect(insert.text).not.toContain("LEFT JOIN wordpress_inventory_donor_states state");
+    expect(insert.values).toEqual(["4", 30, "shihuo", 360, "collect_wordpress_shihuo_inventory"]);
+  });
+
+  it("aggregates running campaign jobs only through its selected batches", async () => {
+    const executor = new FakeExecutor([[]]);
+    const repository = new PostgresExportControlRepository(pool(executor));
+
+    await expect(repository.getRunningCampaign()).resolves.toBeNull();
+
+    expect(executor.calls[0]?.text).toContain("CROSS JOIN LATERAL");
+    expect(executor.calls[0]?.text).toContain("WHERE batch.campaign_id = campaign.id");
+    expect(executor.calls[0]?.text).not.toContain("GROUP BY campaign.id");
+  });
+
   it("reports inventory throughput, sessions and the latest donor product", async () => {
     const executor = new FakeExecutor([[{
       id: "4", variation_auto_status: "running",
@@ -511,7 +539,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(candidateExecutor.calls[2]?.values).toEqual(["10", "4", firstPageLastCheckedAt, "90", 25]);
   });
 
-  it("groups every campaign cursor field when returning a newly inserted campaign", async () => {
+  it("returns every campaign cursor field without a global progress join", async () => {
     const executor = new FakeExecutor([[{
       id: "81",
       target_id: "10",
@@ -549,7 +577,9 @@ describe("PostgreSQL repository mapping and SQL", () => {
 
     expect(campaign.scanBeforeInternalProductId).toBeNull();
     expect(campaign.scanComplete).toBe(false);
-    expect(executor.calls[0]?.text).toContain("campaign.scan_before_internal_product_id, campaign.scan_complete");
+    expect(executor.calls[0]?.text).toContain("SELECT campaign.*");
+    expect(executor.calls[0]?.text).toContain("CROSS JOIN LATERAL");
+    expect(executor.calls[0]?.text).not.toContain("GROUP BY campaign.id");
   });
 
   it("selects only absent footwear with images and variants for readiness preparation", async () => {

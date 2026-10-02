@@ -4,7 +4,7 @@ import { ShihuoProductClient, ShihuoSearchClient } from "../../src/shihuo/produc
 import type { ShihuoGuestProfile } from "../../src/shihuo/types.js";
 
 const profile: ShihuoGuestProfile = { platform: "android", "app-v": "1", sk: "sk", luid: "luid", osv: "14", "user-agent": "test" };
-const signer = { python: "python", script: "signer.py", assetDirectory: "/assets" };
+const signer = { sign: vi.fn().mockResolvedValue({}), close: vi.fn() };
 
 describe("Shihuo product clients", () => {
   it("classifies a product-card transport failure as retryable", async () => {
@@ -22,7 +22,7 @@ describe("Shihuo product clients", () => {
     const client = new ShihuoSearchClient(signer, vi.fn().mockResolvedValue(new Response(JSON.stringify({
       status: 90000,
       msg: "temporary upstream failure",
-    }), { status: 200 })), vi.fn().mockResolvedValue({}));
+    }), { status: 200 })));
 
     await expect(client.searchAll(profile, "DO5870 001")).rejects.toMatchObject({
       name: "RetryableError",

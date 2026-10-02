@@ -926,30 +926,51 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
          WHERE job_type = $1 AND status IN ('pending','running','retry') AND payload->>'runId' = $2`,
         [jobType, input.runId]);
       const available = Math.max(0, input.limit - Number(active.rows[0]?.count ?? 0));
-      if (available === 0) return 0;
+      const refillThreshold = Math.min(25, Math.max(1, Math.ceil(input.limit / 4)));
+      if (available < refillThreshold) return 0;
       const inserted = await client.query<DatabaseRow>(
-        `WITH selected AS (
-           SELECT item.id, item.wordpress_product_id
-           FROM wordpress_catalog_run_items item
-           JOIN wordpress_catalog_runs run ON run.id = item.run_id
-           LEFT JOIN wordpress_inventory_donor_states state
-             ON state.item_id = item.id AND state.donor_code = $3
-           WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+        `WITH active_run AS MATERIALIZED (
+           SELECT id FROM wordpress_catalog_runs run
+           WHERE id = $1
              AND CASE $3 WHEN 'goat' THEN run.goat_inventory_status ELSE run.shihuo_inventory_status END = 'running'
-             AND (state.checked_at IS NULL OR state.checked_at <= NOW() - ($4::INTEGER * INTERVAL '1 minute'))
+         ), blocked AS MATERIALIZED (
+           SELECT DISTINCT NULLIF(job.payload->>'itemId', '')::BIGINT AS item_id
+           FROM jobs job
+           WHERE job.job_type = $5
+             AND (job.status IN ('pending','running','retry')
+               OR (job.status = 'failed' AND job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')))
+         ), missing AS MATERIALIZED (
+           SELECT item.id, item.wordpress_product_id, 0 AS priority
+           FROM wordpress_catalog_run_items item
+           JOIN active_run run ON run.id = item.run_id
+           WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
              AND NOT EXISTS (
-               SELECT 1 FROM jobs active_job
-               WHERE active_job.job_type = $5 AND active_job.status IN ('pending','running','retry')
-                 AND active_job.payload->>'itemId' = item.id::TEXT
+               SELECT 1 FROM wordpress_inventory_donor_states state
+               WHERE state.item_id = item.id AND state.donor_code = $3
              )
              AND NOT EXISTS (
-               SELECT 1 FROM jobs failed_job
-               WHERE failed_job.job_type = $5 AND failed_job.status = 'failed'
-                 AND failed_job.payload->>'itemId' = item.id::TEXT
-                 AND failed_job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')
-             )
-           ORDER BY state.checked_at NULLS FIRST, item.id
+               SELECT 1 FROM blocked WHERE blocked.item_id = item.id
+           )
+           ORDER BY item.id
            LIMIT $2 FOR UPDATE OF item SKIP LOCKED
+         ), stale AS MATERIALIZED (
+           SELECT item.id, item.wordpress_product_id, 1 AS priority
+           FROM wordpress_inventory_donor_states state
+           JOIN wordpress_catalog_run_items item ON item.id = state.item_id
+           JOIN active_run run ON run.id = item.run_id
+           WHERE state.run_id = $1 AND state.donor_code = $3
+             AND state.checked_at <= NOW() - ($4::INTEGER * INTERVAL '1 minute')
+             AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM blocked WHERE blocked.item_id = item.id)
+             AND (SELECT COUNT(*) FROM missing) < $2
+           ORDER BY state.checked_at, item.id
+           LIMIT $2 FOR UPDATE OF item SKIP LOCKED
+         ), selected AS (
+           SELECT * FROM missing
+           UNION ALL
+           SELECT * FROM stale
+           ORDER BY priority, id
+           LIMIT $2
          )
          INSERT INTO jobs (job_type, payload, status, unique_key)
          SELECT $5, JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',selected.id::TEXT,
@@ -1275,11 +1296,8 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
               run.variation_auto_acknowledged_failed_count,
               run.variation_sync_interval_minutes, run.variation_sync_cycle,
               run.variation_sync_next_cycle_at, run.goat_inventory_status,
-              run.shihuo_inventory_status, run.wordpress_inventory_status,
-               (SELECT COUNT(*) FROM wordpress_catalog_run_items item
-                WHERE item.run_id = run.id AND item.variation_sync_cycle = run.variation_sync_cycle
-                  AND item.variation_status IN ('pending', 'refreshing', 'ready', 'submitted')) AS active_count,
-               (SELECT COUNT(*) FROM wordpress_catalog_run_items item
+               run.shihuo_inventory_status, run.wordpress_inventory_status,
+                (SELECT COUNT(*) FROM wordpress_catalog_run_items item
                 WHERE item.run_id = run.id AND item.variation_sync_cycle = run.variation_sync_cycle
                   AND item.variation_status = 'failed') AS failed_count
        FROM wordpress_catalog_runs run
@@ -1292,7 +1310,6 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       runId: text(row, "run_id"),
       window: Number(row.variation_auto_window),
       acknowledgedFailedCount: Number(row.variation_auto_acknowledged_failed_count),
-      activeCount: Number(row.active_count),
       failedCount: Number(row.failed_count),
       intervalMinutes: Number(row.variation_sync_interval_minutes),
       cycle: Number(row.variation_sync_cycle),
