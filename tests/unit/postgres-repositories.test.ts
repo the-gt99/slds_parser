@@ -599,6 +599,48 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(executor.calls[2]?.text).toContain("rules_v2_workbench_items workbench");
     expect(executor.calls[2]?.text).toContain("target_product.external_id IS NOT NULL");
     expect(executor.calls[2]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status')");
+    expect(executor.calls[2]?.text).toContain("review.will_create IS DISTINCT FROM FALSE");
+    expect(executor.calls[2]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL");
+    expect(executor.calls[2]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images'");
+    expect(executor.calls[2]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants'");
+    expect(executor.calls[2]?.text).toContain("ORDER BY internal.id DESC");
+    expect(executor.calls[2]?.text).toContain("review.checked_at < NOW() - INTERVAL '5 minutes'");
+  });
+
+  it("does not let an unfinished descending sweep hide freshly processed new products", async () => {
+    const executor = new FakeExecutor([
+      [], [{ id: "92", target_id: "10", mode: "new_products", catalog_run_id: null,
+        scan_before_internal_product_id: "31", scan_complete: false }], [], [], [],
+    ]);
+    await new PostgresExportControlRepository(pool(executor))
+      .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
+    expect(executor.calls[2]?.values).toEqual(["10", "31", 4, null, "new_products"]);
+    expect(executor.calls[2]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL OR internal.id < $2::BIGINT");
+  });
+
+  it("counts only source refreshes matching the current review, configuration and product", async () => {
+    const executor = new FakeExecutor([[{ count: 2 }]]);
+    await expect(new PostgresExportControlRepository(pool(executor)).countCampaignSourceRefreshBuffer("92"))
+      .resolves.toBe(2);
+    const query = executor.calls[0]?.text ?? "";
+    expect(query).toContain("review.internal_content_hash = refresh.internal_content_hash");
+    expect(query).toContain("review.status = 'ready'");
+    expect(query).toContain("revision.revision = review.configuration_revision");
+    expect(query).toContain("internal.content_hash = refresh.internal_content_hash");
+    expect(query).toContain("refresh.fetched_at > NOW() - INTERVAL '10 minutes'");
+  });
+
+  it("reuses expired source refresh rows without resetting an in-flight refresh", async () => {
+    const executor = new FakeExecutor([[]]);
+    await new PostgresExportControlRepository(pool(executor))
+      .prepareCampaignSourceRefreshCandidates({ campaignId: "92", limit: 4 });
+    const query = executor.calls[0]?.text ?? "";
+    expect(query).toContain("ON CONFLICT (campaign_id, internal_product_id) DO UPDATE");
+    expect(query).toContain("internal_content_hash = EXCLUDED.internal_content_hash");
+    expect(query).toContain("fetched_at = NULL");
+    expect(query).toContain("WHERE target_export_source_refreshes.status <> 'pending'");
+    expect(query).toContain("existing.fetched_at > NOW() - INTERVAL '10 minutes'");
+    expect(query).toContain("existing.updated_at > NOW() - INTERVAL '5 minutes'");
   });
 
   it("freezes a reviewed export batch and its jobs in one transaction", async () => {

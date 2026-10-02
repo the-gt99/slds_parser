@@ -698,6 +698,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND source_refresh.internal_product_id = review.internal_product_id
           AND source_refresh.internal_content_hash = review.internal_content_hash
           AND source_refresh.status = 'ready'
+          AND source_refresh.fetched_at > NOW() - INTERVAL '10 minutes'
       )`);
       pageWhere.push(...filterSql(input.filter ?? {}, addPage, { includeStatus: false }));
       if (beforeCheckedAt !== null && beforeId !== null) {
@@ -772,6 +773,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND source_refresh.internal_product_id = review.internal_product_id
           AND source_refresh.internal_content_hash = review.internal_content_hash
           AND source_refresh.status = 'ready'
+          AND source_refresh.fetched_at > NOW() - INTERVAL '10 minutes'
          JOIN LATERAL (
            SELECT internal.id
            FROM internal_products internal
@@ -858,7 +860,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
         const readyRefreshes = await client.query<DatabaseRow>(
           `SELECT COUNT(*)::INT AS count
            FROM target_export_source_refreshes
-           WHERE id = ANY($1::BIGINT[]) AND campaign_id = $2 AND status = 'ready'`,
+           WHERE id = ANY($1::BIGINT[]) AND campaign_id = $2 AND status = 'ready'
+             AND fetched_at > NOW() - INTERVAL '10 minutes'`,
           [refreshIds, input.campaignId],
         );
         if (Number(readyRefreshes.rows[0]?.count ?? 0) !== input.candidates.length) {
@@ -1228,7 +1231,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  AND catalog_item.match_status = 'matched'
              ))
              AND ($5::TEXT <> 'new_products'
-               OR ((review.will_create = TRUE OR EXISTS (
+               OR ((review.will_create IS DISTINCT FROM FALSE OR EXISTS (
                  SELECT 1 FROM rules_v2_workbench_items workbench
                  WHERE workbench.target_id = $1 AND workbench.source_product_id = internal.source_product_id
                    AND workbench.status = 'ready' AND workbench.product_updated_at IS NOT NULL
@@ -1237,7 +1240,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                  WHERE target_product.target_id = $1 AND target_product.internal_product_id = internal.id
                    AND target_product.external_id IS NOT NULL
                )))
-             AND (review.id IS NULL OR review.status IN ('stale', 'error')
+             AND (review.id IS NULL OR review.status = 'stale'
+               OR (review.status = 'error' AND review.checked_at < NOW() - INTERVAL '5 minutes')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)`;
       const result = await client.query<DatabaseRow>(
@@ -1262,7 +1266,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
            LEFT JOIN target_product_preflight_reviews review
              ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE ${exportEligibleInternalSql("internal")}
-             AND ($2::BIGINT IS NULL OR ${scanCursorSql} < $2::BIGINT)
+             AND ($5::TEXT = 'new_products' OR $2::BIGINT IS NULL OR ${scanCursorSql} < $2::BIGINT)
+             AND ($5::TEXT <> 'new_products' OR (
+               JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images', '[]'::JSONB)) > 0
+               AND JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants', '[]'::JSONB)) > 0
+             ))
              ${campaignScopeSql}
              AND NOT EXISTS (
                SELECT 1 FROM jobs job
@@ -1361,6 +1369,12 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              SELECT 1 FROM target_export_source_refreshes existing
              WHERE existing.campaign_id = $1
                AND existing.internal_product_id = review.internal_product_id
+               AND (existing.status = 'pending' OR (
+                 existing.status = 'ready'
+                 AND existing.internal_content_hash = review.internal_content_hash
+                 AND existing.fetched_at > NOW() - INTERVAL '10 minutes'
+               ) OR (existing.status = 'error'
+                 AND existing.updated_at > NOW() - INTERVAL '5 minutes'))
            )
        ), selected AS MATERIALIZED (
          SELECT campaign.id AS campaign_id, campaign.target_id,
@@ -1388,7 +1402,11 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          SELECT campaign_id, target_id, internal_product_id, source_product_id,
                 internal_content_hash, 'pending'
          FROM selected
-         ON CONFLICT (campaign_id, internal_product_id) DO NOTHING
+         ON CONFLICT (campaign_id, internal_product_id) DO UPDATE
+         SET internal_content_hash = EXCLUDED.internal_content_hash,
+             status = 'pending', variants = '[]'::JSONB, fetched_at = NULL,
+             error = NULL, updated_at = NOW()
+         WHERE target_export_source_refreshes.status <> 'pending'
          RETURNING id, campaign_id, internal_product_id, source_product_id
        )
        SELECT * FROM inserted ORDER BY id`,
@@ -1406,8 +1424,20 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT COUNT(*)::INT AS count
        FROM target_export_source_refreshes refresh
+       JOIN target_product_preflight_reviews review
+         ON review.target_id = refresh.target_id
+        AND review.internal_product_id = refresh.internal_product_id
+        AND review.internal_content_hash = refresh.internal_content_hash
+        AND review.status = 'ready'
+       JOIN target_export_revisions revision
+         ON revision.target_id = review.target_id
+        AND revision.revision = review.configuration_revision
+       JOIN internal_products internal
+         ON internal.id = refresh.internal_product_id
+        AND internal.content_hash = refresh.internal_content_hash
        WHERE refresh.campaign_id = $1
          AND refresh.status IN ('pending', 'ready')
+         AND (refresh.status = 'pending' OR refresh.fetched_at > NOW() - INTERVAL '10 minutes')
          AND NOT EXISTS (
            SELECT 1 FROM target_export_batch_items item
            JOIN target_export_batches batch ON batch.id = item.batch_id
