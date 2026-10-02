@@ -1244,6 +1244,31 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                OR (review.status = 'error' AND review.checked_at < NOW() - INTERVAL '5 minutes')
                OR review.configuration_revision <> revision.revision
                OR review.internal_content_hash <> internal.content_hash)`;
+      // Revalidate the small known-ready set before spending the window on new, unreviewed products.
+      // A separate indexed query avoids sorting the entire internal catalog by review status.
+      const readyReviews = mode === "new_products"
+        ? await client.query<DatabaseRow>(
+          `SELECT review.internal_product_id
+           FROM target_product_preflight_reviews review
+           JOIN target_export_revisions revision ON revision.target_id = review.target_id
+           JOIN internal_products internal ON internal.id = review.internal_product_id
+           WHERE review.target_id = $1 AND review.status = 'ready' AND review.will_create = TRUE
+             AND (review.configuration_revision <> revision.revision
+               OR review.internal_content_hash <> internal.content_hash)
+             AND ${exportEligibleInternalSql("internal")}
+             AND JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images', '[]'::JSONB)) > 0
+             AND JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants', '[]'::JSONB)) > 0
+             AND NOT EXISTS (
+               SELECT 1 FROM target_products target_product
+               WHERE target_product.target_id = $1 AND target_product.internal_product_id = internal.id
+                 AND target_product.external_id IS NOT NULL
+             )
+           ORDER BY review.checked_at DESC, review.id DESC LIMIT $2`,
+          [targetId, input.limit],
+        )
+        : null;
+      const priorityIds = readyReviews === null || readyReviews.rows.length === 0
+        ? null : readyReviews.rows.map((row) => text(row, "internal_product_id"));
       const result = await client.query<DatabaseRow>(
         `WITH selected AS MATERIALIZED (
            SELECT internal.id AS internal_product_id, internal.source_product_id,
@@ -1267,6 +1292,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
              ON review.target_id = $1 AND review.internal_product_id = internal.id
            WHERE ${exportEligibleInternalSql("internal")}
              AND ($5::TEXT = 'new_products' OR $2::BIGINT IS NULL OR ${scanCursorSql} < $2::BIGINT)
+             ${mode === "new_products" ? "AND ($6::BIGINT[] IS NULL OR internal.id = ANY($6::BIGINT[]))" : ""}
              AND ($5::TEXT <> 'new_products' OR (
                JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images', '[]'::JSONB)) > 0
                AND JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants', '[]'::JSONB)) > 0
@@ -1317,7 +1343,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
          FROM marked JOIN selected USING (source_product_id, internal_product_id)
          ORDER BY marked.internal_product_id DESC`,
         [targetId, state.scan_complete === true ? null : nullableText(state, "scan_before_internal_product_id"), input.limit,
-          nullableText(state, "catalog_run_id"), mode, ...(readinessOnly ? [input.campaignId] : [])],
+          nullableText(state, "catalog_run_id"), mode,
+          ...(readinessOnly ? [input.campaignId] : mode === "new_products" ? [priorityIds] : [])],
       );
       const last = result.rows.at(-1);
       await client.query(

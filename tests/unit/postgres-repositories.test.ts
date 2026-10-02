@@ -589,33 +589,47 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const executor = new FakeExecutor([
       [], [{ id: "92", target_id: "10", mode: "new_products", catalog_run_id: null,
         scan_before_internal_product_id: "31", scan_complete: true }],
+      [],
       [{ source_product_id: "21", internal_product_id: "31", scan_cursor_id: "31", refresh_wordpress: true }],
       [], [],
     ]);
     const result = await new PostgresExportControlRepository(pool(executor))
       .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
     expect(result).toHaveLength(1);
-    expect(executor.calls[2]?.values).toEqual(["10", null, 4, null, "new_products"]);
-    expect(executor.calls[2]?.text).toContain("rules_v2_workbench_items workbench");
-    expect(executor.calls[2]?.text).toContain("target_product.external_id IS NOT NULL");
-    expect(executor.calls[2]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status')");
-    expect(executor.calls[2]?.text).toContain("review.will_create IS DISTINCT FROM FALSE");
-    expect(executor.calls[2]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL");
-    expect(executor.calls[2]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images'");
-    expect(executor.calls[2]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants'");
-    expect(executor.calls[2]?.text).toContain("ORDER BY internal.id DESC");
-    expect(executor.calls[2]?.text).toContain("review.checked_at < NOW() - INTERVAL '5 minutes'");
+    expect(executor.calls[3]?.values).toEqual(["10", null, 4, null, "new_products", null]);
+    expect(executor.calls[3]?.text).toContain("rules_v2_workbench_items workbench");
+    expect(executor.calls[3]?.text).toContain("target_product.external_id IS NOT NULL");
+    expect(executor.calls[3]?.text).toContain("COALESCE(internal.data->'rulesV2'->>'status', internal.data->'classification'->>'status')");
+    expect(executor.calls[3]?.text).toContain("review.will_create IS DISTINCT FROM FALSE");
+    expect(executor.calls[3]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL");
+    expect(executor.calls[3]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'images'");
+    expect(executor.calls[3]?.text).toContain("JSONB_ARRAY_LENGTH(COALESCE(internal.data->'variants'");
+    expect(executor.calls[3]?.text).toContain("ORDER BY internal.id DESC");
+    expect(executor.calls[3]?.text).toContain("review.checked_at < NOW() - INTERVAL '5 minutes'");
   });
 
   it("does not let an unfinished descending sweep hide freshly processed new products", async () => {
     const executor = new FakeExecutor([
       [], [{ id: "92", target_id: "10", mode: "new_products", catalog_run_id: null,
-        scan_before_internal_product_id: "31", scan_complete: false }], [], [], [],
+        scan_before_internal_product_id: "31", scan_complete: false }], [], [], [], [],
     ]);
     await new PostgresExportControlRepository(pool(executor))
       .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
-    expect(executor.calls[2]?.values).toEqual(["10", "31", 4, null, "new_products"]);
-    expect(executor.calls[2]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL OR internal.id < $2::BIGINT");
+    expect(executor.calls[3]?.values).toEqual(["10", "31", 4, null, "new_products", null]);
+    expect(executor.calls[3]?.text).toContain("$5::TEXT = 'new_products' OR $2::BIGINT IS NULL OR internal.id < $2::BIGINT");
+  });
+
+  it("revalidates known-ready products before scanning the unreviewed processing backlog", async () => {
+    const executor = new FakeExecutor([
+      [], [{ id: "92", target_id: "10", mode: "new_products", catalog_run_id: null,
+        scan_before_internal_product_id: "31", scan_complete: false }],
+      [{ internal_product_id: "32" }], [], [], [],
+    ]);
+    await new PostgresExportControlRepository(pool(executor))
+      .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
+    expect(executor.calls[2]?.text).toContain("review.status = 'ready' AND review.will_create = TRUE");
+    expect(executor.calls[3]?.values).toEqual(["10", "31", 4, null, "new_products", ["32"]]);
+    expect(executor.calls[3]?.text).toContain("internal.id = ANY($6::BIGINT[])");
   });
 
   it("counts only source refreshes matching the current review, configuration and product", async () => {
