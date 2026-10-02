@@ -18,6 +18,17 @@ function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+async function errorDetails(response: Response): Promise<string> {
+  let decoded: Record<string, unknown>;
+  try { decoded = object(await response.json()); }
+  catch { return ""; }
+  const error = object(decoded.error);
+  const code = typeof error.code === "string" || typeof error.code === "number" ? String(error.code) : "";
+  const message = typeof error.message === "string" ? error.message.replaceAll(/\s+/gu, " ").trim() : "";
+  const detail = [code, message].filter(Boolean).join(": ").slice(0, 300);
+  return detail === "" ? "" : ` (${detail})`;
+}
+
 export class OpenRouterTranslationProvider implements TextTranslationProvider {
   readonly code = "openrouter";
   readonly version: string;
@@ -70,11 +81,14 @@ export class OpenRouterTranslationProvider implements TextTranslationProvider {
         }),
       });
     } catch { throw new RetryableError("OpenRouter translation transport failed", { code: "TRANSLATION_REQUEST" }); }
-    if (response.status === 408 || response.status === 429 || response.status >= 500) {
-      throw new RetryableError(`OpenRouter translation HTTP ${response.status}`, { code: "TRANSLATION_REQUEST" });
+    if (!response.ok) {
+      const details = await errorDetails(response);
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new RetryableError(`OpenRouter translation HTTP ${response.status}${details}`, { code: "TRANSLATION_REQUEST" });
+      }
+      if (response.status === 402) throw new PermanentError("OpenRouter translation balance is exhausted", { code: "TRANSLATION_QUOTA" });
+      throw new PermanentError(`OpenRouter translation HTTP ${response.status}${details}`, { code: "TRANSLATION_REQUEST" });
     }
-    if (response.status === 402) throw new PermanentError("OpenRouter translation balance is exhausted", { code: "TRANSLATION_QUOTA" });
-    if (!response.ok) throw new PermanentError(`OpenRouter translation HTTP ${response.status}`, { code: "TRANSLATION_REQUEST" });
     let decoded: Record<string, unknown>;
     try { decoded = object(await response.json()); }
     catch { throw new IntegrationContractError("OpenRouter translation response is not valid JSON"); }

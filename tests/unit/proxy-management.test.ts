@@ -275,6 +275,48 @@ describe("GOAT pool integration", () => {
     expect(repository.useRecords.filter((item) => item.success)).toHaveLength(3);
     expect(clients.every((jar) => jar.includes(".images") && jar.includes(".proxy-") && jar.includes(".session-"))).toBe(true);
   });
+
+  it("releases the image transport slot when proxy acquisition fails", async () => {
+    const repository = new MemoryProxyRepository([proxy({ id: "1" })]);
+    const pool = new GoatProxyPool(repository, {
+      GOAT_PROXY_POOL_ENABLED: "true",
+      PARSER_PROXY_ENCRYPTION_KEY: key,
+      GOAT_CLI_CURL_BIN: "curl",
+      GOAT_COOKIE_JAR_PATH: "/tmp/goat.jar",
+    });
+    vi.spyOn(pool, "acquireForImage").mockRejectedValueOnce(new Error("database unavailable"));
+    const downloader = new GoatImageDownloader(
+      { GOAT_COOKIE_JAR_PATH: "/tmp/goat.jar" },
+      { concurrency: 1 },
+      () => ({ getBuffer: vi.fn().mockResolvedValue(Buffer.from("legacy")) }),
+      pool,
+      () => ({ getBuffer: vi.fn().mockResolvedValue(Buffer.from("pooled")) }),
+    );
+
+    await expect(downloader.download("first", { source: sourceRecord(), sourceProduct: { id: "1", sourceId: "1", sourceKey: "x", metadata: {} } }))
+      .rejects.toThrow("database unavailable");
+    await expect(downloader.download("second", { source: sourceRecord(), sourceProduct: { id: "1", sourceId: "1", sourceKey: "x", metadata: {} } }))
+      .resolves.toEqual(Buffer.from("pooled"));
+  });
+
+  it("stops waiting for an image proxy session after the configured timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const pool = new GoatProxyPool(new MemoryProxyRepository(), {
+        GOAT_PROXY_POOL_ENABLED: "true",
+        GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS: "1000",
+        PARSER_PROXY_ENCRYPTION_KEY: key,
+      });
+      const acquisition = expect(pool.acquireForImage()).rejects.toMatchObject({
+        code: "GOAT_PROXY_SESSION_TIMEOUT",
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await acquisition;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("worker collection claim guard", () => {

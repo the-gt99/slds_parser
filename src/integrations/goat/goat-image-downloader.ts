@@ -16,7 +16,7 @@ export type GoatImagePooledHttpClientFactory = (lease: GoatProxyLease, cookieJar
 
 export class GoatImageDownloader implements ImageBinaryDownloader {
   readonly code = "goat-http";
-  readonly version = "1.1.0";
+  readonly version = "1.2.0";
 
   readonly #clients: (GoatImageHttpClient | undefined)[];
   readonly #available: number[];
@@ -38,8 +38,8 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
 
   async download(url: string, _context: ProductOperationContext): Promise<Buffer> {
     const slot = await this.#acquire();
-    const lease = await this.proxyPool?.acquireForImage();
     try {
+      const lease = await this.proxyPool?.acquireForImage();
       const started = Date.now();
       try {
         const result = lease === undefined || lease === null

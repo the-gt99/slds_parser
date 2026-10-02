@@ -72,6 +72,7 @@ GOAT_PROXY_HTTP=
 GOAT_PROXY_SOCKS5=
 GOAT_PROXY_POOL_ENABLED=false
 GOAT_PROXY_CONCURRENCY_PER_PROXY=1
+GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS=60000
 GOAT_PROXY_TEST_URL=https://www.goat.com/
 PARSER_PROXY_ENCRYPTION_KEY=
 GOAT_CF_CLEARANCE=
@@ -120,7 +121,7 @@ SHOE_HEIGHT_SOURCE_IMAGE_POSITION=0
 
 `PARSER_OPENROUTER_PROXY_URL` задаёт отдельный HTTP(S)-прокси только для запросов перевода. При его настройке прямого повторного запроса после ошибки прокси нет; соединения GOAT, WordPress и S3 эта настройка не меняет. Адрес с credentials хранится только в защищённом окружении сервиса.
 
-HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
+HTTP и SOCKS5 proxy взаимоисключающие в старом env-режиме. Для управляемого пула задайте `PARSER_PROXY_ENCRYPTION_KEY` как 32-byte base64/hex secret, импортируйте текущий env proxy командой `npm run proxy:import-env`, проверьте `npm run proxy:test -- <id>`, включите `npm run proxy:enable -- <id>` и только затем выставляйте `GOAT_PROXY_POOL_ENABLED=true`. `GOAT_PROXY_CONCURRENCY_PER_PROXY` задаёт от 1 до 16 одновременных независимых сессий на каждый healthy enabled proxy; итоговый collection parallelism дополнительно ограничен `WORKER_COLLECTION_CONCURRENCY`. `GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS` ограничивает ожидание свободной proxy-сессии при скачивании изображения; по истечении времени ожидание завершается retryable-ошибкой вместо бесконечного удержания download slot. После включения pool GOAT runtime использует repository/pool; старые `GOAT_PROXY_HTTP`/`GOAT_PROXY_SOCKS5` можно оставить для rollback, но они не являются скрытым fallback. Клиент делает session warm-up, один раз обновляет сессию после 403, соблюдает timeout и лимит ответа. Transport errors, повторный 403, 408, 425, 429 и 5xx повторяются Worker; 404 карточки и остальные 4xx завершаются постоянно. HTML challenge считается временной ошибкой, неверная JSON/XML-структура — ошибкой интеграционного контракта.
 
 Страница `/proxies` и API `/api/proxies` требуют admin authentication; browser mutations дополнительно требуют CSRF. API не возвращает username, password, ciphertext, IV/auth tag или полный proxy URL. Новый proxy создаётся выключенным, включение разрешено только после успешной проверки через тот же curl-impersonate transport. Password в форме редактирования не предзаполняется; пустое поле не стирает сохранённый secret. Проверочный URL задаётся сервером через `GOAT_PROXY_TEST_URL` и не принимается от клиента.
 
@@ -208,6 +209,8 @@ WordPress importer скачивает готовые WebP по публичны�
 Постоянное обновление вариаций после первого полного прохода делит каталог на два темпа. Товары с недавними изменениями проверяются через заданный в админке интервал, неизменившиеся — раз в 24 часа. Новый товар или изменение его записи в sitemap всегда получает приоритет и проверяется вне холодного интервала.
 
 Конфигурация подключения читается при создании пула. Поэтому импорт модулей не требует `DATABASE_URL`, а попытка создать подключение без этой переменной завершится понятной ошибкой. Миграции применяются в порядке имён файлов, каждая в отдельной транзакции. PostgreSQL advisory lock исключает параллельный запуск двух migration runners.
+
+Production-контейнер PostgreSQL должен запускаться с shared memory не меньше 512 MiB, например `--shm-size=512m`. Docker default 64 MiB для этого runtime не поддерживается: параллельные запросы PostgreSQL могут завершиться `could not resize shared memory segment` и оборвать активные подключения worker. Проверка выполняется через `docker inspect --format '{{.HostConfig.ShmSize}}' slds-parser-postgres`; изменение требует пересоздания только контейнера PostgreSQL с сохранением его data volume и предварительно проверенным бэкапом.
 
 ## Контракты хранения
 

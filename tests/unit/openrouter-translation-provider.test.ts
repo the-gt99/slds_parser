@@ -48,6 +48,22 @@ describe("OpenRouter translation", () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
+  it("keeps a bounded OpenRouter error reason for permanent request failures", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: "provider_rejected", message: `Invalid request ${"x".repeat(500)}` },
+    }), { status: 400 }));
+
+    const error = await new OpenRouterTranslationProvider(options, request)
+      .translate("Leather", "en", "ru").catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      code: "TRANSLATION_REQUEST",
+      message: expect.stringMatching(/^OpenRouter translation HTTP 400 \(provider_rejected: Invalid request x+\)$/u),
+    });
+    expect((error as Error).message).not.toContain("x".repeat(301));
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("stops before translation when the account balance is below the configured reserve", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { total_credits: 10, total_usage: 7.01 } })));
     const provider = new OpenRouterTranslationProvider({ ...options, minBalanceUsd: 3 }, request);

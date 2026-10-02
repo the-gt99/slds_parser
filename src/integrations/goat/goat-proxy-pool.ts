@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import type { EntityId } from "../../contracts/index.js";
+import { RetryableError } from "../../core/errors/index.js";
 import { ProxyCredentialsCrypto, type ProxyCredentials, type ProxyRecord, type ProxyRepository } from "../../proxies/index.js";
 import { GoatHttpClient, type GoatHttpEnvironment } from "./goat-http-client.js";
 
@@ -10,6 +11,7 @@ export interface GoatProxyPoolEnvironment extends GoatHttpEnvironment {
   readonly GOAT_PROXY_CONCURRENCY_PER_PROXY?: string;
   readonly PARSER_PROXY_ENCRYPTION_KEY?: string;
   readonly GOAT_PROXY_LEASE_TTL_MS?: string;
+  readonly GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS?: string;
   readonly GOAT_PROXY_INVENTORY_HEADROOM?: string;
 }
 
@@ -45,6 +47,15 @@ function leaseTtlMs(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 60_000 || parsed > 3_600_000) {
     throw new Error("GOAT_PROXY_LEASE_TTL_MS must be an integer from 60000 to 3600000");
+  }
+  return parsed;
+}
+
+function imageAcquireTimeoutMs(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 60_000;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1_000 || parsed > 3_600_000) {
+    throw new Error("GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS must be an integer from 1000 to 3600000");
   }
   return parsed;
 }
@@ -90,6 +101,7 @@ export class GoatProxyPool {
   readonly #clients = new Map<string, { readonly transport: string; readonly client: GoatHttpClient }>();
   readonly #concurrencyPerProxy: number;
   readonly #leaseTtlMs: number;
+  readonly #imageAcquireTimeoutMs: number;
   readonly #leaseOwner = randomUUID();
   #roundRobin = 0;
 
@@ -101,6 +113,7 @@ export class GoatProxyPool {
     this.#crypto = crypto ?? new ProxyCredentialsCrypto(environment.PARSER_PROXY_ENCRYPTION_KEY);
     this.#concurrencyPerProxy = concurrencyPerProxy(environment.GOAT_PROXY_CONCURRENCY_PER_PROXY);
     this.#leaseTtlMs = leaseTtlMs(environment.GOAT_PROXY_LEASE_TTL_MS);
+    this.#imageAcquireTimeoutMs = imageAcquireTimeoutMs(environment.GOAT_PROXY_IMAGE_ACQUIRE_TIMEOUT_MS);
   }
 
   get enabled(): boolean {
@@ -154,10 +167,17 @@ export class GoatProxyPool {
 
   async acquireForImage(): Promise<GoatProxyLease | null> {
     if (!this.enabled) return null;
+    const deadline = Date.now() + this.#imageAcquireTimeoutMs;
     while (true) {
       const lease = await this.tryAcquire();
       if (lease !== null) return lease;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new RetryableError("No GOAT proxy session is available for image download", {
+          code: "GOAT_PROXY_SESSION_TIMEOUT",
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(500, remainingMs)));
     }
   }
 
