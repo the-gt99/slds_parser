@@ -699,6 +699,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND source_refresh.internal_content_hash = review.internal_content_hash
           AND source_refresh.status = 'ready'
           AND source_refresh.fetched_at > NOW() - INTERVAL '10 minutes'
+          AND JSONB_ARRAY_LENGTH(source_refresh.variants) > 0
       )`);
       pageWhere.push(...filterSql(input.filter ?? {}, addPage, { includeStatus: false }));
       if (beforeCheckedAt !== null && beforeId !== null) {
@@ -774,6 +775,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           AND source_refresh.internal_content_hash = review.internal_content_hash
           AND source_refresh.status = 'ready'
           AND source_refresh.fetched_at > NOW() - INTERVAL '10 minutes'
+          AND JSONB_ARRAY_LENGTH(source_refresh.variants) > 0
          JOIN LATERAL (
            SELECT internal.id
            FROM internal_products internal
@@ -861,7 +863,8 @@ export class PostgresExportControlRepository implements ExportControlRepository 
           `SELECT COUNT(*)::INT AS count
            FROM target_export_source_refreshes
            WHERE id = ANY($1::BIGINT[]) AND campaign_id = $2 AND status = 'ready'
-             AND fetched_at > NOW() - INTERVAL '10 minutes'`,
+             AND fetched_at > NOW() - INTERVAL '10 minutes'
+             AND JSONB_ARRAY_LENGTH(variants) > 0`,
           [refreshIds, input.campaignId],
         );
         if (Number(readyRefreshes.rows[0]?.count ?? 0) !== input.candidates.length) {
@@ -1263,7 +1266,7 @@ export class PostgresExportControlRepository implements ExportControlRepository 
                WHERE target_product.target_id = $1 AND target_product.internal_product_id = internal.id
                  AND target_product.external_id IS NOT NULL
              )
-           ORDER BY review.checked_at DESC, review.id DESC LIMIT $2`,
+           ORDER BY internal.updated_at DESC, review.id DESC LIMIT $2`,
           [targetId, input.limit],
         )
         : null;
@@ -1451,20 +1454,27 @@ export class PostgresExportControlRepository implements ExportControlRepository 
     const result = await queryPool<DatabaseRow>(this.pool,
       `SELECT COUNT(*)::INT AS count
        FROM target_export_source_refreshes refresh
+       JOIN target_export_campaigns campaign ON campaign.id = refresh.campaign_id
        JOIN target_product_preflight_reviews review
          ON review.target_id = refresh.target_id
         AND review.internal_product_id = refresh.internal_product_id
         AND review.internal_content_hash = refresh.internal_content_hash
         AND review.status = 'ready'
+        AND review.will_create = (campaign.mode = 'new_products')
+        AND NOT review.change_flags @> ARRAY['no_changes']::TEXT[]
        JOIN target_export_revisions revision
          ON revision.target_id = review.target_id
         AND revision.revision = review.configuration_revision
        JOIN internal_products internal
          ON internal.id = refresh.internal_product_id
         AND internal.content_hash = refresh.internal_content_hash
+        AND ${exportEligibleInternalSql("internal")}
        WHERE refresh.campaign_id = $1
          AND refresh.status IN ('pending', 'ready')
-         AND (refresh.status = 'pending' OR refresh.fetched_at > NOW() - INTERVAL '10 minutes')
+         AND (refresh.status = 'pending' OR (
+           refresh.fetched_at > NOW() - INTERVAL '10 minutes'
+           AND JSONB_ARRAY_LENGTH(refresh.variants) > 0
+         ))
          AND NOT EXISTS (
            SELECT 1 FROM target_export_batch_items item
            JOIN target_export_batches batch ON batch.id = item.batch_id

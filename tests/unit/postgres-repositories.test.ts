@@ -628,6 +628,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
     await new PostgresExportControlRepository(pool(executor))
       .prepareCampaignPreflightCandidates({ campaignId: "92", limit: 4 });
     expect(executor.calls[2]?.text).toContain("review.status = 'ready' AND review.will_create = TRUE");
+    expect(executor.calls[2]?.text).toContain("ORDER BY internal.updated_at DESC");
     expect(executor.calls[3]?.values).toEqual(["10", "31", 4, null, "new_products", ["32"]]);
     expect(executor.calls[3]?.text).toContain("internal.id = ANY($6::BIGINT[])");
   });
@@ -639,9 +640,11 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const query = executor.calls[0]?.text ?? "";
     expect(query).toContain("review.internal_content_hash = refresh.internal_content_hash");
     expect(query).toContain("review.status = 'ready'");
+    expect(query).toContain("review.will_create = (campaign.mode = 'new_products')");
     expect(query).toContain("revision.revision = review.configuration_revision");
     expect(query).toContain("internal.content_hash = refresh.internal_content_hash");
     expect(query).toContain("refresh.fetched_at > NOW() - INTERVAL '10 minutes'");
+    expect(query).toContain("JSONB_ARRAY_LENGTH(refresh.variants) > 0");
   });
 
   it("reuses expired source refresh rows without resetting an in-flight refresh", async () => {
