@@ -10,7 +10,7 @@ describe("indexed rule candidates", () => {
       { conditions: [{ field: "candidate.brand.sourceValue", operator: "equals", values: [" Ｎｉｋｅ "] }] },
       { conditions: [{ field: "candidate.category.sourceValue", operator: "one_of", values: ["tops", "hats"] }] },
     ]), parameters);
-    expect(predicate).toContain("$3::TEXT[] AND rules_v2_candidate_tokens(item.candidates) && $4::TEXT[]");
+    expect(predicate).toContain("$3::TEXT[] AND product_reference_tokens(internal.data) && $4::TEXT[]");
     expect(parameters).toEqual(["1", "2", ["candidate.brand.sourceValue=nike"],
       ["candidate.category.sourceValue=tops", "candidate.category.sourceValue=hats"]]);
   });
@@ -33,11 +33,11 @@ describe("indexed rule candidates", () => {
   });
   it("fetches DTOs after bounded ID selection, including dirty and missing index rows", () => {
     const sql = indexedCandidatePageSql("predicate", "$4", 500, "DESC", "$2");
-    expect(sql).toContain("item.product_updated_at IS NULL");
-    expect(sql).toContain("item.source_product_id IS NULL");
-    expect(sql).toContain("ORDER BY id DESC LIMIT 500");
+    expect(sql).not.toContain("rules_v2_workbench_items");
+    expect(sql).toContain("internal.data ? 'referenceCandidates'");
+    expect(sql).toContain("ORDER BY product.id DESC LIMIT 500");
     expect(sql.indexOf("LIMIT 500")).toBeLessThan(sql.indexOf("THEN internal.data"));
-    expect(sql).toContain("item.source_product_id < $4");
+    expect(sql).toContain("product.id < $4");
     expect(indexedCandidatePageSql("predicate", "$2", 2000, "ASC", "$3")).toContain("product.id > $2");
   });
 });

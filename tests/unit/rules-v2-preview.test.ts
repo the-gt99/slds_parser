@@ -128,10 +128,10 @@ describe("RulesV2PreviewService", () => {
       ] };
 
     await expect(new RulesV2PreviewService(pool).preview(draft)).resolves.toMatchObject({ examined: 12, productCount: 12 });
-    expect(candidateSql).toContain("JOIN rules_v2_workbench_items item");
+    expect(candidateSql).not.toContain("JOIN rules_v2_workbench_items");
     expect(candidateSql).toContain("WITH candidate_ids AS MATERIALIZED");
-    expect(candidateSql).toContain("rules_v2_candidate_tokens(item.candidates)");
-    expect(candidateSql).toContain("item.product_updated_at IS NULL");
+    expect(candidateSql).toContain("product_reference_tokens(internal.data)");
+    expect(candidateSql).toContain("internal.data ? 'referenceCandidates'");
     expect(candidateParameters).toEqual(["1", "1", ["candidate.brand.sourceValue=phaidon"], ["candidate.category.sourceValue=books"]]);
   });
 

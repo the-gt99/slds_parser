@@ -22,32 +22,22 @@ export function indexedRulePredicate(rule: Pick<RuleV2Record, "conditionGroups">
     // Groups are AND, conditions within a group are OR. Never narrow a mixed OR group.
     if (supported) {
       parameters.push(tokens);
-      groups.push(`rules_v2_candidate_tokens(item.candidates) && $${parameters.length}::TEXT[]`);
+      groups.push(`product_reference_tokens(internal.data) && $${parameters.length}::TEXT[]`);
     }
   }
   return groups.length === 0 ? null : `(${groups.join(" AND ")})`;
 }
 
-/** Select small IDs first; fetch large DTOs only for this page. Include dirty and missing rows. */
+/** Query canonical source candidates, including products absent from the target workbench. */
 export function indexedCandidatePageSql(predicate: string, cursor: string | null, limit: number,
   direction: "ASC" | "DESC", targetParameter: string): string {
-  const itemCursor = cursor === null ? "" : `AND item.source_product_id ${direction === "ASC" ? ">" : "<"} ${cursor}`;
   const productCursor = cursor === null ? "" : `AND product.id ${direction === "ASC" ? ">" : "<"} ${cursor}`;
   return `WITH candidate_ids AS MATERIALIZED (
-    SELECT id FROM (
-      SELECT item.source_product_id AS id FROM rules_v2_workbench_items item
-      WHERE item.source_id = $1 AND item.target_id = ${targetParameter}
-        AND item.product_updated_at IS NOT NULL ${itemCursor} AND (${predicate})
-      UNION
-      SELECT item.source_product_id AS id FROM rules_v2_workbench_items item
-      WHERE item.source_id = $1 AND item.target_id = ${targetParameter}
-        AND item.product_updated_at IS NULL ${itemCursor}
-      UNION
       SELECT product.id FROM source_products product
       JOIN internal_products internal ON internal.source_product_id = product.id
-      LEFT JOIN rules_v2_workbench_items item ON item.source_product_id = product.id AND item.target_id = ${targetParameter}
-      WHERE product.source_id = $1 AND item.source_product_id IS NULL ${productCursor}
-    ) candidates ORDER BY id ${direction} LIMIT ${limit}
+      JOIN targets target ON target.id = ${targetParameter}
+      WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates' ${productCursor} AND (${predicate})
+      ORDER BY product.id ${direction} LIMIT ${limit}
   )
   SELECT product.id::TEXT, product.source_id::TEXT, product.source_key, product.external_id, source.code,
     CASE WHEN internal.data ? 'referenceCandidates' THEN internal.data ELSE NULL END AS data,
