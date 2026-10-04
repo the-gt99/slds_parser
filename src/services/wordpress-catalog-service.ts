@@ -24,6 +24,7 @@ export interface VariationAutoPauseNotifier {
 export class WordPressCatalogService {
   private static readonly variationSubmitBatchSize = 100;
   private nextCoverageCheckAt = 0;
+  private readonly notifiedFailures = new Map<string, number>();
 
   constructor(
     private readonly repository: WordPressCatalogRepository,
@@ -194,16 +195,17 @@ export class WordPressCatalogService {
     const running = active?.componentStatuses[component] === "running";
     if (active !== null && component === "wordpress" && Date.now() >= this.nextCoverageCheckAt) {
       await this.repository.recoverOrphanedVariationItems(active.runId);
+      await this.repository.enqueueInventoryReconciliation(active.runId);
       this.nextCoverageCheckAt = Date.now() + 60_000;
     }
-    if (active !== null && component === "wordpress" && running && active.failedCount > active.acknowledgedFailedCount) {
-      const error = "Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную.";
-      await this.repository.setInventoryComponentStatus({ runId: active.runId, component: "wordpress", status: "paused" });
+    if (active !== null && component === "wordpress" && running
+      && active.failedCount > Math.max(active.acknowledgedFailedCount, this.notifiedFailures.get(active.runId) ?? 0)) {
+      const error = "Ошибки отдельных товаров сохранены в журнале. Обновление остальных товаров продолжается.";
+      this.notifiedFailures.set(active.runId, active.failedCount);
       if (this.pauseNotifier !== undefined) {
         try { await this.pauseNotifier.notify({ runId: active.runId, failedCount: active.failedCount, error }); }
         catch (notifyError) { this.logError(`Failed to send variation auto-sync pause notification: ${notifyError instanceof Error ? notifyError.message : "Unknown error"}`); }
       }
-      return true;
     }
     if (active !== null && running) {
       if (component === "goat" || component === "shihuo") {

@@ -129,18 +129,23 @@ describe("WordPressCatalogService variation auto-sync", () => {
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(false);
   });
 
-  it("reports an automatic pause as work", async () => {
+  it("continues other products after individual failures and notifies only once", async () => {
     const current = run({ variationFailedCount: 3, variationAutoError: "new failures" });
-    const value = setup(current, "paused");
+    const value = setup(current, "queued");
 
     await expect(value.service.tickVariationAutoSync()).resolves.toBe(true);
     expect(value.pauseNotifier.notify).toHaveBeenCalledWith({ runId: "1", failedCount: 3,
-      error: "Постоянное обновление остановлено после ошибки товара. Проверьте журнал и возобновите вручную." });
+      error: "Ошибки отдельных товаров сохранены в журнале. Обновление остальных товаров продолжается." });
+    await value.service.tickVariationAutoSync();
+    expect(value.pauseNotifier.notify).toHaveBeenCalledTimes(1);
+    expect(value.repository.setInventoryComponentStatus).not.toHaveBeenCalled();
+    expect(value.repository.enqueueReadyInventoryMergeJobs).toHaveBeenCalledTimes(2);
+    expect(value.repository.enqueueInventoryReconciliation).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the auto-sync paused when Telegram notification fails", async () => {
+  it("continues the auto-sync when the failure notification fails", async () => {
     const logError = vi.fn();
-    const value = setup(run({ variationFailedCount: 1 }), "paused");
+    const value = setup(run({ variationFailedCount: 1 }), "queued");
     value.pauseNotifier.notify.mockRejectedValue(new Error("network unavailable"));
     const service = new WordPressCatalogService(
       value.repository,
@@ -152,6 +157,8 @@ describe("WordPressCatalogService variation auto-sync", () => {
 
     await expect(service.tickVariationAutoSync()).resolves.toBe(true);
     expect(logError).toHaveBeenCalledWith(expect.stringContaining("network unavailable"));
+    expect(value.repository.setInventoryComponentStatus).not.toHaveBeenCalled();
+    expect(value.repository.enqueueReadyInventoryMergeJobs).toHaveBeenCalled();
   });
 
   it("reports a completed cycle as work", async () => {

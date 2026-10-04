@@ -1,0 +1,15 @@
+[Unit]
+Description=SLDS Parser recurring GOAT discovery
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+ExecStart=/usr/local/bin/node dist/src/cli/goat-scheduled-discovery.js
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
