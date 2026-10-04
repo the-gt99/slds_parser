@@ -46,6 +46,23 @@ export async function runMigrations({
         }
 
         const sql = await readFile(path.join(migrationsDirectory, name), "utf8");
+        if (sql.startsWith("-- migrate: concurrent-index")) {
+          const statement = sql.replace(/^-- migrate: concurrent-index\s*/u, "").trim().replace(/;$/u, "");
+          const indexName = /^CREATE INDEX CONCURRENTLY IF NOT EXISTS ([a-z][a-z0-9_]*)\s+ON\s/iu.exec(statement)?.[1];
+          if (indexName === undefined || statement.includes(";")) {
+            throw new Error(`Concurrent migration must contain exactly one named CREATE INDEX: ${name}`);
+          }
+          const existing = await client.query<{ indisvalid: boolean }>(
+            "SELECT indisvalid FROM pg_index WHERE indexrelid = TO_REGCLASS($1)", [indexName]);
+          if (existing.rows[0]?.indisvalid === false) {
+            // PostgreSQL leaves an invalid index after an interrupted concurrent build.
+            await client.query(`DROP INDEX CONCURRENTLY "${indexName}"`);
+          }
+          await client.query(statement);
+          await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [name]);
+          appliedNow.push(name);
+          continue;
+        }
         await client.query("BEGIN");
 
         try {

@@ -129,11 +129,14 @@ describe("RulesV2PreviewService", () => {
 
     await expect(new RulesV2PreviewService(pool).preview(draft)).resolves.toMatchObject({ examined: 12, productCount: 12 });
     expect(candidateSql).toContain("JOIN rules_v2_workbench_items item");
-    expect(candidateSql).toContain("item.search_text ILIKE");
-    expect(candidateParameters).toEqual(["1", "1", "Phaidon"]);
+    expect(candidateSql).toContain("WITH candidate_ids AS MATERIALIZED");
+    expect(candidateSql).toContain("rules_v2_candidate_tokens(item.candidates)");
+    expect(candidateSql).toContain("item.product_updated_at IS NULL");
+    expect(candidateParameters).toEqual(["1", "1", ["candidate.brand.sourceValue=phaidon"], ["candidate.category.sourceValue=books"]]);
   });
 
   it("counts the effect of a rule across the complete product scan", async () => {
+    vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
     const existing = (id: string, scope: string): RuleV2Record => ({
       id, sourceId: "1", sourceCode: "goat", targetId: "10", targetCode: "slamdunk",
       name: scope, groupCode: `group_${id}`, priority: 100, status: "shadow",
@@ -181,7 +184,7 @@ describe("RulesV2PreviewService", () => {
       statements.push({ sql, values });
       const rows = sql.includes("FROM rules_v2_workbench_state") ? [{ rules_revision: "revision-1", complete: true }]
         : sql.includes("SELECT COUNT(*)::INT AS total") ? [{ total: 2 }]
-          : sql.includes("SELECT item.status") ? [{ status: "incomplete", count: 2 }]
+          : sql.includes("SELECT item.status") ? [{ status: "incomplete", count: 2, filtered_count: 2 }]
             : sql.includes("SELECT COUNT(*)::INT AS count") ? [{ count: 2 }] : [];
       return { rows: rows as unknown as Row[], rowCount: rows.length };
     };
@@ -198,8 +201,31 @@ describe("RulesV2PreviewService", () => {
     expect(list?.sql).toContain("NOT ('variants_missing' = ANY(item.issue_codes))");
     expect(list?.sql).toContain("item.product_updated_at IS NOT NULL");
     expect(list?.sql).not.toContain("JOIN internal_products");
+    expect(list?.sql).toContain("WITH selected AS MATERIALIZED");
     expect(list?.values).toEqual(["1", "10", "сандали", "required_model_missing", 41, 0]);
     expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it("reuses the loaded rule registry while checking the full revision on each preview", async () => {
+    const snapshot = vi.spyOn(RulesV2Runtime.prototype, "snapshot").mockResolvedValue(new RulesV2Snapshot("1", []));
+    const revision = vi.spyOn(RulesV2Runtime.prototype, "revision").mockResolvedValue("1");
+    const query = async <Row extends Record<string, unknown>>(sql: string): Promise<SqlResult<Row>> => ({
+      rows: (sql.includes("FROM target_dictionary_values")
+        ? [{ id: "50", external_id: "70", name: "Black", entity_type: "colors" }] : []) as unknown as Row[], rowCount: 0,
+    });
+    const pool = { connect: async () => ({ query, release() {} }), async end() {} } as SqlPool;
+    const service = new RulesV2PreviewService(pool);
+    const draft: RuleV2Draft = { sourceId: "1", targetId: "10", name: "Exact", groupCode: "exact",
+      priority: 1, status: "shadow", conditionGroups: [{ conditions: [{ field: "common.source.productId", operator: "equals", values: ["2"] }] }],
+      actions: [{ targetScope: "product.color", dictionaryValueId: "50", mode: "add" }] };
+    await service.preview(draft);
+    await service.preview(draft);
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(revision).toHaveBeenCalledTimes(1);
+    revision.mockResolvedValue("2");
+    snapshot.mockResolvedValue(new RulesV2Snapshot("2", []));
+    await service.preview(draft);
+    expect(snapshot).toHaveBeenCalledTimes(2);
   });
 
   it("invalidates only products matched by a newly created rule", async () => {

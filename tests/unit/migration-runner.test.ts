@@ -80,6 +80,45 @@ async function createMigrations(
 }
 
 describe("runMigrations", () => {
+  it("does not record or roll back a failed concurrent index build", async () => {
+    const statement = "CREATE INDEX CONCURRENTLY IF NOT EXISTS lookup_idx ON products (id)";
+    const directory = await createMigrations({ "100_index.sql": `-- migrate: concurrent-index\n${statement};` });
+    const client = new FakeClient([], statement);
+    await expect(runMigrations({ pool: new FakePool(client), migrationsDirectory: directory })).rejects.toThrow("migration failed");
+    expect(client.queries).not.toContain("INSERT INTO schema_migrations (name) VALUES ($1)");
+    expect(client.queries).not.toContain("ROLLBACK");
+    expect(client.released).toBe(true);
+  });
+  it("builds concurrent indexes outside a transaction and records only success", async () => {
+    const directory = await createMigrations({ "100_index.sql":
+      "-- migrate: concurrent-index\nCREATE INDEX CONCURRENTLY IF NOT EXISTS lookup_idx ON products (id);" });
+    const client = new FakeClient();
+    await expect(runMigrations({ pool: new FakePool(client), migrationsDirectory: directory })).resolves.toEqual(["100_index.sql"]);
+    expect(client.queries).not.toContain("BEGIN");
+    expect(client.queries).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS lookup_idx ON products (id)");
+    expect(client.queries).toContain("INSERT INTO schema_migrations (name) VALUES ($1)");
+  });
+
+  it("rebuilds an invalid leftover index before retrying a concurrent migration", async () => {
+    const directory = await createMigrations({ "100_index.sql":
+      "-- migrate: concurrent-index\nCREATE INDEX CONCURRENTLY IF NOT EXISTS lookup_idx ON products (id);" });
+    const client = new FakeClient();
+    const baseQuery = client.query.bind(client);
+    client.query = async <Row extends QueryResultRow>(sql: string, values?: unknown[]) => {
+      if (sql.includes("SELECT indisvalid")) return { rows: [{ indisvalid: false }] as unknown as Row[], rowCount: 1 };
+      return baseQuery<Row>(sql, values);
+    };
+    await runMigrations({ pool: new FakePool(client), migrationsDirectory: directory });
+    expect(client.queries).toContain('DROP INDEX CONCURRENTLY "lookup_idx"');
+  });
+
+  it("rejects multiple commands in a concurrent migration before changing schema", async () => {
+    const directory = await createMigrations({ "100_index.sql":
+      "-- migrate: concurrent-index\nCREATE INDEX CONCURRENTLY IF NOT EXISTS lookup_idx ON products (id); SELECT 1;" });
+    const client = new FakeClient();
+    await expect(runMigrations({ pool: new FakePool(client), migrationsDirectory: directory })).rejects.toThrow("exactly one");
+    expect(client.queries.some((sql) => sql.startsWith("CREATE INDEX"))).toBe(false);
+  });
   it("applies SQL files in filename order", async () => {
     const directory = await createMigrations({
       "002_second.sql": "SELECT 'second'",

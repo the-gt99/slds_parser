@@ -7,6 +7,7 @@ import { RulesV2Runtime } from "../infrastructure/db/rules-v2-runtime.js";
 import { DirectRulesV2Assignments } from "./rules-v2-direct-assignments.js";
 import { rulesV2TargetEntities } from "./rules-v2-fields.js";
 import type { RulesV2Snapshot } from "./rules-v2-snapshot.js";
+import { indexedCandidatePageSql, indexedRulePredicate } from "./rules-v2-candidate-query.js";
 
 const requiredTargetFields = [
   { scope: "product.brand", label: "Бренд", candidateType: "brand" },
@@ -48,6 +49,8 @@ interface WorkbenchRow {
   readonly data: UniversalProductDTO;
   readonly updated_at: string;
 }
+
+type WorkbenchCandidateRow = Omit<WorkbenchRow, "data"> & { readonly data: UniversalProductDTO | null };
 
 function effectiveDescription(product: UniversalProductDTO): string {
   return (product.translatedContent?.story || product.translatedContent?.description || product.description).trim();
@@ -162,8 +165,9 @@ export class RulesV2PreviewService {
   constructor(private readonly pool: SqlPool) {}
 
   private async rulesSnapshot(db: SqlExecutor): Promise<RulesV2Snapshot> {
-    const snapshot = await new RulesV2Runtime(db, () => 0).snapshot();
-    if (this.cachedSnapshot?.revision === snapshot.revision) return this.cachedSnapshot;
+    const runtime = new RulesV2Runtime(db, () => 0);
+    if (this.cachedSnapshot !== undefined && this.cachedSnapshot.revision === await runtime.revision()) return this.cachedSnapshot;
+    const snapshot = await runtime.snapshot();
     this.cachedSnapshot = snapshot;
     return snapshot;
   }
@@ -235,15 +239,19 @@ export class RulesV2PreviewService {
       if (variants === "with") clauses.push("NOT ('variants_missing' = ANY(item.issue_codes))");
       else if (variants === "without") clauses.push("'variants_missing' = ANY(item.issue_codes)");
       const filter = clauses.join(" AND ");
-      const rows = (await client.query<Record<string, unknown>>(`SELECT item.* FROM rules_v2_workbench_items item
-        WHERE ${filter} ORDER BY ${order} LIMIT ${parameter(limit + 1)} OFFSET ${parameter(offset)}`, values)).rows;
+      const rows = (await client.query<Record<string, unknown>>(`WITH selected AS MATERIALIZED (
+        SELECT item.source_product_id, item.target_id FROM rules_v2_workbench_items item
+        WHERE ${filter} ORDER BY ${order} LIMIT ${parameter(limit + 1)} OFFSET ${parameter(offset)}
+      ) SELECT item.* FROM selected
+        JOIN rules_v2_workbench_items item USING (source_product_id, target_id)
+        ORDER BY ${order}`, values)).rows;
       const filterValues = values.slice(0, -2);
-      const count = (await client.query<{ total: number }>(`SELECT COUNT(*)::INT AS total FROM rules_v2_workbench_items item
-        WHERE ${filter}`, filterValues)).rows[0]?.total ?? 0;
-      const counts = (await client.query<{ status: string; count: number }>(`SELECT item.status, COUNT(*)::INT AS count
+      const counts = (await client.query<{ status: string; count: number; filtered_count: number }>(`SELECT item.status,
+        COUNT(*)::INT AS count, COUNT(*) FILTER (WHERE ${filter})::INT AS filtered_count
         FROM rules_v2_workbench_items item
         WHERE item.source_id = $1 AND item.target_id = $2
-        AND item.product_updated_at IS NOT NULL GROUP BY item.status`, [query.sourceId, query.targetId])).rows;
+        AND item.product_updated_at IS NOT NULL GROUP BY item.status`, filterValues)).rows;
+      const count = counts.reduce((sum, row) => sum + row.filtered_count, 0);
       const indexed = counts.reduce((sum, row) => sum + row.count, 0);
       const total = complete ? indexed : (await client.query<{ count: number }>(`SELECT COUNT(*)::INT AS count FROM internal_products internal
         JOIN source_products product ON product.id = internal.source_product_id WHERE product.source_id = $1`, [query.sourceId])).rows[0]?.count ?? 0;
@@ -301,7 +309,7 @@ export class RulesV2PreviewService {
     const db = await this.pool.connect();
     try {
       const runtime = new RulesV2Runtime(db, () => 0);
-      const [revision, snapshot] = await Promise.all([runtime.rulesRevision(), runtime.snapshot()]);
+      const [revision, snapshot] = await Promise.all([runtime.rulesRevision(), this.rulesSnapshot(db)]);
       const pairs = new Map<string, { sourceId: string; targetId: string }>();
       for (const rule of [previous, current]) if (rule !== undefined && rule.sourceId !== null && rule.targetId !== null) {
         pairs.set(`${rule.sourceId}:${rule.targetId}`, { sourceId: rule.sourceId, targetId: rule.targetId });
@@ -324,22 +332,32 @@ export class RulesV2PreviewService {
         let cursor = "0";
         let dirty = 0;
         while (true) {
+          if (!oldActive && !newActive) break;
           const parameters: unknown[] = [sourceId, cursor];
+          const indexedParameters: unknown[] = [sourceId, cursor, targetId];
+          const indexedPredicates = [oldActive ? indexedRulePredicate(previous!, indexedParameters) : null,
+            newActive ? indexedRulePredicate(current, indexedParameters) : null];
+          const useIndex = (!oldActive || indexedPredicates[0] !== null) && (!newActive || indexedPredicates[1] !== null)
+            && indexedPredicates.some((predicate) => predicate !== null);
           const predicates = [oldActive ? selectiveRuleSql(previous!, parameters) : null,
             newActive ? selectiveRuleSql(current, parameters) : null];
           const canNarrow = (!oldActive || predicates[0] !== null) && (!newActive || predicates[1] !== null);
           const activePredicates = predicates.filter((predicate): predicate is string => predicate !== null);
           const candidateFilter = canNarrow && activePredicates.length > 0 ? `AND (${activePredicates.join(" OR ")})` : "";
-          const rows = (await db.query<WorkbenchRow>(`SELECT product.id::TEXT, product.source_id::TEXT,
+          const rawSql = `SELECT product.id::TEXT, product.source_id::TEXT,
             product.source_key, product.external_id, source.code, internal.data, internal.updated_at::TEXT
             FROM source_products product JOIN sources source ON source.id = product.source_id
             JOIN internal_products internal ON internal.source_product_id = product.id
             WHERE product.source_id = $1 AND product.id > $2 ${candidateFilter}
-            ORDER BY product.id LIMIT 2000`, parameters)).rows;
+            ORDER BY product.id LIMIT 2000`;
+          const rows = (await db.query<WorkbenchCandidateRow>(useIndex
+            ? indexedCandidatePageSql(indexedPredicates.filter((predicate) => predicate !== null).join(" OR "), "$2", 2000, "ASC", "$3")
+            : rawSql, useIndex ? indexedParameters : parameters)).rows;
           if (rows.length === 0) break;
           const matched: string[] = [];
           for (const row of rows) {
             cursor = row.id;
+            if (row.data === null) continue;
             const source = { id: row.source_id, code: row.code, productId: row.id,
               sourceKey: row.source_key, externalId: row.external_id };
             const oldMatch = oldActive && before.matchesRule(ruleIdentity(previous!), row.data, source);
@@ -580,7 +598,7 @@ export class RulesV2PreviewService {
   private async runFullPreview(draft: RuleV2Draft, job: NonNullable<ReturnType<RulesV2PreviewService["fullPreviewStatus"]>>): Promise<void> {
     const db = await this.pool.connect();
     try {
-      const snapshot = await new RulesV2Runtime(db, () => 0).snapshot();
+      const snapshot = await this.rulesSnapshot(db);
       const dictionary = (await db.query<{ id: string; external_id: string; name: string; entity_type: string }>(
         `SELECT id::TEXT, external_id, name, entity_type FROM target_dictionary_values
          WHERE id = ANY($1::BIGINT[]) AND target_id = $2 AND active = TRUE`,
@@ -654,7 +672,7 @@ export class RulesV2PreviewService {
           }
         }
       }
-      const currentRevision = (await new RulesV2Runtime(db, () => 0).snapshot()).revision;
+      const currentRevision = await new RulesV2Runtime(db, () => 0).revision();
       if (currentRevision !== snapshot.revision) throw new IntegrationContractError("Правила изменились во время проверки. Запустите её повторно.");
       job.status = "complete";
     } finally { db.release(); }
@@ -671,8 +689,7 @@ export class RulesV2PreviewService {
     finally { client.release(); }
   }
   private async evaluate(db: SqlExecutor, draft: RuleV2Draft) {
-    const runtime = new RulesV2Runtime(db, () => 0);
-    const snapshot = await runtime.snapshot();
+    const snapshot = await this.rulesSnapshot(db);
     const dictionary = await db.query<{ id: string; external_id: string; name: string; entity_type: string }>(`SELECT id::TEXT, external_id, name, entity_type
       FROM target_dictionary_values WHERE id = ANY($1::BIGINT[]) AND target_id = $2 AND active = TRUE`,
     [draft.actions.map((a) => a.dictionaryValueId), draft.targetId]);
@@ -698,6 +715,11 @@ export class RulesV2PreviewService {
       `SELECT complete FROM rules_v2_workbench_state WHERE source_id = $1 AND target_id = $2`,
       [draft.sourceId, draft.targetId])).rows[0]?.complete === true;
     while (productCount < 201) {
+      const indexedParameters: unknown[] = [draft.sourceId, draft.targetId];
+      const indexedPredicate = productId === null ? indexedRulePredicate(preview, indexedParameters) : null;
+      const indexedCursor: string | null = cursor === null ? null : (() => {
+        indexedParameters.push(cursor); return `$${indexedParameters.length}`;
+      })();
       const parameters: unknown[] = workbenchReady ? [draft.sourceId, draft.targetId] : [draft.sourceId];
       const selector = workbenchReady ? null : selectiveRuleSql(preview, parameters);
       const selectorFilter = workbenchReady
@@ -710,8 +732,7 @@ export class RulesV2PreviewService {
         parameters.push(cursor);
         return `AND product.id < $${parameters.length}`;
       })();
-      const rows: { id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }[] = (await db.query<{
-        id: string; source_key: string; external_id: string | null; code: string; data: UniversalProductDTO }>(`
+      const rows: WorkbenchCandidateRow[] = (await db.query<WorkbenchCandidateRow>(indexedPredicate === null ? `
         SELECT product.id::TEXT, product.source_key, product.external_id, source.code, internal.data
         FROM source_products product JOIN sources source ON source.id = product.source_id
         JOIN internal_products internal ON internal.source_product_id = product.id
@@ -719,11 +740,14 @@ export class RulesV2PreviewService {
           AND item.target_id = $2 AND item.product_updated_at IS NOT NULL` : ""}
         WHERE product.source_id = $1 AND internal.data ? 'referenceCandidates'
         ${selectorFilter} ${cursorFilter}
-        ORDER BY product.id DESC LIMIT ${batchSize}`, parameters)).rows;
+        ORDER BY product.id DESC LIMIT ${batchSize}`
+        : indexedCandidatePageSql(indexedPredicate, indexedCursor, batchSize, "DESC", "$2"),
+        indexedPredicate === null ? parameters : indexedParameters)).rows;
       if (rows.length === 0) break;
-      examined += rows.length;
+      examined += rows.filter((row) => row.data !== null).length;
       cursor = rows.at(-1)!.id;
       for (const row of rows) {
+        if (row.data === null) continue;
         const source = { id: draft.sourceId, code: row.code, productId: row.id, sourceKey: row.source_key, externalId: row.external_id };
         if (!withDraft.matchesRule(preview.id, row.data, source)) continue;
         productCount++;
