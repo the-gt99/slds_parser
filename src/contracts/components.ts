@@ -7,6 +7,7 @@ import type {
   ExportContext,
   ExportResult,
   JsonValue,
+  JsonObject,
   ProcessingContext,
   ProductOperationContext,
   UniversalProductDTO,
@@ -51,4 +52,5 @@ export interface TargetExporter {
   readonly targetCode: string;
   readonly version: string;
   export(context: ExportContext): Promise<ExportResult>;
+  resumeExport?(receipt: JsonObject): Promise<ExportResult>;
 }

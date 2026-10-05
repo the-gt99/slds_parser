@@ -196,6 +196,16 @@ export class PostgresJobRepository implements JobRepository {
     requireRow(result.rows, "job", id);
   }
 
+  async saveExportSubmission(id: EntityId, workerId: string, submission: import("../../../contracts/index.js").JsonObject): Promise<void> {
+    const result = await this.executor.query<DatabaseRow>(
+      `UPDATE jobs SET payload = jsonb_set(payload, '{submission}', $3::JSONB), updated_at = NOW()
+       WHERE id = $1 AND locked_by = $2 AND status = 'running' AND job_type = 'export_product'
+         AND (payload->'submission' IS NULL OR payload->'submission' = $3::JSONB)
+       RETURNING id`, [id, workerId, JSON.stringify(submission)],
+    );
+    requireRow(result.rows, "owned export job", id);
+  }
+
   async fail(id: EntityId, error: string): Promise<void> {
     const result = await this.executor.query<DatabaseRow>(`UPDATE jobs SET status = 'failed', finished_at = NOW(), last_error = $2, locked_at = NULL, locked_by = NULL, updated_at = NOW() WHERE id = $1 RETURNING id`, [id, error]);
     requireRow(result.rows, "job", id);

@@ -1,5 +1,5 @@
 import { InvalidJobPayloadError } from "../core/errors/index.js";
-import type { ExportControlRepository, JobRecord, SourceRunRepository } from "../repositories/index.js";
+import type { ExportControlRepository, JobRecord, JobRepository, SourceRunRepository } from "../repositories/index.js";
 import type { CollectionRunner } from "./collection-runner.js";
 import type { ExportRunner } from "./export-runner.js";
 import { parseApplyTargetClassificationSuggestionPayload, parseCollectProductPayload, parseCollectWordPressVariationSourcePayload, parseDiscoverSourcePayload, parseExportProductPayload, parsePollWordPressVariationPatchesPayload, parsePreflightProductPayload, parsePrepareWordPressVariationPatchPayload, parsePrepareWordPressVariationPatchesPayload, parseProcessProductPayload, parseReclassifyProductPayload, parseResolveShihuoProductPayload, parseRetranslateProductPayload, parseRefreshExportSourcePayload, parseSubmitWordPressVariationPatchesPayload, parseSyncTargetClassificationsPayload, parseSyncWordPressCatalogPayload } from "./job-payloads.js";
@@ -30,7 +30,8 @@ export class JobDispatcher implements JobHandler {
     private readonly wordpressVariationPatches?: WordPressVariationPatchRunner,
     private readonly retranslations?: RetranslationRunner,
     private readonly exportSourceRefreshes?: ExportSourceRefreshRunner,
-    private readonly shihuoResolutions?: ShihuoResolutionRunner) {}
+    private readonly shihuoResolutions?: ShihuoResolutionRunner,
+    private readonly jobs?: JobRepository) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
@@ -90,7 +91,10 @@ export class JobDispatcher implements JobHandler {
         if (this.wordpressVariationPatches === undefined) throw new InvalidJobPayloadError("poll_wordpress_variation_patches is not configured");
         return await this.wordpressVariationPatches.poll(parsePollWordPressVariationPatchesPayload(job.payload));
       }
-      case "export_product": return await this.exports.exportProduct(parseExportProductPayload(job.payload));
+      case "export_product": return await this.exports.exportProduct(parseExportProductPayload(job.payload), async (submission) => {
+        if (this.jobs === undefined || job.lockedBy === null) throw new InvalidJobPayloadError("Export submission persistence is not configured");
+        await this.jobs.saveExportSubmission(job.id, job.lockedBy, submission);
+      });
       case "refresh_export_source": {
         if (this.exportSourceRefreshes === undefined) throw new InvalidJobPayloadError("refresh_export_source is not configured");
         return await this.exportSourceRefreshes.refresh(parseRefreshExportSourcePayload(job.payload));

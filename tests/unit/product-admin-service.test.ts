@@ -234,7 +234,7 @@ describe("ProductAdminService", () => {
     const jobs: JobRepository = {
       enqueue: vi.fn().mockResolvedValue(queuedJob),
       enqueueMany: vi.fn().mockResolvedValue([queuedJob]),
-      claimNext: vi.fn(), claimMany: vi.fn(), claimById: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn(),
+      claimNext: vi.fn(), claimMany: vi.fn(), claimById: vi.fn(), complete: vi.fn(), saveExportSubmission: vi.fn(), retry: vi.fn(), fail: vi.fn(),
     };
 
     const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).applyBatch({
@@ -266,7 +266,7 @@ describe("ProductAdminService", () => {
       listFailedJobRetryIds: vi.fn().mockResolvedValue(["1", "2"]),
       saveBatchAudit: vi.fn().mockResolvedValue("20"),
     };
-    const jobs: JobRepository = { enqueue: vi.fn(), enqueueMany: vi.fn(), claimNext: vi.fn(), claimMany: vi.fn(), claimById: vi.fn(), complete: vi.fn(), retry: vi.fn(), fail: vi.fn() };
+    const jobs: JobRepository = { enqueue: vi.fn(), enqueueMany: vi.fn(), claimNext: vi.fn(), claimMany: vi.fn(), claimById: vi.fn(), complete: vi.fn(), saveExportSubmission: vi.fn(), retry: vi.fn(), fail: vi.fn() };
 
     const result = await new ProductAdminService(repository, new TargetDictionaryProviderRegistry(), undefined, jobs).retryFailedJobs("process_product", 100, "admin", "retry");
 

@@ -74,6 +74,28 @@ function context(config: JsonObject = {}): ExportContext {
 }
 
 describe("WordPressExporter", () => {
+  it("persists an accepted request before polling and resumes without a new write", async () => {
+    const input = context();
+    const hash = (await buildWordPressUpsertPayload(input)).payload_hash as string;
+    const save = vi.fn().mockResolvedValue(undefined);
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, job: { job_id: 9, status: "pending", payload_hash: hash } })))
+      .mockImplementationOnce(async () => { expect(save).toHaveBeenCalledWith({ jobId: 9, payloadHash: hash }); throw new Error("poll transport failed"); })
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, jobs: [{ job_id: 9, status: "done", payload_hash: hash,
+        result: { operation: "created", target_id: 321 } }] })));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5000, jobTimeoutMs: 10000, pollIntervalMs: 1 }, request);
+    await expect(exporter.export({ ...input, onSubmitted: save })).rejects.toThrow();
+    expect(await exporter.resumeExport({ jobId: 9, payloadHash: hash })).toMatchObject({ externalId: "321", operation: "created" });
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(String(request.mock.calls[2]![0])).not.toContain("upsert-jobs");
+  });
+
+  it("rejects a resumed job with a different hash before recording success", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ok: true, jobs: [{ job_id: 9,
+      status: "done", payload_hash: "b".repeat(64), result: { operation: "created", target_id: 321 } }] })));
+    const exporter = new WordPressExporter({ baseUrl: "https://shop.example", authToken: "token", timeoutMs: 5000, jobTimeoutMs: 10000, pollIntervalMs: 1 }, request);
+    await expect(exporter.resumeExport({ jobId: 9, payloadHash: "a".repeat(64) })).rejects.toThrow("payload hash");
+  });
   it("builds the same payload from direct DTO-to-WordPress terms without reference lookups", async () => {
     const initial = context();
     const base: ExportContext = { ...initial, product: { ...initial.product,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import type { SqlPool } from "../../src/infrastructure/db/sql-executor.js";
 import { PostgresWordPressCatalogRepository } from "../../src/infrastructure/db/repositories/postgres-wordpress-catalog-repository.js";
+import { PostgresJobRepository } from "../../src/infrastructure/db/repositories/postgres-job-repository.js";
 
 const modulePath = process.env.INVENTORY_QUERY_PGLITE_MODULE;
 if (modulePath === undefined) throw new Error("INVENTORY_QUERY_PGLITE_MODULE is required");
@@ -43,6 +44,19 @@ try {
   assert.equal(await repository.enqueueDueInventoryDonorJobs(input), 2);
   assert.deepEqual(await ids(), ["2", "6"]);
   assert.equal(await repository.enqueueDueInventoryDonorJobs({ ...input, donorCode: "shihuo" }), 5);
+  await db.exec(`ALTER TABLE jobs ADD COLUMN locked_by TEXT, ADD COLUMN updated_at TIMESTAMPTZ;
+    INSERT INTO jobs(id,job_type,payload,status,locked_by) VALUES
+      (100,'export_product','{"targetId":"1"}','running','owner');`);
+  const jobs = new PostgresJobRepository({ query: (q, values) => db.query(q, values) });
+  const submission = { receipt: { jobId: 9, payloadHash: "a".repeat(64) }, exportedHash: "b".repeat(64), exportFingerprint: "c".repeat(64) };
+  await assert.rejects(jobs.saveExportSubmission("100", "wrong-owner", submission));
+  await jobs.saveExportSubmission("100", "owner", submission);
+  await jobs.saveExportSubmission("100", "owner", submission);
+  await assert.rejects(jobs.saveExportSubmission("100", "owner", { ...submission, exportedHash: "d".repeat(64) }));
+  const saved = (await db.query("SELECT payload FROM jobs WHERE id=100")).rows[0].payload;
+  assert.deepEqual(saved, { targetId: "1", submission });
+  await db.exec("UPDATE jobs SET status='completed' WHERE id=100");
+  await assert.rejects(jobs.saveExportSubmission("100", "owner", submission));
   console.info(JSON.stringify({ passed: true, missingAndStale: true, recentFailuresBlocked: true,
     activeJobsBlocked: true, throttleKeepsStaleFlowing: true, newItemsRechecked: true, independentDonors: true }));
 } finally { await db.close(); }

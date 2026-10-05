@@ -187,7 +187,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
     wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner,
-    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver));
+    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,

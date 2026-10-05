@@ -48,6 +48,8 @@ ESM-проект на Node.js и TypeScript для конвейера сбора
 
 Внешний экспорт нельзя атомарно объединить с PostgreSQL. Поэтому `TargetExporter` обязан быть идемпотентным: внешний запрос мог завершиться успешно до сбоя сохранения результата. Export fingerprint учитывает content hash товара, версию exporter, конфигурацию target и revision mappings.
 
+После принятия асинхронного WordPress upsert worker сохраняет номер внешней задачи, payload hash и исходные export fingerprints в payload своей PostgreSQL job до ожидания результата. Повторная попытка с сохранённым submission только читает эту внешнюю задачу и проверяет её номер и hash: не обновляет source, не строит новый payload и не выполняет повторную запись. До первого принятого запроса проверки readiness, approval и WordPress snapshot остаются обязательными. Сохранение submission требует действующего владельца running export job; противоречащий checkpoint не перезаписывается. Если ответ принятия запроса не дошёл до worker либо checkpoint не сохранился, подтверждённого submission нет и этот механизм не заменяет проверку состояния target.
+
 ## GOAT
 
 GOAT discovery читает `https://www.goat.com/sitemap`, отбирает только дочерние sitemap для sneakers и apparel и сохраняет slug, URL, маршрут, `lastmod`, заголовок и изображения. HTML карточек не разбирается. Сбор товара сохраняет две части:

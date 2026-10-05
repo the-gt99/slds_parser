@@ -31,6 +31,11 @@ export interface RetranslateProductPayload {
 export interface ResolveShihuoProductPayload { readonly sourceProductId: string; }
 
 export interface ExportProductPayload {
+  readonly submission?: {
+    readonly receipt: import("../contracts/index.js").JsonObject;
+    readonly exportedHash: string;
+    readonly exportFingerprint: string;
+  };
   readonly internalProductId: string;
   readonly targetId: string;
   readonly force: boolean;
@@ -168,6 +173,16 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
     && (value.batchItemId === undefined || typeof value.batchItemId === "string")
     && (value.sourceRefreshId === undefined || (typeof value.sourceRefreshId === "string" && /^\d+$/u.test(value.sourceRefreshId)))) {
     let approval: ExportProductPayload["approval"];
+    let submission: ExportProductPayload["submission"];
+    if (value.submission !== undefined) {
+      if (!isObject(value.submission) || value.submission.receipt === undefined || !isObject(value.submission.receipt)
+        || typeof value.submission.exportedHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.submission.exportedHash)
+        || typeof value.submission.exportFingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(value.submission.exportFingerprint)) {
+        throw new InvalidJobPayloadError("export_product");
+      }
+      submission = { receipt: value.submission.receipt, exportedHash: value.submission.exportedHash,
+        exportFingerprint: value.submission.exportFingerprint };
+    }
     if (value.approval !== undefined) {
       if (!isObject(value.approval) || typeof value.approval.preflightReviewId !== "string"
         || typeof value.approval.payloadHash !== "string" || typeof value.approval.willCreate !== "boolean"
@@ -192,6 +207,7 @@ export function parseExportProductPayload(value: JsonValue): ExportProductPayloa
       ...(value.batchItemId === undefined ? {} : { batchItemId: value.batchItemId }),
       ...(value.sourceRefreshId === undefined ? {} : { sourceRefreshId: value.sourceRefreshId }),
       ...(approval === undefined ? {} : { approval }),
+      ...(submission === undefined ? {} : { submission }),
     };
   }
   throw new InvalidJobPayloadError("export_product");

@@ -1194,7 +1194,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.32.0";
+  readonly version = "1.33.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
@@ -1336,7 +1336,21 @@ export class WordPressExporter {
     });
     const initialJob = normalizeJob(created.job);
     const jobId = positiveInteger(initialJob.job_id, "WordPress job_id");
-    const job = await this.waitForJob(jobId, expectedPayloadHash, initialJob);
+    if (text(initialJob.payload_hash) !== expectedPayloadHash) {
+      throw new IntegrationContractError(`WordPress job ${jobId} payload hash does not match the export request`);
+    }
+    await context.onSubmitted?.({ jobId, payloadHash: expectedPayloadHash });
+    return this.exportResult(await this.waitForJob(jobId, expectedPayloadHash, initialJob));
+  }
+
+  async resumeExport(receipt: JsonObject): Promise<ExportResult> {
+    const jobId = positiveInteger(receipt.jobId, "WordPress submission job_id");
+    const payloadHash = text(receipt.payloadHash);
+    if (!/^[a-f0-9]{64}$/u.test(payloadHash)) throw new IntegrationContractError("WordPress submission payload hash is invalid");
+    return this.exportResult(await this.waitForJob(jobId, payloadHash, await this.readJob(jobId)));
+  }
+
+  private exportResult(job: WordPressJob): ExportResult {
     const result = record(job.result, "WordPress job result");
     const externalId = String(positiveInteger(result.target_id ?? result.product_id, "WordPress target_id"));
     const operation = result.operation === "created"
@@ -1347,7 +1361,7 @@ export class WordPressExporter {
       externalId,
       operation,
       metadata: {
-        jobId,
+        jobId: positiveInteger(job.job_id, "WordPress job_id"),
         payloadHash: text(job.payload_hash),
         matchedBy: text(result.matched_by),
       },

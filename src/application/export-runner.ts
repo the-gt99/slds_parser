@@ -1,4 +1,4 @@
-import type { JsonValue, ProductVariantDTO, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
+import type { JsonObject, JsonValue, ProductVariantDTO, SourceDTO, SourceProductDTO, TargetDTO } from "../contracts/index.js";
 import { EntityNotFoundError, IntegrationContractError } from "../core/errors/index.js";
 import type { TargetExporterRegistry } from "../core/registry/index.js";
 import { hashStableJson } from "../core/utils/index.js";
@@ -27,11 +27,11 @@ export class ExportRunner {
     private readonly sourceRefreshes?: ExportControlRepository,
   ) {}
 
-  async exportProduct(payload: ExportProductPayload): Promise<RunnerResult> {
-    return this.mappings.runWithRules(() => this.exportUnderRules(payload));
+  async exportProduct(payload: ExportProductPayload, saveSubmission?: (submission: JsonObject) => Promise<void>): Promise<RunnerResult> {
+    return this.mappings.runWithRules(() => this.exportUnderRules(payload, saveSubmission));
   }
 
-  private async exportUnderRules(payload: ExportProductPayload): Promise<RunnerResult> {
+  private async exportUnderRules(payload: ExportProductPayload, saveSubmission?: (submission: JsonObject) => Promise<void>): Promise<RunnerResult> {
     const internal = await this.repositories.internalProducts.getById(payload.internalProductId);
     if (internal === null) throw new EntityNotFoundError("Internal product", payload.internalProductId);
     const sourceProduct = await this.repositories.sourceProducts.getById(internal.sourceProductId);
@@ -53,6 +53,17 @@ export class ExportRunner {
     };
     const targetDto: TargetDTO = { id: target.id, code: target.code, config: target.config };
     try {
+      if (payload.submission !== undefined) {
+        const exporter = this.exporters.get(target.exporterCode);
+        if (exporter.resumeExport === undefined) throw new IntegrationContractError("Target does not support resuming an accepted export");
+        const result = await exporter.resumeExport(payload.submission.receipt);
+        await this.repositories.targets.saveExportSuccess({
+          targetId: target.id, internalProductId: internal.id, externalId: result.externalId, status: "synced",
+          exportedHash: payload.submission.exportedHash, exportFingerprint: payload.submission.exportFingerprint,
+          attemptedAt, syncedAt: new Date(this.currentTime()).toISOString(),
+        });
+        return { status: "completed" };
+      }
       const preparedProduct = await this.mappings.prepareProduct(source.id, internal.data);
       const preparedHash = preparedProduct === internal.data ? internal.contentHash : hashStableJson(preparedProduct as unknown as JsonValue);
       let liveVariants: readonly ProductVariantDTO[] | null;
@@ -103,6 +114,9 @@ export class ExportRunner {
         return { status: "skipped" };
       }
       const result = await exporter.export({
+        ...(saveSubmission === undefined ? {} : { onSubmitted: (receipt: JsonObject) => saveSubmission({
+          receipt, exportedHash: exportedContentHash, exportFingerprint: fingerprint,
+        }) }),
         source: sourceDto,
         sourceProduct: sourceProductDto,
         target: targetDto,

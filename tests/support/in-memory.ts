@@ -173,6 +173,11 @@ export class MemoryJobRepository implements JobRepository {
   async claimMany(workerId: string, lockTimeoutMs: number, jobType: JobRecord["jobType"], limit: number): Promise<readonly JobRecord[]> { const claimed: JobRecord[] = []; for (let index = 0; index < limit; index += 1) { const job = await this.claimNext(workerId, lockTimeoutMs, [jobType]); if (job === null) break; claimed.push(job); } return claimed; }
   async claimById(id: EntityId, workerId: string, jobTypes: readonly JobRecord["jobType"][]): Promise<JobRecord | null> { const job = this.store.jobs.get(id); if (!job || !["pending", "retry"].includes(job.status) || !jobTypes.includes(job.jobType)) return null; const claimed: JobRecord = { ...job, status: "running", attempts: job.attempts + 1, lockedAt: timestamp, lockedBy: workerId }; this.store.jobs.set(job.id, claimed); return claimed; }
   async complete(id: EntityId): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "completed", lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
+  async saveExportSubmission(id: EntityId, workerId: string, submission: import("../../src/contracts/index.js").JsonObject): Promise<void> {
+    const job = this.store.jobs.get(id);
+    if (job?.status !== "running" || job.lockedBy !== workerId || job.jobType !== "export_product") throw new Error("Export job ownership lost");
+    this.store.jobs.set(id, { ...job, payload: { ...(job.payload as import("../../src/contracts/index.js").JsonObject), submission } });
+  }
   async retry(id: EntityId, input: RetryJobInput): Promise<void> { const job = this.store.jobs.get(id)!; this.store.jobs.set(id, { ...job, status: "retry", attempts: input.consumeAttempt === false ? Math.max(0, job.attempts - 1) : job.attempts, availableAt: input.availableAt, lastError: input.error, lockedAt: null, lockedBy: null }); }
   async fail(id: EntityId, error: string): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "failed", lastError: error, lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
 }

@@ -358,6 +358,8 @@ export interface TargetReferenceResolver {
 }
 
 export interface ExportContext {
+  /** Persist the accepted asynchronous request before waiting for its result. */
+  readonly onSubmitted?: (receipt: JsonObject) => Promise<void>;
   readonly source: SourceDTO;
   readonly sourceProduct: SourceProductDTO;
   readonly target: TargetDTO;

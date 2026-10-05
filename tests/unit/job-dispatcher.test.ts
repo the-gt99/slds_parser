@@ -7,6 +7,27 @@ import { createMemoryRepositories, MemoryStore } from "../support/in-memory.js";
 function job(jobType: JobType, payload: JobRecord["payload"]): JobRecord { return { id: "1", jobType, payload, status: "running", attempts: 1, availableAt: "2026-01-01T00:00:00.000Z", lockedAt: null, lockedBy: null, uniqueKey: "key", lastError: null, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", finishedAt: null }; }
 
 describe("JobDispatcher", () => {
+  it("persists a submission against the claimed export job", async () => {
+    const store = new MemoryStore();
+    const repositories = createMemoryRepositories(store);
+    const queued = await repositories.jobs.enqueue({ jobType: "export_product", payload: { internalProductId: "1", targetId: "2", force: false }, uniqueKey: "export-1" });
+    const claimed = (await repositories.jobs.claimById(queued.id, "owner", ["export_product"]))!;
+    const submission = { receipt: { jobId: 9, payloadHash: "a".repeat(64) }, exportedHash: "b".repeat(64), exportFingerprint: "c".repeat(64) };
+    const exports = { exportProduct: vi.fn(async (_payload: unknown, save: (value: typeof submission) => Promise<void>) => { await save(submission); return { status: "completed" }; }) };
+    const dispatcher = new JobDispatcher({} as never, {} as never, exports as never, repositories.sourceRuns,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, repositories.jobs);
+    await dispatcher.dispatch(claimed);
+    expect(store.jobs.get(queued.id)!.payload).toMatchObject({ submission });
+  });
+
+  it("rejects an incomplete export submission before dispatch", async () => {
+    const repositories = createMemoryRepositories(new MemoryStore());
+    const exports = { exportProduct: vi.fn() };
+    const dispatcher = new JobDispatcher({} as never, {} as never, exports as never, repositories.sourceRuns);
+    await expect(dispatcher.dispatch(job("export_product", { internalProductId: "1", targetId: "2", force: false,
+      submission: { exportedHash: "a".repeat(64), exportFingerprint: "b".repeat(64) } }))).rejects.toBeInstanceOf(InvalidJobPayloadError);
+    expect(exports.exportProduct).not.toHaveBeenCalled();
+  });
   it.each([
     ["discover_source", { sourceId: "1", runType: "full", coverage: "catalog" }, "discoverSource"],
     ["collect_product", { sourceProductId: "1", requestedPartKeys: ["details"] }, "collectProduct"],

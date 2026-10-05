@@ -1,4 +1,4 @@
-import type { EntityId } from "../contracts/index.js";
+import type { EntityId, JsonObject } from "../contracts/index.js";
 import type { EnqueueJobInput, JobRecord, JobType, RetryJobInput } from "./types.js";
 
 export interface JobRepository {
@@ -8,6 +8,7 @@ export interface JobRepository {
   claimMany(workerId: string, lockTimeoutMs: number, jobType: JobType, limit: number): Promise<readonly JobRecord[]>;
   claimById(id: EntityId, workerId: string, jobTypes: readonly JobType[]): Promise<JobRecord | null>;
   complete(id: EntityId): Promise<void>;
+  saveExportSubmission(id: EntityId, workerId: string, submission: JsonObject): Promise<void>;
   retry(id: EntityId, input: RetryJobInput): Promise<void>;
   fail(id: EntityId, error: string): Promise<void>;
 }

@@ -17,12 +17,34 @@ async function setup(
   const exporter: TargetExporter = { targetCode: "fake-exporter", version, export: implementation }; const registry = new TargetExporterRegistry(); registry.register(exporter);
   const sourceRefresher = { refresh: vi.fn().mockResolvedValue(liveVariants) };
   const mappings = new TargetReferenceMappingService(repositories.references);
-  return { store, repositories, internal, implementation, sourceRefresher,
+  return { store, repositories, internal, implementation, sourceRefresher, exporter,
     mappings,
     runner: new ExportRunner(repositories, registry, mappings, sourceRefresher as never, () => refreshEnabled, currentTime) };
 }
 
 describe("ExportRunner", () => {
+  it("resumes the accepted export using original fingerprints without refreshing source or rebuilding payload", async () => {
+    const value = await setup();
+    const resumeExport = vi.fn().mockResolvedValue({ externalId: "321", operation: "created", metadata: {} });
+    value.exporter.resumeExport = resumeExport;
+    const submission = { receipt: { jobId: 9, payloadHash: "a".repeat(64) }, exportedHash: "b".repeat(64), exportFingerprint: "c".repeat(64) };
+    await value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false, submission });
+    expect(resumeExport).toHaveBeenCalledWith(submission.receipt);
+    expect(value.implementation).not.toHaveBeenCalled();
+    expect(value.sourceRefresher.refresh).not.toHaveBeenCalled();
+    expect([...value.store.targetProducts.values()][0]).toMatchObject({ status: "synced", externalId: "321", lastExportedHash: submission.exportedHash, lastExportFingerprint: submission.exportFingerprint });
+  });
+
+  it("saves submission with the exact export fingerprints before waiting", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const implementation = vi.fn(async (input: Parameters<TargetExporter["export"]>[0]) => {
+      await input.onSubmitted!({ jobId: 9, payloadHash: "a".repeat(64) });
+      throw new Error("poll failed");
+    });
+    const value = await setup("1", implementation);
+    await expect(value.runner.exportProduct({ internalProductId: value.internal.id, targetId: "10", force: false }, save)).rejects.toThrow("poll failed");
+    expect(save).toHaveBeenCalledWith({ receipt: { jobId: 9, payloadHash: "a".repeat(64) }, exportedHash: "content", exportFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u) });
+  });
   it("passes direct v2 resolution to the exporter", async () => {
     const implementation = vi.fn(async (context: Parameters<TargetExporter["export"]>[0]) => {
       expect(await context.references.resolveDirect?.(context.product)).toBeNull();
