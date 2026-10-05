@@ -4,6 +4,12 @@ import { loadProcessingConfig } from "../../src/config/index.js";
 import { PermanentError } from "../../src/core/errors/index.js";
 
 describe("processing config", () => {
+  it("loads only explicit excluded routes and deduplicates them", () => {
+    const base = { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_TRANSLATION_PROVIDER: "openrouter", PARSER_OPENROUTER_API_KEY: "key" };
+    expect(loadProcessingConfig(base).translation).toMatchObject({ ignoredProviders: [] });
+    expect(loadProcessingConfig({ ...base, PARSER_OPENROUTER_IGNORED_PROVIDERS: " gmicloud, ,gmicloud,deepinfra/fp4 " }).translation)
+      .toMatchObject({ ignoredProviders: ["gmicloud", "deepinfra/fp4"] });
+  });
   it("requires a key for the explicitly selected OpenRouter provider", () => {
     const environment = { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_TRANSLATION_PROVIDER: "openrouter" };
     expect(() => loadProcessingConfig(environment)).toThrow("PARSER_OPENROUTER_API_KEY");

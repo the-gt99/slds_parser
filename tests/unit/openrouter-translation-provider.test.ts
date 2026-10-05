@@ -8,6 +8,15 @@ const success = () => new Response(JSON.stringify({ id: "request-1", choices: [{
 describe("OpenRouter translation", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("excludes explicitly configured upstream routes without changing model, price limits or fallback policy", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const request = vi.fn().mockResolvedValue(success());
+    await new OpenRouterTranslationProvider({ ...options, ignoredProviders: ["gmicloud"] }, request).translate("Leather", "en", "ru");
+    expect(JSON.parse(request.mock.calls[0]![1].body)).toMatchObject({ model: options.model,
+      provider: { ignore: ["gmicloud"], sort: "price", allow_fallbacks: false, max_price: { prompt: 0.30, completion: 0.50 } } });
+    expect(() => new OpenRouterTranslationProvider({ ...options, ignoredProviders: ["https://bad.example"] })).toThrow("slug is invalid");
+  });
+
   it("routes configured requests through a dedicated proxy without sending its credentials to the API", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const request = vi.fn().mockResolvedValue(success());

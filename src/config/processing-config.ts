@@ -15,6 +15,7 @@ export interface ProcessingEnvironment {
   readonly PARSER_OPENROUTER_API_KEY?: string;
   readonly PARSER_OPENROUTER_MODEL?: string;
   readonly PARSER_OPENROUTER_PROXY_URL?: string;
+  readonly PARSER_OPENROUTER_IGNORED_PROVIDERS?: string;
   readonly PARSER_OPENROUTER_MIN_BALANCE_USD?: string;
   readonly PARSER_DEEPL_API_KEY?: string;
   readonly PARSER_DEEPL_API_URL?: string;
@@ -159,7 +160,8 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
           apiKey: openRouterApiKey,
           model: environment.PARSER_OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v3.2",
           minBalanceUsd: nonNegativeNumber(environment.PARSER_OPENROUTER_MIN_BALANCE_USD, 0, "PARSER_OPENROUTER_MIN_BALANCE_USD"),
-          proxyUrl: environment.PARSER_OPENROUTER_PROXY_URL?.trim() || undefined }
+          proxyUrl: environment.PARSER_OPENROUTER_PROXY_URL?.trim() || undefined,
+          ignoredProviders: [...new Set((environment.PARSER_OPENROUTER_IGNORED_PROVIDERS ?? "").split(",").map((value) => value.trim()).filter(Boolean))] }
         : { ...translationOptions, provider: "google" as const },
     shoeHeight: shoeHeightApiUrl === "" ? null : {
       apiUrl: shoeHeightApiUrl,
