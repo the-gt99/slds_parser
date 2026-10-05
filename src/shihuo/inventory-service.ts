@@ -1,5 +1,6 @@
 import type { JsonObject, ProductVariantDTO } from "../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../core/errors/index.js";
+import { normalizeSizeAudience } from "../core/utils/index.js";
 import type { WordPressVariationPatchDraft } from "../integrations/wordpress/index.js";
 import type { ShihuoProductCard, ShihuoProductLinkRepository } from "./product-types.js";
 import type { ShihuoProductResolver } from "./product-resolver.js";
@@ -26,11 +27,20 @@ export interface ShihuoCurrencyRate {
 
 export class EcbShihuoCurrencyConverter {
   private cached: { readonly rate: ShihuoCurrencyRate; readonly expiresAt: number } | null = null;
+  private inFlight: Promise<ShihuoCurrencyRate> | null = null;
 
   constructor(private readonly fetchImpl: typeof fetch = fetch, private readonly now: () => number = Date.now) {}
 
   async rate(): Promise<ShihuoCurrencyRate> {
     if (this.cached !== null && this.cached.expiresAt > this.now()) return this.cached.rate;
+    if (this.inFlight !== null) return this.inFlight;
+    const request = this.loadRate();
+    this.inFlight = request;
+    try { return await request; }
+    finally { this.inFlight = null; }
+  }
+
+  private async loadRate(): Promise<ShihuoCurrencyRate> {
     let response: Response;
     try {
       response = await this.fetchImpl(ECB_RATES_URL, { headers: { Accept: "text/csv" }, signal: AbortSignal.timeout(15_000) });
@@ -93,10 +103,15 @@ export class ShihuoInventoryService {
     return { status: "resolved", cardHash: saved.contentHash };
   }
 
-  async variants(sourceProductId: string, goatVariants: readonly ProductVariantDTO[]): Promise<readonly ProductVariantDTO[]> {
+  async variants(sourceProductId: string, goatVariants: readonly ProductVariantDTO[], productAudience?: unknown): Promise<readonly ProductVariantDTO[]> {
     const saved = await this.links.getCard(sourceProductId);
     if (saved === null) throw new IntegrationContractError(`Shihuo card was not saved for source product ${sourceProductId}`);
     const audiences = [...new Set(goatVariants.flatMap((variant) => variant.size.audience === undefined ? [] : [variant.size.audience]))];
+    // Empty offers do not erase the explicit product-level audience.
+    if (audiences.length === 0) {
+      const audience = normalizeSizeAudience(productAudience);
+      if (audience !== undefined) audiences.push(audience);
+    }
     if (audiences.length !== 1) throw new IntegrationContractError(`Shihuo size audience is ambiguous for source product ${sourceProductId}`);
     return await this.cardVariants(saved.card, audiences[0]!);
   }

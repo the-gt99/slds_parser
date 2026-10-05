@@ -23,6 +23,20 @@ describe("GOAT sitemap", () => {
     expect(second).toMatchObject({ hasMore: false, completeness: "partial", checkpoint: { emitted: 2 } });
     expect(request).toHaveBeenCalledTimes(2);
   });
+  it("releases completed sitemap children while preserving checkpoint continuation", async () => {
+    const index = Buffer.from(`<sitemapindex><sitemap><loc>https://fixture/sitemap_sneakers-test.xml.gz</loc></sitemap></sitemapindex>`);
+    const request = vi.fn(async (url: string) => url.endsWith("index.xml") ? index : fixture("products.xml"));
+    const adapter = new GoatSourceAdapter(request);
+    const first = await adapter.discover({ source: source(), runType: "full", checkpoint: {} });
+    const second = await adapter.discover({ source: source(), runType: "full", checkpoint: first.checkpoint });
+    expect(second.hasMore).toBe(false);
+    expect(request).toHaveBeenCalledTimes(2);
+    // A resumed saved checkpoint must reload a child already released at completion.
+    const resumed = await adapter.discover({ source: source(), runType: "full", checkpoint: first.checkpoint });
+    expect(resumed.items).toEqual(second.items);
+    expect(resumed.checkpoint).toEqual(second.checkpoint);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("GOAT adapter and processor", () => {

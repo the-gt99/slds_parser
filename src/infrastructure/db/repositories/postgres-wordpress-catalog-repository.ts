@@ -223,7 +223,9 @@ const runSelect = `
   LEFT JOIN wordpress_catalog_run_items item ON item.run_id = run.id`;
 
 export class PostgresWordPressCatalogRepository implements WordPressCatalogRepository {
-  constructor(private readonly pool: SqlPool) {}
+  private readonly missingInventoryProbeAt = new Map<string, number>();
+
+  constructor(private readonly pool: SqlPool, private readonly currentTime: () => number = Date.now) {}
 
   async createRun(input: Parameters<WordPressCatalogRepository["createRun"]>[0]): Promise<WordPressCatalogRunRecord> {
     const runId = await transaction(this.pool, async (client) => {
@@ -919,7 +921,9 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   }
 
   async enqueueDueInventoryDonorJobs(input: Parameters<WordPressCatalogRepository["enqueueDueInventoryDonorJobs"]>[0]): Promise<number> {
-    return transaction(this.pool, async (client) => {
+    const probeKey = `${input.runId}:${input.donorCode}`;
+    const probeMissing = this.currentTime() >= (this.missingInventoryProbeAt.get(probeKey) ?? 0);
+    const result = await transaction(this.pool, async (client) => {
       const jobType = input.donorCode === "goat" ? "collect_wordpress_goat_inventory" : "collect_wordpress_shihuo_inventory";
       const active = await client.query<DatabaseRow>(
         `SELECT COUNT(*) AS count FROM jobs
@@ -927,7 +931,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
         [jobType, input.runId]);
       const available = Math.max(0, input.limit - Number(active.rows[0]?.count ?? 0));
       const refillThreshold = Math.min(25, Math.max(1, Math.ceil(input.limit / 4)));
-      if (available < refillThreshold) return 0;
+      if (available < refillThreshold) return { queued: 0, missingExhausted: false };
       const inserted = await client.query<DatabaseRow>(
         `WITH active_run AS MATERIALIZED (
            SELECT id FROM wordpress_catalog_runs run
@@ -943,7 +947,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            SELECT item.id, item.wordpress_product_id, 0 AS priority
            FROM wordpress_catalog_run_items item
            JOIN active_run run ON run.id = item.run_id
-           WHERE item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+           WHERE $6::BOOLEAN AND item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
              AND NOT EXISTS (
                SELECT 1 FROM wordpress_inventory_donor_states state
                WHERE state.item_id = item.id AND state.donor_code = $3
@@ -978,10 +982,20 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                 'pending', 'wordpress-inventory-' || $3 || ':' || $1::TEXT || ':' || selected.id::TEXT
          FROM selected
          ON CONFLICT (job_type, unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
-         RETURNING id`,
-        [input.runId, available, input.donorCode, input.intervalMinutes, jobType]);
-      return inserted.rows.length;
+         RETURNING id, (SELECT COUNT(*) FROM missing) AS missing_count`,
+        [input.runId, available, input.donorCode, input.intervalMinutes, jobType, probeMissing]);
+      return { queued: inserted.rows.length,
+        missingExhausted: probeMissing && Number(inserted.rows[0]?.missing_count ?? 0) < available };
     });
+    if (result.missingExhausted) {
+      // Keep stale inventory flowing, but do not rescan the full catalog on every tick.
+      // Newly enrolled products are picked up within at most one minute.
+      if (this.missingInventoryProbeAt.size >= 16 && !this.missingInventoryProbeAt.has(probeKey)) {
+        this.missingInventoryProbeAt.clear();
+      }
+      this.missingInventoryProbeAt.set(probeKey, this.currentTime() + 60_000);
+    }
+    return result.queued;
   }
 
   async enqueueReadyInventoryMergeJobs(runId: string, limit: number): Promise<number> {

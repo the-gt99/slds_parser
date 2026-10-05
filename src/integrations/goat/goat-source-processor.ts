@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, MoneyDTO, ProcessingContext, ProductImageDTO, ProductVariantDTO, ReferenceCandidateDTO, SourceProcessor, UniversalProductDTO } from "../../contracts/index.js";
 import { IntegrationContractError } from "../../core/errors/index.js";
+import { normalizeSizeAudience } from "../../core/utils/index.js";
 
 function object(value: JsonValue | undefined, label: string): JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new IntegrationContractError(`GOAT ${label} part has invalid shape`);
@@ -60,23 +61,6 @@ function shouldReplaceVariant(candidate: VariantCandidate, existing: VariantCand
     return candidate.priceMinor < existing.priceMinor;
   }
   return candidate.fingerprint.localeCompare(existing.fingerprint, "en-US") < 0;
-}
-
-function audience(value: string): ProductVariantDTO["size"]["audience"] | undefined {
-  switch (value.trim().toLocaleLowerCase("en-US")) {
-    case "men":
-    case "male": return "men";
-    case "women":
-    case "female": return "women";
-    case "youth":
-    case "kids":
-    case "gs": return "youth";
-    case "infant":
-    case "td":
-    case "ps": return "infant";
-    case "unisex": return "unisex";
-    default: return undefined;
-  }
 }
 
 function sizeSystem(sizeType: string, sizeUnit: string): string | undefined {
@@ -177,7 +161,7 @@ function parseVariants(product: JsonObject, offersPayload: JsonObject): {
   const productId = text(product.id);
   const countryCode = text(offersPayload.countryCode);
   if (!productId || !countryCode) throw new IntegrationContractError("GOAT product id and country code are required");
-  const normalizedAudience = audience(text(product.singleGender) || text(product.gender));
+  const normalizedAudience = normalizeSizeAudience(text(product.singleGender) || text(product.gender));
   const normalizedSizeSystem = sizeSystem(text(product.sizeType), text(product.sizeUnit));
   const variantsBySize = new Map<string, VariantCandidate>();
   const keys = new Set<string>();

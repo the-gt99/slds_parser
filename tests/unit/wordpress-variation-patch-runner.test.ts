@@ -22,6 +22,24 @@ describe("inventory donor barrier", () => {
   });
 });
 
+describe("Shihuo inventory audience evidence", () => {
+  it("passes the saved product audience even with an empty GOAT variation set", async () => {
+    const repository = {
+      listVariationCandidates: vi.fn().mockResolvedValue([{ item: { id: "7" }, sourceProduct: { id: "21" },
+        product: { variants: [], attributes: { gender: "youth" } } }]),
+      saveInventoryDonorState: vi.fn(),
+    };
+    const shihuoInventory = { refresh: vi.fn().mockResolvedValue({ status: "resolved", cardHash: "hash" }),
+      variants: vi.fn().mockResolvedValue([{ size: { audience: "youth" } }]) };
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), {
+      repository, shihuoInventory, currentTime: () => 0,
+    }) as WordPressVariationPatchRunner;
+    await runner.collectShihuo({ runId: "4", itemId: "7", wordpressProductId: "100" });
+    expect(shihuoInventory.variants).toHaveBeenCalledWith("21", [], "youth");
+    expect(repository.saveInventoryDonorState).toHaveBeenCalledWith(expect.objectContaining({ outcome: "resolved" }));
+  });
+});
+
 describe("WordPressVariationPatchRunner preparation safety", () => {
   it("does not interpret a cleared refresh state as sold-out GOAT offers", async () => {
     const sourceProducts = { getById: vi.fn() };

@@ -33,6 +33,7 @@ export class OpenRouterTranslationProvider implements TextTranslationProvider {
   readonly code = "openrouter";
   readonly version: string;
   readonly #proxy: ProxyAgent | undefined;
+  #balanceCheck: Promise<void> | undefined;
 
   constructor(private readonly options: OpenRouterTranslationOptions, private readonly request: typeof fetch = globalThis.fetch) {
     if (!options.apiKey.trim()) throw new Error("OpenRouter API key is required");
@@ -109,6 +110,14 @@ export class OpenRouterTranslationProvider implements TextTranslationProvider {
 
   private async assertBalanceReserve(): Promise<void> {
     if (this.options.minBalanceUsd === 0) return;
+    if (this.#balanceCheck !== undefined) return this.#balanceCheck;
+    const check = this.checkBalanceReserve();
+    this.#balanceCheck = check;
+    try { await check; }
+    finally { this.#balanceCheck = undefined; }
+  }
+
+  private async checkBalanceReserve(): Promise<void> {
     const credits = await this.getBalanceData("credits");
     const totalCredits = credits.total_credits;
     const totalUsage = credits.total_usage;

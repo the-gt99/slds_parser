@@ -86,6 +86,32 @@ describe("OpenRouter translation", () => {
     ]);
   });
 
+  it("shares only overlapping balance checks, without caching a passed reserve check", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let creditsCalls = 0;
+    const request = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith("/credits")) {
+        creditsCalls++;
+        if (creditsCalls === 1) await pending;
+        return new Response(JSON.stringify({ data: { total_credits: 25, total_usage: 1 } }));
+      }
+      if (String(url).endsWith("/key")) return new Response(JSON.stringify({ data: { limit_remaining: 4.25 } }));
+      return success();
+    });
+    const provider = new OpenRouterTranslationProvider({ ...options, minBalanceUsd: 3 }, request);
+    const first = provider.translate("Leather", "en", "ru");
+    const second = provider.translate("Mesh", "en", "ru");
+    expect(creditsCalls).toBe(1);
+    release();
+    await Promise.all([first, second]);
+    expect(request).toHaveBeenCalledTimes(4);
+    await provider.translate("Foam", "en", "ru");
+    expect(creditsCalls).toBe(2);
+    expect(request).toHaveBeenCalledTimes(7);
+  });
+
   it.each(["length", "content_filter", null])("rejects unfinished output (%s)", async (reason) => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ finish_reason: reason, message: { content: "Кожаный" } }] })));
     await expect(new OpenRouterTranslationProvider(options, request).translate("Leather upper", "en", "ru")).rejects.toBeInstanceOf(IntegrationContractError);

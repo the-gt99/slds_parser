@@ -70,11 +70,10 @@ function productImages(card: JsonObject, discoveryMetadata: JsonObject): readonl
 
 export class GoatSourceAdapter implements SourceAdapter {
   readonly code = "goat";
-  readonly version = "1.1.0";
+  readonly version = "1.1.1";
   readonly exportRefreshPartKeys = ["offers"] as const;
   readonly #children = new Map<string, readonly GoatSitemapProduct[]>();
   readonly #indexes = new Map<string, readonly string[]>();
-  // TODO: Add ETag/304 revalidation when sitemap refresh scheduling is implemented.
   readonly #nextRequestAtBySession = new Map<string, number>();
   #client: GoatHttpClient | undefined;
 
@@ -132,7 +131,12 @@ export class GoatSourceAdapter implements SourceAdapter {
       const childUrl = children[state.childIndex];
       if (!childUrl) break;
       let products = this.#children.get(childUrl);
-      if (!products) { products = parseProductSitemap(await this.#get(childUrl, settings.requestDelayMs, lease)); this.#children.set(childUrl, products); }
+      if (!products) {
+        // Only the current child is needed for checkpoint continuation.
+        this.#children.clear();
+        products = parseProductSitemap(await this.#get(childUrl, settings.requestDelayMs, lease));
+        this.#children.set(childUrl, products);
+      }
       while (items.length < settings.discoveryBatchSize && state.itemIndex < products.length) {
         if (settings.maxProductsPerRun !== undefined && state.emitted >= settings.maxProductsPerRun) break;
         const product = products[state.itemIndex];
@@ -141,10 +145,14 @@ export class GoatSourceAdapter implements SourceAdapter {
         state = { ...state, itemIndex: state.itemIndex + 1, emitted: state.emitted + 1 };
       }
       if (settings.maxProductsPerRun !== undefined && state.emitted >= settings.maxProductsPerRun) break;
-      if (state.itemIndex >= products.length) state = { ...state, childIndex: state.childIndex + 1, itemIndex: 0 };
+      if (state.itemIndex >= products.length) {
+        this.#children.delete(childUrl);
+        state = { ...state, childIndex: state.childIndex + 1, itemIndex: 0 };
+      }
     }
     const limited = settings.maxProductsPerRun !== undefined && state.emitted >= settings.maxProductsPerRun;
     const exhausted = state.childIndex >= children.length;
+    if (limited || exhausted) this.#children.clear();
     return { items, checkpoint: { childIndex: state.childIndex, itemIndex: state.itemIndex, emitted: state.emitted }, hasMore: !limited && !exhausted, completeness: limited ? "partial" : exhausted ? "complete" : "unknown", stats: { processed: items.length, discovered: items.length } };
     });
   }

@@ -207,7 +207,27 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(insert.text).toContain("blocked AS MATERIALIZED");
     expect(insert.text).toContain("ORDER BY priority, id");
     expect(insert.text).not.toContain("LEFT JOIN wordpress_inventory_donor_states state");
-    expect(insert.values).toEqual(["4", 30, "shihuo", 360, "collect_wordpress_shihuo_inventory"]);
+    expect(insert.values).toEqual(["4", 30, "shihuo", 360, "collect_wordpress_shihuo_inventory", true]);
+  });
+
+  it("throttles exhausted missing scans without stopping stale inventory or other donors", async () => {
+    let now = 1_000;
+    const executor = new FakeExecutor([
+      [], [{ count: "0" }], [{ id: "1", missing_count: "0" }], [],
+      [], [{ count: "0" }], [{ id: "2", missing_count: "0" }], [],
+      [], [{ count: "0" }], [{ id: "3", missing_count: "100" }], [],
+      [], [{ count: "0" }], [{ id: "4", missing_count: "100" }], [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor), () => now);
+    const input = { runId: "4", donorCode: "goat", limit: 100, intervalMinutes: 30 } as const;
+    await expect(repository.enqueueDueInventoryDonorJobs(input)).resolves.toBe(1);
+    await expect(repository.enqueueDueInventoryDonorJobs(input)).resolves.toBe(1);
+    await repository.enqueueDueInventoryDonorJobs({ ...input, donorCode: "shihuo" });
+    now += 60_000;
+    await repository.enqueueDueInventoryDonorJobs(input);
+    const queries = executor.calls.filter((call) => call.text.includes("WITH active_run AS MATERIALIZED"));
+    expect(queries.map((call) => call.values[5])).toEqual([true, false, true, true]);
+    expect(queries[1]?.text).toContain("stale AS MATERIALIZED");
   });
 
   it("aggregates running campaign jobs only through its selected batches", async () => {

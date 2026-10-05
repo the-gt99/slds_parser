@@ -280,7 +280,7 @@ export class WordPressVariationPatchRunner {
       if (this.shihuoInventory === undefined) throw new IntegrationContractError("Shihuo inventory is not configured");
       const result = await this.shihuoInventory.refresh(candidate.sourceProduct.id);
       const variants = result.status === "resolved"
-        ? await this.shihuoInventory.variants(candidate.sourceProduct.id, candidate.product.variants)
+        ? await this.shihuoInventory.variants(candidate.sourceProduct.id, candidate.product.variants, candidate.product.attributes.gender)
         : [];
       await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
         donorCode, outcome: result.status, contentHash: result.status === "resolved" ? result.cardHash
