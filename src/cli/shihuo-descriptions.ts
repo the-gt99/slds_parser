@@ -26,16 +26,12 @@ try {
         WHERE status='resolved' AND source_product_id>$5::BIGINT
           AND ($4::BIGINT IS NULL OR source_product_id=$4)
         ORDER BY source_product_id LIMIT 200
-      ), candidates AS (
-        SELECT w.source_product_id,w.title,w.issue_count,l.goods_id,l.style_id
+      ), eligible AS MATERIALIZED (
+        SELECT w.source_product_id,w.title,w.issue_count,l.goods_id,l.style_id,i.id AS internal_product_id
         FROM links l JOIN internal_products i USING(source_product_id)
         JOIN rules_v2_workbench_items w USING(source_product_id)
         WHERE w.source_id=$1 AND w.target_id=$2
       AND w.issue_codes @> ARRAY['description_missing']::TEXT[]
-      AND btrim(COALESCE(i.data->>'description',''))=''
-      AND btrim(COALESCE(i.data->'attributes'->>'story',''))=''
-      AND btrim(COALESCE(i.data->'translatedContent'->>'description',''))=''
-      AND btrim(COALESCE(i.data->'translatedContent'->>'story',''))=''
       AND NOT EXISTS(SELECT 1 FROM target_products t WHERE t.internal_product_id=i.id AND t.target_id=$2)
       AND (NOT $6::BOOLEAN OR NOT EXISTS(
         SELECT 1 FROM wordpress_catalog_run_items c JOIN wordpress_catalog_runs r ON r.id=c.run_id
@@ -46,6 +42,15 @@ try {
       AND NOT EXISTS(SELECT 1 FROM product_content_enrichments e WHERE e.source_product_id=l.source_product_id AND e.donor_code='shihuo')
       AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.job_type='collect_product_content'
         AND j.status IN('pending','running','retry') AND j.unique_key='source-product:' || l.source_product_id::TEXT || ':content:shihuo')
+      ), candidates AS (
+        SELECT e.source_product_id,e.title,e.issue_count,e.goods_id,e.style_id
+        FROM eligible e JOIN internal_products i ON i.id=e.internal_product_id
+        CROSS JOIN LATERAL jsonb_to_record(i.data)
+          AS content(description TEXT,attributes JSONB,"translatedContent" JSONB)
+        WHERE btrim(COALESCE(content.description,''))=''
+          AND btrim(COALESCE(content.attributes->>'story',''))=''
+          AND btrim(COALESCE(content."translatedContent"->>'description',''))=''
+          AND btrim(COALESCE(content."translatedContent"->>'story',''))=''
       ) SELECT (SELECT MAX(source_product_id)::TEXT FROM links) AS cursor,
         COALESCE((SELECT jsonb_agg(candidate) FROM (SELECT * FROM candidates
           ORDER BY issue_count,source_product_id LIMIT $3) candidate),'[]'::JSONB) AS candidates`,
