@@ -38,6 +38,9 @@ try {
   await db.exec(`CREATE TABLE shihuo_product_links(source_product_id BIGINT,status TEXT,goods_id TEXT,style_id TEXT);
     CREATE TABLE rules_v2_workbench_items(source_product_id BIGINT,source_id BIGINT,target_id BIGINT,title TEXT,issue_count INT,issue_codes TEXT[]);
     CREATE TABLE target_products(internal_product_id BIGINT,target_id BIGINT);
+    CREATE TABLE wordpress_catalog_runs(id BIGINT,target_id BIGINT);
+    CREATE TABLE wordpress_catalog_run_items(run_id BIGINT,source_product_id BIGINT,match_status TEXT);
+    CREATE TABLE target_product_preflight_reviews(target_id BIGINT,internal_product_id BIGINT,will_create BOOLEAN,external_id TEXT);
     INSERT INTO shihuo_product_links VALUES(2,'resolved','1','2');
     INSERT INTO rules_v2_workbench_items VALUES(2,1,1,'Product',1,ARRAY['description_missing']);
     UPDATE internal_products SET data='{"description":"","attributes":{}}';
@@ -45,9 +48,14 @@ try {
   const cli = await readFile(new URL("../../src/cli/shihuo-descriptions.ts",import.meta.url),"utf8");
   const candidateQuery = /client\.query\(`(WITH links[\s\S]*?)`,/u.exec(cli)?.[1];
   assert.ok(candidateQuery);
-  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0"])).rows[0].candidates.length,1);
-  assert.equal((await db.query(candidateQuery,[1,1,3,null,"2"])).rows[0].cursor,null);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,1);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"2",true])).rows[0].cursor,null);
+  await db.exec("INSERT INTO wordpress_catalog_runs VALUES(4,1); INSERT INTO wordpress_catalog_run_items VALUES(4,2,'matched')");
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,0);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",false])).rows[0].candidates.length,1);
+  await db.exec("DELETE FROM wordpress_catalog_run_items; INSERT INTO target_product_preflight_reviews VALUES(1,1,FALSE,'101')");
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,0);
   await db.exec("INSERT INTO target_products VALUES(1,1)");
-  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0"])).rows[0].candidates.length,0);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,0);
   console.info(JSON.stringify({ passed: true,migration: true,atomicJobs: true,cas: true,replayRollback: true,appliedPreserved: true }));
 } finally { await db.close(); }
