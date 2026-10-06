@@ -1,0 +1,3122 @@
+{
+  "date": "2026-10-06",
+  "scope": "Сохранённые связи Shihuo со статусом resolved. Новые HTTP-запросы для массовой сверки не выполнялись.",
+  "total": 71762,
+  "normalizedBrandMatches": 71044,
+  "remainingAfterNormalization": 718,
+  "relatedBrandGroups": {
+    "adidas_Y3": 344,
+    "CurryBrand_UnderArmour": 166
+  },
+  "otherDifferences": [
+    {
+      "source_product_id": "133664",
+      "goods_id": "118723",
+      "style_id": "45675364",
+      "source_article": "IF0174",
+      "source_title": "Balenciaga x adidas Wmns Triple S Sneaker 'White Blue'",
+      "source_brand": "adidas",
+      "donor_title": "Balenciaga 巴黎世家  Triple S TRIPLE S CLEAR SOLE 复古简约 舒适百搭 防滑耐磨 减震轻便 厚底  圆头  网布  老爹鞋",
+      "donor_brand": "Balenciaga/巴黎世家",
+      "donor_model": "Triple",
+      "source_family": "Balenciaga Triple S"
+    },
+    {
+      "source_product_id": "117848",
+      "goods_id": "7060984",
+      "style_id": "417570145",
+      "source_article": "BB0585",
+      "source_title": "Adidas Golleto 6 TF 'Black Scream Green'",
+      "source_brand": "adidas",
+      "donor_title": "Champion/冠军童装 锦纶品牌logo刺绣短款连帽羽绒服 中大童 BB0585",
+      "donor_brand": "Champion/冠军",
+      "donor_model": "",
+      "source_family": "Goletto"
+    },
+    {
+      "source_product_id": "112679",
+      "goods_id": "27054",
+      "style_id": "956792",
+      "source_article": "564968C",
+      "source_title": "Adidas Wmns VLTG High 'Black'",
+      "source_brand": "adidas",
+      "donor_title": "Converse/匡威 1970s 帆布鞋 圆头防滑经典复古轻便时尚拼接百搭",
+      "donor_brand": "Converse/匡威",
+      "donor_model": "1970s",
+      "source_family": "VLTG"
+    },
+    {
+      "source_product_id": "112707",
+      "goods_id": "27054",
+      "style_id": "967839",
+      "source_article": "564970C",
+      "source_title": "Adidas Wmns VLTG High 'Black'",
+      "source_brand": "adidas",
+      "donor_title": "Converse/匡威 1970s 帆布鞋 圆头防滑经典复古轻便时尚拼接百搭",
+      "donor_brand": "Converse/匡威",
+      "donor_model": "1970s",
+      "source_family": "VLTG"
+    },
+    {
+      "source_product_id": "113400",
+      "goods_id": "414779",
+      "style_id": "1296211",
+      "source_article": "566167C",
+      "source_title": "Adidas Wmns VLTG Mid 'Made It To The Top'",
+      "source_brand": "adidas",
+      "donor_title": "Converse/匡威 Vltg Mission V 防滑耐磨 复古 合成革 波浪鞋 运动休闲鞋",
+      "donor_brand": "Converse/匡威",
+      "donor_model": "",
+      "source_family": "VLTG"
+    },
+    {
+      "source_product_id": "108477",
+      "goods_id": "9912545",
+      "style_id": "1181470410",
+      "source_article": "DB2614",
+      "source_title": "Alexander Wang x adidas Puff Trainer 'Core Black'",
+      "source_brand": "adidas",
+      "donor_title": "德尔惠 运动鞋儿童 休闲舒适百搭 DB2614",
+      "donor_brand": "DEERWAY/德尔惠",
+      "donor_model": "",
+      "source_family": "Puff"
+    },
+    {
+      "source_product_id": "121098",
+      "goods_id": "569104",
+      "style_id": "2565524",
+      "source_article": "FY9043",
+      "source_title": "NASA x adidas NMD_R1 Spectoo J 'Core Black'",
+      "source_brand": "adidas",
+      "donor_title": "Feiyue/飞跃 舒适百搭 时尚潮流 板鞋 DFN/1-9042",
+      "donor_brand": "Feiyue/飞跃",
+      "donor_model": "",
+      "source_family": "NMD Runner"
+    },
+    {
+      "source_product_id": "123028",
+      "goods_id": "1271566",
+      "style_id": "24415402",
+      "source_article": "FY8955",
+      "source_title": "Adidas Wmns Advantage 'White Clear Lilac'",
+      "source_brand": "adidas",
+      "donor_title": "飞跃 潮流厚底 防滑耐磨 舒适透气 显脚小 休闲简约 百搭ins 增高 饼干鞋 帆布鞋 DF/1-8955",
+      "donor_brand": "Feiyue/飞跃",
+      "donor_model": "",
+      "source_family": "Advantage"
+    },
+    {
+      "source_product_id": "132514",
+      "goods_id": "9035749",
+      "style_id": "1032450630",
+      "source_article": "GW1877",
+      "source_title": "LEGO x adidas Racer TR Little Kid 'Off White Bliss Lilac'",
+      "source_brand": "adidas",
+      "donor_title": "Ginoble/基诺浦 运动鞋儿童 学步低帮魔术贴 GW1877",
+      "donor_brand": "Ginoble/基诺浦",
+      "donor_model": "",
+      "source_family": "Racer TR"
+    },
+    {
+      "source_product_id": "137517",
+      "goods_id": "9364450",
+      "style_id": "1105849575",
+      "source_article": "GW1749",
+      "source_title": "Adidas Freak 23 'Super Bowl'",
+      "source_brand": "adidas",
+      "donor_title": "Ginoble/基诺浦 凉鞋儿童 运动缓震透气百搭",
+      "donor_brand": "Ginoble/基诺浦",
+      "donor_model": "",
+      "source_family": "Freak"
+    },
+    {
+      "source_product_id": "136918",
+      "goods_id": "2153816",
+      "style_id": "621258734",
+      "source_article": "IE2276",
+      "source_title": "Gucci x adidas Slide Sandal 'Mesa GG Monogram'",
+      "source_brand": "adidas",
+      "donor_title": "Gucci 露趾 舒适厚底 时尚休闲 一字 套穿 拖鞋 702412 UU010 6560",
+      "donor_brand": "Gucci/古驰",
+      "donor_model": "",
+      "source_family": "Adidas Slide"
+    },
+    {
+      "source_product_id": "115854",
+      "goods_id": "8345181",
+      "style_id": "821759368",
+      "source_article": "FV4227",
+      "source_title": "Adidas Harden Vol. 4 'Madison Square Harden'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Air Jordan 1 Element 户外休闲鞋 机能风透气耐用训练支撑缓震",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Jordan",
+      "source_family": "Harden Vol. 4"
+    },
+    {
+      "source_product_id": "121695",
+      "goods_id": "6800712",
+      "style_id": "346062131",
+      "source_article": "FV7108",
+      "source_title": "Adidas Crazy BYW 2.0 'Team Dark Green'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Brand/乔丹 Renegade 保暖梭织棒球领落肩袖拉链夹克 女装 FV7108",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Crazy BYW"
+    },
+    {
+      "source_product_id": "137771",
+      "goods_id": "8734142",
+      "style_id": "924368391",
+      "source_article": "IF2202",
+      "source_title": "LEGO x adidas Superstar CF J 'Bricks And Figurine - White Wonder Quartz'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Brand/乔丹 2026SS 透气印花口袋运动长裤 IF2202",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Superstar"
+    },
+    {
+      "source_product_id": "140227",
+      "goods_id": "9030688",
+      "style_id": "1030344551",
+      "source_article": "IF2266",
+      "source_title": "Adidas Predator Accuracy.3 Laceless FG J 'Marinerush Pack'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Brand/乔丹 速干松紧腰修身高腰运动短裤 女装 IF2266",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Predator Accuracy.3"
+    },
+    {
+      "source_product_id": "141910",
+      "goods_id": "8755191",
+      "style_id": "993662566",
+      "source_article": "IF0891",
+      "source_title": "Adidas Adilette Comfort Elevated Slide 'Aurora Black'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Brand/乔丹 松紧三分中腰网眼口袋运动短裤 IF0891",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Adilette"
+    },
+    {
+      "source_product_id": "143931",
+      "goods_id": "8954773",
+      "style_id": "1003030250",
+      "source_article": "IF1367",
+      "source_title": "Adidas Adizero F50 League MG J 'Advancement Pack'",
+      "source_brand": "adidas",
+      "donor_title": "Jordan Brand/乔丹 透气圆领套头背心 女装 IF1367",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Adizero F50"
+    },
+    {
+      "source_product_id": "100524",
+      "goods_id": "4572133",
+      "style_id": "203747253",
+      "source_article": "M22651",
+      "source_title": "Adidas Equipment Running Support 'New York'",
+      "source_brand": "adidas",
+      "donor_title": "Louis Vuitton MARELLINI 可拆卸可调节肩带Epi粒面牛皮革时尚斜挎手提单肩包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "MARELLINI",
+      "source_family": "EQT Support"
+    },
+    {
+      "source_product_id": "100611",
+      "goods_id": "4629068",
+      "style_id": "127881442",
+      "source_article": "M20997",
+      "source_title": "Adidas Military Trail Runner",
+      "source_brand": "adidas",
+      "donor_title": "Louis Vuitton Lockme Ever 迷你 可拆卸肩带链条粒面牛皮革单肩斜挎手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "Military Trail"
+    },
+    {
+      "source_product_id": "100832",
+      "goods_id": "5017280",
+      "style_id": "156635547",
+      "source_article": "M21865",
+      "source_title": "adidas adiPower Weightlifting Shoes",
+      "source_brand": "adidas",
+      "donor_title": "Louis Vuitton Sac Plat 24H 老花满印钩扣开合压纹皮革托特购物袋单肩手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "Adipower Weightlifting"
+    },
+    {
+      "source_product_id": "102791",
+      "goods_id": "8490022",
+      "style_id": "857519843",
+      "source_article": "M21728",
+      "source_title": "Adidas Y-3 Qasa Racer",
+      "source_brand": "adidas",
+      "donor_title": "【Yayoi Kusama 联名款】Louis Vuitton/路易威登 Sac Capucines 中号 皮革斜挎手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "Qasa Racer"
+    },
+    {
+      "source_product_id": "103400",
+      "goods_id": "8434200",
+      "style_id": "844931755",
+      "source_article": "M25788",
+      "source_title": "Adidas ZX 750 RG 84 Lab 'Pencil'",
+      "source_brand": "adidas",
+      "donor_title": "【Grace Coddington 联名款】Louis Vuitton/路易威登 Packing CubeCatogram 小号 猫猫品牌老花满印尼龙出行收纳包手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "ZX 750"
+    },
+    {
+      "source_product_id": "107242",
+      "goods_id": "8182208",
+      "style_id": "782965027",
+      "source_article": "M25786",
+      "source_title": "Neighborhood x adidas Superstar 80s",
+      "source_brand": "adidas",
+      "donor_title": "Louis Vuitton/路易威登 keepall 25 金色五金件涂层帆布单肩手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "Superstar"
+    },
+    {
+      "source_product_id": "107279",
+      "goods_id": "8434176",
+      "style_id": "844930497",
+      "source_article": "M21775",
+      "source_title": "Adidas ZX Flux 'Moscow'",
+      "source_brand": "adidas",
+      "donor_title": "Louis Vuitton/路易威登 Carmel 银色五金配件小牛皮手提包",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "donor_model": "",
+      "source_family": "ZX Flux"
+    },
+    {
+      "source_product_id": "115261",
+      "goods_id": "1911121",
+      "style_id": "41262950",
+      "source_article": "FW6390",
+      "source_title": "Adidas Stan Smith 'Valentine's Day'",
+      "source_brand": "adidas",
+      "donor_title": "Mark Fairwhale/马克华菲 地球王者 50米防水机械机芯镂空夜光商务男士腕表",
+      "donor_brand": "Mark Fairwhale/马克华菲",
+      "donor_model": "",
+      "source_family": "Stan Smith"
+    },
+    {
+      "source_product_id": "106281",
+      "goods_id": "167160",
+      "style_id": "244586",
+      "source_article": "AQ0919",
+      "source_title": "Adidas Wmns Superstar Slip-On",
+      "source_brand": "adidas",
+      "donor_title": "Nike Logo健身文胸速干运动内衣 女装 AQ0919",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Superstar"
+    },
+    {
+      "source_product_id": "106696",
+      "goods_id": "36861",
+      "style_id": "249403",
+      "source_article": "AJ8229 200",
+      "source_title": "adidas Wmns Zoom Fly SP 'Dusty Peach'",
+      "source_brand": "adidas",
+      "donor_title": "Nike Zoom Fly 跑鞋 碳板减震回弹防滑耐磨轻便透气气垫泡棉",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Zoom Fly",
+      "source_family": "Zoom Fly"
+    },
+    {
+      "source_product_id": "112165",
+      "goods_id": "7623646",
+      "style_id": "611529965",
+      "source_article": "FV7280",
+      "source_title": "Adidas UltraBoost 'Rainbow Pack - Yellow'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 系带中腰透气束脚运动长裤 FV7280",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "UltraBoost"
+    },
+    {
+      "source_product_id": "113442",
+      "goods_id": "394687",
+      "style_id": "1292539",
+      "source_article": "AR8836 103",
+      "source_title": "Adidas Hard Court Lite 2 'Ultramarine'",
+      "source_brand": "adidas",
+      "donor_title": "Nike Court Lite 2 防滑耐磨 轻便透气 舒适运动 硬地球场 网球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Court Lite",
+      "source_family": "Hard Court"
+    },
+    {
+      "source_product_id": "115805",
+      "goods_id": "81236",
+      "style_id": "967409",
+      "source_article": "BQ9632 103",
+      "source_title": "Adidas Air Speed Turf GS 'White Fresh Water'",
+      "source_brand": "adidas",
+      "donor_title": "Nike Air Max Speed Turf 缓震 舒适轻便 防滑耐磨 透气 复古百搭 训练鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Speed Turf"
+    },
+    {
+      "source_product_id": "118502",
+      "goods_id": "4850591",
+      "style_id": "146972592",
+      "source_article": "FV4972",
+      "source_title": "Adidas Pro Model 'White Wonder Glow'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 纯色系带高腰直筒运动长裤 女装 FV4972",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Pro Model"
+    },
+    {
+      "source_product_id": "118940",
+      "goods_id": "6135170",
+      "style_id": "196176434",
+      "source_article": "FV1738",
+      "source_title": "Adidas NMD_R1 Knit 'Black Signal Pink'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 吸湿排汗套头短袖T恤 FV1738",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "NMD Runner"
+    },
+    {
+      "source_product_id": "119688",
+      "goods_id": "6882631",
+      "style_id": "369309420",
+      "source_article": "FZ1712",
+      "source_title": "Human Made x adidas UNOFCL 'Core Black'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 Phoenix Cozy Boucl纯色长袖无扣针织衫 女装 FZ1712",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "UNOFCL"
+    },
+    {
+      "source_product_id": "127642",
+      "goods_id": "8771859",
+      "style_id": "936492249",
+      "source_article": "FZ1350",
+      "source_title": "Adidas UltraBoost DNA 2.0 'Signal Pink'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 吸汗修身短袖足球服",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "UltraBoost"
+    },
+    {
+      "source_product_id": "135306",
+      "goods_id": "81236",
+      "style_id": "38841549",
+      "source_article": "DZ4449 100",
+      "source_title": "adidas Air Speed Turf GS 'White Rush Blue Red'",
+      "source_brand": "adidas",
+      "donor_title": "Nike Air Max Speed Turf 缓震 舒适轻便 防滑耐磨 透气 复古百搭 训练鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Speed Turf"
+    },
+    {
+      "source_product_id": "135723",
+      "goods_id": "7008141",
+      "style_id": "612813456",
+      "source_article": "HQ3753",
+      "source_title": "Adidas Lite Racer Adapt 5.0 J 'Grey Lilac Orange'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 满印长袖T恤 女装 HQ3753",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Lite Racer Adapt"
+    },
+    {
+      "source_product_id": "137791",
+      "goods_id": "9066086",
+      "style_id": "1108790316",
+      "source_article": "IF5580",
+      "source_title": "Adidas Wmns Cloudfoam Pure 'Halo Silver Grey'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 徽标印花中腰透气运动短裤 女装 IF5580",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Cloudfoam Pure"
+    },
+    {
+      "source_product_id": "138187",
+      "goods_id": "8959886",
+      "style_id": "1020234812",
+      "source_article": "IF7373",
+      "source_title": "Adidas Adilette Aqua Slides 'Pink Fusion'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 落肩短款柔软垂坠长袖卫衣 女装 IF7373",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Adilette"
+    },
+    {
+      "source_product_id": "139604",
+      "goods_id": "9194368",
+      "style_id": "1070082725",
+      "source_article": "IF2830",
+      "source_title": "adidas Nucombe 'Silver Pebble'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克童装 拉链条纹连帽背心 中大童 IF2830",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Nucombe"
+    },
+    {
+      "source_product_id": "139819",
+      "goods_id": "9136975",
+      "style_id": "1098619362",
+      "source_article": "IF2772",
+      "source_title": "Adidas Wmns Puremotion 2.0 'White Zero Metallic'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克童装 速干Logo印花圆领短袖T恤 中大童 IF2772",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Puremotion"
+    },
+    {
+      "source_product_id": "141497",
+      "goods_id": "8874173",
+      "style_id": "1028846338",
+      "source_article": "IF2425",
+      "source_title": "Adidas Adizero Electric.1 'White Silver Metallic'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克童装 速干透气吸汗短袖T恤 中大童 IF2425",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Adizero Electric.1"
+    },
+    {
+      "source_product_id": "142627",
+      "goods_id": "8941863",
+      "style_id": "1132794496",
+      "source_article": "HQ8896",
+      "source_title": "adidas Copa Pure+ FG 'Nightstrike Pack'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 2026SS 纯色拉链健身夹克 女装 HQ8896",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Copa Pure"
+    },
+    {
+      "source_product_id": "143472",
+      "goods_id": "8973762",
+      "style_id": "1010306575",
+      "source_article": "IH8036",
+      "source_title": "Star Wars x adidas Grand Court CF I 'Darth Vader and Storm Troopers - Gold'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 字母套头短袖T恤 女装 IH8036",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Grand Court"
+    },
+    {
+      "source_product_id": "143539",
+      "goods_id": "9131041",
+      "style_id": "1054535579",
+      "source_article": "IF1777",
+      "source_title": "Adidas Kaptir 3.0 K 'Aluminium Hazy Orange'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克童装 印花套头圆领短袖T恤 男中大童 IF1777",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Kaptir"
+    },
+    {
+      "source_product_id": "144143",
+      "goods_id": "9559476",
+      "style_id": "1134212092",
+      "source_article": "IH2433",
+      "source_title": "Adidas Duramo SL K 'Purple Burst'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 2026AW 系带中腰透气运动短裤 IH2433",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Duramo"
+    },
+    {
+      "source_product_id": "144470",
+      "goods_id": "7187426",
+      "style_id": "457878498",
+      "source_article": "IH0982",
+      "source_title": "Adidas Terrex Agravic 3 'Pulse Blue'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克童装 口袋印花套头连帽卫衣 中小童 IH0982",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Terrex Agravic"
+    },
+    {
+      "source_product_id": "144524",
+      "goods_id": "7900057",
+      "style_id": "703314350",
+      "source_article": "IF2891",
+      "source_title": "LEGO x adidas Racer TR21 EL I 'White Shock Blue'",
+      "source_brand": "adidas",
+      "donor_title": "Nike 品牌Logo设计织物情侣款双肩包",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Racer TR21"
+    },
+    {
+      "source_product_id": "145441",
+      "goods_id": "8817516",
+      "style_id": "959770531",
+      "source_article": "IF3367",
+      "source_title": "Adidas Adizero Instinct Molded K 'White Black'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 2026SS 拉链亲肤透气夹克 IF3367",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Adizero Instinct"
+    },
+    {
+      "source_product_id": "145517",
+      "goods_id": "8899465",
+      "style_id": "1147350500",
+      "source_article": "IF2070",
+      "source_title": "Adidas Nora 'Black Green'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 系带松紧腰纯色运动短裤 IF2070",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Nora"
+    },
+    {
+      "source_product_id": "145596",
+      "goods_id": "9406018",
+      "style_id": "1116437780",
+      "source_article": "IH2434",
+      "source_title": "Adidas Duramo SL EL K 'Black Spark'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 2026AW 透气耐磨速干运动短裤 IH2434",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Duramo"
+    },
+    {
+      "source_product_id": "145900",
+      "goods_id": "9908699",
+      "style_id": "1181016112",
+      "source_article": "IF1318",
+      "source_title": "Adidas Adizero F50 Elite Laceless SG 'Vivid Horizon Pack'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 连帽拉链长袖夹克 IF1318",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Adizero F50"
+    },
+    {
+      "source_product_id": "146013",
+      "goods_id": "8743122",
+      "style_id": "926270950",
+      "source_article": "IF2020",
+      "source_title": "adidas Y-3 Kyasu Low 'Alumina'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 防水透气系带运动长裤 IF2020",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Y-3 Kyasu"
+    },
+    {
+      "source_product_id": "146157",
+      "goods_id": "8771850",
+      "style_id": "936491535",
+      "source_article": "IH0183",
+      "source_title": "Adidas Wmns Hoops 3.0 Bold Low 'White Preloved Blue Mint'",
+      "source_brand": "adidas",
+      "donor_title": "Nike/耐克 松紧修身针织运动长裤 女装 IH0183",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Hoops 3.0"
+    },
+    {
+      "source_product_id": "123213",
+      "goods_id": "1003188",
+      "style_id": "19436123",
+      "source_article": "GZ7286",
+      "source_title": "Reebok x adidas ZX Fury 'A-ZX Series'",
+      "source_brand": "adidas",
+      "donor_title": "Reebok/锐步 ZX Flux 跑鞋 缓震回弹防滑耐磨舒适透气运动休闲支撑轻便裹性",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "",
+      "source_family": "ZX Fury"
+    },
+    {
+      "source_product_id": "127899",
+      "goods_id": "7293300",
+      "style_id": "495249393",
+      "source_article": "GZ1050",
+      "source_title": "Adidas Wmns Puremotion Adapt 'Halo Silver'",
+      "source_brand": "adidas",
+      "donor_title": "Simple&nature 常规休闲斜疯马皮个性手工牛皮邮差背包机车包单肩包斜挎包",
+      "donor_brand": "Simple&nature",
+      "donor_model": "",
+      "source_family": "Puremotion Adapt"
+    },
+    {
+      "source_product_id": "137175",
+      "goods_id": "7340675",
+      "style_id": "510040744",
+      "source_article": "GZ5008",
+      "source_title": "adidas UltraBoost 20 LAB 'Black'",
+      "source_brand": "adidas",
+      "donor_title": "Simple&nature 小号短款竖款手工原创休闲拉链钱软皮日韩简约潮夹青年个性牛皮钱包",
+      "donor_brand": "Simple&nature",
+      "donor_model": "",
+      "source_family": "UltraBoost 20"
+    },
+    {
+      "source_product_id": "112805",
+      "goods_id": "2994",
+      "style_id": "1315894",
+      "source_article": "VN0A4BV60IV",
+      "source_title": "Cordura x adidas Sk8 Hi 'Black'",
+      "source_brand": "adidas",
+      "donor_title": "Vans/范斯 SK8-Hi 板鞋 潮流经典拼接复古街头厚底",
+      "donor_brand": "Vans/范斯",
+      "donor_model": "SK8",
+      "source_family": "Skate Copa"
+    },
+    {
+      "source_product_id": "141042",
+      "goods_id": "9219622",
+      "style_id": "1073999328",
+      "source_article": "HP6198",
+      "source_title": "Adidas Forum Bold J 'Scratch Art'",
+      "source_brand": "adidas",
+      "donor_title": "吕小虎 2026SS ACTUP系列速干凉感短袖Polo衫 HP6198",
+      "donor_brand": "吕小虎",
+      "donor_model": "",
+      "source_family": "Forum"
+    },
+    {
+      "source_product_id": "114857",
+      "goods_id": "8862544",
+      "style_id": "970646415",
+      "source_article": "B22634",
+      "source_title": "Adidas Tubular Shadow J 'Aero Green'",
+      "source_brand": "adidas",
+      "donor_title": "悦内 印花带胸垫可外穿长袖睡衣 女装 B22634",
+      "donor_brand": "悦内",
+      "donor_model": "",
+      "source_family": "Tubular Shadow"
+    },
+    {
+      "source_product_id": "209727",
+      "goods_id": "91319",
+      "style_id": "531289",
+      "source_article": "CG6228",
+      "source_title": "Air Jordan Wmns Arkyn Knit 'Black Pink'",
+      "source_brand": "Air Jordan",
+      "donor_title": "adidas Originals Arkyn Knit 缓震回弹 防滑耐磨 舒适透气 轻便 织物 休闲运动 跑鞋",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Arkyn",
+      "source_family": "Arkyn"
+    },
+    {
+      "source_product_id": "206351",
+      "goods_id": "25965",
+      "style_id": "157526696",
+      "source_article": "878458 006",
+      "source_title": "Serena Williams x Air Jordan Flare AJ1 '23'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Court Flare 耐磨 舒适 运动 运动休闲鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "All Court",
+      "source_family": "Air Jordan 1"
+    },
+    {
+      "source_product_id": "209754",
+      "goods_id": "107",
+      "style_id": "836483",
+      "source_article": "AH8145 303",
+      "source_title": "Air Jordan Air Max 1 'Outdoor Green'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Max 1 跑鞋 气垫缓震透气轻便复古运动舒适百搭潮流耐磨低帮训练防滑冬季支撑马拉松防水抓地圆头耐穿",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Comfort Air Max 10"
+    },
+    {
+      "source_product_id": "213248",
+      "goods_id": "134",
+      "style_id": "4305512",
+      "source_article": "CZ5890 100",
+      "source_title": "Air Jordan Air Force 1 LV8 2 GS 'Misplaced Swooshes - White Multi'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Force 1 空军一号 板鞋 轻便舒适百搭耐磨防滑复古",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Force",
+      "source_family": "Air Force 1"
+    },
+    {
+      "source_product_id": "214319",
+      "goods_id": "134",
+      "style_id": "39151765",
+      "source_article": "DH2943 001",
+      "source_title": "Air Jordan Air Force 1 High LE GS 'Triple Black'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Force 1 空军一号 板鞋 轻便舒适百搭耐磨防滑复古",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Force",
+      "source_family": "Air Force 1"
+    },
+    {
+      "source_product_id": "216392",
+      "goods_id": "1662573",
+      "style_id": "35503724",
+      "source_article": "DX4976 141",
+      "source_title": "A Ma Maniére x Air Jordan Jordan Air Ship PE SP 'Game Royal'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "216561",
+      "goods_id": "1662573",
+      "style_id": "35503973",
+      "source_article": "DX4976 181",
+      "source_title": "Air Jordan Air Ship PE SP 'Team Orange'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217130",
+      "goods_id": "1662573",
+      "style_id": "45318132",
+      "source_article": "DX4976 107",
+      "source_title": "Air Jordan Air Ship PE SP 'University Gold'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217234",
+      "goods_id": "2203914",
+      "style_id": "48114169",
+      "source_article": "DX5573 100",
+      "source_title": "Air Jordan Tatum 1 'St. Louis'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217314",
+      "goods_id": "1662573",
+      "style_id": "47132757",
+      "source_article": "DX4976 103",
+      "source_title": "Air Jordan Air Ship PE SP 'Pine Green'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217323",
+      "goods_id": "2203914",
+      "style_id": "46886502",
+      "source_article": "DX5572 001",
+      "source_title": "Air Jordan Tatum 1 'Zoo'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217325",
+      "goods_id": "2203914",
+      "style_id": "63827603",
+      "source_article": "DX5359 600",
+      "source_title": "Air Jordan Tatum 1 GS 'Pink Lemonade'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217327",
+      "goods_id": "2203914",
+      "style_id": "50410771",
+      "source_article": "DX5359 100",
+      "source_title": "Air Jordan Tatum 1 GS 'St. Louis'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217330",
+      "goods_id": "2203914",
+      "style_id": "55209718",
+      "source_article": "DX5571 180",
+      "source_title": "Air Jordan Tatum 1 'Barbershop'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217434",
+      "goods_id": "1662573",
+      "style_id": "47993288",
+      "source_article": "DZ3497 104",
+      "source_title": "Air Jordan Air Ship PE SP 'Every Game'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217450",
+      "goods_id": "501033",
+      "style_id": "87762867",
+      "source_article": "DV1321 100",
+      "source_title": "Air Jordan 1 Mid SE TD 'Multi-Color Canvas'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Force 1 板鞋儿童 透气舒适防滑耐磨轻便休闲",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Force",
+      "source_family": "Air Jordan 1"
+    },
+    {
+      "source_product_id": "217507",
+      "goods_id": "2203914",
+      "style_id": "49947797",
+      "source_article": "FJ4653 001",
+      "source_title": "Air Jordan Tatum 1 GS 'Zoo'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217551",
+      "goods_id": "2203914",
+      "style_id": "49108107",
+      "source_article": "DX6734 001",
+      "source_title": "Air Jordan Tatum 1 PF 'Zoo'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217555",
+      "goods_id": "2203914",
+      "style_id": "74699563",
+      "source_article": "DZ3323 001",
+      "source_title": "Air Jordan Tatum 1 'Old School'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217636",
+      "goods_id": "1662573",
+      "style_id": "54260597",
+      "source_article": "DZ3497 106",
+      "source_title": "Air Jordan Air Ship PE SP 'Every Game - Dune Red'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217682",
+      "goods_id": "2203914",
+      "style_id": "53564892",
+      "source_article": "DX5574 180",
+      "source_title": "Air Jordan Tatum 1 PF 'Barbershop'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217728",
+      "goods_id": "2203914",
+      "style_id": "49762940",
+      "source_article": "DX6732 100",
+      "source_title": "Air Jordan Tatum 1 PF 'St. Louis'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217767",
+      "goods_id": "1662573",
+      "style_id": "52707309",
+      "source_article": "DZ3497 100",
+      "source_title": "Air Jordan Air Ship PE SP 'Tech Grey'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "217812",
+      "goods_id": "2203914",
+      "style_id": "68040864",
+      "source_article": "DV6208 600",
+      "source_title": "Air Jordan Tatum 1 'Pink Lemonade'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217833",
+      "goods_id": "2203914",
+      "style_id": "62183658",
+      "source_article": "DX6733 600",
+      "source_title": "Air Jordan Tatum 1 PF 'Pink Lemonade'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217945",
+      "goods_id": "2203914",
+      "style_id": "76923639",
+      "source_article": "FQ8133 001",
+      "source_title": "Air Jordan Tatum 1 GS 'Old School'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "217962",
+      "goods_id": "2203914",
+      "style_id": "89568899",
+      "source_article": "DZ3320 400",
+      "source_title": "Air Jordan Tatum 1 'Denim'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218040",
+      "goods_id": "1662573",
+      "style_id": "83591349",
+      "source_article": "DX4976 100",
+      "source_title": "A Ma Maniére x Air Jordan Jordan Air Ship PE SP 'White Black'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "218049",
+      "goods_id": "2203914",
+      "style_id": "79624019",
+      "source_article": "FB2863 001",
+      "source_title": "Air Jordan Tatum 1 TB 'Black White'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218058",
+      "goods_id": "4892118",
+      "style_id": "149031827",
+      "source_article": "FZ8117 100",
+      "source_title": "Travis Scott x Air Jordan Jordan Jumpman Jack TR 'Sail'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Jumpman Jack 圆头舒适 防滑 耐磨 中帮复古 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Jumpman Jack"
+    },
+    {
+      "source_product_id": "218098",
+      "goods_id": "2203914",
+      "style_id": "78411414",
+      "source_article": "DX5359 400",
+      "source_title": "Air Jordan Tatum 1 GS 'Denim'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218164",
+      "goods_id": "2203914",
+      "style_id": "87629344",
+      "source_article": "FB2863 600",
+      "source_title": "Air Jordan Tatum 1 TB 'University Red'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218175",
+      "goods_id": "2203914",
+      "style_id": "72466244",
+      "source_article": "DZ3322 001",
+      "source_title": "Air Jordan Tatum 1 PF 'Old School'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218229",
+      "goods_id": "2203914",
+      "style_id": "83453051",
+      "source_article": "DZ3324 108",
+      "source_title": "Air Jordan Tatum 1 'Home Team'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218317",
+      "goods_id": "1662573",
+      "style_id": "90364687",
+      "source_article": "FQ4123 105",
+      "source_title": "Forget-me-nots x Air Jordan Wmns Jordan Air Ship PE SP 'From Bud To Flower'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "218323",
+      "goods_id": "2203914",
+      "style_id": "77351674",
+      "source_article": "DZ3321 400",
+      "source_title": "Air Jordan Tatum 1 PF 'Denim'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218453",
+      "goods_id": "2203914",
+      "style_id": "106800171",
+      "source_article": "FV0172 400",
+      "source_title": "Air Jordan Tatum 1 GS 'Wave Runner'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218508",
+      "goods_id": "2203914",
+      "style_id": "83511690",
+      "source_article": "DZ3330 108",
+      "source_title": "Air Jordan Tatum 1 PF 'Home Team'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218524",
+      "goods_id": "2203914",
+      "style_id": "144665459",
+      "source_article": "DX5359 200",
+      "source_title": "Air Jordan Tatum 1 GS 'Tunnel Walk'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218561",
+      "goods_id": "2203914",
+      "style_id": "109337986",
+      "source_article": "DZ3324 003",
+      "source_title": "Air Jordan Tatum 1 'Green Strike'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218694",
+      "goods_id": "2203914",
+      "style_id": "104861674",
+      "source_article": "FV0171 400",
+      "source_title": "Air Jordan Tatum 1 PF 'Wave Runner'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218821",
+      "goods_id": "2203914",
+      "style_id": "123939172",
+      "source_article": "DZ3330 002",
+      "source_title": "Air Jordan Tatum 1 PF 'Cool Grey'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "218859",
+      "goods_id": "1662573",
+      "style_id": "148089717",
+      "source_article": "DZ3497 140",
+      "source_title": "Air Jordan Air Ship PE SP 'Diffused Blue'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "218860",
+      "goods_id": "4879724",
+      "style_id": "180015440",
+      "source_article": "FB3146 106",
+      "source_title": "Air Jordan Wmns Zoom GP Challenge Pro 'White Light Blue'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Zoom GP Challenge Pro 防滑耐磨 缓震支撑 简约运动 硬地球场 训练鞋 网球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Challenger",
+      "source_family": "Zoom GP Challenge Pro"
+    },
+    {
+      "source_product_id": "218910",
+      "goods_id": "2203914",
+      "style_id": "109337986",
+      "source_article": "DZ3330 003",
+      "source_title": "Air Jordan Tatum 1 PF 'Green Strike'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "219016",
+      "goods_id": "4892118",
+      "style_id": "155356844",
+      "source_article": "FZ8117 101",
+      "source_title": "Travis Scott x Air Jordan Jordan Jumpman Jack TR 'University Red'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Jumpman Jack 圆头舒适 防滑 耐磨 中帮复古 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Jumpman Jack"
+    },
+    {
+      "source_product_id": "219043",
+      "goods_id": "1662573",
+      "style_id": "155555015",
+      "source_article": "FQ2942 100",
+      "source_title": "A Ma Maniére x Air Jordan Jordan Air Ship PE SP 'Green Stone'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Ship SP 运动休闲鞋 时尚复古舒适透气缓震轻便防滑耐磨实战圆头",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Ship",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "219209",
+      "goods_id": "2203914",
+      "style_id": "129131253",
+      "source_article": "DZ3321 200",
+      "source_title": "Air Jordan Tatum 1 PF 'Tunnel Walk'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Tatum 1 塔图姆1 Zoom 缓震防滑 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "塔图姆",
+      "source_family": "Jordan Tatum 1"
+    },
+    {
+      "source_product_id": "219583",
+      "goods_id": "501033",
+      "style_id": "186466313",
+      "source_article": "FN9771 018",
+      "source_title": "Air Jordan 1 Low ALT SE TD 'Gatorade Pack - Red'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Air Force 1 板鞋儿童 透气舒适防滑耐磨轻便休闲",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Air Force",
+      "source_family": "Air Jordan 1"
+    },
+    {
+      "source_product_id": "219616",
+      "goods_id": "4892118",
+      "style_id": "192788290",
+      "source_article": "FZ8117 102",
+      "source_title": "Travis Scott x Air Jordan Jordan Jumpman Jack TR 'Bright Cactus'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Jordan Jumpman Jack 圆头舒适 防滑 耐磨 中帮复古 篮球鞋",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Jumpman Jack"
+    },
+    {
+      "source_product_id": "219727",
+      "goods_id": "4903389",
+      "style_id": "688757726",
+      "source_article": "FB9924 101",
+      "source_title": "Air Jordan Stay Loyal 3 TD 'White Black Gym Red'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Stay Loyal 3 舒适百搭 防滑耐磨 学步鞋儿童",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Stay Loyal"
+    },
+    {
+      "source_product_id": "219890",
+      "goods_id": "4903389",
+      "style_id": "224573343",
+      "source_article": "FB9924 102",
+      "source_title": "Air Jordan Stay Loyal 3 TD 'White Varsity Red Navy'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Stay Loyal 3 舒适百搭 防滑耐磨 学步鞋儿童",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Stay Loyal"
+    },
+    {
+      "source_product_id": "220469",
+      "goods_id": "7159097",
+      "style_id": "448693928",
+      "source_article": "555511 061",
+      "source_title": "Air Jordan Hydro 5 Retro Slide GS 'Black Metallic'",
+      "source_brand": "Air Jordan",
+      "donor_title": "Nike Hydro 5 Retro 轻便 柔软 透气 低帮 拖鞋儿童",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Jordan Hydro Slide"
+    },
+    {
+      "source_product_id": "204131",
+      "goods_id": "9080464",
+      "style_id": "1045786431",
+      "source_article": "4490",
+      "source_title": "Air Jordan 5 OG 'Grape' 1990",
+      "source_brand": "Air Jordan",
+      "donor_title": "Running River/奔流 防风保暖背带滑雪裤 女装 4490",
+      "donor_brand": "Running River/奔流",
+      "donor_model": "",
+      "source_family": "Air Jordan 5"
+    },
+    {
+      "source_product_id": "282179",
+      "goods_id": "3572986",
+      "style_id": "416746176",
+      "source_article": "1014A209 704",
+      "source_title": "Asics Gel Noosa TRI 13 GS 'Lavender Glow Soft Sky'",
+      "source_brand": "ASICS",
+      "donor_title": "361度 刀锋 跑鞋 防滑耐磨减震回弹透气轻便软底舒适休闲运动加厚防泼水",
+      "donor_brand": "361°/361度",
+      "donor_model": "刀锋",
+      "source_family": "Gel Noosa"
+    },
+    {
+      "source_product_id": "276189",
+      "goods_id": "2902",
+      "style_id": "442304",
+      "source_article": "1183A359 101",
+      "source_title": "Asics Mexico 66 'White Peacoat Lime'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Mexico 66 德训鞋 运动休闲鞋 复古轻便透气舒适百搭防滑",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Mexico 66",
+      "source_family": "Mexico 66"
+    },
+    {
+      "source_product_id": "276191",
+      "goods_id": "79228",
+      "style_id": "674811",
+      "source_article": "1183A204 002",
+      "source_title": "Asics OK Basketball Low 'Black'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ok Basketball RB 休闲透气 防滑耐磨 包裹性 运动 板鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "OK Basketball",
+      "source_family": "OK Basketball"
+    },
+    {
+      "source_product_id": "276249",
+      "goods_id": "2902",
+      "style_id": "524173",
+      "source_article": "1183A349 001",
+      "source_title": "Asics Mexico 66 'Black Rich Gold'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Mexico 66 德训鞋 运动休闲鞋 复古轻便透气舒适百搭防滑",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Mexico 66",
+      "source_family": "Mexico 66"
+    },
+    {
+      "source_product_id": "276267",
+      "goods_id": "2902",
+      "style_id": "524216",
+      "source_article": "1183A349 100",
+      "source_title": "Asics Mexico 66 'White Silver Grey'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Mexico 66 德训鞋 运动休闲鞋 复古轻便透气舒适百搭防滑",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Mexico 66",
+      "source_family": "Mexico 66"
+    },
+    {
+      "source_product_id": "276274",
+      "goods_id": "2902",
+      "style_id": "269582",
+      "source_article": "1183A474 020",
+      "source_title": "Asics Mexico 66 SD 'Peacoat'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Mexico 66 德训鞋 运动休闲鞋 复古轻便透气舒适百搭防滑",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Mexico 66",
+      "source_family": "Mexico 66"
+    },
+    {
+      "source_product_id": "284573",
+      "goods_id": "3760363",
+      "style_id": "76330382",
+      "source_article": "1183B744 020",
+      "source_title": "Street Fighter 6 x ASICS ENDACTUS 'Graphite Grey'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Endactus 时尚百搭 户外功能 休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "",
+      "source_family": "ENDACTUS"
+    },
+    {
+      "source_product_id": "284800",
+      "goods_id": "4778",
+      "style_id": "34883664",
+      "source_article": "1183B536 600",
+      "source_title": "ASICS Ultimate 81 NM 'Classic Red Pure Gold'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 复古时尚 拼接 轻便舒适 耐磨透气 减震防滑 织物 厚底 运动休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284801",
+      "goods_id": "4778",
+      "style_id": "31949052",
+      "source_article": "1183B536 401",
+      "source_title": "ASICS Ultimate 81 NM 'Peacoat Birch'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 复古时尚 拼接 轻便舒适 耐磨透气 减震防滑 织物 厚底 运动休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284802",
+      "goods_id": "4778",
+      "style_id": "34883335",
+      "source_article": "1183B536 400",
+      "source_title": "ASICS Ultimate 81 NM 'Peacoat Cream'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 复古时尚 拼接 轻便舒适 耐磨透气 减震防滑 织物 厚底 运动休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284803",
+      "goods_id": "4778",
+      "style_id": "31886590",
+      "source_article": "1183B536 200",
+      "source_title": "ASICS Ultimate 81 NM 'Putty Black'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 复古时尚 拼接 轻便舒适 耐磨透气 减震防滑 织物 厚底 运动休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284804",
+      "goods_id": "4778",
+      "style_id": "31948756",
+      "source_article": "1183B536 002",
+      "source_title": "ASICS Ultimate 81 NM 'Black Lime'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 复古时尚 拼接 轻便舒适 耐磨透气 减震防滑 织物 厚底 运动休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284805",
+      "goods_id": "1131571",
+      "style_id": "21986191",
+      "source_article": "1183B510 100",
+      "source_title": "ASICS Ultimate 81 EX 'White Black'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 EX 耐磨百搭 舒适透气 时尚复古 织物 休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284806",
+      "goods_id": "1131571",
+      "style_id": "40088067",
+      "source_article": "1183B510 203",
+      "source_title": "ASICS Ultimate 81 EX 'Birch Kale'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 EX 耐磨百搭 舒适透气 时尚复古 织物 休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284807",
+      "goods_id": "1131571",
+      "style_id": "21986518",
+      "source_article": "1183B510 102",
+      "source_title": "ASICS Ultimate 81 EX 'Mustard Steeple Grey'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 EX 耐磨百搭 舒适透气 时尚复古 织物 休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "284808",
+      "goods_id": "1131571",
+      "style_id": "21986477",
+      "source_article": "1183B510 101",
+      "source_title": "ASICS Ultimate 81 EX 'White Directoire Blue'",
+      "source_brand": "ASICS",
+      "donor_title": "Onitsuka Tiger Ultimate 81 EX 耐磨百搭 舒适透气 时尚复古 织物 休闲鞋",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "donor_model": "Ultimate 81 EX",
+      "source_family": "Ultimate 81"
+    },
+    {
+      "source_product_id": "158886",
+      "goods_id": "9928194",
+      "style_id": "1183522111",
+      "source_article": "905",
+      "source_title": "Pharrell x BAPE Roadsta FS-034 Low 'Yellow Green'",
+      "source_brand": "BAPE",
+      "donor_title": "TUCANO/啄木鸟 薄款五分弹力牛仔裤 905",
+      "donor_brand": "TUCANO/啄木鸟",
+      "donor_model": "",
+      "source_family": "Roadsta"
+    },
+    {
+      "source_product_id": "159201",
+      "goods_id": "9777783",
+      "style_id": "1160755143",
+      "source_article": "625",
+      "source_title": "Bapesta FS-001 Low 'Red White Blue'",
+      "source_brand": "BAPE",
+      "donor_title": "TUCANO/啄木鸟 冰丝速干透气男士平角内裤 625",
+      "donor_brand": "TUCANO/啄木鸟",
+      "donor_model": "",
+      "source_family": "Bapesta"
+    },
+    {
+      "source_product_id": "257894",
+      "goods_id": "631782",
+      "style_id": "38368574",
+      "source_article": "1026228",
+      "source_title": "Concepts x Birkenstock Wmns Kyoto 'White Felt'",
+      "source_brand": "Birkenstock",
+      "donor_title": "KEEN/科恩 Uneek 防滑耐磨 舒适时尚 休闲百搭 简约潮流 速干 沙滩鞋 户外鞋",
+      "donor_brand": "KEEN/科恩",
+      "donor_model": "UNEEK",
+      "source_family": "Kyoto"
+    },
+    {
+      "source_product_id": "257908",
+      "goods_id": "4444193",
+      "style_id": "111592071",
+      "source_article": "1026773",
+      "source_title": "Birkenstock Z√ºrich Tech 'Antique White'",
+      "source_brand": "Birkenstock",
+      "donor_title": "KEEN Circadia 百搭 舒适 徒步 防水 圆头 徒步鞋 户外鞋",
+      "donor_brand": "KEEN/科恩",
+      "donor_model": "",
+      "source_family": "Z√ºrich Tech"
+    },
+    {
+      "source_product_id": "201150",
+      "goods_id": "4872645",
+      "style_id": "928218963",
+      "source_article": "1201B025 001",
+      "source_title": "Comme Des Garçons SHIRT x Gel Terrain 'Black'",
+      "source_brand": "Comme des Garçons",
+      "donor_title": "Asics/亚瑟士 Gel-Terrain 跑鞋 简约复古舒适百搭防滑耐磨网布透气轻便慢跑",
+      "donor_brand": "Asics/亚瑟士",
+      "donor_model": "Gel-Terrain",
+      "source_family": "Gel Terrain"
+    },
+    {
+      "source_product_id": "161041",
+      "goods_id": "3969967",
+      "style_id": "82112436",
+      "source_article": "144771",
+      "source_title": "Converse Chuck Taylor All Star Back Zip Hi 'Timber'",
+      "source_brand": "Converse",
+      "donor_title": "Skechers/斯凯奇 ON THE GO STELLAR 锁温加厚 防滑耐磨 百搭复古 美拉德 一脚穿短筒 易打理 雪地靴",
+      "donor_brand": "Skechers/斯凯奇",
+      "donor_model": "On-The-GO",
+      "source_family": "Chuck Taylor All Star"
+    },
+    {
+      "source_product_id": "224186",
+      "goods_id": "3532",
+      "style_id": "39395414",
+      "source_article": "707848 9STU0 6360",
+      "source_title": "Adidas x Gucci Gazelle 'Red Velvet'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224189",
+      "goods_id": "3532",
+      "style_id": "38705899",
+      "source_article": "707847 UTT10 9060",
+      "source_title": "Adidas x Gucci Gazelle 'White'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224190",
+      "goods_id": "3532",
+      "style_id": "39362470",
+      "source_article": "707867 U7R10 3660",
+      "source_title": "Adidas x Gucci Wmns Gazelle 'Light Blue Silk'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224191",
+      "goods_id": "3532",
+      "style_id": "38634832",
+      "source_article": "707848 9STU0 3170",
+      "source_title": "Adidas x Gucci Gazelle 'Green Suede'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224192",
+      "goods_id": "3532",
+      "style_id": "75556780",
+      "source_article": "707848 9STU0 7170",
+      "source_title": "Adidas x Gucci Gazelle 'Yellow Velvet'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224193",
+      "goods_id": "3532",
+      "style_id": "72743836",
+      "source_article": "707848 9STU0 4860",
+      "source_title": "Adidas x Gucci Gazelle 'Light Blue Suede'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224194",
+      "goods_id": "3532",
+      "style_id": "39362488",
+      "source_article": "707864 9STU0 5960",
+      "source_title": "Adidas x Gucci Wmns Gazelle 'Pink Velvet'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224548",
+      "goods_id": "3532",
+      "style_id": "45873019",
+      "source_article": "726487 AAA43 9547",
+      "source_title": "Adidas x Gucci Gazelle 'White Green Red'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "224663",
+      "goods_id": "159",
+      "style_id": "53991988",
+      "source_article": "721936 AAA9E 3942",
+      "source_title": "Adidas x Gucci ZX 8000 'Pink Strata'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals ZX 8000 复古 舒适百搭 防滑耐磨 轻便透气 织物 低帮 缓震 运动休闲鞋",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "ZX",
+      "source_family": "ZX 8000"
+    },
+    {
+      "source_product_id": "224730",
+      "goods_id": "3532",
+      "style_id": "42199817",
+      "source_article": "707871 9STU0 6360",
+      "source_title": "Gucci x Wmns Gazelle 'Red Velvet'",
+      "source_brand": "Gucci",
+      "donor_title": "adidas Originals Gazelle T头鞋 德训鞋 板鞋 轻便复古薄底舒适百搭减震耐磨贴合圆头",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Gazelle",
+      "source_family": "Gazelle"
+    },
+    {
+      "source_product_id": "329475",
+      "goods_id": "1702327",
+      "style_id": "41589479",
+      "source_article": "DJ6945 600",
+      "source_title": "Mizuno Wmns Spark 'Barely Rose'",
+      "source_brand": "Mizuno",
+      "donor_title": "Nike Spark Flyknit 跑鞋 轻便舒适透气缓震耐磨防滑休闲时尚",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Spark Flyknit",
+      "source_family": "Spark"
+    },
+    {
+      "source_product_id": "333156",
+      "goods_id": "4193738",
+      "style_id": "400510528",
+      "source_article": "MSCHF010 Y",
+      "source_title": "Crocs x MSCHF Big Red Boot 'Yellow'",
+      "source_brand": "MSCHF",
+      "donor_title": "Crocs/卡骆驰 x MSCHF 联名 舒适时尚 增高休闲 厚底 洞洞鞋 凉鞋 MSCHF010-Y",
+      "donor_brand": "Crocs/卡骆驰",
+      "donor_model": "MSCHF联名",
+      "source_family": "Big Red Boot"
+    },
+    {
+      "source_product_id": "333160",
+      "goods_id": "944656",
+      "style_id": "115309039",
+      "source_article": "MSCHF013",
+      "source_title": "MSCHF x Pump Omni Zone IX",
+      "source_brand": "MSCHF",
+      "donor_title": "Reebok/锐步 Pump Omni Zone 2 运动休闲鞋 防滑耐磨舒适透气减震支撑圆头织物包裹性合成革复古风人造革轻便",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "Pump Omni Zone",
+      "source_family": "Pump Omni"
+    },
+    {
+      "source_product_id": "176608",
+      "goods_id": "5670833",
+      "style_id": "180036463",
+      "source_article": "ML574ESA",
+      "source_title": "New Balance 574 Core Plus 'Nimbus Cloud'",
+      "source_brand": "New Balance",
+      "donor_title": "回力 网面透气 减震回弹 防滑耐磨 舒适软底 运动休闲鞋",
+      "donor_brand": "Warrior/回力",
+      "donor_model": "",
+      "source_family": "574"
+    },
+    {
+      "source_product_id": "64653",
+      "goods_id": "915134",
+      "style_id": "24060454",
+      "source_article": "GZ7017",
+      "source_title": "Nike Originals Flex J 'Black White'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Originals Flex 缓震 耐磨 透气 跑鞋",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Flex",
+      "source_family": "Flex"
+    },
+    {
+      "source_product_id": "68344",
+      "goods_id": "953541",
+      "style_id": "45264123",
+      "source_article": "GX9246",
+      "source_title": "Disney x Nike Originals Flex Little Kid 'Mickey And Pluto'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Originals Flex 休闲 防滑耐磨 减震 舒适 透气 运动鞋儿童",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "Flex",
+      "source_family": "Flex"
+    },
+    {
+      "source_product_id": "39227",
+      "goods_id": "1756",
+      "style_id": "1469535",
+      "source_article": "EF3658",
+      "source_title": "Nike Predator Mania FG Cleat 'Red'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Predator Mania FG 胶质长钉 天然草地 防滑 低帮舒适 足球鞋",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Predator",
+      "source_family": "Predator Mania"
+    },
+    {
+      "source_product_id": "42765",
+      "goods_id": "577266",
+      "style_id": "2635268",
+      "source_article": "EH2958",
+      "source_title": "Nike Predator Mania FG 'Active Blue'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Predator Mania FG 胶质长钉 硬天然草场 足球鞋",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Predator Mania",
+      "source_family": "Predator Mania"
+    },
+    {
+      "source_product_id": "42766",
+      "goods_id": "549053",
+      "style_id": "1713348",
+      "source_article": "EH2957",
+      "source_title": "Nike Predator Mania Boost 'Active Blue'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Predator Mania TR 复合材质 休闲缓震 防滑耐磨 圆头 跑鞋",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Predator",
+      "source_family": "Predator Mania"
+    },
+    {
+      "source_product_id": "66532",
+      "goods_id": "1737492",
+      "style_id": "38167757",
+      "source_article": "GZ2143",
+      "source_title": "Nike Predator Mania SG 'Black Predator Red'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Predator Mania SG 超顶级 金属长钉 软草地天然草地 防滑耐磨包裹性支撑 足球鞋",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Predator Mania",
+      "source_family": "Predator Mania"
+    },
+    {
+      "source_product_id": "70362",
+      "goods_id": "1157429",
+      "style_id": "40824124",
+      "source_article": "GV9926",
+      "source_title": "Nike Court Vision 3 'Black White'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Court Vision 3 篮球鞋 防滑耐磨实战缓震",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Court Vision",
+      "source_family": "Court Vision"
+    },
+    {
+      "source_product_id": "77818",
+      "goods_id": "1157429",
+      "style_id": "25064605",
+      "source_article": "H67756",
+      "source_title": "Nike Court Vision 3 'Black Orbit Grey'",
+      "source_brand": "Nike",
+      "donor_title": "adidas Court Vision 3 篮球鞋 防滑耐磨实战缓震",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Court Vision",
+      "source_family": "Court Vision"
+    },
+    {
+      "source_product_id": "81509",
+      "goods_id": "4805949",
+      "style_id": "144381471",
+      "source_article": "1093A214 001",
+      "source_title": "Nike High Jump Pro 3 L 'Black Silver Red'",
+      "source_brand": "Nike",
+      "donor_title": "Asics/亚瑟士 High Jump PRO 3 跑鞋 训练鞋 低帮舒适百搭田径比赛",
+      "donor_brand": "Asics/亚瑟士",
+      "donor_model": "High Jump",
+      "source_family": "High Jump"
+    },
+    {
+      "source_product_id": "79769",
+      "goods_id": "4996221",
+      "style_id": "155574200",
+      "source_article": "CV0724 401",
+      "source_title": "NikeCourt React Vapor NXT 'Blue Chill'",
+      "source_brand": "Nike",
+      "donor_title": "CHARLES&KEITH 气质 马衔扣 尖头 细跟 高跟鞋 CK1-61720178",
+      "donor_brand": "CHARLES&KEITH",
+      "donor_model": "",
+      "source_family": "React Vapor NXT"
+    },
+    {
+      "source_product_id": "40087",
+      "goods_id": "500774",
+      "style_id": "1485986",
+      "source_article": "AV5186 101",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Barely Volt'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40198",
+      "goods_id": "523796",
+      "style_id": "2686405",
+      "source_article": "CD6105 601",
+      "source_title": "Nike Jordan Air Max 200 'Fire Red'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40303",
+      "goods_id": "523796",
+      "style_id": "1597682",
+      "source_article": "CV8452 001",
+      "source_title": "Paris Saint-Germain x Nike Air Max 200 QS",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40389",
+      "goods_id": "500774",
+      "style_id": "1629541",
+      "source_article": "AV5186 002",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Bright Crimson'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40511",
+      "goods_id": "523796",
+      "style_id": "1597680",
+      "source_article": "CV9778 900",
+      "source_title": "Nike Jordan Air Max 200 XX 'Super Bowl LIV'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40512",
+      "goods_id": "523796",
+      "style_id": "2469160",
+      "source_article": "CD6105 100",
+      "source_title": "Nike Jordan Air Max 200 XX 'Challenge Red'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "40872",
+      "goods_id": "500774",
+      "style_id": "1539955",
+      "source_article": "CW0896 006",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Chinese New Year'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "41260",
+      "goods_id": "500774",
+      "style_id": "1555202",
+      "source_article": "AV5186 602",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Barely Rose'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "41651",
+      "goods_id": "523796",
+      "style_id": "1597681",
+      "source_article": "CD6105 007",
+      "source_title": "Nike Jordan Air Max 200 XX 'Black Volt'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "41745",
+      "goods_id": "523796",
+      "style_id": "2556459",
+      "source_article": "CD6105 006",
+      "source_title": "Nike Jordan Air Max 200 XX 'Bred'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200 XX"
+    },
+    {
+      "source_product_id": "41972",
+      "goods_id": "523796",
+      "style_id": "1625007",
+      "source_article": "CJ3840 700",
+      "source_title": "Nike Jordan Air Max 200 GS 'Dynamic Yellow'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Air Max 200"
+    },
+    {
+      "source_product_id": "42325",
+      "goods_id": "523796",
+      "style_id": "1668436",
+      "source_article": "CD6105 101",
+      "source_title": "Nike Jordan Air Max 200 'Pure Money'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "42991",
+      "goods_id": "500774",
+      "style_id": "1704897",
+      "source_article": "AV5186 007",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Dynamic Yellow'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "43443",
+      "goods_id": "523796",
+      "style_id": "2556462",
+      "source_article": "CD6105 102",
+      "source_title": "Nike Jordan Air Max 200 'Vibrant'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "44945",
+      "goods_id": "500774",
+      "style_id": "2460354",
+      "source_article": "CZ3573 281",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Light Cream'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "47012",
+      "goods_id": "500774",
+      "style_id": "1705981",
+      "source_article": "AV5186 003",
+      "source_title": "Nike Wmns Jordan Air Max 200 XX 'Spruce Aura'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 XX 跑鞋 防滑耐磨轻便透气休闲运动回弹",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "47497",
+      "goods_id": "655007",
+      "style_id": "4947497",
+      "source_article": "CD4302 006",
+      "source_title": "Nike Air Ship OG 'Banned'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Ship Pro 篮球鞋 防滑减震耐磨复古",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Ship Pro",
+      "source_family": "Air Ship"
+    },
+    {
+      "source_product_id": "47909",
+      "goods_id": "523796",
+      "style_id": "4727997",
+      "source_article": "CD6105 110",
+      "source_title": "Nike Jordan Air Max 200 'Dark Sulfur'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "48114",
+      "goods_id": "523796",
+      "style_id": "2686405",
+      "source_article": "CD5161 601",
+      "source_title": "Nike Jordan Air Max 200 GS 'Fire Red'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Air Max 200 跑鞋 缓震实战时尚潮流运动耐磨透气休闲",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Max",
+      "source_family": "Jordan Air Max 200"
+    },
+    {
+      "source_product_id": "55739",
+      "goods_id": "13",
+      "style_id": "19263141",
+      "source_article": "DJ6910 100",
+      "source_title": "Nike Air Jordan 1 Zoom Air Comfort High 'To My First Coach'",
+      "source_brand": "Nike",
+      "donor_title": "Air Jordan 1 板鞋 运动休闲鞋 复古潮流支撑合成革",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Jordan",
+      "source_family": "Air Force 1"
+    },
+    {
+      "source_product_id": "55749",
+      "goods_id": "13",
+      "style_id": "10482517",
+      "source_article": "DJ6908 100",
+      "source_title": "Nike Wmns Air Jordan 1 Mid 'To My First Coach'",
+      "source_brand": "Nike",
+      "donor_title": "Air Jordan 1 板鞋 运动休闲鞋 复古潮流支撑合成革",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Jordan",
+      "source_family": "Air Force 1"
+    },
+    {
+      "source_product_id": "67711",
+      "goods_id": "1684422",
+      "style_id": "43586520",
+      "source_article": "DM1683 170",
+      "source_title": "Nike Jordan Super Play Slide 'White Taxi'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Super Play slide 支撑抓地 轻盈缓震 一字 魔术贴 拖鞋",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Jordan Play Slide"
+    },
+    {
+      "source_product_id": "68871",
+      "goods_id": "1708822",
+      "style_id": "37790290",
+      "source_article": "DQ8431 001",
+      "source_title": "Nike Jumpman Two Trey GS 'Bred'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Jumpman Two Trey 篮球鞋 时尚复古减震防滑耐磨缓震实战",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Jumpman",
+      "source_family": "Jumpman Two Trey"
+    },
+    {
+      "source_product_id": "69094",
+      "goods_id": "1684422",
+      "style_id": "41224521",
+      "source_article": "DR1330 413",
+      "source_title": "J. Balvin x Nike Jordan Super Play Slide",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Super Play slide 支撑抓地 轻盈缓震 一字 魔术贴 拖鞋",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Jordan Play Slide"
+    },
+    {
+      "source_product_id": "73411",
+      "goods_id": "544010",
+      "style_id": "166864597",
+      "source_article": "DH2935 400",
+      "source_title": "Nike Force 1 Mid LE TD 'Blue Lightning Black'",
+      "source_brand": "Nike",
+      "donor_title": "Air Jordan 1 复古运动 舒适防踢 缓震耐磨 魔术贴 板鞋儿童",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Jordan",
+      "source_family": "Force 1"
+    },
+    {
+      "source_product_id": "74655",
+      "goods_id": "13",
+      "style_id": "45540544",
+      "source_article": "FD9906 131",
+      "source_title": "Nike Wmns Air Jordan 1 Low 'Sail Pale Citron'",
+      "source_brand": "Nike",
+      "donor_title": "Air Jordan 1 板鞋 运动休闲鞋 复古潮流支撑合成革",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "Air Jordan",
+      "source_family": "Air Force 1"
+    },
+    {
+      "source_product_id": "90030",
+      "goods_id": "7358664",
+      "style_id": "521578690",
+      "source_article": "HF5981 600",
+      "source_title": "Nike Jordan Hydrip GS 'Digital Pink'",
+      "source_brand": "Nike",
+      "donor_title": "Jordan Hydrip 简约 防滑 耐磨 低帮 拖鞋 洞洞鞋 凉鞋",
+      "donor_brand": "Jordan Brand/乔丹",
+      "donor_model": "",
+      "source_family": "Jordan Hydrip"
+    },
+    {
+      "source_product_id": "32563",
+      "goods_id": "3582385",
+      "style_id": "192847198",
+      "source_article": "CD6404 800",
+      "source_title": "Nike P-6000 'Total Orange'",
+      "source_brand": "Nike",
+      "donor_title": "PCLP 圆头 牛皮 金属片 德比鞋 PS2301",
+      "donor_brand": "PCLP/PERCLIPS",
+      "donor_model": "",
+      "source_family": "P-6000"
+    },
+    {
+      "source_product_id": "53206",
+      "goods_id": "791884",
+      "style_id": "17528279",
+      "source_article": "FY6521",
+      "source_title": "Nike Vector Runner 'Vector Blue Black'",
+      "source_brand": "Nike",
+      "donor_title": "Reebok/锐步 Vector Runner 运动休闲鞋 合成革潮流复古防滑减震耐磨厚底",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "Vector Runner",
+      "source_family": "Vector"
+    },
+    {
+      "source_product_id": "53207",
+      "goods_id": "791884",
+      "style_id": "17528763",
+      "source_article": "FY6519",
+      "source_title": "Nike Vector Runner 'White Vector Blue'",
+      "source_brand": "Nike",
+      "donor_title": "Reebok/锐步 Vector Runner 运动休闲鞋 合成革潮流复古防滑减震耐磨厚底",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "Vector Runner",
+      "source_family": "Vector"
+    },
+    {
+      "source_product_id": "231097",
+      "goods_id": "212107",
+      "style_id": "390882",
+      "source_article": "G27831",
+      "source_title": "Puma ZX 930 EQT 'Triple White'",
+      "source_brand": "Puma",
+      "donor_title": "adidas ZX 930 EQT Boost 防滑 运动 跑鞋",
+      "donor_brand": "adidas Originals/三叶草",
+      "donor_model": "ZX",
+      "source_family": "ZX 930 EQT"
+    },
+    {
+      "source_product_id": "238374",
+      "goods_id": "1741121",
+      "style_id": "38218307",
+      "source_article": "GZ1689",
+      "source_title": "Puma Wmns Court Platform CLN 'White Gold Metallic'",
+      "source_brand": "Puma",
+      "donor_title": "adidas neo Court Platform CIn 板鞋 防滑耐磨舒适轻便网球文化厚底增高复古百搭",
+      "donor_brand": "adidas/阿迪达斯",
+      "donor_model": "Court Platform",
+      "source_family": "Court Platform"
+    },
+    {
+      "source_product_id": "248497",
+      "goods_id": "6295836",
+      "style_id": "690088572",
+      "source_article": "100228700",
+      "source_title": "Puma Wmns Zignition 'Moon Y2K Blue'",
+      "source_brand": "Puma",
+      "donor_title": "Reebok/锐步 FLOATRIDE ENERGY 6 跑鞋 运动休闲系带轻质轻便防滑越野",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "Floatride Energy",
+      "source_family": "Zignition"
+    },
+    {
+      "source_product_id": "248498",
+      "goods_id": "7621215",
+      "style_id": "651065981",
+      "source_article": "100228699",
+      "source_title": "Puma Wmns Zignition 'White Barely Grey'",
+      "source_brand": "Puma",
+      "donor_title": "Reebok/锐步 Zignition 跑鞋 网布防滑耐磨低帮",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "",
+      "source_family": "Zignition"
+    },
+    {
+      "source_product_id": "248499",
+      "goods_id": "7621215",
+      "style_id": "648288169",
+      "source_article": "100228697",
+      "source_title": "Puma Wmns Zignition 'Black White'",
+      "source_brand": "Puma",
+      "donor_title": "Reebok/锐步 Zignition 跑鞋 网布防滑耐磨低帮",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "",
+      "source_family": "Zignition"
+    },
+    {
+      "source_product_id": "297493",
+      "goods_id": "603738",
+      "style_id": "105759638",
+      "source_article": "AR1957",
+      "source_title": "Reebok Question Mid J 'Dress Code'",
+      "source_brand": "Reebok",
+      "donor_title": "Armani/阿玛尼 32mm 小金表复古编织钢带女神节礼物镶钻防水石英女士手表",
+      "donor_brand": "Emporio Armani/阿玛尼",
+      "donor_model": "",
+      "source_family": "Question"
+    },
+    {
+      "source_product_id": "300223",
+      "goods_id": "9247956",
+      "style_id": "1079492107",
+      "source_article": "2431",
+      "source_title": "Reebok Wmns Freestyle High 'White'",
+      "source_brand": "Reebok",
+      "donor_title": "GEM 2026SS 透气亲肤高弹无痕文胸 女装 2431",
+      "donor_brand": "GEM",
+      "donor_model": "",
+      "source_family": "Freestyle"
+    },
+    {
+      "source_product_id": "298019",
+      "goods_id": "4343210",
+      "style_id": "107916944",
+      "source_article": "DV7164",
+      "source_title": "Reebok Wmns Aztrek 96 'White Green'",
+      "source_brand": "Reebok",
+      "donor_title": "Nike Air Flea 2 运动休闲鞋 防滑耐磨支撑包裹性",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "Flea",
+      "source_family": "Aztrek"
+    },
+    {
+      "source_product_id": "299179",
+      "goods_id": "6055049",
+      "style_id": "192037471",
+      "source_article": "FV6372",
+      "source_title": "Reebok Classic Leather 'White Vector Red'",
+      "source_brand": "Reebok",
+      "donor_title": "Nike/耐克 Trail Repel梭织小脚纯色防水中腰拒水多口袋运动长裤 女装 FV6372",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Reebok Classic"
+    },
+    {
+      "source_product_id": "299447",
+      "goods_id": "5015581",
+      "style_id": "156537690",
+      "source_article": "DV8298",
+      "source_title": "Reebok Classic Leather RC 1.0 'Chalk Skull Grey'",
+      "source_brand": "Reebok",
+      "donor_title": "Nike/耐克 纯色开衩网状镂空条纹叠搭连衣裙 女装 DV8298",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Reebok Classic"
+    },
+    {
+      "source_product_id": "299987",
+      "goods_id": "9919365",
+      "style_id": "1182488264",
+      "source_article": "FZ5022",
+      "source_title": "Cardi B x Reebok Club C Toddler 'Instinct Red'",
+      "source_brand": "Reebok",
+      "donor_title": "Nike/耐克童装 系带合身束脚休闲长裤 中大童 FZ5022",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Club C"
+    },
+    {
+      "source_product_id": "301012",
+      "goods_id": "6274371",
+      "style_id": "222763922",
+      "source_article": "FZ5538",
+      "source_title": "Reebok Ever Road DMX 4 'Pure Grey'",
+      "source_brand": "Reebok",
+      "donor_title": "Nike/耐克童装 纯棉圆领套头落肩短袖T恤 女大童 FZ5538",
+      "donor_brand": "Nike/耐克",
+      "donor_model": "",
+      "source_family": "Ever Road"
+    },
+    {
+      "source_product_id": "298802",
+      "goods_id": "492942",
+      "style_id": "1554108",
+      "source_article": "3022594 001",
+      "source_title": "Reebok Charged Pursuit 2 'Black'",
+      "source_brand": "Reebok",
+      "donor_title": "Under Armour/安德玛 Charged Pursuit 2 健身训练 透气软底 轻便缓震 防滑耐磨 织物 运动 跑鞋",
+      "donor_brand": "Under Armour/安德玛",
+      "donor_model": "Charged Pursuit",
+      "source_family": "Charged Pursuit"
+    },
+    {
+      "source_product_id": "298803",
+      "goods_id": "492942",
+      "style_id": "1554108",
+      "source_article": "3022604 001",
+      "source_title": "Reebok Wmns Charged Pursuit 2 'Black'",
+      "source_brand": "Reebok",
+      "donor_title": "Under Armour/安德玛 Charged Pursuit 2 健身训练 透气软底 轻便缓震 防滑耐磨 织物 运动 跑鞋",
+      "donor_brand": "Under Armour/安德玛",
+      "donor_model": "Charged Pursuit",
+      "source_family": "Charged Pursuit"
+    },
+    {
+      "source_product_id": "299875",
+      "goods_id": "492942",
+      "style_id": "6255429",
+      "source_article": "3022594 005",
+      "source_title": "Reebok Charged Pursuit 2 'Black Gold'",
+      "source_brand": "Reebok",
+      "donor_title": "Under Armour/安德玛 Charged Pursuit 2 健身训练 透气软底 轻便缓震 防滑耐磨 织物 运动 跑鞋",
+      "donor_brand": "Under Armour/安德玛",
+      "donor_model": "Charged Pursuit",
+      "source_family": "Charged Pursuit"
+    },
+    {
+      "source_product_id": "310245",
+      "goods_id": "6112990",
+      "style_id": "911868822",
+      "source_article": "13070",
+      "source_title": "Timberland Field Boot 'Wheat'",
+      "source_brand": "Timberland",
+      "donor_title": "Rains Box Bag Micro 超小型运动包斜挎包",
+      "donor_brand": "Rains",
+      "donor_model": "",
+      "source_family": "Field Boot"
+    },
+    {
+      "source_product_id": "315337",
+      "goods_id": "605602",
+      "style_id": "4478284",
+      "source_article": "DV8569",
+      "source_title": "Under Armour Torch Hex 'White Chalk'",
+      "source_brand": "Under Armour",
+      "donor_title": "Reebok/锐步 Torch Hex 复古 耐磨 运动休闲鞋",
+      "donor_brand": "Reebok/锐步",
+      "donor_model": "",
+      "source_family": "Torch"
+    },
+    {
+      "source_product_id": "271262",
+      "goods_id": "1968081",
+      "style_id": "42081024",
+      "source_article": "VN0A4BVQRGR",
+      "source_title": "Vans Old Skool 36 DX 'Anaheim Factory - Velvet Floral'",
+      "source_brand": "Vans",
+      "donor_title": "Vision Street Wear Push Pro 翻毛皮 时尚潮流 防滑耐磨 帆布鞋",
+      "donor_brand": "Vision Street Wear",
+      "donor_model": "Push Pro",
+      "source_family": "Old Skool"
+    },
+    {
+      "source_product_id": "3",
+      "goods_id": "5703130",
+      "style_id": "181234168",
+      "source_article": "YZYPODBLK",
+      "source_title": "YZY Pod 'Black'",
+      "source_brand": "YZY",
+      "donor_title": "平底 套筒 圆头 高筒 时装靴",
+      "donor_brand": "其他",
+      "donor_model": "",
+      "source_family": "Yeezy Pod"
+    }
+  ],
+  "brandPairs": [
+    {
+      "source_brand": "Nike",
+      "donor_brand": "Nike/耐克",
+      "count": 27476,
+      "sample_id": "54"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "adidas/阿迪达斯",
+      "count": 8705,
+      "sample_id": "100440"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "adidas Originals/三叶草",
+      "count": 7615,
+      "sample_id": "100431"
+    },
+    {
+      "source_brand": "Air Jordan",
+      "donor_brand": "Jordan Brand/乔丹",
+      "count": 7501,
+      "sample_id": "203382"
+    },
+    {
+      "source_brand": "New Balance",
+      "donor_brand": "New Balance",
+      "count": 4149,
+      "sample_id": "175467"
+    },
+    {
+      "source_brand": "ASICS",
+      "donor_brand": "Asics/亚瑟士",
+      "count": 3295,
+      "sample_id": "275675"
+    },
+    {
+      "source_brand": "Converse",
+      "donor_brand": "Converse/匡威",
+      "count": 3202,
+      "sample_id": "160885"
+    },
+    {
+      "source_brand": "Vans",
+      "donor_brand": "Vans/范斯",
+      "count": 2632,
+      "sample_id": "258822"
+    },
+    {
+      "source_brand": "Reebok",
+      "donor_brand": "Reebok/锐步",
+      "count": 1805,
+      "sample_id": "295928"
+    },
+    {
+      "source_brand": "Under Armour",
+      "donor_brand": "Under Armour/安德玛",
+      "count": 1804,
+      "sample_id": "313933"
+    },
+    {
+      "source_brand": "Onitsuka Tiger",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "count": 421,
+      "sample_id": "331536"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Y-3",
+      "count": 344,
+      "sample_id": "102730"
+    },
+    {
+      "source_brand": "Crocs",
+      "donor_brand": "Crocs/卡骆驰",
+      "count": 327,
+      "sample_id": "337800"
+    },
+    {
+      "source_brand": "ON",
+      "donor_brand": "On/昂跑",
+      "count": 319,
+      "sample_id": "256215"
+    },
+    {
+      "source_brand": "Mizuno",
+      "donor_brand": "Mizuno/美津浓",
+      "count": 316,
+      "sample_id": "328726"
+    },
+    {
+      "source_brand": "Gucci",
+      "donor_brand": "Gucci/古驰",
+      "count": 308,
+      "sample_id": "223103"
+    },
+    {
+      "source_brand": "Salomon",
+      "donor_brand": "Salomon/萨洛蒙",
+      "count": 250,
+      "sample_id": "322875"
+    },
+    {
+      "source_brand": "Saucony",
+      "donor_brand": "Saucony/索康尼",
+      "count": 242,
+      "sample_id": "289949"
+    },
+    {
+      "source_brand": "Curry Brand",
+      "donor_brand": "Under Armour/安德玛",
+      "count": 166,
+      "sample_id": "341907"
+    },
+    {
+      "source_brand": "HOKA",
+      "donor_brand": "HOKA ONE ONE",
+      "count": 159,
+      "sample_id": "339541"
+    },
+    {
+      "source_brand": "UGG",
+      "donor_brand": "UGG",
+      "count": 114,
+      "sample_id": "333833"
+    },
+    {
+      "source_brand": "Dr. Martens",
+      "donor_brand": "Dr. Martens",
+      "count": 96,
+      "sample_id": "326180"
+    },
+    {
+      "source_brand": "Merrell",
+      "donor_brand": "Merrell/迈乐",
+      "count": 88,
+      "sample_id": "336395"
+    },
+    {
+      "source_brand": "Air Jordan",
+      "donor_brand": "Nike/耐克",
+      "count": 52,
+      "sample_id": "206351"
+    },
+    {
+      "source_brand": "Amiri",
+      "donor_brand": "AMIRI",
+      "count": 38,
+      "sample_id": "171717"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Nike/耐克",
+      "count": 28,
+      "sample_id": "106281"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "Jordan Brand/乔丹",
+      "count": 27,
+      "sample_id": "40087"
+    },
+    {
+      "source_brand": "The North Face",
+      "donor_brand": "TheNorthFace/北面",
+      "count": 27,
+      "sample_id": "100118"
+    },
+    {
+      "source_brand": "Fila",
+      "donor_brand": "FILA/斐乐",
+      "count": 21,
+      "sample_id": "294870"
+    },
+    {
+      "source_brand": "Timberland",
+      "donor_brand": "Timberland/添柏岚",
+      "count": 19,
+      "sample_id": "309438"
+    },
+    {
+      "source_brand": "Louis Vuitton",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "count": 18,
+      "sample_id": "228300"
+    },
+    {
+      "source_brand": "Givenchy",
+      "donor_brand": "Givenchy/纪梵希",
+      "count": 17,
+      "sample_id": "252951"
+    },
+    {
+      "source_brand": "ASICS",
+      "donor_brand": "Onitsuka Tiger/鬼塚虎",
+      "count": 15,
+      "sample_id": "276189"
+    },
+    {
+      "source_brand": "Birkenstock",
+      "donor_brand": "Birkenstock",
+      "count": 14,
+      "sample_id": "257871"
+    },
+    {
+      "source_brand": "Puma",
+      "donor_brand": "Puma/彪马",
+      "count": 13,
+      "sample_id": "233758"
+    },
+    {
+      "source_brand": "Gucci",
+      "donor_brand": "adidas Originals/三叶草",
+      "count": 10,
+      "sample_id": "224186"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Louis Vuitton/路易威登",
+      "count": 7,
+      "sample_id": "100524"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Jordan Brand/乔丹",
+      "count": 6,
+      "sample_id": "115854"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "adidas/阿迪达斯",
+      "count": 6,
+      "sample_id": "39227"
+    },
+    {
+      "source_brand": "Karhu",
+      "donor_brand": "KARHU",
+      "count": 6,
+      "sample_id": "325659"
+    },
+    {
+      "source_brand": "Alexander McQueen",
+      "donor_brand": "Alexander McQueen/亚历山大麦昆",
+      "count": 5,
+      "sample_id": "199069"
+    },
+    {
+      "source_brand": "Reebok",
+      "donor_brand": "Nike/耐克",
+      "count": 5,
+      "sample_id": "298019"
+    },
+    {
+      "source_brand": "BAPE",
+      "donor_brand": "Bape/猿人头",
+      "count": 5,
+      "sample_id": "159505"
+    },
+    {
+      "source_brand": "Off-White",
+      "donor_brand": "OFF-WHITE",
+      "count": 5,
+      "sample_id": "254477"
+    },
+    {
+      "source_brand": "Puma",
+      "donor_brand": "Reebok/锐步",
+      "count": 3,
+      "sample_id": "248497"
+    },
+    {
+      "source_brand": "Brooks",
+      "donor_brand": "Brooks/布鲁克斯",
+      "count": 3,
+      "sample_id": "307576"
+    },
+    {
+      "source_brand": "Burberry",
+      "donor_brand": "Burberry/博柏利",
+      "count": 3,
+      "sample_id": "255874"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Converse/匡威",
+      "count": 3,
+      "sample_id": "112679"
+    },
+    {
+      "source_brand": "Clarks Originals",
+      "donor_brand": "Clarks/其乐",
+      "count": 3,
+      "sample_id": "332792"
+    },
+    {
+      "source_brand": "Reebok",
+      "donor_brand": "Under Armour/安德玛",
+      "count": 3,
+      "sample_id": "298802"
+    },
+    {
+      "source_brand": "Anta",
+      "donor_brand": "Anta/安踏",
+      "count": 3,
+      "sample_id": "324762"
+    },
+    {
+      "source_brand": "BAPE",
+      "donor_brand": "TUCANO/啄木鸟",
+      "count": 2,
+      "sample_id": "158886"
+    },
+    {
+      "source_brand": "Li-Ning",
+      "donor_brand": "Li Ning/李宁",
+      "count": 2,
+      "sample_id": "327782"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Simple&nature",
+      "count": 2,
+      "sample_id": "127899"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "adidas Originals/三叶草",
+      "count": 2,
+      "sample_id": "64653"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "Reebok/锐步",
+      "count": 2,
+      "sample_id": "53206"
+    },
+    {
+      "source_brand": "Chanel",
+      "donor_brand": "Chanel/香奈儿",
+      "count": 2,
+      "sample_id": "335184"
+    },
+    {
+      "source_brand": "Birkenstock",
+      "donor_brand": "KEEN/科恩",
+      "count": 2,
+      "sample_id": "257894"
+    },
+    {
+      "source_brand": "Balenciaga",
+      "donor_brand": "Balenciaga/巴黎世家",
+      "count": 2,
+      "sample_id": "226198"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Feiyue/飞跃",
+      "count": 2,
+      "sample_id": "121098"
+    },
+    {
+      "source_brand": "Golden Goose",
+      "donor_brand": "GOLDEN GOOSE",
+      "count": 2,
+      "sample_id": "335912"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Ginoble/基诺浦",
+      "count": 2,
+      "sample_id": "132514"
+    },
+    {
+      "source_brand": "Bottega Veneta",
+      "donor_brand": "Bottega Veneta/葆蝶家",
+      "count": 2,
+      "sample_id": "174323"
+    },
+    {
+      "source_brand": "Fendi",
+      "donor_brand": "FENDI/芬迪",
+      "count": 2,
+      "sample_id": "255610"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "吕小虎",
+      "count": 1,
+      "sample_id": "141042"
+    },
+    {
+      "source_brand": "Moncler",
+      "donor_brand": "Moncler/盟可睐",
+      "count": 1,
+      "sample_id": "156122"
+    },
+    {
+      "source_brand": "Puma",
+      "donor_brand": "adidas/阿迪达斯",
+      "count": 1,
+      "sample_id": "238374"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "DEERWAY/德尔惠",
+      "count": 1,
+      "sample_id": "108477"
+    },
+    {
+      "source_brand": "Comme des Garçons",
+      "donor_brand": "Asics/亚瑟士",
+      "count": 1,
+      "sample_id": "201150"
+    },
+    {
+      "source_brand": "Reebok",
+      "donor_brand": "GEM",
+      "count": 1,
+      "sample_id": "300223"
+    },
+    {
+      "source_brand": "Under Armour",
+      "donor_brand": "Reebok/锐步",
+      "count": 1,
+      "sample_id": "315337"
+    },
+    {
+      "source_brand": "Diadora",
+      "donor_brand": "Diadora/迪亚多纳",
+      "count": 1,
+      "sample_id": "313602"
+    },
+    {
+      "source_brand": "New Balance",
+      "donor_brand": "Warrior/回力",
+      "count": 1,
+      "sample_id": "176608"
+    },
+    {
+      "source_brand": "Palm Angels",
+      "donor_brand": "Palm Angels/棕榈天使",
+      "count": 1,
+      "sample_id": "229067"
+    },
+    {
+      "source_brand": "YZY",
+      "donor_brand": "其他",
+      "count": 1,
+      "sample_id": "3"
+    },
+    {
+      "source_brand": "Vans",
+      "donor_brand": "Vision Street Wear",
+      "count": 1,
+      "sample_id": "271262"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Mark Fairwhale/马克华菲",
+      "count": 1,
+      "sample_id": "115261"
+    },
+    {
+      "source_brand": "MSCHF",
+      "donor_brand": "Crocs/卡骆驰",
+      "count": 1,
+      "sample_id": "333156"
+    },
+    {
+      "source_brand": "Reebok",
+      "donor_brand": "Emporio Armani/阿玛尼",
+      "count": 1,
+      "sample_id": "297493"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "Asics/亚瑟士",
+      "count": 1,
+      "sample_id": "81509"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Gucci/古驰",
+      "count": 1,
+      "sample_id": "136918"
+    },
+    {
+      "source_brand": "Timberland",
+      "donor_brand": "Rains",
+      "count": 1,
+      "sample_id": "310245"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "CHARLES&KEITH",
+      "count": 1,
+      "sample_id": "79769"
+    },
+    {
+      "source_brand": "MSCHF",
+      "donor_brand": "MSCHF",
+      "count": 1,
+      "sample_id": "333151"
+    },
+    {
+      "source_brand": "Prada",
+      "donor_brand": "Prada/普拉达",
+      "count": 1,
+      "sample_id": "157991"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Vans/范斯",
+      "count": 1,
+      "sample_id": "112805"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Reebok/锐步",
+      "count": 1,
+      "sample_id": "123213"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Champion/冠军",
+      "count": 1,
+      "sample_id": "117848"
+    },
+    {
+      "source_brand": "Puma",
+      "donor_brand": "adidas Originals/三叶草",
+      "count": 1,
+      "sample_id": "231097"
+    },
+    {
+      "source_brand": "ASICS",
+      "donor_brand": "361°/361度",
+      "count": 1,
+      "sample_id": "282179"
+    },
+    {
+      "source_brand": "Nike",
+      "donor_brand": "PCLP/PERCLIPS",
+      "count": 1,
+      "sample_id": "32563"
+    },
+    {
+      "source_brand": "Mizuno",
+      "donor_brand": "Nike/耐克",
+      "count": 1,
+      "sample_id": "329475"
+    },
+    {
+      "source_brand": "Versace",
+      "donor_brand": "Versace/范思哲",
+      "count": 1,
+      "sample_id": "202911"
+    },
+    {
+      "source_brand": "Air Jordan",
+      "donor_brand": "Running River/奔流",
+      "count": 1,
+      "sample_id": "204131"
+    },
+    {
+      "source_brand": "Air Jordan",
+      "donor_brand": "adidas Originals/三叶草",
+      "count": 1,
+      "sample_id": "209727"
+    },
+    {
+      "source_brand": "Converse",
+      "donor_brand": "Skechers/斯凯奇",
+      "count": 1,
+      "sample_id": "161041"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "Balenciaga/巴黎世家",
+      "count": 1,
+      "sample_id": "133664"
+    },
+    {
+      "source_brand": "Rhude",
+      "donor_brand": "Rhude",
+      "count": 1,
+      "sample_id": "158580"
+    },
+    {
+      "source_brand": "MSCHF",
+      "donor_brand": "Reebok/锐步",
+      "count": 1,
+      "sample_id": "333160"
+    },
+    {
+      "source_brand": "Dc",
+      "donor_brand": "DC Shoes",
+      "count": 1,
+      "sample_id": "322511"
+    },
+    {
+      "source_brand": "adidas",
+      "donor_brand": "悦内",
+      "count": 1,
+      "sample_id": "114857"
+    }
+  ],
+  "confirmedRejectedSourceProductIds": [
+    "127899",
+    "137175"
+  ],
+  "note": "Несовпадение бренда не является доказательством ошибки связи. Остальные расхождения не исключены автоматически. Связи Simple&nature отклонены по явному несовпадению товара; сохранённые ценовые варианты отсутствовали."
+}

@@ -1,5 +1,8 @@
 import type { EntityId } from "../contracts/index.js";
 
+// Explicit audit rejection, not an automatic comparison of differently named brands.
+export const SHIHUO_IDENTITY_REJECTED = "SHIHUO_IDENTITY_REJECTED";
+
 export type ShihuoResolutionStatus = "pending" | "resolved" | "not_found" | "article_mismatch" | "temporarily_blocked" | "failed";
 
 export interface ShihuoProductLink {

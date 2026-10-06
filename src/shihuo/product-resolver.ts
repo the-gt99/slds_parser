@@ -5,6 +5,7 @@ import { normalizeShihuoArticle, shihuoArticlesMatch } from "./product-parser.js
 import { ShihuoProductClient, ShihuoRiskError, ShihuoSearchClient } from "./product-clients.js";
 import { ShihuoGuestSessionPool } from "./guest-session-pool.js";
 import type { ShihuoProductCard, ShihuoProductLinkRepository, ShihuoResolutionResult } from "./product-types.js";
+import { SHIHUO_IDENTITY_REJECTED } from "./product-types.js";
 
 function normalizeShihuoRequestError(error: unknown): unknown {
   if (error instanceof RetryableError) return error;
@@ -31,6 +32,11 @@ export class ShihuoProductResolver {
   async resolveProductByArticle(input: { readonly sourceProductId: EntityId; readonly article: string }): Promise<ShihuoResolutionResult> {
     const normalized = normalizeShihuoArticle(input.article);
     const existing = await this.links.get(input.sourceProductId);
+    if (existing?.status === "article_mismatch" && existing.normalizedArticle === normalized
+      && existing.lastErrorCode === SHIHUO_IDENTITY_REJECTED) {
+      return { status: "article_mismatch", sourceProductId: input.sourceProductId, article: input.article,
+        errorCode: SHIHUO_IDENTITY_REJECTED };
+    }
     if (existing?.status === "resolved" && existing.normalizedArticle === normalized && existing.goodsId && existing.styleId) {
       return { status: "resolved", sourceProductId: input.sourceProductId, article: input.article, goodsId: existing.goodsId, styleId: existing.styleId };
     }

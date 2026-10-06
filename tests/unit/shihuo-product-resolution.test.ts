@@ -86,6 +86,47 @@ describe("Shihuo product resolution", () => {
     expect(search.searchAll).not.toHaveBeenCalled();
   });
 
+  it("does not rediscover an explicitly rejected identity for the same article", async () => {
+    const rejected = { ...resolvedLink(), status: "article_mismatch", goodsId: null, styleId: null,
+      lastErrorCode: "SHIHUO_IDENTITY_REJECTED" };
+    const links = { get: vi.fn().mockResolvedValue(rejected), savePending: vi.fn() };
+    const sessions = { acquire: vi.fn() };
+    const search = { searchAll: vi.fn() };
+    const resolver = new ShihuoProductResolver(sessions as never, search as never, {} as never,
+      links as never, {} as never, 1100);
+
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "dr0092 001" }))
+      .resolves.toMatchObject({ status: "article_mismatch", errorCode: "SHIHUO_IDENTITY_REJECTED" });
+    expect(sessions.acquire).not.toHaveBeenCalled();
+    expect(search.searchAll).not.toHaveBeenCalled();
+    expect(links.savePending).not.toHaveBeenCalled();
+  });
+
+  it("allows a new search when the rejected product article changes", async () => {
+    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status: "article_mismatch",
+      lastErrorCode: "SHIHUO_IDENTITY_REJECTED" }), savePending: vi.fn(), saveOutcome: vi.fn() };
+    const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
+    const search = { searchAll: vi.fn().mockResolvedValue([]) };
+    const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
+      search as never, {} as never, links as never, {} as never, 1100);
+
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "NEW-001" }))
+      .resolves.toMatchObject({ status: "not_found" });
+    expect(search.searchAll).toHaveBeenCalledOnce();
+    expect(links.savePending).toHaveBeenCalledWith("1", "NEW-001", "NEW001");
+  });
+
+  it("does not fetch a card for an explicitly rejected link", async () => {
+    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status: "article_mismatch",
+      goodsId: null, styleId: null, lastErrorCode: "SHIHUO_IDENTITY_REJECTED" }) };
+    const products = { fetch: vi.fn() };
+    const resolver = new ShihuoProductResolver({} as never, {} as never, products as never,
+      links as never, {} as never, 1100);
+
+    await expect(resolver.fetchResolvedProductCard({ sourceProductId: "1" })).rejects.toThrow("Resolved Shihuo product");
+    expect(products.fetch).not.toHaveBeenCalled();
+  });
+
   it("fetches a saved card without repeating search", async () => {
     const search = { searchAll: vi.fn() }; const products = { fetch: vi.fn().mockResolvedValue(card()) };
     const lease = { success: vi.fn(), fail: vi.fn() }; const links = { get: vi.fn().mockResolvedValue(resolvedLink()), touchCard: vi.fn(), saveCard: vi.fn() };
