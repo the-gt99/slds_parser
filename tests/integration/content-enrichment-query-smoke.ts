@@ -35,5 +35,19 @@ try {
   assert.equal((await repo.save({ ...input,cleanedText: "changed" })).cleanedText,input.cleanedText);
   assert.equal(await repo.apply({ enrichmentId: record.id,internalProductId: "1",expectedContentHash: "after",data: validProduct(),contentHash: "unwanted",translatedText: "Повтор" }),false);
   assert.equal((await db.query("SELECT content_hash FROM internal_products WHERE id=1")).rows[0].content_hash,"after");
+  await db.exec(`CREATE TABLE shihuo_product_links(source_product_id BIGINT,status TEXT,goods_id TEXT,style_id TEXT);
+    CREATE TABLE rules_v2_workbench_items(source_product_id BIGINT,source_id BIGINT,target_id BIGINT,title TEXT,issue_count INT,issue_codes TEXT[]);
+    CREATE TABLE target_products(internal_product_id BIGINT,target_id BIGINT);
+    INSERT INTO shihuo_product_links VALUES(2,'resolved','1','2');
+    INSERT INTO rules_v2_workbench_items VALUES(2,1,1,'Product',1,ARRAY['description_missing']);
+    UPDATE internal_products SET data='{"description":"","attributes":{}}';
+    DELETE FROM product_content_enrichments;`);
+  const cli = await readFile(new URL("../../src/cli/shihuo-descriptions.ts",import.meta.url),"utf8");
+  const candidateQuery = /client\.query\(`(WITH links[\s\S]*?)`,/u.exec(cli)?.[1];
+  assert.ok(candidateQuery);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0"])).rows[0].candidates.length,1);
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"2"])).rows[0].cursor,null);
+  await db.exec("INSERT INTO target_products VALUES(1,1)");
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0"])).rows[0].candidates.length,0);
   console.info(JSON.stringify({ passed: true,migration: true,atomicJobs: true,cas: true,replayRollback: true,appliedPreserved: true }));
 } finally { await db.close(); }
