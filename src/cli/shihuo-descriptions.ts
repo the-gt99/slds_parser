@@ -38,6 +38,7 @@ try {
         WHERE w.source_id=$1 AND w.target_id=$2
       AND w.issue_codes @> ARRAY['description_missing']::TEXT[]
       AND NOT EXISTS(SELECT 1 FROM target_products t WHERE t.internal_product_id=i.id AND t.target_id=$2)
+      AND (NOT $6::BOOLEAN OR NOT EXISTS(SELECT 1 FROM target_product_snapshots s WHERE s.target_id=$2 AND s.source_product_id=l.source_product_id))
       AND (NOT $6::BOOLEAN OR NOT EXISTS(
         SELECT 1 FROM wordpress_catalog_run_items c JOIN wordpress_catalog_runs r ON r.id=c.run_id
         WHERE r.target_id=$2 AND c.source_product_id=l.source_product_id AND c.match_status='matched'))
@@ -51,9 +52,10 @@ try {
         SELECT e.source_product_id,e.title,e.issue_count,e.goods_id,e.style_id
         FROM eligible e JOIN internal_products i ON i.id=e.internal_product_id
         CROSS JOIN LATERAL jsonb_to_record(i.data)
-          AS content(description TEXT,sku TEXT,attributes JSONB,"translatedContent" JSONB)
+          AS content(description TEXT,sku TEXT,variants JSONB,images JSONB,attributes JSONB,"translatedContent" JSONB)
         WHERE btrim(COALESCE(content.description,''))=''
           AND (NOT $7::BOOLEAN OR btrim(COALESCE(content.sku,''))<>'')
+          AND (NOT $7::BOOLEAN OR (jsonb_array_length(content.variants)>0 AND jsonb_array_length(content.images)>0))
           AND btrim(COALESCE(content.attributes->>'story',''))=''
           AND btrim(COALESCE(content."translatedContent"->>'description',''))=''
           AND btrim(COALESCE(content."translatedContent"->>'story',''))=''
@@ -71,7 +73,8 @@ try {
   if (process.argv.includes("--apply")) {
     for (let offset=0;offset<rows.length;offset+=100) await application.repositories.jobs.enqueueMany(rows.slice(offset,offset+100).map((row) => ({
       jobType: "collect_product_content",payload: { sourceProductId: String(row.source_product_id),donorCode: "shihuo",
-        ...(resolveMissing ? { resolveIfMissing: true } : {}) },
+        ...(resolveMissing ? { resolveIfMissing: true } : {}),
+        ...(process.argv.includes("--new-only") ? { newProductTargetId: targetId } : {}) },
       uniqueKey: `source-product:${row.source_product_id}:content:shihuo`,
     })));
   }

@@ -31,12 +31,14 @@ export interface RetranslateProductPayload {
 
 export interface ResolveShihuoProductPayload { readonly sourceProductId: string; }
 
-export function parseCollectProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean } {
+export function parseCollectProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean; readonly newProductTargetId?: string } {
   if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)
     && typeof value.donorCode === "string" && /^[a-z][a-z0-9_-]*$/u.test(value.donorCode)
-    && (value.resolveIfMissing === undefined || typeof value.resolveIfMissing === "boolean")) {
+    && (value.resolveIfMissing === undefined || typeof value.resolveIfMissing === "boolean")
+    && (value.newProductTargetId === undefined || typeof value.newProductTargetId === "string" && /^\d+$/u.test(value.newProductTargetId))) {
     return { sourceProductId: value.sourceProductId, donorCode: value.donorCode,
-      ...(value.resolveIfMissing === undefined ? {} : { resolveIfMissing: value.resolveIfMissing }) };
+      ...(value.resolveIfMissing === undefined ? {} : { resolveIfMissing: value.resolveIfMissing }),
+      ...(value.newProductTargetId === undefined ? {} : { newProductTargetId: value.newProductTargetId }) };
   }
   throw new InvalidJobPayloadError("collect_product_content");
 }

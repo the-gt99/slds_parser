@@ -13,6 +13,7 @@ import { EcbShihuoCurrencyConverter, PersistentShihuoSigner, ShihuoGuestSessionP
 import { PostgresContentEnrichmentRepository } from "./infrastructure/db/repositories/postgres-content-enrichment-repository.js";
 import { ApplyContentEnrichmentOperation } from "./processing/operations/apply-content-enrichment-operation.js";
 import { ContentEnrichmentRunner, type ProductContentDonor } from "./application/content-enrichment-runner.js";
+import { hashStableJson } from "./core/utils/index.js";
 import { ShihuoDescriptionDonor } from "./shihuo/description-donor.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
@@ -132,7 +133,23 @@ export function createApplication(environment: ApplicationEnvironment = process.
   if (shihuoResolver !== undefined) contentDonors.set("shihuo", new ShihuoDescriptionDonor(shihuoResolver,
     new PostgresShihuoProductLinkRepository(pool),processingConfig.translation.targetLocale));
   const contentEnrichmentRunner = new ContentEnrichmentRunner(repositories.internalProducts,contentEnrichments,contentDonors,
-    new CachedTranslationProvider(createTranslationProvider(processingConfig.translation),translationCache));
+    new CachedTranslationProvider(createTranslationProvider(processingConfig.translation),translationCache),
+    async (sourceProductId,targetId) => {
+      const target = await repositories.targets.getById(targetId);
+      const product = await repositories.sourceProducts.getById(sourceProductId);
+      const source = product === null ? null : await repositories.sources.getById(product.sourceId);
+      if (wordpress === null || target?.exporterCode !== "wordpress" || !product?.externalId || !source) {
+        throw new Error("Content eligibility requires a configured target and source identity");
+      }
+      const [remote] = await new WordPressProductSnapshotReader(wordpress).read(source.code,[product.externalId]);
+      if (!remote || remote.errorCode) throw new Error("Content eligibility lookup did not return a confirmed result");
+      if (!remote.found) return true;
+      if (!remote.externalId || !remote.snapshot) throw new Error("Content eligibility returned an incomplete existing product");
+      await repositories.targets.saveProductSnapshot({ targetId,sourceProductId,externalId: remote.externalId,
+        sourceExternalId: product.externalId,payload: remote.snapshot,contentHash: hashStableJson(remote.snapshot),
+        fetchedAt: new Date().toISOString() });
+      return false;
+    });
   const exportControl = new PostgresExportControlRepository(pool);
   const exportCampaigns = new ExportControlService(exportControl, repositories.jobs, workerOptions.exportConcurrency ?? 1);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);

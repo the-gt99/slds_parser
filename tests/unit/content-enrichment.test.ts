@@ -124,6 +124,20 @@ describe("content enrichment", () => {
     await expect(s.runner.translate({ sourceProductId: "2",enrichmentId: "1" })).resolves.toEqual({ status: "completed" });
     expect(s.repo.apply).toHaveBeenCalledWith(expect.objectContaining({ expectedContentHash: "before",translatedText: russian }));
   });
+  it("checks the live target before searching and skips existing products", async () => {
+    const s = await setup();
+    const store = new MemoryStore(); seedProduct(store);
+    const products = createMemoryRepositories(store).internalProducts;
+    await products.upsert({ sourceProductId: "2",data: product,inputHash: "input",contentHash: "before",processorVersion: "1",status: "classified" });
+    const eligible = vi.fn(async () => false);
+    const runner = new ContentEnrichmentRunner(products,s.repo,new Map([[s.donor.code,s.donor]]),{ code: "test",version: "1",translate: s.translate },eligible);
+    expect(await runner.collect({ sourceProductId: "2",donorCode: "shihuo",resolveIfMissing: true,newProductTargetId: "1" })).toEqual({ status: "skipped" });
+    expect(eligible).toHaveBeenCalledWith("2","1");
+    expect(s.donor.collect).not.toHaveBeenCalled();
+    eligible.mockResolvedValue(true);
+    await runner.collect({ sourceProductId: "2",donorCode: "shihuo",resolveIfMissing: true,newProductTargetId: "1" });
+    expect(s.donor.collect).toHaveBeenCalledWith(product,{ resolveIfMissing: true });
+  });
   it("rechecks identity after translation and leaves a revoked link untouched", async () => {
     const s = await setup(); vi.mocked(s.donor.validate).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     expect(await s.runner.translate({ sourceProductId: "2",enrichmentId: "1" })).toEqual({ status: "skipped" });

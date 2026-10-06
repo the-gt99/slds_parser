@@ -17,11 +17,16 @@ export interface ProductContentDonor {
 
 export class ContentEnrichmentRunner {
   constructor(private readonly products: InternalProductRepository, private readonly repository: ContentEnrichmentRepository,
-    private readonly donors: ReadonlyMap<string, ProductContentDonor>, private readonly translation: TextTranslationProvider) {}
-  async collect(payload: { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean }): Promise<RunnerResult> {
+    private readonly donors: ReadonlyMap<string, ProductContentDonor>, private readonly translation: TextTranslationProvider,
+    private readonly isNewTargetProduct?: (sourceProductId: string,targetId: string) => Promise<boolean>) {}
+  async collect(payload: { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean; readonly newProductTargetId?: string }): Promise<RunnerResult> {
     const product = await this.products.findBySourceProductId(payload.sourceProductId);
     if (!product) throw new EntityNotFoundError("Internal product", payload.sourceProductId);
     if (hasDescription(product.data)) return { status: "skipped" };
+    if (payload.newProductTargetId !== undefined) {
+      if (!this.isNewTargetProduct) throw new IntegrationContractError("Content target eligibility is not configured");
+      if (!await this.isNewTargetProduct(payload.sourceProductId,payload.newProductTargetId)) return { status: "skipped" };
+    }
     const donor = this.donors.get(payload.donorCode);
     if (!donor) throw new IntegrationContractError("Content donor is not configured");
     const record = payload.resolveIfMissing === true
