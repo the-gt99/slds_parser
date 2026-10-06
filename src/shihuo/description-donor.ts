@@ -68,15 +68,23 @@ export class ShihuoDescriptionDonor implements ProductContentDonor {
   readonly version = "1.0.0";
   constructor(private readonly resolver: ShihuoProductResolver, private readonly links: ShihuoProductLinkRepository,
     private readonly targetLocale: string) {}
-  async collect(product: UniversalProductDTO): Promise<ReturnType<ProductContentDonor["collect"]> extends Promise<infer T> ? T : never> {
-    const link = await this.links.get(product.sourceProductId);
+  async collect(product: UniversalProductDTO, options?: { readonly resolveIfMissing: boolean }): Promise<ReturnType<ProductContentDonor["collect"]> extends Promise<infer T> ? T : never> {
+    let link = await this.links.get(product.sourceProductId);
     const base = { sourceProductId: product.sourceProductId,donorCode: this.code,article: product.sku ?? "",
       sourceLocale: "zh-CN",targetLocale: this.targetLocale,parserVersion: this.version };
+    let resolvedCard: ShihuoProductCard | undefined;
+    if (options?.resolveIfMissing === true && link?.status !== "resolved") {
+      const result = await this.resolver.resolveSourceProduct(product.sourceProductId);
+      if (result.status !== "resolved") return { ...base,donorProductKey: "",rawPayload: {},
+        cleanedText: "",status: "skipped",reason: `resolution_${result.status}` };
+      resolvedCard = result.card;
+      link = await this.links.get(product.sourceProductId);
+    }
     if (link?.status !== "resolved" || !link.goodsId || !link.styleId
       || normalizeShihuoArticle(link.sourceArticle) !== normalizeShihuoArticle(product.sku ?? "")) {
       return { ...base,donorProductKey: "",rawPayload: {},cleanedText: "",status: "skipped",reason: "unconfirmed_link" };
     }
-    const card = await this.resolver.fetchResolvedProductCard({ sourceProductId: product.sourceProductId });
+    const card = resolvedCard ?? await this.resolver.fetchResolvedProductCard({ sourceProductId: product.sourceProductId });
     const rawPayload: JsonObject = { product: card.structuredProduct ?? {}, title: card.title,brand: card.brand,
       model: card.model,article: card.article,attributes: card.attributes,detailUrl: card.detailUrl };
     const key = `${card.goodsId}:${card.styleId}`;

@@ -31,10 +31,12 @@ export interface RetranslateProductPayload {
 
 export interface ResolveShihuoProductPayload { readonly sourceProductId: string; }
 
-export function parseCollectProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly donorCode: string } {
+export function parseCollectProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean } {
   if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)
-    && typeof value.donorCode === "string" && /^[a-z][a-z0-9_-]*$/u.test(value.donorCode)) {
-    return { sourceProductId: value.sourceProductId, donorCode: value.donorCode };
+    && typeof value.donorCode === "string" && /^[a-z][a-z0-9_-]*$/u.test(value.donorCode)
+    && (value.resolveIfMissing === undefined || typeof value.resolveIfMissing === "boolean")) {
+    return { sourceProductId: value.sourceProductId, donorCode: value.donorCode,
+      ...(value.resolveIfMissing === undefined ? {} : { resolveIfMissing: value.resolveIfMissing }) };
   }
   throw new InvalidJobPayloadError("collect_product_content");
 }

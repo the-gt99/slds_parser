@@ -9,7 +9,7 @@ import type { RunnerResult } from "./runner-result.js";
 
 export interface ProductContentDonor {
   readonly code: string;
-  collect(product: UniversalProductDTO): Promise<Omit<ContentEnrichmentRecord,"id"|"status"|"translatedText"> & {
+  collect(product: UniversalProductDTO, options?: { readonly resolveIfMissing: boolean }): Promise<Omit<ContentEnrichmentRecord,"id"|"status"|"translatedText"> & {
     readonly status: "collected" | "skipped";
   }>;
   validate(product: UniversalProductDTO, record: ContentEnrichmentRecord): Promise<boolean>;
@@ -18,13 +18,14 @@ export interface ProductContentDonor {
 export class ContentEnrichmentRunner {
   constructor(private readonly products: InternalProductRepository, private readonly repository: ContentEnrichmentRepository,
     private readonly donors: ReadonlyMap<string, ProductContentDonor>, private readonly translation: TextTranslationProvider) {}
-  async collect(payload: { readonly sourceProductId: string; readonly donorCode: string }): Promise<RunnerResult> {
+  async collect(payload: { readonly sourceProductId: string; readonly donorCode: string; readonly resolveIfMissing?: boolean }): Promise<RunnerResult> {
     const product = await this.products.findBySourceProductId(payload.sourceProductId);
     if (!product) throw new EntityNotFoundError("Internal product", payload.sourceProductId);
     if (hasDescription(product.data)) return { status: "skipped" };
     const donor = this.donors.get(payload.donorCode);
     if (!donor) throw new IntegrationContractError("Content donor is not configured");
-    const record = await donor.collect(product.data);
+    const record = payload.resolveIfMissing === true
+      ? await donor.collect(product.data,{ resolveIfMissing: true }) : await donor.collect(product.data);
     await this.repository.save(record);
     return { status: record.status === "skipped" ? "skipped" : "completed" };
   }

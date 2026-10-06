@@ -7,6 +7,8 @@ const limit = Number(option("--limit") ?? "3");
 const targetId = option("--target-id");
 const sourceId = option("--source-id");
 const onlyProduct = option("--source-product-id") ?? null;
+const resolveMissing = process.argv.includes("--resolve-missing");
+if (resolveMissing && !process.argv.includes("--new-only")) throw new Error("--resolve-missing requires --new-only");
 if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10000 || !targetId || !/^\d+$/u.test(targetId)
   || !sourceId || !/^\d+$/u.test(sourceId) || onlyProduct !== null && !/^\d+$/u.test(onlyProduct)) {
   throw new Error("Provide numeric --source-id, --target-id and --limit 1..10000");
@@ -22,10 +24,13 @@ try {
       // Bound each read before joining large DTOs. Keyset pagination avoids a
       // full-catalog sort and never holds locks across the whole cohort.
       const page = (await client.query(`WITH links AS MATERIALIZED (
-        SELECT source_product_id,goods_id,style_id FROM shihuo_product_links
-        WHERE status='resolved' AND source_product_id>$5::BIGINT
-          AND ($4::BIGINT IS NULL OR source_product_id=$4)
-        ORDER BY source_product_id LIMIT 200
+        SELECT w.source_product_id,l.goods_id,l.style_id FROM rules_v2_workbench_items w
+        LEFT JOIN shihuo_product_links l USING(source_product_id)
+        WHERE w.source_id=$1 AND w.target_id=$2 AND w.issue_codes @> ARRAY['description_missing']::TEXT[]
+          AND w.source_product_id>$5::BIGINT
+          AND (($7::BOOLEAN AND l.source_product_id IS NULL) OR (NOT $7::BOOLEAN AND l.status='resolved'))
+          AND ($4::BIGINT IS NULL OR w.source_product_id=$4)
+        ORDER BY w.source_product_id LIMIT 200
       ), eligible AS MATERIALIZED (
         SELECT w.source_product_id,w.title,w.issue_count,l.goods_id,l.style_id,i.id AS internal_product_id
         FROM links l JOIN internal_products i USING(source_product_id)
@@ -46,15 +51,16 @@ try {
         SELECT e.source_product_id,e.title,e.issue_count,e.goods_id,e.style_id
         FROM eligible e JOIN internal_products i ON i.id=e.internal_product_id
         CROSS JOIN LATERAL jsonb_to_record(i.data)
-          AS content(description TEXT,attributes JSONB,"translatedContent" JSONB)
+          AS content(description TEXT,sku TEXT,attributes JSONB,"translatedContent" JSONB)
         WHERE btrim(COALESCE(content.description,''))=''
+          AND (NOT $7::BOOLEAN OR btrim(COALESCE(content.sku,''))<>'')
           AND btrim(COALESCE(content.attributes->>'story',''))=''
           AND btrim(COALESCE(content."translatedContent"->>'description',''))=''
           AND btrim(COALESCE(content."translatedContent"->>'story',''))=''
       ) SELECT (SELECT MAX(source_product_id)::TEXT FROM links) AS cursor,
         COALESCE((SELECT jsonb_agg(candidate) FROM (SELECT * FROM candidates
           ORDER BY issue_count,source_product_id LIMIT $3) candidate),'[]'::JSONB) AS candidates`,
-      [sourceId,targetId,limit-rows.length,onlyProduct,cursor,process.argv.includes("--new-only")])).rows[0];
+      [sourceId,targetId,limit-rows.length,onlyProduct,cursor,process.argv.includes("--new-only"),resolveMissing])).rows[0];
       if (!page?.cursor) break;
       rows.push(...page.candidates as Record<string,unknown>[]);
       cursor = String(page.cursor);
@@ -64,7 +70,8 @@ try {
   }
   if (process.argv.includes("--apply")) {
     for (let offset=0;offset<rows.length;offset+=100) await application.repositories.jobs.enqueueMany(rows.slice(offset,offset+100).map((row) => ({
-      jobType: "collect_product_content",payload: { sourceProductId: String(row.source_product_id),donorCode: "shihuo" },
+      jobType: "collect_product_content",payload: { sourceProductId: String(row.source_product_id),donorCode: "shihuo",
+        ...(resolveMissing ? { resolveIfMissing: true } : {}) },
       uniqueKey: `source-product:${row.source_product_id}:content:shihuo`,
     })));
   }
