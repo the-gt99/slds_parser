@@ -49,6 +49,9 @@ try {
   const candidateQuery = /client\.query\(`(WITH links[\s\S]*?)`,/u.exec(cli)?.[1];
   assert.ok(candidateQuery);
   assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,1);
+  await db.exec("INSERT INTO jobs(job_type,payload,status,unique_key) VALUES('collect_product_content','{\"sourceProductId\":\"2\"}','pending','source-product:2:content:shihuo')");
+  assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,0);
+  await db.exec("DELETE FROM jobs WHERE job_type='collect_product_content'");
   assert.equal((await db.query(candidateQuery,[1,1,3,null,"2",true])).rows[0].cursor,null);
   await db.exec("INSERT INTO wordpress_catalog_runs VALUES(4,1); INSERT INTO wordpress_catalog_run_items VALUES(4,2,'matched')");
   assert.equal((await db.query(candidateQuery,[1,1,3,null,"0",true])).rows[0].candidates.length,0);

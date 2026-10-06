@@ -45,7 +45,7 @@ try {
         WHERE p.target_id=$2 AND p.internal_product_id=i.id AND p.will_create=FALSE AND p.external_id IS NOT NULL))
       AND NOT EXISTS(SELECT 1 FROM product_content_enrichments e WHERE e.source_product_id=l.source_product_id AND e.donor_code='shihuo')
       AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.job_type='collect_product_content'
-        AND j.status IN('pending','running','retry') AND j.payload->>'sourceProductId'=l.source_product_id::TEXT)
+        AND j.status IN('pending','running','retry') AND j.unique_key='source-product:' || l.source_product_id::TEXT || ':content:shihuo')
       ) SELECT (SELECT MAX(source_product_id)::TEXT FROM links) AS cursor,
         COALESCE((SELECT jsonb_agg(candidate) FROM (SELECT * FROM candidates
           ORDER BY issue_count,source_product_id LIMIT $3) candidate),'[]'::JSONB) AS candidates`,
