@@ -142,7 +142,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         throw new Error("Content eligibility requires a configured target and source identity");
       }
       const [remote] = await new WordPressProductSnapshotReader(wordpress).read(source.code,[product.externalId]);
-      if (!remote || remote.errorCode) throw new Error("Content eligibility lookup did not return a confirmed result");
+      if (!remote || remote.errorCode && remote.errorCode !== "target_not_found") throw new Error("Content eligibility lookup did not return a confirmed result");
       if (!remote.found) return true;
       if (!remote.externalId || !remote.snapshot) throw new Error("Content eligibility returned an incomplete existing product");
       await repositories.targets.saveProductSnapshot({ targetId,sourceProductId,externalId: remote.externalId,
