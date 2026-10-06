@@ -1,0 +1,57 @@
+{
+  "reason": "Подтверждено несовпадение обуви adidas с кошельком и сумкой Simple&nature. Ценовые варианты отсутствуют. Снимок до точечного отклонения связей.",
+  "sourceProductIds": [
+    "127899",
+    "137175"
+  ],
+  "links": [
+    {
+      "source_product_id": "127899",
+      "goods_id": "7293300",
+      "style_id": "495249393",
+      "status": "resolved",
+      "source_article": "GZ1050",
+      "normalized_article": "GZ1050",
+      "confirmation_method": "exact_article",
+      "confirmed_article": "GZ1050",
+      "confirmed_at": "2026-10-01T03:09:05.538Z",
+      "last_card_loaded_at": "2026-10-05T11:39:14.668Z",
+      "last_error_code": null
+    },
+    {
+      "source_product_id": "137175",
+      "goods_id": "7340675",
+      "style_id": "510040744",
+      "status": "resolved",
+      "source_article": "GZ5008",
+      "normalized_article": "GZ5008",
+      "confirmation_method": "exact_article",
+      "confirmed_article": "GZ5008",
+      "confirmed_at": "2026-09-29T17:58:49.406Z",
+      "last_card_loaded_at": "2026-09-29T17:58:49.406Z",
+      "last_error_code": null
+    }
+  ],
+  "donorStates": [
+    {
+      "run_id": "4",
+      "item_id": "517770",
+      "donor_code": "shihuo",
+      "outcome": "resolved",
+      "content_hash": "b36f672bbcc03dad075e98ce5d4b88ece49f10dd4913431a6b4eea0f80dbf754",
+      "variants": [],
+      "checked_at": "2026-10-05T11:39:13.378Z",
+      "updated_at": "2026-10-05T11:39:15.059Z"
+    },
+    {
+      "run_id": "4",
+      "item_id": "494042",
+      "donor_code": "shihuo",
+      "outcome": "resolved",
+      "content_hash": "77bd08e9bc5ea4ce853113e43c74e8cfa28cb7371f6d553991d13ad511196e44",
+      "variants": [],
+      "checked_at": "2026-09-29T17:58:36.790Z",
+      "updated_at": "2026-09-29T17:58:49.418Z"
+    }
+  ]
+}
