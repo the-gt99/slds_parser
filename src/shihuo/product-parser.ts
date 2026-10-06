@@ -1,4 +1,5 @@
 import type { ShihuoProductCard } from "./product-types.js";
+import type { JsonObject } from "../contracts/index.js";
 
 type JsonRecord = Record<string, unknown>;
 const object = (value: unknown): JsonRecord => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -37,6 +38,12 @@ export function parseShihuoProductCard(document: string, detailUrl: string, http
   if (!match?.[1]) throw new Error("Shihuo card does not contain __NEXT_DATA__");
   const root = object(JSON.parse(match[1]) as unknown);
   const props = object(object(root.props).pageProps);
+  let structured: unknown = object(object(props.data).data).script_id_json;
+  if (typeof structured === "string") {
+    try { structured = JSON.parse(structured); } catch { structured = undefined; }
+  }
+  const structuredProduct = (Array.isArray(structured) ? structured : [structured])
+    .map(object).find((entry) => entry["@type"] === "Product");
   const style = unwrap(props, "styleBaseData");
   unwrap(props, "goodsBaseData");
   const skuBase = unwrap(props, "skuBaseData");
@@ -69,6 +76,7 @@ export function parseShihuoProductCard(document: string, detailUrl: string, http
   const prices = variants.flatMap((variant) => variant.price === null ? [] : [{ raw: variant.price, numeric: Number(variant.price) }]).filter((value) => Number.isFinite(value.numeric));
   const minPrice = prices.reduce<{ raw: string; numeric: number } | null>((lowest, value) => lowest === null || value.numeric < lowest.numeric ? value : lowest, null)?.raw ?? null;
   return { article, goodsId, styleId, title: text(style.title), brand: text(style.root_brand_name), model: text(style.child_brand_name),
+    ...(structuredProduct === undefined ? {} : { structuredProduct: structuredProduct as JsonObject }),
     currency: "CNY", minPrice, variants, suppliers, attributes,
     detailUrl, httpStatus };
 }

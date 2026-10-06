@@ -78,6 +78,10 @@ export class PostgresJobRepository implements JobRepository {
     const availableJobTypeFilter = singleJobType === undefined
       ? "($2::TEXT[] IS NULL OR job_type = ANY($2::TEXT[]))"
       : "job_type = $2::TEXT";
+    const contentLane = jobTypes?.length === 2 && jobTypes.includes("collect_product_content") && jobTypes.includes("translate_product_content");
+    const availableOrder = contentLane
+      ? "CASE WHEN job_type='translate_product_content' THEN 0 ELSE 1 END, available_at, id"
+      : "available_at, id";
     const available = await this.executor.query<DatabaseRow>(
       `WITH candidate AS (
          SELECT id
@@ -97,7 +101,7 @@ export class PostgresJobRepository implements JobRepository {
              JOIN target_export_campaigns campaign ON campaign.id = campaign_batch.campaign_id
              WHERE campaign_item.job_id = jobs.id AND campaign.status <> 'running'
            ))
-         ORDER BY available_at, id
+         ORDER BY ${availableOrder}
          FOR UPDATE SKIP LOCKED
          LIMIT 1
        )

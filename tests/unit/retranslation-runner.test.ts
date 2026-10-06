@@ -5,6 +5,18 @@ import { TranslateContentOperation } from "../../src/processing/index.js";
 import { createMemoryRepositories, MemoryStore, seedProduct, validProduct } from "../support/in-memory.js";
 
 describe("RetranslationRunner", () => {
+  it("enqueues requested reclassification after translation and on safe replay", async () => {
+    const store = new MemoryStore(); seedProduct(store);
+    const repositories = createMemoryRepositories(store);
+    await repositories.internalProducts.upsert({ sourceProductId: "2",data: validProduct(),inputHash: "in",contentHash: "old",processorVersion: "1",status: "classified" });
+    const operation = new TranslateContentOperation({ code: "test",version: "1",translate: vi.fn(async () => "Описание") },{ sourceLocale: "en",targetLocale: "ru" });
+    const enqueue = vi.spyOn(repositories.jobs,"enqueue");
+    const runner = new RetranslationRunner(repositories,operation);
+    expect(await runner.retranslateProduct({ sourceProductId: "2",reclassifyAfter: true })).toEqual({ status: "completed" });
+    expect(await runner.retranslateProduct({ sourceProductId: "2",reclassifyAfter: true })).toEqual({ status: "skipped" });
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    expect(enqueue).toHaveBeenCalledWith({ jobType: "reclassify_product",payload: { sourceProductId: "2" },uniqueKey: "source-product:2:reclassify" });
+  });
   it("changes only translated content and does not enqueue downstream jobs", async () => {
     const store = new MemoryStore();
     seedProduct(store);

@@ -1,4 +1,4 @@
-import type { EntityId } from "../contracts/index.js";
+import type { EntityId, JsonObject } from "../contracts/index.js";
 
 // Explicit audit rejection, not an automatic comparison of differently named brands.
 export const SHIHUO_IDENTITY_REJECTED = "SHIHUO_IDENTITY_REJECTED";
@@ -36,6 +36,7 @@ export interface ShihuoSupplier {
 }
 
 export interface ShihuoProductCard {
+  readonly structuredProduct?: JsonObject;
   readonly article: string;
   readonly goodsId: string;
   readonly styleId: string;

@@ -7,6 +7,17 @@ const card = (article = "DR0092-001"): ShihuoProductCard => ({ article, goodsId:
 const resolvedLink = (): ShihuoProductLink => ({ sourceProductId: "1", sourceArticle: "DR0092-001", normalizedArticle: "DR0092001", goodsId: "10", styleId: "20", status: "resolved", confirmedArticle: "DR0092-001", confirmedAt: "now", lastCardLoadedAt: "now", lastErrorCode: null });
 
 describe("Shihuo product resolution", () => {
+  it.each([undefined,"invalid JSON",JSON.stringify([{ "@type": "Product",description: "特性" }]),[{ "@type": "Product",description: "特性" }]])("reads optional structured content without breaking pricing", (structured) => {
+    const next = { props: { pageProps: { data: { data: { script_id_json: structured } },
+      styleBaseData: { status: 0,data: { style_id: 20 } },goodsBaseData: { status: 0,data: {} },
+      skuBaseData: { status: 0,data: { goods_attr: [{ name: "货号",value: ["SKU"] }] } },
+      skuListData: { status: 0,data: { list: [{ style_id: 20,sku_list: [{ sku_id: 1,price: "500",attrs: [] }] }] } },
+      supplierListData: { status: 0,data: { list: [] } },
+    } } };
+    const parsed = parseShihuoProductCard(`<script id="__NEXT_DATA__">${JSON.stringify(next)}</script>`,"https://www.shihuo.cn/page/pcGoodsDetail?goodsId=10&styleId=20",200);
+    expect(parsed.minPrice).toBe("500");
+    expect(parsed.structuredProduct?.description).toBe(structured === undefined || structured === "invalid JSON" ? undefined : "特性");
+  });
   it("normalizes only spaces, hyphens and case for exact comparison", () => {
     expect(normalizeShihuoArticle(" dr0092 - 001 ")).toBe("DR0092001");
     expect(shihuoArticlesMatch("DR0092-001", "dr0092 001")).toBe(true);

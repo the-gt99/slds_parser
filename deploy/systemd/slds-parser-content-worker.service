@@ -1,0 +1,22 @@
+[Unit]
+Description=SLDS Parser missing description worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+ExecStart=/usr/local/bin/node --env-file=.env dist/src/cli/content-worker.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=90
+CPUQuota=50%
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

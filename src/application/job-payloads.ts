@@ -26,9 +26,25 @@ export interface ReclassifyProductPayload {
 
 export interface RetranslateProductPayload {
   readonly sourceProductId: string;
+  readonly reclassifyAfter?: boolean;
 }
 
 export interface ResolveShihuoProductPayload { readonly sourceProductId: string; }
+
+export function parseCollectProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly donorCode: string } {
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)
+    && typeof value.donorCode === "string" && /^[a-z][a-z0-9_-]*$/u.test(value.donorCode)) {
+    return { sourceProductId: value.sourceProductId, donorCode: value.donorCode };
+  }
+  throw new InvalidJobPayloadError("collect_product_content");
+}
+export function parseTranslateProductContentPayload(value: JsonValue): { readonly sourceProductId: string; readonly enrichmentId: string } {
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)
+    && typeof value.enrichmentId === "string" && /^\d+$/u.test(value.enrichmentId)) {
+    return { sourceProductId: value.sourceProductId, enrichmentId: value.enrichmentId };
+  }
+  throw new InvalidJobPayloadError("translate_product_content");
+}
 
 export interface ExportProductPayload {
   readonly submission?: {
@@ -157,8 +173,10 @@ export function parseReclassifyProductPayload(value: JsonValue): ReclassifyProdu
 }
 
 export function parseRetranslateProductPayload(value: JsonValue): RetranslateProductPayload {
-  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)) {
-    return { sourceProductId: value.sourceProductId };
+  if (isObject(value) && typeof value.sourceProductId === "string" && /^\d+$/u.test(value.sourceProductId)
+    && (value.reclassifyAfter === undefined || typeof value.reclassifyAfter === "boolean")) {
+    return { sourceProductId: value.sourceProductId,
+      ...(value.reclassifyAfter === undefined ? {} : { reclassifyAfter: value.reclassifyAfter }) };
   }
   throw new InvalidJobPayloadError("retranslate_product");
 }

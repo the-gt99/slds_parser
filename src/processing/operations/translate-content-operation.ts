@@ -1,4 +1,5 @@
 import type {
+  JsonObject,
   JsonValue,
   ProductOperation,
   UniversalProductDTO,
@@ -90,6 +91,7 @@ const ATTRIBUTE_TRANSLATIONS: Readonly<Record<string, string>> = {
 };
 
 export interface TranslateContentOperationOptions {
+  readonly dependsOn?: readonly string[];
   readonly sourceLocale: string;
   readonly targetLocale: string;
   readonly sourceCodes?: readonly string[];
@@ -127,8 +129,8 @@ function suspiciousTranslation(source: string, translated: string): boolean {
 export class TranslateContentOperation implements ProductOperation {
   readonly code = "translate-content";
   readonly name = "Перевод контента";
-  readonly version = "1.2.0";
-  readonly dependsOn = ["normalize-product"];
+  readonly version = "1.3.0";
+  readonly dependsOn: readonly string[];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
 
@@ -136,6 +138,7 @@ export class TranslateContentOperation implements ProductOperation {
     private readonly provider: TextTranslationProvider,
     private readonly options: TranslateContentOperationOptions,
   ) {
+    this.dependsOn = options.dependsOn ?? ["normalize-product"];
     if (options.sourceCodes !== undefined) this.sourceCodes = options.sourceCodes;
     this.configurationFingerprint = {
       provider: provider.code,
@@ -169,7 +172,15 @@ export class TranslateContentOperation implements ProductOperation {
     const details = attribute(product, "details");
     const upperMaterial = attribute(product, "upperMaterial");
 
-    const translatedDescription = await this.translateVerified("description", description);
+    const provenance = product.metadata.contentProvenance;
+    const descriptionProvenance = provenance !== null && typeof provenance === "object" && !Array.isArray(provenance)
+      ? (provenance as JsonObject).description : undefined;
+    const descriptionLocale = descriptionProvenance !== null && typeof descriptionProvenance === "object" && !Array.isArray(descriptionProvenance)
+      ? (descriptionProvenance as JsonObject).sourceLocale : undefined;
+    if (descriptionLocale !== undefined && (typeof descriptionLocale !== "string" || !/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/u.test(descriptionLocale))) {
+      throw new IntegrationContractError("Description provenance locale is invalid");
+    }
+    const translatedDescription = await this.translateVerified("description", description, descriptionLocale as string | undefined);
     const translatedStory = story !== "" && story === description
       ? translatedDescription
       : await this.translateVerified("story", story);
@@ -190,11 +201,11 @@ export class TranslateContentOperation implements ProductOperation {
     };
   }
 
-  async translateVerified(field: string, source: string): Promise<string> {
+  async translateVerified(field: string, source: string, sourceLocale?: string): Promise<string> {
     if (source === "") return "";
     const translated = ["color", "details", "upperMaterial"].includes(field)
       ? await this.translatePassiveAttribute(source)
-      : await this.translateText(source);
+      : await this.translateText(source, sourceLocale);
     const result = translated.trim();
     if (result === "") throw new IntegrationContractError(`Translation returned an empty ${field}`);
     if (field === "details") return result;
@@ -243,8 +254,8 @@ export class TranslateContentOperation implements ProductOperation {
     return translated.join("").trim();
   }
 
-  async translateText(source: string): Promise<string> {
+  async translateText(source: string, sourceLocale = this.options.sourceLocale): Promise<string> {
     const dictionary = ATTRIBUTE_TRANSLATIONS[dictionaryKey(source)];
-    return dictionary ?? await this.provider.translate(source, this.options.sourceLocale, this.options.targetLocale);
+    return dictionary ?? await this.provider.translate(source, sourceLocale, this.options.targetLocale);
   }
 }

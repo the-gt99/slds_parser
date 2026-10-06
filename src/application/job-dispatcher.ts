@@ -13,6 +13,8 @@ import type { RunnerResult } from "./runner-result.js";
 import type { WordPressCatalogSyncRunner } from "./wordpress-catalog-sync-runner.js";
 import type { WordPressVariationPatchRunner } from "./wordpress-variation-patch-runner.js";
 import type { ShihuoResolutionRunner } from "./shihuo-resolution-runner.js";
+import type { ContentEnrichmentRunner } from "./content-enrichment-runner.js";
+import { parseCollectProductContentPayload, parseTranslateProductContentPayload } from "./job-payloads.js";
 
 export interface JobHandler {
   dispatch(job: JobRecord): Promise<RunnerResult>;
@@ -31,10 +33,19 @@ export class JobDispatcher implements JobHandler {
     private readonly retranslations?: RetranslationRunner,
     private readonly exportSourceRefreshes?: ExportSourceRefreshRunner,
     private readonly shihuoResolutions?: ShihuoResolutionRunner,
-    private readonly jobs?: JobRepository) {}
+    private readonly jobs?: JobRepository,
+    private readonly contentEnrichments?: ContentEnrichmentRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
+      case "collect_product_content": {
+        if (!this.contentEnrichments) throw new InvalidJobPayloadError("Content enrichment is not configured");
+        return this.contentEnrichments.collect(parseCollectProductContentPayload(job.payload));
+      }
+      case "translate_product_content": {
+        if (!this.contentEnrichments) throw new InvalidJobPayloadError("Content enrichment is not configured");
+        return this.contentEnrichments.translate(parseTranslateProductContentPayload(job.payload));
+      }
       case "discover_source": return await this.collection.discoverSource(parseDiscoverSourcePayload(job.payload));
       case "collect_product": return await this.collection.collectProduct(parseCollectProductPayload(job.payload));
       case "process_product": return await this.processing.processProduct(parseProcessProductPayload(job.payload));

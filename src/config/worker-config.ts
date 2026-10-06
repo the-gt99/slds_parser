@@ -23,12 +23,12 @@ export interface WorkerEnvironment {
   readonly WORDPRESS_RETRY_MAX_MS?: string;
 }
 
-function workerRole(value: string | undefined): "all" | "pipeline" | "inventory" | "inventory-goat" | "inventory-shihuo" | "inventory-wordpress" {
+function workerRole(value: string | undefined): NonNullable<WorkerOptions["role"]> {
   const normalized = value?.trim().toLocaleLowerCase("en-US") || "all";
-  if (!["all", "pipeline", "inventory", "inventory-goat", "inventory-shihuo", "inventory-wordpress"].includes(normalized)) {
-    throw new Error("WORKER_ROLE must be all, pipeline, inventory, inventory-goat, inventory-shihuo or inventory-wordpress");
+  if (!["all", "pipeline", "inventory", "inventory-goat", "inventory-shihuo", "inventory-wordpress", "content-enrichment"].includes(normalized)) {
+    throw new Error("Invalid WORKER_ROLE");
   }
-  return normalized as "all" | "pipeline" | "inventory" | "inventory-goat" | "inventory-shihuo" | "inventory-wordpress";
+  return normalized as NonNullable<WorkerOptions["role"]>;
 }
 
 function positiveInteger(environment: WorkerEnvironment, key: keyof WorkerEnvironment): number {

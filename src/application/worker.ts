@@ -10,7 +10,7 @@ export interface WorkerClaimPermit {
 
 export interface WorkerOptions {
   readonly workerId: string;
-  readonly role?: "all" | "pipeline" | "inventory" | "inventory-goat" | "inventory-shihuo" | "inventory-wordpress";
+  readonly role?: "all" | "pipeline" | "inventory" | "inventory-goat" | "inventory-shihuo" | "inventory-wordpress" | "content-enrichment";
   readonly pollIntervalMs: number;
   readonly lockTimeoutMs: number;
   readonly maxJobAttempts: number;
@@ -163,6 +163,7 @@ export class Worker {
   private async handleClaimedFailure(job: JobRecord, error: unknown): Promise<void> {
     if (error instanceof AppError && error.code === "TRANSLATION_QUOTA") {
       this.pausedJobTypes.add(job.jobType);
+      if (job.jobType === "translate_product_content") this.pausedJobTypes.add("collect_product_content");
       await this.jobs.retry(job.id, {
         error: errorText(error),
         availableAt: new Date(this.currentTime() + this.options.retryMaxMs).toISOString(),
@@ -304,6 +305,8 @@ export class Worker {
     else signal.addEventListener("abort", stop, { once: true });
     try {
       await Promise.all([
+        ...(role === "content-enrichment" ? [this.runLane(controller.signal,
+          ["collect_product_content","translate_product_content"], `${this.options.workerId}:content`)] : []),
         ...(runPipeline ? [
         this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>

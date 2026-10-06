@@ -1,0 +1,39 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import type { SqlPool } from "../../src/infrastructure/db/sql-executor.js";
+import { PostgresContentEnrichmentRepository } from "../../src/infrastructure/db/repositories/postgres-content-enrichment-repository.js";
+import { validProduct } from "../support/in-memory.js";
+
+const modulePath = process.env.CONTENT_QUERY_PGLITE_MODULE;
+if (!modulePath) throw new Error("CONTENT_QUERY_PGLITE_MODULE is required");
+const { PGlite } = await import(pathToFileURL(modulePath).href);
+const db = new PGlite();
+try {
+  await db.exec(`CREATE TABLE source_products(id BIGINT PRIMARY KEY);
+    CREATE TABLE internal_products(id BIGINT PRIMARY KEY,source_product_id BIGINT,data JSONB,content_hash TEXT,updated_at TIMESTAMPTZ);
+    CREATE TABLE jobs(id BIGSERIAL PRIMARY KEY,job_type TEXT CONSTRAINT jobs_job_type_check CHECK(job_type IN('process_product')),
+      payload JSONB,status TEXT,unique_key TEXT);
+    CREATE UNIQUE INDEX jobs_active_unique_key_idx ON jobs(job_type,unique_key) WHERE status IN('pending','running','retry');
+    INSERT INTO source_products VALUES(2);
+    INSERT INTO internal_products VALUES(1,2,'{}','before',NOW());`);
+  await db.exec(await readFile(new URL("../../src/infrastructure/db/migrations/105_product_content_enrichments.sql",import.meta.url),"utf8"));
+  const pool: SqlPool = { connect: async () => ({ query: (q,values) => db.query(q,values),release() {} }),async end() {} };
+  const repo = new PostgresContentEnrichmentRepository(pool);
+  const input = { sourceProductId: "2",donorCode: "shihuo",donorProductKey: "1:2",article: "SKU",sourceLocale: "zh-CN",targetLocale: "ru",
+    parserVersion: "1",rawPayload: {},cleanedText: "特性",status: "collected" as const,reason: null };
+  const record = await repo.save(input);
+  await repo.save(input);
+  assert.equal((await db.query("SELECT COUNT(*)::int AS n FROM jobs")).rows[0].n,1);
+  assert.equal(await repo.apply({ enrichmentId: record.id,internalProductId: "1",expectedContentHash: "wrong",data: validProduct(),contentHash: "after",translatedText: "Описание" }),false);
+  assert.equal((await repo.get(record.id))?.status,"collected");
+  assert.equal(await repo.apply({ enrichmentId: record.id,internalProductId: "1",expectedContentHash: "before",data: validProduct(),contentHash: "after",translatedText: "Описание" }),true);
+  assert.equal((await repo.latestApplied("2"))?.translatedText,"Описание");
+  assert.equal((await db.query("SELECT COUNT(*)::int AS n FROM jobs WHERE job_type='retranslate_product' AND payload->>'reclassifyAfter'='true'")).rows[0].n,1);
+  await repo.skip(record.id,"race");
+  assert.equal((await repo.get(record.id))?.status,"applied");
+  assert.equal((await repo.save({ ...input,cleanedText: "changed" })).cleanedText,input.cleanedText);
+  assert.equal(await repo.apply({ enrichmentId: record.id,internalProductId: "1",expectedContentHash: "after",data: validProduct(),contentHash: "unwanted",translatedText: "Повтор" }),false);
+  assert.equal((await db.query("SELECT content_hash FROM internal_products WHERE id=1")).rows[0].content_hash,"after");
+  console.info(JSON.stringify({ passed: true,migration: true,atomicJobs: true,cas: true,replayRollback: true,appliedPreserved: true }));
+} finally { await db.close(); }

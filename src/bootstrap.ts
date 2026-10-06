@@ -10,6 +10,10 @@ import { ConvertImagesToWebpOperation, DetectShoeHeightOperation, DownloadImages
 import { ClassifierAdminService, ExportControlService, ProductClassifier, TargetClassificationImportService, TargetReferenceMappingService, WordPressCatalogService, WordPressPreviewService } from "./services/index.js";
 import { RulesExecution } from "./infrastructure/db/rules-execution.js";
 import { EcbShihuoCurrencyConverter, PersistentShihuoSigner, ShihuoGuestSessionPool, ShihuoInventoryService, ShihuoProductClient, ShihuoProductResolver, ShihuoSearchClient, ShihuoSecretCrypto } from "./shihuo/index.js";
+import { PostgresContentEnrichmentRepository } from "./infrastructure/db/repositories/postgres-content-enrichment-repository.js";
+import { ApplyContentEnrichmentOperation } from "./processing/operations/apply-content-enrichment-operation.js";
+import { ContentEnrichmentRunner, type ProductContentDonor } from "./application/content-enrichment-runner.js";
+import { ShihuoDescriptionDonor } from "./shihuo/description-donor.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
@@ -31,7 +35,7 @@ function inventoryProxyHeadroom(environment: GoatProxyPoolEnvironment): number {
   return parsed;
 }
 
-export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
+export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation): void {
   const processing = loadProcessingConfig(environment);
   const imageStore = processing.image.storage.type === "s3"
     ? new S3ImageStore({ ...processing.image, ...processing.image.storage })
@@ -41,7 +45,9 @@ export function registerProductOperations(registry: ProductOperationRegistry, en
     ? configuredTranslationProvider
     : new CachedTranslationProvider(configuredTranslationProvider, translationCache);
   registry.register(new NormalizeProductOperation());
-  registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"] }));
+  if (enrichment !== undefined) registry.register(enrichment);
+  registry.register(new TranslateContentOperation(translationProvider, { ...processing.translation, sourceCodes: ["goat"],
+    ...(enrichment === undefined ? {} : { dependsOn: ["normalize-product", enrichment.code] }) }));
   registry.register(new DownloadImagesOperation(
     new GoatImageDownloader(environment, { concurrency: processing.image.transportConcurrency }, undefined, proxyPool),
     imageStore,
@@ -68,10 +74,10 @@ export function registerPipelineComponents(registries: {
   readonly processors: SourceProcessorRegistry;
   readonly operations: ProductOperationRegistry;
   readonly exporters: TargetExporterRegistry;
-}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository): void {
+}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation): void {
   registries.adapters.register(GoatSourceAdapter.create(environment, proxyPool));
   registerSourceProcessors(registries.processors);
-  registerProductOperations(registries.operations, environment, proxyPool, translationCache);
+  registerProductOperations(registries.operations, environment, proxyPool, translationCache, enrichment);
   const wordpress = loadWordPressTargetConfig(environment);
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }
@@ -88,7 +94,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const operations = new ProductOperationRegistry();
   const exporters = new TargetExporterRegistry();
   const translationCache = new PostgresTranslationCacheRepository(pool);
-  registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache);
+  const contentEnrichments = new PostgresContentEnrichmentRepository(pool);
+  const contentDonors = new Map<string, ProductContentDonor>();
+  registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache,
+    new ApplyContentEnrichmentOperation(contentEnrichments, async (product,record) =>
+      await contentDonors.get(record.donorCode)?.validate(product,record) ?? false));
   const targetDictionary = new PostgresTargetDictionaryRepository(pool);
   const titleBrandAssignments = new WordPressTitleBrandAssignmentResolver(targetDictionary);
   const rulesExecution = new RulesExecution(pool, repositories.classifications, titleBrandAssignments);
@@ -118,6 +128,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const shihuoInventory = shihuoResolver === undefined || shihuoConfig?.inventoryEnabled !== true ? undefined : new ShihuoInventoryService(
     shihuoResolver, new PostgresShihuoProductLinkRepository(pool), new EcbShihuoCurrencyConverter(),
   );
+  const processingConfig = loadProcessingConfig(environment);
+  if (shihuoResolver !== undefined) contentDonors.set("shihuo", new ShihuoDescriptionDonor(shihuoResolver,
+    new PostgresShihuoProductLinkRepository(pool),processingConfig.translation.targetLocale));
+  const contentEnrichmentRunner = new ContentEnrichmentRunner(repositories.internalProducts,contentEnrichments,contentDonors,
+    new CachedTranslationProvider(createTranslationProvider(processingConfig.translation),translationCache));
   const exportControl = new PostgresExportControlRepository(pool);
   const exportCampaigns = new ExportControlService(exportControl, repositories.jobs, workerOptions.exportConcurrency ?? 1);
   const collectionRunner = new CollectionRunner(repositories, unitOfWork, adapters);
@@ -187,7 +202,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
     wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner,
-    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs);
+    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs, contentEnrichmentRunner);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
@@ -196,9 +211,9 @@ export function createApplication(environment: ApplicationEnvironment = process.
     Date.now,
     options.workerLogError ?? console.error,
     async (jobTypes) => {
-        const needsShihuoSession = jobTypes.length === 2
+        const needsShihuoSession = jobTypes.length === 2 && jobTypes.includes("collect_product_content") && jobTypes.includes("translate_product_content") || (jobTypes.length === 2
           ? jobTypes.includes("resolve_shihuo_product") && jobTypes.includes("collect_wordpress_shihuo_inventory")
-          : jobTypes.length === 1 && (jobTypes[0] === "resolve_shihuo_product" || jobTypes[0] === "collect_wordpress_shihuo_inventory");
+          : jobTypes.length === 1 && (jobTypes[0] === "resolve_shihuo_product" || jobTypes[0] === "collect_wordpress_shihuo_inventory"));
         if (needsShihuoSession) return shihuoSessions?.reserveClaim() ?? null;
         const needsGoatProxy = jobTypes.length === 1
           && (jobTypes[0] === "collect_product" || jobTypes[0] === "collect_wordpress_variation_source"
@@ -229,6 +244,6 @@ export function createApplication(environment: ApplicationEnvironment = process.
     wordpress === null ? undefined : wordpressCatalogService,
   );
   return { pool, repositories, unitOfWork, adapters, processors, operations, exporters, classifier, targetMappings, collectionRunner, operationPipeline, processingRunner, retranslationRunner,
-    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, shihuoResolver, dispatcher, worker,
+    sourceRefresher, exportRunner, preflightRunner, exportControl, wordpressCatalog, wordpressCatalogSync, wordpressVariationPatches, shihuoResolver, contentEnrichmentRunner, contentEnrichments, dispatcher, worker,
     close: async () => { shihuoSigner?.close(); await pool.end(); } };
 }

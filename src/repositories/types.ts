@@ -33,6 +33,8 @@ export type JobType =
   | "poll_wordpress_variation_patches"
   | "refresh_export_source"
   | "resolve_shihuo_product"
+  | "collect_product_content"
+  | "translate_product_content"
   | "export_product";
 export type JobStatus = "pending" | "running" | "retry" | "completed" | "failed";
 

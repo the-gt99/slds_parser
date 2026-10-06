@@ -11,6 +11,19 @@ async function setup(error?: unknown, attempts = 0) {
 }
 
 describe("Worker", () => {
+  it("runs exactly one content lane without claiming processing, inventory or exports", async () => {
+    const store = new MemoryStore(); const jobs = new MemoryJobRepository(store);
+    const content = await jobs.enqueue({ jobType: "collect_product_content",payload: { sourceProductId: "2",donorCode: "shihuo" },uniqueKey: "content" });
+    await jobs.enqueue({ jobType: "process_product",payload: { sourceProductId: "2" },uniqueKey: "process" });
+    const controller = new AbortController();
+    const dispatch = vi.fn(async () => { controller.abort(); return { status: "completed" as const }; });
+    const claim = vi.spyOn(jobs,"claimNext");
+    await new Worker(jobs,{ dispatch,handleTerminalFailure: vi.fn() },{ ...options,role: "content-enrichment" },async () => {}).run(controller.signal);
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(store.jobs.get(content.id)?.status).toBe("completed");
+    expect(claim).toHaveBeenCalledOnce();
+    expect(claim.mock.calls[0]?.[2]).toEqual(["collect_product_content","translate_product_content"]);
+  });
   it("completes a successful job", async () => { const value = await setup(); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)?.status).toBe("completed"); });
   it("retries only RetryableError with exponential capped backoff", async () => { const value = await setup(new RetryableError("later", { code: "LATER" }), 2); await value.worker.processNext(); expect(value.store.jobs.get(value.job.id)).toMatchObject({ status: "failed" }); const retry = await setup(new RetryableError("later", { code: "LATER" }), 1); await retry.worker.processNext(); expect(retry.store.jobs.get(retry.job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:00:02.000Z" }); });
   it("keeps a job waiting when the Shihuo session pool is temporarily busy", async () => {

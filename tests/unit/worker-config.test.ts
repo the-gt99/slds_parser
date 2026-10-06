@@ -20,8 +20,9 @@ describe("worker config", () => {
     expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "inventory-goat" }).role).toBe("inventory-goat");
     expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "inventory-shihuo" }).role).toBe("inventory-shihuo");
     expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "inventory-wordpress" }).role).toBe("inventory-wordpress");
+    expect(loadWorkerConfig({ ...environment, WORKER_ROLE: "content-enrichment" }).role).toBe("content-enrichment");
     expect(() => loadWorkerConfig({ ...environment, WORKER_ROLE: "unknown" })).toThrow(
-      "WORKER_ROLE must be all, pipeline, inventory, inventory-goat, inventory-shihuo or inventory-wordpress",
+      "Invalid WORKER_ROLE",
     );
   });
   it("uses one dedicated processing lane by default", () => {
