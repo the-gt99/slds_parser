@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Настройка Shihuo</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <script type="module" src="/assets/shihuo-onboarding.js?v=20260924-3"></script>
+  <script type="module" src="/assets/shihuo-onboarding.js?v=20261008-1"></script>
 </head>
 <body>
 <main class="admin-page shihuo-onboarding">
@@ -15,30 +15,52 @@
     <p id="device-name" class="muted">Загрузка...</p>
     <div id="progress" class="shihuo-progress" hidden><span id="progress-label"></span></div>
     <nav class="shihuo-step-nav" aria-label="Шаги настройки">
-      <button type="button" data-onboarding-step="certificate">1</button><button type="button" data-onboarding-step="wireguard">2</button>
-      <button type="button" data-onboarding-step="trust">3</button><button type="button" data-onboarding-step="search">4</button>
-      <button type="button" data-onboarding-step="verify">5</button>
+      <button type="button" data-onboarding-step="apps">1</button><button type="button" data-onboarding-step="certificate">2</button>
+      <button type="button" data-onboarding-step="wireguard">3</button><button type="button" data-onboarding-step="trust">4</button>
+      <button type="button" data-onboarding-step="search">5</button><button type="button" data-onboarding-step="verify">6</button>
     </nav>
     <button id="current-step" class="button quiet" type="button" hidden>Вернуться к текущему шагу</button>
     <div id="fatal" class="product-message error" hidden></div>
   </section>
 
+  <section id="step-apps" class="section shihuo-step" hidden>
+    <h2>1. Установите WireGuard и Shihuo</h2>
+    <p>Скачайте и установите оба приложения до подключения VPN. Если туннель WireGuard уже включён, выключите его на время скачивания.</p>
+    <p><strong>WireGuard:</strong> <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener">для iPhone</a> · <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener">для Android</a></p>
+    <p><strong>Shihuo:</strong> <a id="ios-link" target="_blank" rel="noopener">в App Store</a> · <a id="android-link" target="_blank" rel="noopener">официальная страница Android</a></p>
+    <p>После установки вернитесь на эту страницу. Не входите в аккаунт Shihuo.</p>
+    <p><button id="apps-next" class="button primary" type="button">Оба приложения установлены</button></p>
+  </section>
+
   <section id="step-certificate" class="section shihuo-step" hidden>
-    <h2>1. Установите сертификат</h2>
+    <h2>2. Установите сертификат</h2>
     <p><a id="ca-link" class="button primary">Скачать CA-сертификат</a></p>
     <ol>
       <li>Откройте скачанный файл и разрешите установку профиля.</li>
       <li>На iPhone откройте «Настройки → Основные → VPN и управление устройством» и установите профиль.</li>
       <li>Откройте «Настройки → Основные → Об этом устройстве → Доверие сертификатам» и включите полное доверие сертификату SLDS Shihuo CA.</li>
     </ol>
+    <details id="ios-certificate-guide" class="shihuo-guide">
+      <summary>Пошаговая инструкция для iPhone со скриншотами</summary>
+      <p>Нажмите на изображение, чтобы открыть его в полном размере. На примере профиль называется «mitmproxy»; устанавливайте только сертификат, скачанный по кнопке на этой странице. Нумерация шагов сайта на первом скриншоте относится к предыдущей версии инструкции.</p>
+      <div class="shihuo-guide-grid">
+        <figure><a href="/assets/shihuo-guide/ios-certificate-1.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-1.jpg" alt="Запрос Safari на загрузку профиля конфигурации" loading="lazy" width="591" height="1280"></a><figcaption>1. После скачивания сертификата нажмите «Разрешить».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-2.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-2.jpg" alt="Пункт Основные в настройках iPhone" loading="lazy" width="591" height="1280"></a><figcaption>2. Откройте «Настройки» → «Основные».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-3.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-3.jpg" alt="Пункт VPN и управление устройством" loading="lazy" width="591" height="1280"></a><figcaption>3. Прокрутите вниз и откройте «VPN и управление устройством».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-4.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-4.jpg" alt="Загруженный профиль сертификата" loading="lazy" width="591" height="1280"></a><figcaption>4. Откройте скачанный профиль в разделе «Загруженный профиль».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-5.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-5.jpg" alt="Кнопка Установить на экране профиля" loading="lazy" width="591" height="1280"></a><figcaption>5. Нажмите «Установить». Если iPhone запросит код-пароль, введите его на телефоне.</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-6.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-6.jpg" alt="Подтверждение установки профиля" loading="lazy" width="591" height="1280"></a><figcaption>6. Подтвердите установку кнопкой «Установить».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-7.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-7.jpg" alt="Пункт Об этом устройстве в разделе Основные" loading="lazy" width="591" height="1280"></a><figcaption>7. Вернитесь в «Основные» → «Об этом устройстве». Прокрутите вниз и откройте «Доверие сертификатам».</figcaption></figure>
+        <figure><a href="/assets/shihuo-guide/ios-certificate-9.jpg" target="_blank" rel="noopener"><img src="/assets/shihuo-guide/ios-certificate-9.jpg" alt="Подтверждение полного доверия корневому сертификату" loading="lazy" width="591" height="1280"></a><figcaption>8. Включите полное доверие скачанному сертификату и подтвердите кнопкой «Продолжить». Затем вернитесь сюда и нажмите «Сертификат установлен».</figcaption></figure>
+      </div>
+    </details>
     <details><summary>Инструкция для Android</summary><p>Откройте скачанный сертификат и установите его как CA-сертификат для VPN и приложений. Названия пунктов зависят от производителя.</p></details>
     <p><strong>После установки вернитесь на эту страницу</strong> и нажмите кнопку:</p>
     <p><button id="certificate-next" class="button primary">Сертификат установлен</button></p>
   </section>
 
   <section id="step-wireguard" class="section shihuo-step" hidden>
-    <h2>2. Подключите WireGuard</h2>
-    <p><a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener">WireGuard для iPhone</a> · <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener">WireGuard для Android</a></p>
+    <h2>3. Подключите WireGuard</h2>
     <img id="wg-qr" class="shihuo-wg-qr" alt="QR-код WireGuard">
     <p><a id="config-link" class="button secondary">Скачать конфигурацию</a></p>
     <p>Добавьте туннель по QR-коду или из файла и включите его. <strong>Затем вернитесь на эту страницу</strong> — она увидит подключение автоматически.</p>
@@ -46,15 +68,15 @@
   </section>
 
   <section id="step-trust" class="section shihuo-step" hidden>
-    <h2>3. Проверяем сертификат</h2>
+    <h2>4. Проверяем сертификат</h2>
     <p>Если вы открывали настройки доверия, <strong>вернитесь на эту страницу</strong>. Проверка выполняется здесь автоматически через подключённый VPN.</p>
     <div class="shihuo-wait"><span class="shihuo-spinner"></span><span>Проверяем полное доверие сертификату…</span></div>
     <div id="trust-help" class="product-message" hidden>Если проверка не проходит, убедитесь, что для SLDS Shihuo CA включено полное доверие, затем вернитесь сюда.</div>
   </section>
 
   <section id="step-search" class="section shihuo-step" hidden>
-    <h2>4. Выполните поиск в Shihuo</h2>
-    <p><a id="ios-link" target="_blank" rel="noopener">Shihuo в App Store</a> · <a id="android-link" target="_blank" rel="noopener">официальная страница Android</a></p>
+    <h2>5. Выполните поиск в Shihuo</h2>
+    <p>Откройте установленное приложение Shihuo с включённым VPN.</p>
     <p><strong>Не входите в аккаунт.</strong> Найдите товар по реальному артикулу:</p>
     <p class="shihuo-search-row"><code id="challenge"></code> <button id="copy" class="button quiet">Копировать</button></p>
     <p><strong>После появления результатов вернитесь на эту страницу.</strong></p>
@@ -62,7 +84,7 @@
   </section>
 
   <section id="step-verify" class="section shihuo-step" hidden>
-    <h2>5. Проверяем запрос к Shihuo</h2>
+    <h2>6. Проверяем запрос к Shihuo</h2>
     <p>Сервер создаёт свежую подпись из сохранённого гостевого профиля и выполняет реальный контрольный поиск.</p>
     <div class="shihuo-wait"><span class="shihuo-spinner"></span><span id="verify-status">Подготавливаем контрольный запрос…</span></div>
     <p><button id="verify-retry" class="button secondary" type="button" hidden>Повторить проверку</button></p>

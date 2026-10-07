@@ -1,7 +1,9 @@
 const token = location.pathname.split("/").filter(Boolean).at(-1);
 const byId = (id) => document.getElementById(id);
-const stepIds = ["certificate", "wireguard", "trust", "search", "verify", "complete"];
-const numberedSteps = stepIds.slice(0, 5);
+const stepIds = ["apps", "certificate", "wireguard", "trust", "search", "verify", "complete"];
+const numberedSteps = stepIds.slice(0, -1);
+const appsStorageKey = `shihuo-apps-installed:${token}`;
+let appsInstalled = sessionStorage.getItem(appsStorageKey) === "true";
 const trustedStages = new Set(["certificate_trusted", "challenge_not_found", "authorized_request_rejected", "profile_incomplete", "profile_captured", "verification_failed", "ready"]);
 let currentStep = ""; let recommendedStep = ""; let manualStep = null; let lastProbeAt = 0;
 let completionSent = false; let verificationAttempted = false; let verificationRunning = false;
@@ -17,7 +19,7 @@ function showStep(step) {
   for (const id of stepIds) byId(`step-${id}`).hidden = id !== step;
   currentStep = step;
   const number = numberedSteps.indexOf(step) + 1;
-  byId("progress-label").textContent = step === "complete" ? "Настройка завершена" : `Шаг ${number} из 5`;
+  byId("progress-label").textContent = step === "complete" ? "Настройка завершена" : `Шаг ${number} из ${numberedSteps.length}`;
   byId("progress").hidden = false; byId("current-step").hidden = manualStep === null;
   for (const button of document.querySelectorAll("[data-onboarding-step]")) {
     const id = button.dataset.onboardingStep;
@@ -30,6 +32,7 @@ function desiredStep(data) {
   if (data.status === "ready" || data.diagnosticStage === "ready") return "complete";
   if (data.profileCaptured) return "verify";
   const certificateWasProven = trustedStages.has(data.diagnosticStage);
+  if (!appsInstalled && !data.certificateAcknowledged && !certificateWasProven) return "apps";
   if (!data.certificateAcknowledged && !certificateWasProven) return "certificate";
   if (!data.wireguardConnected) return "wireguard";
   if (certificateWasProven) return "search";
@@ -87,6 +90,11 @@ byId("config-link").href = `/api/shihuo/onboarding/${encodeURIComponent(token)}/
 byId("wg-qr").src = `/api/shihuo/onboarding/${encodeURIComponent(token)}/qr`;
 for (const button of document.querySelectorAll("[data-onboarding-step]")) button.onclick = () => { manualStep = button.dataset.onboardingStep; showStep(manualStep); };
 byId("current-step").onclick = () => { manualStep = null; showStep(recommendedStep); };
+byId("apps-next").onclick = async () => {
+  appsInstalled = true; sessionStorage.setItem(appsStorageKey, "true"); manualStep = null;
+  try { await refresh(); }
+  catch (error) { byId("fatal").textContent = error.message; byId("fatal").hidden = false; }
+};
 byId("certificate-next").onclick = async () => {
   const button = byId("certificate-next"); button.disabled = true;
   try { await request("/certificate-ack", { method: "POST" }); manualStep = null; await refresh(); }

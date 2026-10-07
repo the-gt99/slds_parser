@@ -663,6 +663,16 @@ h3 { font-size: 17px; line-height: 1.3; }
 .shihuo-step-nav button.active { border-color: var(--accent); background: var(--accent); color: white; }
 .shihuo-step h2 { margin-top: 0; }
 .shihuo-step ol { padding-left: 24px; line-height: 1.5; }
+.shihuo-guide { margin: 20px 0; }
+.shihuo-guide summary { cursor: pointer; font-weight: 700; }
+.shihuo-guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 24px; margin-top: 20px; }
+.shihuo-guide-grid figure { min-width: 0; margin: 0; }
+.shihuo-guide-grid a { display: block; }
+.shihuo-guide-grid img { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; }
+.shihuo-guide-grid figcaption { margin-top: 12px; line-height: 1.5; }
+@media (max-width: 620px) {
+  .shihuo-onboarding .shihuo-heading { position: static; }
+}
 .shihuo-wait { display: flex; align-items: center; gap: 10px; margin-top: 24px; color: var(--muted); }
 .shihuo-spinner { width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: shihuo-spin .8s linear infinite; }
 .shihuo-step .product-message { margin: 24px 0 0; text-align: left; }
