@@ -1,3 +1,4 @@
+import { AsyncLruCache } from "../../core/utils/async-lru-cache.js";
 import type { WordPressTargetConfig } from "../../config/index.js";
 import type { ProductSizeDTO } from "../../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
@@ -73,7 +74,7 @@ function retryableHttpStatus(status: number): boolean {
 }
 
 export class WordPressSizeConverter implements WordPressSizeConverterLike {
-  private readonly tableCache = new Map<string, Promise<ResolvedSizeTable>>();
+  private readonly tableCache = new AsyncLruCache<string, ResolvedSizeTable>(256);
 
   constructor(
     private readonly config: WordPressTargetConfig,
@@ -93,21 +94,14 @@ export class WordPressSizeConverter implements WordPressSizeConverterLike {
     const audience = input.size.audience ?? "unisex";
     const modelTermIds = [...new Set(input.modelTermIds ?? [])].sort((a, b) => a - b);
     const cacheKey = [input.brandTermId, input.categoryTermId, system, audience, modelTermIds.join(",")].join(":");
-    const pending = this.tableCache.get(cacheKey) ?? this.fetchTable({
+    const pending = this.tableCache.getOrLoad(cacheKey, () => this.fetchTable({
       brandTermId: input.brandTermId,
       categoryTermId: input.categoryTermId,
       sourceSystem: system,
       audience,
       modelTermIds,
-    });
-    this.tableCache.set(cacheKey, pending);
-    let table: ResolvedSizeTable;
-    try {
-      table = await pending;
-    } catch (error) {
-      this.tableCache.delete(cacheKey);
-      throw error;
-    }
+    }));
+    const table = await pending;
     const sourceValue = input.size.sourceValue.trim().replaceAll(",", ".");
     if (table.conflicts.has(sourceValue)) {
       throw new IntegrationContractError(`WordPress size conversion is ambiguous: ${originalKey}`);

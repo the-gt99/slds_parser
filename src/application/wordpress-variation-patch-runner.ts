@@ -1,6 +1,7 @@
 import type { WordPressTargetConfig } from "../config/index.js";
 import type { JsonObject, JsonValue, ProductVariantDTO, TargetProjectionResolutionInput, TargetReferenceResolutionInput } from "../contracts/index.js";
 import { IntegrationContractError, MappingMissingError, PermanentError } from "../core/errors/index.js";
+import { AsyncLruCache } from "../core/utils/async-lru-cache.js";
 import { hashStableJson } from "../core/utils/index.js";
 import {
   matchExistingWordPressVariations,
@@ -98,16 +99,16 @@ export class WordPressVariationPatchRunner {
   private readonly exporter: WordPressExporter;
   private readonly referenceCachesByRun = new Map<
     string,
-    Map<string, ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>
+    AsyncLruCache<string, Awaited<ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>>
   >();
   private readonly projectionCachesByRun = new Map<
     string,
-    Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>
+    AsyncLruCache<string, Awaited<ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>>
   >();
-  private readonly assignmentResolversByRun = new Map<
+  private readonly assignmentResolversByRun = new AsyncLruCache<
     string,
-    Promise<Awaited<ReturnType<TargetReferenceMappingService["createTargetAssignmentResolver"]>>>
-  >();
+    Awaited<ReturnType<TargetReferenceMappingService["createTargetAssignmentResolver"]>>
+  >(WordPressVariationPatchRunner.retainedRunCaches);
 
   constructor(
     private readonly repository: WordPressCatalogRepository,
@@ -130,14 +131,12 @@ export class WordPressVariationPatchRunner {
     const runIds = [...new Set([
       ...this.referenceCachesByRun.keys(),
       ...this.projectionCachesByRun.keys(),
-      ...this.assignmentResolversByRun.keys(),
     ])].filter((runId) => runId !== activeRunId);
     while (runIds.length >= WordPressVariationPatchRunner.retainedRunCaches) {
       const oldest = runIds.shift();
       if (oldest === undefined) break;
       this.referenceCachesByRun.delete(oldest);
       this.projectionCachesByRun.delete(oldest);
-      this.assignmentResolversByRun.delete(oldest);
     }
   }
 
@@ -164,38 +163,26 @@ export class WordPressVariationPatchRunner {
     }));
     let referenceCache = this.referenceCachesByRun.get(cacheKey);
     if (referenceCache === undefined) {
-      referenceCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>();
+      referenceCache = new AsyncLruCache<string, Awaited<ReturnType<TargetReferenceMappingService["resolveTargetMapping"]>>>(1024);
       this.referenceCachesByRun.set(cacheKey, referenceCache);
     }
     let projectionCache = this.projectionCachesByRun.get(cacheKey);
     if (projectionCache === undefined) {
-      projectionCache = new Map<string, ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>();
+      projectionCache = new AsyncLruCache<string, Awaited<ReturnType<TargetReferenceMappingService["resolveTargetProjections"]>>>(1024);
       this.projectionCachesByRun.set(cacheKey, projectionCache);
     }
-    let assignmentResolver = this.assignmentResolversByRun.get(cacheKey);
-    if (assignmentResolver === undefined && candidates[0] !== undefined) {
-      assignmentResolver = this.mappings.createTargetAssignmentResolver(candidates[0].target.id);
-      this.assignmentResolversByRun.set(cacheKey, assignmentResolver);
-    }
-    const resolveAssignments = assignmentResolver === undefined
+    const resolveAssignments = candidates[0] === undefined
       ? async () => []
-      : await assignmentResolver;
+      : await this.assignmentResolversByRun.getOrLoad(cacheKey,
+        () => this.mappings.createTargetAssignmentResolver(candidates[0]!.target.id));
     const resolveReference = (targetId: string, input: TargetReferenceResolutionInput) => {
       const key = `${targetId}:${input.referenceId}:${input.targetScope}`;
-      const cached = referenceCache.get(key);
-      if (cached !== undefined) return cached;
-      const resolution = this.mappings.resolveTargetMapping(targetId, input.referenceId, input.targetScope);
-      referenceCache.set(key, resolution);
-      return resolution;
+      return referenceCache.getOrLoad(key, () => this.mappings.resolveTargetMapping(targetId, input.referenceId, input.targetScope));
     };
     const resolveProjections = (targetId: string, inputs: readonly TargetProjectionResolutionInput[]) => {
       const resolutions = inputs.map((input) => {
         const key = `${targetId}:${input.resolutionKind}:${input.resolutionId}:${input.referenceId}`;
-        const cached = projectionCache.get(key);
-        if (cached !== undefined) return cached;
-        const resolution = this.mappings.resolveTargetProjections(targetId, [input]);
-        projectionCache.set(key, resolution);
-        return resolution;
+        return projectionCache.getOrLoad(key, () => this.mappings.resolveTargetProjections(targetId, [input]));
       });
       return Promise.all(resolutions).then((items) => items.flat());
     };
@@ -418,35 +405,23 @@ export class WordPressVariationPatchRunner {
     this.trimRunCaches(cacheKey);
     let referenceCache = this.referenceCachesByRun.get(cacheKey);
     if (referenceCache === undefined) {
-      referenceCache = new Map();
+      referenceCache = new AsyncLruCache(1024);
       this.referenceCachesByRun.set(cacheKey, referenceCache);
     }
     let projectionCache = this.projectionCachesByRun.get(cacheKey);
     if (projectionCache === undefined) {
-      projectionCache = new Map();
+      projectionCache = new AsyncLruCache(1024);
       this.projectionCachesByRun.set(cacheKey, projectionCache);
     }
-    let assignmentResolver = this.assignmentResolversByRun.get(cacheKey);
-    if (assignmentResolver === undefined) {
-      assignmentResolver = this.mappings.createTargetAssignmentResolver(candidate.target.id);
-      this.assignmentResolversByRun.set(cacheKey, assignmentResolver);
-    }
-    const resolveAssignments = await assignmentResolver;
+    const resolveAssignments = await this.assignmentResolversByRun.getOrLoad(cacheKey,
+      () => this.mappings.createTargetAssignmentResolver(candidate.target.id));
     const resolveReference = (input: TargetReferenceResolutionInput) => {
       const key = `${candidate.target.id}:${input.referenceId}:${input.targetScope}`;
-      const cached = referenceCache.get(key);
-      if (cached !== undefined) return cached;
-      const result = this.mappings.resolveTargetMapping(candidate.target.id, input.referenceId, input.targetScope);
-      referenceCache.set(key, result);
-      return result;
+      return referenceCache.getOrLoad(key, () => this.mappings.resolveTargetMapping(candidate.target.id, input.referenceId, input.targetScope));
     };
     const resolveProjections = (inputs: readonly TargetProjectionResolutionInput[]) => Promise.all(inputs.map((input) => {
       const key = `${candidate.target.id}:${input.resolutionKind}:${input.resolutionId}:${input.referenceId}`;
-      const cached = projectionCache.get(key);
-      if (cached !== undefined) return cached;
-      const result = this.mappings.resolveTargetProjections(candidate.target.id, [input]);
-      projectionCache.set(key, result);
-      return result;
+      return projectionCache.getOrLoad(key, () => this.mappings.resolveTargetProjections(candidate.target.id, [input]));
     })).then((items) => items.flat());
     const context = {
       source: candidate.source,

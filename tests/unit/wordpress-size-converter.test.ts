@@ -12,6 +12,19 @@ const config = {
 };
 
 describe("WordPressSizeConverter", () => {
+  it("bounds model table retention and reloads an evicted table without changing conversion", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ conversion_table: { "40": "7" } })));
+    const converter = new WordPressSizeConverter(config, request);
+    const input = { brandTermId: 31, categoryTermId: 75, size: { sourceValue: "40", displayValue: "40", system: "eu-numeric", audience: "men" as const } };
+    for (let model = 1; model <= 257; model++) {
+      expect((await converter.convert({ ...input, modelTermIds: [model] })).sourceValue).toBe("7");
+    }
+    await converter.convert({ ...input, modelTermIds: [257] });
+    expect(request).toHaveBeenCalledTimes(257);
+    expect((await converter.convert({ ...input, modelTermIds: [1] })).sourceValue).toBe("7");
+    expect(request).toHaveBeenCalledTimes(258);
+  });
+
   it("preserves the child scale specified by the brand table rather than treating C as Y", async () => {
     const request = vi.fn(async () => new Response(JSON.stringify({ conversion_table: { "31": "13.5C", "32": "1Y" } })));
     const converter = new WordPressSizeConverter(config, request);
