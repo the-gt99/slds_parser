@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Участие в сборе гостевых профилей Shihuo</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/shihuo-join.js?v=20261008-1"></script>
+</head>
+<body>
+<main class="admin-page shihuo-onboarding">
+  <section class="section">
+    <p class="eyebrow">SLDS Parser</p>
+    <h1>Подключите гостевой профиль Shihuo</h1>
+    <p>Получите персональную инструкцию для своего телефона. Регистрация в аккаунте Shihuo не нужна.</p>
+    <ol>
+      <li>Установите WireGuard и Shihuo до подключения VPN.</li>
+      <li>По инструкции установите временный сертификат и включите VPN. Через это подключение сервер получит параметры гостевого запроса Shihuo.</li>
+      <li>Найдите указанный товар в Shihuo и дождитесь результата проверки.</li>
+      <li>После завершения выключите VPN и удалите временный сертификат.</li>
+    </ol>
+    <p>Каждый профиль принимается один раз. Совпадение всех шести параметров с ранее полученным профилем считается повторной заявкой.</p>
+    <p>С одного IP можно создать до трёх заявок за сутки. Продолжение сохранённой заявки не расходует лимит. Сохраните персональную ссылку, чтобы вернуться к инструкции.</p>
+    <p><button id="join" class="button primary" type="button">Получить инструкцию</button></p>
+    <p id="join-status" role="status" aria-live="polite"></p>
+    <p><button id="new-request" class="button secondary" type="button" hidden>Создать новую заявку</button></p>
+  </section>
+</main>
+</body>
+</html>

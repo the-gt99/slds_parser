@@ -145,10 +145,11 @@ async function main(): Promise<void> {
       assetDirectory: shihuoConfig.signerAssetDirectory,
     });
     const shihuo = shihuoConfig === null ? undefined : new ShihuoGuestDeviceService(
-      new PostgresShihuoDeviceRepository(pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
+      new PostgresShihuoDeviceRepository(pool, pool), new ShihuoSecretCrypto(process.env.PARSER_PROXY_ENCRYPTION_KEY),
       new SystemWireGuardManager(shihuoConfig.wgCommand, shihuoConfig.reconcileService), shihuoConfig,
       new SignedShihuoSearchVerifier(shihuoSigner!),
     );
+    await shihuo?.initializeFingerprints();
     runtime = new RuntimeAdminService(pool, repositories, process.env, undefined, undefined, new PostgresRuntimeWorkerSettingsRepository(pool));
     const dataSchema = new DataSchemaService(repositories.sources);
     const rulesV2 = new RulesV2Service(new PostgresRulesV2Repository(pool), new RulesV2PreviewService(pool), () => rulesExecution.state());

@@ -22,6 +22,8 @@ const assets = new Map([
   ["/assets/rules-v2.js", { file: "rules-v2.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/shihuo-devices.js", { file: "shihuo-devices.js", type: "text/javascript; charset=utf-8" }],
   ["/assets/shihuo-onboarding.js", { file: "shihuo-onboarding.js", type: "text/javascript; charset=utf-8" }],
+  ["/assets/shihuo-join.js", { file: "shihuo-join.js", type: "text/javascript; charset=utf-8" }],
+  ["/shihuo/join", { file: "shihuo-join.html", type: "text/html; charset=utf-8" }],
   ["/assets/shihuo-guide/ios-certificate-1.jpg", { file: "shihuo-guide/ios-certificate-1.jpg", type: "image/jpeg" }],
   ["/assets/shihuo-guide/ios-certificate-2.jpg", { file: "shihuo-guide/ios-certificate-2.jpg", type: "image/jpeg" }],
   ["/assets/shihuo-guide/ios-certificate-3.jpg", { file: "shihuo-guide/ios-certificate-3.jpg", type: "image/jpeg" }],

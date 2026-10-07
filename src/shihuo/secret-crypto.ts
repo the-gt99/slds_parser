@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 const VERSION = "v1";
 
@@ -13,6 +13,10 @@ function decodeKey(raw: string | undefined): Buffer {
 export class ShihuoSecretCrypto {
   readonly #key: Buffer;
   constructor(rawKey: string | undefined) { this.#key = decodeKey(rawKey); }
+
+  fingerprint(domain: string, value: string): string {
+    return createHmac("sha256", this.#key).update(`${domain}\0${value}`).digest("hex");
+  }
 
   encrypt(value: string): string {
     const iv = randomBytes(12);

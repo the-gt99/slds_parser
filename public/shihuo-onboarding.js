@@ -29,6 +29,7 @@ function showStep(step) {
 }
 
 function desiredStep(data) {
+  if (data.diagnosticStage === "duplicate_profile") return "complete";
   if (data.status === "ready" || data.diagnosticStage === "ready") return "complete";
   if (data.profileCaptured) return "verify";
   const certificateWasProven = trustedStages.has(data.diagnosticStage);
@@ -78,11 +79,14 @@ async function refresh() {
   byId("ios-link").href = data.iosAppUrl; byId("android-link").href = data.androidAppUrl;
   recommendedStep = desiredStep(data); const visibleStep = manualStep ?? recommendedStep;
   showStep(visibleStep);
+  const duplicate = data.diagnosticStage === "duplicate_profile";
+  byId("complete-title").textContent = duplicate ? "Повторная заявка не принята" : "Готово";
+  byId("complete-message").textContent = duplicate ? "Этот гостевой профиль уже был получен. Удалите временную настройку с телефона:" : "Данные гостевого подключения получены. Теперь удалите временную настройку с телефона:";
   if (recommendedStep === "search") byId("search-status").textContent = searchMessage(data.diagnosticStage, data.diagnosticMessage);
   if (data.diagnosticStage === "verification_failed") { byId("verify-status").textContent = data.diagnosticMessage || "Проверка не прошла."; byId("verify-retry").hidden = false; verificationAttempted = true; }
   await probeCertificate(data);
   if (recommendedStep === "verify" && data.diagnosticStage !== "verification_failed") void verifyProfile();
-  if (recommendedStep === "complete") void acknowledgeCompletion(data);
+  if (recommendedStep === "complete" && !duplicate) void acknowledgeCompletion(data);
 }
 
 byId("ca-link").href = `/api/shihuo/onboarding/${encodeURIComponent(token)}/ca`;

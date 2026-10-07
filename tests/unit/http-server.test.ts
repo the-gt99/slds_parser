@@ -23,6 +23,20 @@ function dependencies(database: { query(sql: string): Promise<unknown> }) {
 }
 
 describe("HTTP server", () => {
+  it("issues public instructions using the trusted proxy IP and rejects cross-origin registration", async () => {
+    const join = vi.fn().mockResolvedValue({ onboardingUrl: "https://parser.example/shihuo/onboarding/example" });
+    const server = createHttpServer({ ...dependencies({ query: vi.fn() }), shihuo: { join } as unknown as ShihuoGuestDeviceService });
+    const response = await server.inject({ method: "POST", url: "/api/shihuo/join", payload: { requestKey: "a".repeat(64) }, headers: { "x-real-ip": "203.0.113.8" }, remoteAddress: "127.0.0.1" });
+    expect(response.statusCode).toBe(200);
+    expect(join).toHaveBeenCalledWith("a".repeat(64), "203.0.113.8");
+    await server.inject({ method: "POST", url: "/api/shihuo/join", payload: { requestKey: "a".repeat(64) }, headers: { "x-real-ip": "203.0.113.9" }, remoteAddress: "203.0.113.7" });
+    expect(join).toHaveBeenLastCalledWith("a".repeat(64), "203.0.113.7");
+    const rejected = await server.inject({ method: "POST", url: "/api/shihuo/join", payload: { requestKey: "a".repeat(64) }, headers: { origin: "https://other.example" } });
+    expect(rejected.statusCode).toBe(403);
+    expect(join).toHaveBeenCalledTimes(2);
+    expect((await server.inject({ url: "/shihuo/join" })).body).toContain("Получить инструкцию");
+    await server.close();
+  });
   it("protects Shihuo device administration while keeping token onboarding public", async () => {
     const shihuo = { list: vi.fn().mockResolvedValue([]), onboarding: vi.fn().mockResolvedValue({ name: "Phone", challenge: "SLDS-X" }) } as unknown as ShihuoGuestDeviceService;
     const server = createHttpServer({ ...dependencies({ query: vi.fn() }), shihuo });

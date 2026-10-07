@@ -1,6 +1,7 @@
 import type { EntityId } from "../../../contracts/index.js";
 import type { ShihuoDeviceRecord, ShihuoDeviceRepository, ShihuoDeviceStatus, ShihuoDiagnosticStage } from "../../../shihuo/index.js";
-import type { SqlExecutor } from "../sql-executor.js";
+import type { SqlExecutor, SqlPool } from "../sql-executor.js";
+import { PermanentError } from "../../../core/errors/index.js";
 import { requireRow } from "./repository-utils.js";
 import type { DatabaseRow } from "./row-mappers.js";
 
@@ -9,7 +10,7 @@ const timestamp = (value: unknown): string | null => value == null ? null : valu
 function mapDevice(row: DatabaseRow): ShihuoDeviceRecord {
   return {
     id: String(row.id), name: String(row.name), status: row.status as ShihuoDeviceStatus,
-    wireguardPublicKey: String(row.wireguard_public_key), wireguardIp: String(row.wireguard_ip).replace(/\/32$/u, ""),
+    wireguardPublicKey: String(row.wireguard_public_key), wireguardIp: row.wireguard_ip == null ? null : String(row.wireguard_ip).replace(/\/32$/u, ""),
     onboardingTokenHash: row.onboarding_token_hash == null ? null : String(row.onboarding_token_hash),
     onboardingExpiresAt: timestamp(row.onboarding_expires_at), challenge: String(row.challenge),
     guestProfileCiphertext: row.guest_profile_ciphertext == null ? null : String(row.guest_profile_ciphertext),
@@ -24,7 +25,61 @@ function mapDevice(row: DatabaseRow): ShihuoDeviceRecord {
 }
 
 export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
-  constructor(private readonly executor: SqlExecutor) {}
+  constructor(private readonly executor: SqlExecutor, private readonly pool: SqlPool) {}
+
+  private async transaction<T>(action: (client: SqlExecutor) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await action(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async findPublic(requestHash: string) {
+    return this.publicRegistration(this.executor, requestHash);
+  }
+
+  private async publicRegistration(executor: SqlExecutor, requestHash: string) {
+    const result = await executor.query<DatabaseRow>(`SELECT d.*, r.token_ciphertext, r.expires_at AS public_expires_at
+      FROM shihuo_public_registrations r LEFT JOIN shihuo_guest_devices d ON d.id=r.device_id
+      WHERE r.request_hash=$1`, [requestHash]);
+    const row = result.rows[0];
+    if (!row) return null;
+    if (row.id == null || new Date(String(row.public_expires_at)).getTime() <= Date.now() || row.status === "revoked") {
+      throw new PermanentError("Ссылка истекла. Создайте новую заявку.", { code: "SHIHUO_PUBLIC_LINK_EXPIRED" });
+    }
+    return { device: mapDevice(row), tokenCiphertext: String(row.token_ciphertext) };
+  }
+
+  async createPublic(input: Parameters<ShihuoDeviceRepository["create"]>[0], registration: Parameters<ShihuoDeviceRepository["createPublic"]>[1]) {
+    return this.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(81473192)");
+      const existing = await this.publicRegistration(client, registration.requestHash);
+      if (existing) return { ...existing, created: false };
+      const count = await client.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM shihuo_public_registrations
+        WHERE ip_hash=$1 AND created_at > NOW()-INTERVAL '24 hours'`, [registration.ipHash]);
+      if (count.rows[0]!.count >= 3) throw new PermanentError("С этого IP уже созданы три заявки за сутки. Продолжите ранее начатую заявку или попробуйте позже.", { code: "SHIHUO_PUBLIC_RATE_LIMIT" });
+      await client.query(`UPDATE shihuo_guest_devices d SET wireguard_ip=NULL, client_private_key_ciphertext=NULL,
+        status=CASE WHEN d.status='ready' THEN 'ready' ELSE 'revoked' END,
+        diagnostic_stage=CASE WHEN d.status='ready' THEN d.diagnostic_stage ELSE 'revoked' END,
+        completion_acknowledged_at=CASE WHEN d.status='ready' THEN COALESCE(d.completion_acknowledged_at,NOW()) ELSE d.completion_acknowledged_at END,
+        updated_at=NOW()
+        FROM shihuo_public_registrations r WHERE r.device_id=d.id AND r.expires_at<=NOW()
+        AND d.wireguard_ip IS NOT NULL`);
+      const device = await this.insertDevice(client, input);
+      await client.query(`INSERT INTO shihuo_public_registrations(request_hash,ip_hash,device_id,token_ciphertext,expires_at)
+        VALUES($1,$2,$3,$4,$5::timestamptz)`, [registration.requestHash, registration.ipHash, device.id, registration.tokenCiphertext, input.expiresAt]);
+      return { device, tokenCiphertext: registration.tokenCiphertext, created: true };
+    });
+  }
+
+  async registerFingerprint(id: EntityId, fingerprint: string): Promise<void> {
+    await this.executor.query(`INSERT INTO shihuo_profile_fingerprints(fingerprint,device_id) VALUES($1,$2)
+      ON CONFLICT(fingerprint) DO NOTHING`, [fingerprint, id]);
+  }
 
   async randomProductSku(): Promise<string | null> {
     const result = await this.executor.query<DatabaseRow>(
@@ -35,6 +90,7 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
            AND data->'attributes'->>'productType'='sneakers'
            AND COALESCE((data->'metadata'->>'activeVariantCount')::INTEGER, 0) > 0
            AND BTRIM(data->>'sku') ~ '^[A-Za-z0-9][A-Za-z0-9 ._/-]{2,39}$'
+           AND NOT EXISTS (SELECT 1 FROM shihuo_guest_devices d WHERE d.challenge=BTRIM(data->>'sku'))
          ORDER BY RANDOM() LIMIT 1`,
     );
     return result.rows[0]?.sku == null ? null : String(result.rows[0].sku);
@@ -58,9 +114,16 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
   }
 
   async create(input: Parameters<ShihuoDeviceRepository["create"]>[0]): Promise<ShihuoDeviceRecord> {
-    const result = await this.executor.query<DatabaseRow>(
-      `WITH locked AS (SELECT pg_advisory_xact_lock(81473192)), candidate AS (
-         SELECT host($7::inet + slot)::inet AS address FROM locked, generate_series($8::INTEGER, $9::INTEGER) slot
+    return this.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(81473192)");
+      return this.insertDevice(client, input);
+    });
+  }
+
+  private async insertDevice(executor: SqlExecutor, input: Parameters<ShihuoDeviceRepository["create"]>[0]): Promise<ShihuoDeviceRecord> {
+    const result = await executor.query<DatabaseRow>(
+      `WITH candidate AS (
+         SELECT host($7::inet + slot)::inet AS address FROM generate_series($8::INTEGER, $9::INTEGER) slot
          WHERE NOT EXISTS (SELECT 1 FROM shihuo_guest_devices d WHERE d.wireguard_ip = host($7::inet + slot)::inet)
          ORDER BY slot LIMIT 1
        )
@@ -70,7 +133,8 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
       [input.name, input.publicKey, input.tokenHash, input.expiresAt, input.challenge, input.privateKeyCiphertext,
         input.subnet, input.firstHost, input.lastHost],
     );
-    return mapDevice(requireRow(result.rows, "Shihuo device", input.name));
+    if (!result.rows[0]) throw new PermanentError("Все подключения заняты. Попробуйте позже.", { code: "SHIHUO_PUBLIC_CAPACITY" });
+    return mapDevice(result.rows[0]);
   }
 
   async rotateToken(id: EntityId, tokenHash: string, expiresAt: string): Promise<ShihuoDeviceRecord> {
@@ -88,6 +152,7 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
        onboarding_token_hash=CASE WHEN $2='revoked' THEN NULL ELSE onboarding_token_hash END,
        onboarding_expires_at=CASE WHEN $2='revoked' THEN NULL ELSE onboarding_expires_at END,
        client_private_key_ciphertext=CASE WHEN $2='revoked' THEN NULL ELSE client_private_key_ciphertext END,
+       wireguard_ip=CASE WHEN $2='revoked' AND EXISTS(SELECT 1 FROM shihuo_public_registrations WHERE device_id=$1) THEN NULL ELSE wireguard_ip END,
        updated_at=NOW()
        WHERE id=$1 RETURNING *`, [id, status, stage],
     );
@@ -110,7 +175,9 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
   async acknowledgeCompletion(id: EntityId): Promise<ShihuoDeviceRecord> {
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE shihuo_guest_devices SET completion_acknowledged_at=COALESCE(completion_acknowledged_at,NOW()),
-       client_private_key_ciphertext=NULL, updated_at=NOW() WHERE id=$1 AND status='ready' RETURNING *`, [id],
+       client_private_key_ciphertext=NULL,
+       wireguard_ip=CASE WHEN EXISTS(SELECT 1 FROM shihuo_public_registrations WHERE device_id=$1) THEN NULL ELSE wireguard_ip END,
+       updated_at=NOW() WHERE id=$1 AND status='ready' RETURNING *`, [id],
     );
     return mapDevice(requireRow(result.rows, "Shihuo device", id));
   }
@@ -147,20 +214,39 @@ export class PostgresShihuoDeviceRepository implements ShihuoDeviceRepository {
            last_traffic_at=CASE WHEN $5::timestamptz IS NULL THEN NOW() ELSE last_traffic_at END,
            last_request_at=CASE WHEN $2 IN ('profile_captured','authorized_request_rejected','profile_incomplete') THEN NOW() ELSE last_request_at END,
          updated_at=NOW()
-       WHERE wireguard_ip=$1::inet AND status NOT IN ('paused','revoked') RETURNING *`,
+       WHERE wireguard_ip=$1::inet AND status='onboarding' AND completion_acknowledged_at IS NULL RETURNING *`,
       [input.wireguardIp, input.stage, input.message ?? null, captured ? input.profileCiphertext : null, input.handshakeAt ?? null],
     );
     return result.rows[0] ? mapDevice(result.rows[0]) : null;
   }
 
-  async recordVerification(id: EntityId, success: boolean, message?: string): Promise<ShihuoDeviceRecord> {
-    const result = await this.executor.query<DatabaseRow>(
+  async recordVerification(id: EntityId, success: boolean, message?: string, profile?: { fingerprint: string; ciphertext: string }): Promise<ShihuoDeviceRecord> {
+    return this.transaction(async (client) => {
+      const locked = await client.query<DatabaseRow>("SELECT * FROM shihuo_guest_devices WHERE id=$1 FOR UPDATE", [id]);
+      const device = mapDevice(requireRow(locked.rows, "Shihuo device", id));
+      if (device.status === "paused" || device.status === "revoked" || device.diagnosticStage === "duplicate_profile") return device;
+      if (device.status === "ready") return device;
+      if (profile && device.guestProfileCiphertext !== profile.ciphertext) throw new PermanentError("Профиль изменился. Повторите проверку.", { code: "SHIHUO_PROFILE_CHANGED" });
+      if (success && profile) {
+        const claimed = await client.query<{ device_id: string | null }>(`INSERT INTO shihuo_profile_fingerprints(fingerprint,device_id) VALUES($1,$2)
+          ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING device_id`, [profile.fingerprint,id]);
+        if (String(claimed.rows[0]!.device_id) !== id) {
+          const duplicate = await client.query<DatabaseRow>(`UPDATE shihuo_guest_devices SET status='error', diagnostic_stage='duplicate_profile',
+            diagnostic_message='Этот гостевой профиль уже был получен. Повторная заявка не принята.',
+            completion_acknowledged_at=NOW(),client_private_key_ciphertext=NULL,
+            wireguard_ip=CASE WHEN EXISTS(SELECT 1 FROM shihuo_public_registrations WHERE device_id=$1) THEN NULL ELSE wireguard_ip END,
+            last_verification_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *`, [id]);
+          return mapDevice(duplicate.rows[0]!);
+        }
+      }
+      const result = await client.query<DatabaseRow>(
       `UPDATE shihuo_guest_devices SET status=CASE WHEN $2 THEN 'ready' ELSE 'onboarding' END,
        diagnostic_stage=CASE WHEN $2 THEN 'ready' ELSE 'verification_failed' END,
        diagnostic_message=$3, last_verification_at=NOW(), updated_at=NOW()
        WHERE id=$1 AND status NOT IN ('paused','revoked') RETURNING *`, [id, success, message ?? null],
     );
-    return mapDevice(requireRow(result.rows, "Shihuo device", id));
+      return mapDevice(requireRow(result.rows, "Shihuo device", id));
+    });
   }
 
   async delete(id: EntityId): Promise<void> {

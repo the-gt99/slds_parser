@@ -74,7 +74,7 @@ describe("Shihuo guest device onboarding", () => {
     const service = new ShihuoGuestDeviceService(repository, crypto, {} as never, config, localVerifier);
     await expect(service.verify("a".repeat(43))).resolves.toEqual({ verified: true, goodsCount: 20 });
     expect(localVerifier.verify).toHaveBeenCalledWith(profile, captured.challenge);
-    expect(repository.recordVerification).toHaveBeenCalledWith(captured.id, true);
+    expect(repository.recordVerification).toHaveBeenCalledWith(captured.id, true, undefined, { fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u), ciphertext: captured.guestProfileCiphertext });
   });
 
   it("does not treat an old WireGuard handshake as a current connection", async () => {
@@ -92,11 +92,31 @@ describe("Shihuo guest device onboarding", () => {
       audit: vi.fn(), list: vi.fn().mockResolvedValue([completed, record({ id: "2" })]),
     } as unknown as ShihuoDeviceRepository;
     const wireguard = { reconcile: vi.fn() };
-    const service = new ShihuoGuestDeviceService(repository, new ShihuoSecretCrypto(key), wireguard as never, config, verifier);
+    const service = new ShihuoGuestDeviceService(repository, new ShihuoSecretCrypto(key), wireguard as never, config, verifier, () => new Date("2026-09-24T00:00:00Z"));
 
     await expect(service.acknowledgeCertificate("a".repeat(43))).resolves.toEqual({ acknowledged: true });
     await expect(service.acknowledgeCompletion("a".repeat(43))).resolves.toEqual({ completed: true });
     await expect(service.gatewayPeers()).resolves.toMatchObject({ items: [{ id: "2" }] });
+    expect(wireguard.reconcile).toHaveBeenCalledOnce();
+  });
+
+  it("resumes a public request without generating another peer or consuming another IP limit", async () => {
+    const crypto = new ShihuoSecretCrypto(key);
+    const repository = { findPublic: vi.fn().mockResolvedValue({ device: record(), tokenCiphertext: crypto.encrypt("a".repeat(43)) }) } as unknown as ShihuoDeviceRepository;
+    const wireguard = { generateKeyPair: vi.fn(), reconcile: vi.fn() };
+    const service = new ShihuoGuestDeviceService(repository, crypto, wireguard, config, verifier);
+    await expect(service.join("b".repeat(64), "203.0.113.1")).resolves.toMatchObject({ onboardingUrl: `https://parser.example/shihuo/onboarding/${"a".repeat(43)}` });
+    expect(wireguard.generateKeyPair).not.toHaveBeenCalled();
+  });
+
+  it("reports duplicates as rejected and removes their temporary peer", async () => {
+    const crypto = new ShihuoSecretCrypto(key);
+    const profile = { platform: "ios", "app-v": "7.6.0", sk: "guest", luid: "device", osv: "18.0", "user-agent": "shihuo" };
+    const captured = record({ guestProfileCiphertext: crypto.encrypt(JSON.stringify(profile)) });
+    const repository = { findByTokenHash: vi.fn().mockResolvedValue(captured), recordVerification: vi.fn().mockResolvedValue(record({ status: "error", diagnosticStage: "duplicate_profile", diagnosticMessage: "Повтор" })), audit: vi.fn() } as unknown as ShihuoDeviceRepository;
+    const wireguard = { reconcile: vi.fn() };
+    const service = new ShihuoGuestDeviceService(repository, crypto, wireguard as never, config, verifier);
+    await expect(service.verify("a".repeat(43))).resolves.toEqual({ verified: false, duplicate: true, message: "Повтор" });
     expect(wireguard.reconcile).toHaveBeenCalledOnce();
   });
 });

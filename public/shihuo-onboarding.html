@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Настройка Shihuo</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <script type="module" src="/assets/shihuo-onboarding.js?v=20261008-1"></script>
+  <script type="module" src="/assets/shihuo-onboarding.js?v=20261008-2"></script>
 </head>
 <body>
 <main class="admin-page shihuo-onboarding">
@@ -91,8 +91,8 @@
   </section>
 
   <section id="step-complete" class="section shihuo-step shihuo-complete" hidden>
-    <h2>Готово</h2>
-    <p>Данные гостевого подключения получены. Теперь удалите временную настройку с телефона:</p>
+    <h2 id="complete-title">Готово</h2>
+    <p id="complete-message">Данные гостевого подключения получены. Теперь удалите временную настройку с телефона:</p>
     <ol>
       <li>В WireGuard выключите и удалите туннель Shihuo.</li>
       <li>На iPhone откройте «Настройки → Основные → VPN и управление устройством» и удалите профиль SLDS Shihuo CA.</li>

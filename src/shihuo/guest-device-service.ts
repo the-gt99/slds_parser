@@ -12,9 +12,10 @@ import type { ShihuoSearchVerifier } from "./search-verifier.js";
 import type { WireGuardManager } from "./wireguard-manager.js";
 
 const tokenHash = (token: string): string => createHash("sha256").update(token).digest("hex");
+const profileKeys = ["platform", "app-v", "sk", "luid", "osv", "user-agent"] as const;
 
 export interface ShihuoAdminDevice {
-  readonly id: EntityId; readonly name: string; readonly status: ShihuoDeviceStatus; readonly wireguardIp: string;
+  readonly id: EntityId; readonly name: string; readonly status: ShihuoDeviceStatus; readonly wireguardIp: string | null;
   readonly diagnosticStage: string; readonly diagnosticMessage: string | null; readonly createdAt: string;
   readonly updatedAt: string; readonly lastHandshakeAt: string | null; readonly lastRequestAt: string | null;
   readonly lastVerificationAt: string | null;
@@ -36,6 +37,36 @@ export class ShihuoGuestDeviceService {
 
   async list(): Promise<readonly ShihuoAdminDevice[]> { return (await this.repository.list()).map(publicDevice); }
 
+  private profileFingerprint(profile: ShihuoGuestProfile): string {
+    return this.crypto.fingerprint("shihuo-profile-v1", JSON.stringify(profileKeys.map((key) => profile[key])));
+  }
+
+  async initializeFingerprints(): Promise<void> {
+    const records = [...await this.repository.list()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || Number(a.id)-Number(b.id));
+    for (const record of records) {
+      if (record.guestProfileCiphertext === null || (record.status !== "ready" && record.completionAcknowledgedAt === null) || record.diagnosticStage === "duplicate_profile") continue;
+      const profile = JSON.parse(this.crypto.decrypt(record.guestProfileCiphertext)) as ShihuoGuestProfile;
+      await this.repository.registerFingerprint(record.id, this.profileFingerprint(profile));
+    }
+  }
+
+  async join(requestKey: unknown, ip: string) {
+    if (typeof requestKey !== "string" || !/^[a-f0-9]{64}$/u.test(requestKey)) throw new PermanentError("Некорректная заявка.", { code: "INVALID_SHIHUO_DEVICE" });
+    const requestHash = tokenHash(requestKey);
+    const existing = await this.repository.findPublic(requestHash);
+    if (existing) return { onboardingUrl: this.onboardingUrl(this.crypto.decrypt(existing.tokenCiphertext)), expiresAt: existing.device.onboardingExpiresAt };
+    const challenge = await this.repository.randomProductSku();
+    if (challenge === null) throw new PermanentError("Сейчас нельзя создать заявку. Попробуйте позже.", { code: "SHIHUO_PRODUCT_SKU_UNAVAILABLE" });
+    const issued = this.issueToken(); const keys = await this.wireguard.generateKeyPair();
+    const result = await this.repository.createPublic({ name: `Гость ${requestHash.slice(0, 10)}`, publicKey: keys.publicKey,
+      tokenHash: issued.hash, expiresAt: issued.expiresAt, challenge, privateKeyCiphertext: this.crypto.encrypt(keys.privateKey),
+      subnet: this.config.subnet, firstHost: 10, lastHost: 254 },
+    { requestHash, ipHash: this.crypto.fingerprint("shihuo-public-ip-v1", ip), tokenCiphertext: this.crypto.encrypt(issued.token) });
+    if (result.created) await this.repository.audit({ deviceId: result.device.id, action: "public_create", actor: "public" });
+    await this.wireguard.reconcile();
+    return { onboardingUrl: this.onboardingUrl(this.crypto.decrypt(result.tokenCiphertext)), expiresAt: result.device.onboardingExpiresAt };
+  }
+
   gatewayAuthorized(value: string | undefined): boolean {
     const token = /^Bearer\s+(.+)$/iu.exec(value ?? "")?.[1]?.trim();
     if (!token) return false;
@@ -45,7 +76,8 @@ export class ShihuoGuestDeviceService {
   }
 
   async gatewayPeers() {
-    return { items: (await this.repository.list()).filter((item) => item.status !== "paused" && item.status !== "revoked" && item.completionAcknowledgedAt === null).map((item) => ({
+    return { items: (await this.repository.list()).filter((item) => item.wireguardIp !== null && item.status !== "paused" && item.status !== "revoked" && item.status !== "error" && item.completionAcknowledgedAt === null
+      && item.onboardingExpiresAt !== null && Date.parse(item.onboardingExpiresAt) > this.now().getTime()).map((item) => ({
       id: item.id, publicKey: item.wireguardPublicKey, wireguardIp: item.wireguardIp, challenge: item.challenge,
     })) };
   }
@@ -59,7 +91,7 @@ export class ShihuoGuestDeviceService {
     let profileCiphertext: string | undefined;
     if (stage === "profile_captured") {
       if (body.profile === null || typeof body.profile !== "object" || Array.isArray(body.profile)) throw new PermanentError("Guest profile is required", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
-      const profile = body.profile as Record<string, unknown>; const keys = ["platform", "app-v", "sk", "luid", "osv", "user-agent"] as const;
+      const profile = body.profile as Record<string, unknown>; const keys = profileKeys;
       if (Object.keys(profile).length !== keys.length || keys.some((key) => typeof profile[key] !== "string" || !(profile[key] as string))) throw new PermanentError("Guest profile fields are invalid", { code: "INVALID_SHIHUO_GATEWAY_EVENT" });
       profileCiphertext = this.crypto.encrypt(JSON.stringify(Object.fromEntries(keys.map((key) => [key, profile[key]]))));
     }
@@ -145,21 +177,31 @@ export class ShihuoGuestDeviceService {
 
   async verify(token: string) {
     const record = await this.validToken(token);
+    if (record.diagnosticStage === "duplicate_profile") return { verified: false, duplicate: true, message: record.diagnosticMessage };
+    if (record.status === "ready") return { verified: true };
     if (record.guestProfileCiphertext === null) throw new PermanentError("Shihuo guest profile has not been captured", { code: "INVALID_SHIHUO_DEVICE_STATE" });
     let profile: ShihuoGuestProfile;
     try { profile = JSON.parse(this.crypto.decrypt(record.guestProfileCiphertext)) as ShihuoGuestProfile; }
     catch { throw new PermanentError("Shihuo guest profile cannot be read", { code: "SHIHUO_VERIFICATION_FAILED" }); }
+    let result;
     try {
-      const result = await this.verifier.verify(profile, record.challenge);
-      await this.repository.recordVerification(record.id, true);
-      await this.repository.audit({ deviceId: record.id, action: "profile_verified", actor: "onboarding", payload: { httpStatus: result.httpStatus, goodsCount: result.goodsCount } });
-      return { verified: true, goodsCount: result.goodsCount };
+      result = await this.verifier.verify(profile, record.challenge);
     } catch {
       const message = "Тестовый запрос к Shihuo не прошёл. Повторите проверку позже.";
-      await this.repository.recordVerification(record.id, false, message);
+      const failed = await this.repository.recordVerification(record.id, false, message, { fingerprint: this.profileFingerprint(profile), ciphertext: record.guestProfileCiphertext });
+      if (failed.status === "ready") return { verified: true };
       await this.repository.audit({ deviceId: record.id, action: "profile_verification_failed", actor: "onboarding" });
       return { verified: false, message };
     }
+    const verified = await this.repository.recordVerification(record.id, true, undefined, { fingerprint: this.profileFingerprint(profile), ciphertext: record.guestProfileCiphertext });
+    if (verified.diagnosticStage === "duplicate_profile") {
+      await this.repository.audit({ deviceId: record.id, action: "profile_duplicate", actor: "onboarding" });
+      await this.wireguard.reconcile();
+      return { verified: false, duplicate: true, message: verified.diagnosticMessage };
+    }
+    if (verified.status !== "ready") throw new PermanentError("Заявка приостановлена или отозвана.", { code: "INVALID_SHIHUO_DEVICE_STATE" });
+    await this.repository.audit({ deviceId: record.id, action: "profile_verified", actor: "onboarding", payload: { httpStatus: result.httpStatus, goodsCount: result.goodsCount } });
+    return { verified: true, goodsCount: result.goodsCount };
   }
 
   async configuration(token: string): Promise<string> {

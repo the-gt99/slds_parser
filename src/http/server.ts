@@ -3,6 +3,7 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
+import { isIP } from "node:net";
 
 import type { AdminApiConfig, McpConfig } from "../config/index.js";
 import { AppError } from "../core/errors/index.js";
@@ -871,6 +872,9 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       return reply.code(400).send({ error: "invalid_request", message: error.message });
     }
     if (error instanceof AppError) {
+      if (error.code === "SHIHUO_PUBLIC_RATE_LIMIT") return reply.code(429).send({ error: error.code.toLowerCase(), message: error.message });
+      if (error.code === "SHIHUO_PUBLIC_LINK_EXPIRED") return reply.code(410).send({ error: error.code.toLowerCase(), message: error.message });
+      if (error.code === "SHIHUO_PUBLIC_CAPACITY") return reply.code(503).send({ error: error.code.toLowerCase(), message: error.message });
       const status = error.code === "ENTITY_NOT_FOUND"
         ? 404
         : error.code === "TARGET_DICTIONARY_REQUEST_FAILED"
@@ -918,6 +922,24 @@ export function createHttpServer(dependencies: HttpServerDependencies): FastifyI
       return { authenticated: false };
     },
   );
+
+  server.post<{ Body: { requestKey?: unknown } }>("/api/shihuo/join", async (request, reply) => {
+    const service = shihuoService();
+    if (request.headers.origin !== undefined) {
+      let validOrigin = false;
+      try {
+        const origin = new URL(request.headers.origin);
+        validOrigin = origin.host === request.headers.host && (origin.protocol === "https:" || origin.protocol === "http:");
+      } catch { /* Invalid origin is rejected below. */ }
+      if (!validOrigin) return reply.code(403).send({ error: "invalid_origin", message: "Откройте страницу участия на сайте парсера." });
+    }
+    const peer = request.raw.socket.remoteAddress ?? request.ip;
+    const forwarded = request.headers["x-real-ip"];
+    const loopback = peer === "127.0.0.1" || peer === "::1" || peer === "::ffff:127.0.0.1";
+    let ip = loopback && typeof forwarded === "string" && isIP(forwarded) ? forwarded : peer;
+    if (ip.startsWith("::ffff:") && isIP(ip.slice(7)) === 4) ip = ip.slice(7);
+    return reply.header("Cache-Control", "no-store").send(await service.join(request.body?.requestKey, ip));
+  });
 
   server.get("/api/shihuo/devices", { preHandler: requireAdmin }, async () => ({ items: await shihuoService().list() }));
   server.post<{ Body: ShihuoCreateBody }>("/api/shihuo/devices", { preHandler: [requireAdmin, requireMutationAccess] }, async (request, reply) =>
