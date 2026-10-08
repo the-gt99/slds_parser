@@ -175,7 +175,7 @@ export class MemoryJobRepository implements JobRepository {
   async complete(id: EntityId): Promise<void> { this.store.jobs.set(id, { ...this.store.jobs.get(id)!, status: "completed", lockedAt: null, lockedBy: null, finishedAt: timestamp }); }
   async saveExportSubmission(id: EntityId, workerId: string, submission: import("../../src/contracts/index.js").JsonObject): Promise<void> {
     const job = this.store.jobs.get(id);
-    if (job?.status !== "running" || job.lockedBy !== workerId || job.jobType !== "export_product") throw new Error("Export job ownership lost");
+    if (job?.status !== "running" || job.lockedBy !== workerId || !["export_product","export_product_images"].includes(job.jobType)) throw new Error("Export job ownership lost");
     this.store.jobs.set(id, { ...job, payload: { ...(job.payload as import("../../src/contracts/index.js").JsonObject), submission } });
   }
   async retry(id: EntityId, input: RetryJobInput): Promise<void> { const job = this.store.jobs.get(id)!; this.store.jobs.set(id, { ...job, status: "retry", attempts: input.consumeAttempt === false ? Math.max(0, job.attempts - 1) : job.attempts, availableAt: input.availableAt, lastError: input.error, lockedAt: null, lockedBy: null }); }

@@ -17,7 +17,7 @@ export interface DownloadImagesOperationOptions {
 export class DownloadImagesOperation implements ProductOperation {
   readonly code = "download-images";
   readonly name = "Скачивание изображений";
-  readonly version = "1.2.0";
+  readonly version = "1.3.0";
   readonly dependsOn = ["normalize-product"];
   readonly sourceCodes?: readonly string[];
   readonly configurationFingerprint: JsonValue;
@@ -64,6 +64,8 @@ export class DownloadImagesOperation implements ProductOperation {
             ...(previous.width === undefined ? {} : { width: previous.width }),
             ...(previous.height === undefined ? {} : { height: previous.height }),
             ...(previous.sourceContentHash === undefined ? {} : { sourceContentHash: previous.sourceContentHash }),
+            ...(previous.sourceEtag === undefined ? {} : { sourceEtag: previous.sourceEtag }),
+            ...(previous.sourceLastModified === undefined ? {} : { sourceLastModified: previous.sourceLastModified }),
             contentHash: imageContentHash(binary),
             perceptualHash: await imagePerceptualHash(binary),
           };

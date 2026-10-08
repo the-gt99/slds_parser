@@ -77,7 +77,7 @@ function nextIdlePollDelay(current: number, base: number): number {
 function usesWordPressRetryPolicy(job: JobRecord, error: unknown): boolean {
   return error instanceof RetryableError
     && error.code.startsWith("WORDPRESS_")
-    && (job.jobType === "preflight_product" || job.jobType === "export_product"
+    && (job.jobType === "preflight_product" || job.jobType === "export_product" || job.jobType === "export_product_images"
       || job.jobType === "prepare_wordpress_variation_patch" || job.jobType === "submit_wordpress_variation_patches"
       || job.jobType === "poll_wordpress_variation_patches");
 }
@@ -308,6 +308,8 @@ export class Worker {
         ...(role === "content-enrichment" ? [this.runLane(controller.signal,
           ["collect_product_content","translate_product_content"], `${this.options.workerId}:content`)] : []),
         ...(runPipeline ? [
+        this.runLane(controller.signal, ["refresh_product_images"], `${this.options.workerId}:image-refresh`),
+        this.runLane(controller.signal, ["export_product_images"], `${this.options.workerId}:image-export`),
         this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),
         ...Array.from({ length: configuredConcurrency.collectionConcurrency }, (_, index) =>
           this.runLane(controller.signal, collectionJobTypes, `${this.options.workerId}:collection-${index + 1}`)),
@@ -342,6 +344,7 @@ export class Worker {
           ...(this.wordpressVariationAuto === undefined ? [] : [this.runWordPressVariationAutoLane(controller.signal, runInventory ? undefined : "wordpress")]),
         ] : []),
         ...(runGoatInventory ? [
+          this.runLane(controller.signal, ["check_product_images"], `${this.options.workerId}:image-check`),
           ...Array.from({ length: this.options.inventoryRefreshConcurrency ?? 1 }, (_, index) =>
             this.runLane(controller.signal, wordpressGoatInventoryJobTypes, `${this.options.workerId}:inventory-goat-${index + 1}`)),
           ...(this.wordpressVariationAuto === undefined || runInventory ? [] : [this.runWordPressVariationAutoLane(controller.signal, "goat")]),

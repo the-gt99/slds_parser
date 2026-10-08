@@ -5,12 +5,14 @@ import type {
   JsonObject,
   JsonValue,
   ProductImageDTO,
+  ProductImageExportContext,
   ProductSizeDTO,
   ProductVariantDTO,
   UniversalProductDTO,
 } from "../../contracts/index.js";
 import { IntegrationContractError, RetryableError } from "../../core/errors/index.js";
 import { hashStableJson } from "../../core/utils/index.js";
+import { WordPressProductSnapshotReader } from "./wordpress-product-snapshot-reader.js";
 import { resolveWordPressSourceSize } from "./wordpress-size-rules.js";
 import { WordPressSizeConverter, WordPressSizeConversionMissingError, type WordPressSizeConverterLike } from "./wordpress-size-converter.js";
 import {
@@ -81,9 +83,11 @@ interface WordPressResponse {
   readonly variation_plan?: unknown;
   readonly snapshot?: unknown;
   readonly resolved_content?: unknown;
+  readonly image_identity_mode?: unknown;
 }
 
 export interface WordPressUpsertPreflightResult {
+  readonly imageIdentityMode?: string;
   readonly externalId: string | null;
   readonly willCreate: boolean;
   readonly matchedBy: string;
@@ -1176,6 +1180,29 @@ export async function buildWordPressUpsertPayload(
   context: ExportContext,
   converter?: WordPressSizeConverterLike,
 ): Promise<JsonObject> {
+  if (context.imageRefreshOnly === true) {
+    const snapshot = record(context.existingTargetSnapshot, "WordPress image refresh snapshot");
+    const product = record(snapshot.product, "WordPress image refresh product");
+    const sourceExternalId = context.sourceProduct.externalId?.trim() ?? "";
+    const sourceCode = context.source.code.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(sourceCode) || sourceExternalId === ""
+      || !context.existingExternalId || String(product.target_id) !== context.existingExternalId) {
+      throw new IntegrationContractError("Image refresh requires a confirmed existing WordPress product identity");
+    }
+    if (product.status !== "publish" || product.type !== "variable" || text(product.title).trim() === "") {
+      throw new IntegrationContractError("Image refresh supports only existing published variable WordPress products");
+    }
+    if (context.product.images.length === 0) throw new IntegrationContractError("Image refresh cannot erase all product images");
+    // The current upsert contract requires one non-media field. Keep the exact target title,
+    // guarded by expected_target_snapshot, rather than applying the source title.
+    const base: JsonObject = { contract_version: CONTRACT_VERSION, mode: "upsert",
+      identity: { source_code: sourceCode, source_external_id: sourceExternalId,
+        external_key: `${sourceCode}:${sourceExternalId}`, target_id: Number(context.existingExternalId) },
+      managed_fields: ["title", "images"], product: { status: "publish", title: product.title as string,
+        sku: text(product.sku), images: context.product.images.map((image) => ({ ...imagePayload(image, sourceExternalId), identity_mode: "exact_content" })) } };
+    const payload: JsonObject = { ...base, idempotency_key: `slds-images:v1:${hashStableJson(base)}` };
+    return { ...payload, payload_hash: hashStableJson(payload) };
+  }
   return (await buildWordPressPayload(context, false, converter)).payload;
 }
 
@@ -1194,7 +1221,7 @@ function withoutLiveVariants(context: ExportContext): ExportContext {
 
 export class WordPressExporter {
   readonly targetCode = "wordpress";
-  readonly version = "1.33.0";
+  readonly version = "1.34.0";
   private readonly pendingJobReads = new Map<number, Array<{
     readonly resolve: (job: WordPressJob) => void;
     readonly reject: (error: unknown) => void;
@@ -1270,6 +1297,7 @@ export class WordPressExporter {
       matchedBy,
       payloadHash,
       variationPlan,
+      ...(typeof response.image_identity_mode === "string" ? { imageIdentityMode: response.image_identity_mode } : {}),
       ...(snapshot === undefined ? {} : { snapshot }),
       ...(resolvedDescriptionHtml === undefined ? {} : { resolvedDescriptionHtml }),
       ...(resolvedDescriptionSource === undefined ? {} : { resolvedDescriptionSource }),
@@ -1341,6 +1369,38 @@ export class WordPressExporter {
     }
     await context.onSubmitted?.({ jobId, payloadHash: expectedPayloadHash });
     return this.exportResult(await this.waitForJob(jobId, expectedPayloadHash, initialJob));
+  }
+
+  async exportImages(context: ProductImageExportContext): Promise<ExportResult> {
+    if (context.existingExternalId === undefined) throw new IntegrationContractError("Image refresh cannot create a WordPress product");
+    const sourceExternalId = context.sourceProduct.externalId;
+    if (sourceExternalId === undefined) throw new IntegrationContractError("Image refresh requires source identity");
+    const [remote] = await new WordPressProductSnapshotReader(this.config, this.requestImplementation).read(context.source.code, [sourceExternalId]);
+    if (remote === undefined || !remote.found || remote.errorCode || remote.externalId !== context.existingExternalId || remote.snapshot === undefined) {
+      throw new IntegrationContractError("WordPress image refresh product identity was not confirmed");
+    }
+    const effective: ExportContext = { ...context, imageRefreshOnly: true, existingTargetSnapshot: remote.snapshot,
+      references: { resolveReference: async () => { throw new IntegrationContractError("Image refresh must not resolve taxonomies"); },
+        resolveProjections: async () => [], resolveAssignments: async () => [] } };
+    const payload = await this.buildPayload(effective);
+    const preflight = await this.preflightPayload(payload);
+    if (preflight.imageIdentityMode !== "exact_content") {
+      throw new IntegrationContractError("WordPress does not confirm exact-content image refresh support");
+    }
+    if (preflight.willCreate || preflight.externalId !== context.existingExternalId || preflight.snapshot === undefined
+      || hashStableJson(preflight.snapshot) !== hashStableJson(remote.snapshot)) {
+      throw new IntegrationContractError("WordPress product changed during image refresh preflight");
+    }
+    const created = await this.request("upsert-jobs", { method: "POST", body: JSON.stringify({ payload,
+      patch: { expected_target_snapshot: remote.snapshot } }) });
+    const job = normalizeJob(created.job);
+    const jobId = positiveInteger(job.job_id, "WordPress image job_id");
+    const payloadHash = text(payload.payload_hash);
+    if (text(job.payload_hash) !== payloadHash) throw new IntegrationContractError("WordPress image submission hash differs from the request");
+    await context.onSubmitted?.({ jobId, payloadHash });
+    const result = this.exportResult(await this.waitForJob(jobId, payloadHash, job));
+    if (result.externalId !== context.existingExternalId) throw new IntegrationContractError("WordPress image refresh returned a different product");
+    return result;
   }
 
   async resumeExport(receipt: JsonObject): Promise<ExportResult> {

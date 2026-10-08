@@ -10,6 +10,8 @@ import type {
   JsonObject,
   ProcessingContext,
   ProductOperationContext,
+  ProductImageDTO,
+  ProductImageExportContext,
   UniversalProductDTO,
 } from "./products.js";
 
@@ -18,6 +20,7 @@ export interface SourceAdapter {
   readonly version: string;
   /** Source parts fetched inside the export attempt when live refresh is enabled. */
   readonly exportRefreshPartKeys?: readonly string[];
+  readonly imageRefreshPartKeys?: readonly string[];
   discover(input: DiscoveryInput): Promise<DiscoveryResult>;
   collectProduct(input: CollectProductInput): Promise<CollectedSourceProduct>;
 }
@@ -30,6 +33,8 @@ export interface SourceProcessor {
   process(context: ProcessingContext): Promise<UniversalProductDTO>;
   /** Extract target-write commerce data without running the processing pipeline. */
   processExportRefresh?(context: ProcessingContext): Promise<ExportRefreshDTO>;
+  /** Extract only source images from saved parts, without classification or operations. */
+  processImageRefresh?(context: ProcessingContext): Promise<readonly ProductImageDTO[]>;
 }
 
 export interface ProductOperation {
@@ -53,4 +58,5 @@ export interface TargetExporter {
   readonly version: string;
   export(context: ExportContext): Promise<ExportResult>;
   resumeExport?(receipt: JsonObject): Promise<ExportResult>;
+  exportImages?(context: ProductImageExportContext): Promise<ExportResult>;
 }

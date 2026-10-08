@@ -24,7 +24,7 @@ describe("processing config", () => {
 
   it("uses the confirmed legacy processing defaults", () => {
     expect(loadProcessingConfig({ PARSER_PUBLIC_BASE_URL: "https://parser.example/images" })).toEqual({
-      image: { baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2, storage: { type: "local" } },
+      image: { checkIntervalMs: 86_400_000, baseDirectory: "runtime/images", publicBaseUrl: "https://parser.example/images", publicPathPrefix: "", webpQuality: 85, transportConcurrency: 8, operationConcurrency: 2, storage: { type: "local" } },
       translation: { provider: "google", sourceLocale: "en", targetLocale: "ru", timeoutMs: 8_000, attempts: 2, retryDelayMs: 400 },
       shoeHeight: null,
     });

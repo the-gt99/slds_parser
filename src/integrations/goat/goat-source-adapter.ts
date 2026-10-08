@@ -72,6 +72,7 @@ export class GoatSourceAdapter implements SourceAdapter {
   readonly code = "goat";
   readonly version = "1.1.1";
   readonly exportRefreshPartKeys = ["offers"] as const;
+  readonly imageRefreshPartKeys = ["product"] as const;
   readonly #children = new Map<string, readonly GoatSitemapProduct[]>();
   readonly #indexes = new Map<string, readonly string[]>();
   readonly #nextRequestAtBySession = new Map<string, number>();

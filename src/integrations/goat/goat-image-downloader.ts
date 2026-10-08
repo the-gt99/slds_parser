@@ -1,10 +1,13 @@
 import type { ProductOperationContext } from "../../contracts/index.js";
 import type { ImageBinaryDownloader } from "../../processing/index.js";
+import type { ImageDownload, ImageRefreshClient, ImageValidators } from "../../processing/media/image-refresh-client.js";
+import { IntegrationContractError } from "../../core/errors/index.js";
 import { GoatHttpClient, type GoatHttpEnvironment } from "./goat-http-client.js";
 import type { GoatProxyLease, GoatProxyPool } from "./goat-proxy-pool.js";
 
 interface GoatImageHttpClient {
   getBuffer(url: string): Promise<Buffer>;
+  getImage?: GoatHttpClient["getImage"];
 }
 
 export interface GoatImageDownloaderOptions {
@@ -14,7 +17,7 @@ export interface GoatImageDownloaderOptions {
 export type GoatImageHttpClientFactory = (environment: GoatHttpEnvironment) => GoatImageHttpClient;
 export type GoatImagePooledHttpClientFactory = (lease: GoatProxyLease, cookieJarSuffix: string) => GoatImageHttpClient;
 
-export class GoatImageDownloader implements ImageBinaryDownloader {
+export class GoatImageDownloader implements ImageBinaryDownloader, ImageRefreshClient {
   readonly code = "goat-http";
   readonly version = "1.2.0";
 
@@ -37,14 +40,33 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
   }
 
   async download(url: string, _context: ProductOperationContext): Promise<Buffer> {
+    return this.#request((client) => client.getBuffer(url));
+  }
+
+  async inspect(url: string, validators: ImageValidators): Promise<ImageValidators & { readonly unchanged: boolean }> {
+    return this.#request(async (client) => {
+      if (client.getImage === undefined) throw new IntegrationContractError("GOAT image refresh transport is not configured");
+      const response = await client.getImage(url, validators, true);
+      return { ...imageValidators(response.headers), unchanged: response.status === 304 };
+    });
+  }
+
+  async downloadImage(url: string): Promise<ImageDownload> {
+    return this.#request(async (client) => {
+      if (client.getImage === undefined) throw new IntegrationContractError("GOAT image refresh transport is not configured");
+      const response = await client.getImage(url);
+      return { ...imageValidators(response.headers), body: response.body };
+    });
+  }
+
+  async #request<T>(request: (client: GoatImageHttpClient) => Promise<T>): Promise<T> {
     const slot = await this.#acquire();
     try {
       const lease = await this.proxyPool?.acquireForImage();
       const started = Date.now();
       try {
-        const result = lease === undefined || lease === null
-          ? await this.#client(slot).getBuffer(url)
-          : await this.pooledClientFactory(lease, ".images").getBuffer(url);
+        const result = await request(lease === undefined || lease === null
+          ? this.#client(slot) : this.pooledClientFactory(lease, ".images"));
         await lease?.release(true, Date.now() - started);
         return result;
       } catch (error) {
@@ -78,4 +100,11 @@ export class GoatImageDownloader implements ImageBinaryDownloader {
     if (waiter === undefined) this.#available.push(slot);
     else waiter(slot);
   }
+}
+
+function imageValidators(headers: Readonly<Record<string, string>> | undefined): ImageValidators {
+  return {
+    ...(headers?.etag ? { etag: headers.etag } : {}),
+    ...(headers?.["last-modified"] ? { lastModified: headers["last-modified"] } : {}),
+  };
 }

@@ -210,6 +210,13 @@ export class GoatSourceProcessor implements SourceProcessor {
   readonly version = "3.2.0";
   readonly classificationVersion = "3.0.0";
 
+  async processImageRefresh(context: ProcessingContext): Promise<readonly ProductImageDTO[]> {
+    const part = context.parts.find((entry) => entry.partKey === "product");
+    if (part === undefined) throw new IntegrationContractError("GOAT product part is required for image refresh");
+    const product = object(part.parsedPayload, "product");
+    return images(product.images, text(product.name));
+  }
+
   async processExportRefresh(context: ProcessingContext) {
     const productPart = context.parts.find((part) => part.partKey === "product");
     const offersPart = context.parts.find((part) => part.partKey === "offers");

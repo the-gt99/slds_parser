@@ -145,6 +145,9 @@ export interface ProductImageDTO {
   readonly height?: number;
   /** SHA-256 of the bytes received from the source before conversion. */
   readonly sourceContentHash?: string;
+  /** Source HTTP validators corresponding to sourceContentHash, never hashes of the WebP. */
+  readonly sourceEtag?: string;
+  readonly sourceLastModified?: string;
   /** SHA-256 of the final published image bytes. */
   readonly contentHash?: string;
   /** 64-bit perceptual dHash of the rendered image. */
@@ -358,6 +361,7 @@ export interface TargetReferenceResolver {
 }
 
 export interface ExportContext {
+  readonly imageRefreshOnly?: boolean;
   /** Persist the accepted asynchronous request before waiting for its result. */
   readonly onSubmitted?: (receipt: JsonObject) => Promise<void>;
   readonly source: SourceDTO;
@@ -379,6 +383,9 @@ export interface ExportContext {
     readonly wordpressStateHash?: string | null;
   };
 }
+
+export type ProductImageExportContext = Pick<ExportContext,
+  "source" | "sourceProduct" | "target" | "product" | "existingExternalId" | "onSubmitted">;
 
 export type ExportOperation = "created" | "updated" | "skipped";
 

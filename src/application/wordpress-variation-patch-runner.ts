@@ -16,6 +16,7 @@ import type { CollectWordPressVariationSourcePayload, PollWordPressVariationPatc
 import type { ExportSourceRefresher } from "./export-source-refresher.js";
 import type { RunnerResult } from "./runner-result.js";
 import { mergeWordPressInventoryDrafts, type ShihuoInventoryService } from "../shihuo/index.js";
+import type { ProductImageRefreshRunner } from "./product-image-refresh-runner.js";
 
 function record(value: unknown): JsonObject {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -122,6 +123,8 @@ export class WordPressVariationPatchRunner {
     wordpressConfig: WordPressTargetConfig,
     private readonly shihuoInventory?: ShihuoInventoryService,
     private readonly currentTime: () => number = Date.now,
+    private readonly imageRefreshes?: Pick<ProductImageRefreshRunner, "enqueueDue">,
+    private readonly logError: (message: string) => void = console.error,
   ) {
     this.converter = new WordPressSizeConverter(wordpressConfig);
     this.exporter = new WordPressExporter(wordpressConfig);
@@ -263,6 +266,14 @@ export class WordPressVariationPatchRunner {
       if (variants === null) throw new IntegrationContractError(`Source ${source.code} does not provide live variation refresh`);
       await this.repository.saveInventoryDonorState({ runId: payload.runId, itemId: candidate.item.id,
         donorCode, outcome: "resolved", contentHash: hashStableJson(variants as unknown as JsonValue), variants, checkedAt });
+      if (this.imageRefreshes !== undefined) {
+        try {
+          await this.imageRefreshes.enqueueDue({ sourceProductId: sourceProduct.id,
+            targetId: candidate.target.id, externalId: candidate.item.wordpressProductId });
+        } catch (error) {
+          this.logError(`Image check scheduling failed for source product ${sourceProduct.id}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
     } else {
       if (this.shihuoInventory === undefined) throw new IntegrationContractError("Shihuo inventory is not configured");
       const result = await this.shihuoInventory.refresh(candidate.sourceProduct.id);

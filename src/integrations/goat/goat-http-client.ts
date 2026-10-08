@@ -4,6 +4,7 @@ import { dirname, extname, join } from "node:path";
 
 import type { JsonValue } from "../../contracts/index.js";
 import { IntegrationContractError, PermanentError, RetryableError } from "../../core/errors/index.js";
+import type { ImageValidators } from "../../processing/media/image-refresh-client.js";
 
 export interface GoatHttpEnvironment {
   readonly GOAT_CLI_CURL_BIN?: string;
@@ -23,6 +24,30 @@ export interface GoatHttpClientOptions {
 export interface GoatHttpResponse {
   readonly status: number;
   readonly body: Buffer;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+/** Skip redirect and informational blocks; return only the final response headers. */
+export function parseGoatResponseHeaders(output: Buffer): {
+  readonly status: number; readonly headers: Readonly<Record<string, string>>; readonly bodyOffset: number;
+} | null {
+  let offset = 0;
+  while (offset < output.length) {
+    const end = output.indexOf("\r\n\r\n", offset);
+    if (end < 0) return null;
+    const lines = output.subarray(offset, end).toString("latin1").split("\r\n");
+    const status = Number(/^HTTP\/\S+\s+(\d{3})\b/u.exec(lines.shift() ?? "")?.[1]);
+    if (!Number.isInteger(status)) throw new IntegrationContractError("GOAT image response has invalid HTTP headers");
+    const headers: Record<string, string> = {};
+    for (const line of lines) {
+      const colon = line.indexOf(":");
+      if (colon > 0) headers[line.slice(0, colon).toLowerCase()] = line.slice(colon + 1).trim();
+    }
+    offset = end + 4;
+    if (status < 200 || (status >= 300 && status < 400 && status !== 304)) continue;
+    return { status, headers, bodyOffset: offset };
+  }
+  return null;
 }
 
 export type GoatRequestExecutor = (url: string) => Promise<Buffer>;
@@ -120,6 +145,38 @@ export class GoatHttpClient {
     }
   }
 
+  async getImage(url: string, validators: ImageValidators = {}, headersOnly = false): Promise<GoatHttpResponse> {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "image.goat.com") {
+      throw new IntegrationContractError("GOAT image refresh requires an image.goat.com HTTPS URL");
+    }
+    for (const value of [validators.etag, validators.lastModified]) {
+      if (value !== undefined && (/[\r\n]/u.test(value) || value.length > 1024)) {
+        throw new IntegrationContractError("GOAT image validator is invalid");
+      }
+    }
+    await this.#ensureSession(false);
+    let response = await this.#execute(url, false, { validators, headersOnly });
+    if (response.status === 403) {
+      await this.#ensureSession(true);
+      response = await this.#execute(url, false, { validators, headersOnly });
+    }
+    if (response.status === 304) {
+      if (!headersOnly || (!validators.etag && !validators.lastModified)) {
+        throw new IntegrationContractError("Unexpected GOAT image 304 response");
+      }
+      return response;
+    }
+    assertGoatHttpStatus(response.status, url);
+    if (response.status !== 200 || !response.headers?.["content-type"]?.toLowerCase().startsWith("image/")) {
+      throw new IntegrationContractError("GOAT image response must be HTTP 200 with an image Content-Type");
+    }
+    if (!headersOnly && isGoatHtmlChallenge(response.body)) {
+      throw new RetryableError("GOAT returned an HTML challenge", { code: "GOAT_CHALLENGE" });
+    }
+    return response;
+  }
+
   async #ensureSession(force: boolean): Promise<void> {
     if (!force && Date.now() - this.#sessionWarmedAt < this.#sessionTtlMs) return;
     if (this.#warming) return this.#warming;
@@ -144,7 +201,7 @@ export class GoatHttpClient {
     return { command: this.#bin, args: [...args] };
   }
 
-  async #execute(url: string, warmup: boolean): Promise<GoatHttpResponse> {
+  async #execute(url: string, warmup: boolean, image?: { readonly validators: ImageValidators; readonly headersOnly: boolean }): Promise<GoatHttpResponse> {
     const marker = `__GOAT_STATUS_${crypto.randomUUID()}__`;
     const seconds = String(Math.ceil(this.#timeoutMs / 1000));
     const headers = warmup
@@ -160,6 +217,13 @@ export class GoatHttpClient {
     const args = ["--silent", "--show-error", "--location", "--compressed", "--connect-timeout", seconds, "--max-time", seconds,
       "--cookie", this.#cookieJar, "--cookie-jar", this.#cookieJar, "--write-out", `${marker}%{http_code}`];
     if (this.#proxy) args.push("--proxy", this.#proxy);
+    if (image !== undefined) {
+      args.push("--include", "--suppress-connect-headers");
+      // Request the current cached representation to revalidate against the origin.
+      headers.push("Cache-Control: no-cache");
+      if (image.validators.etag) headers.push(`If-None-Match: ${image.validators.etag}`);
+      else if (image.validators.lastModified) headers.push(`If-Modified-Since: ${image.validators.lastModified}`);
+    }
     for (const header of headers) args.push("--header", header);
     args.push(url);
     const invocation = this.#command(args);
@@ -169,6 +233,7 @@ export class GoatHttpClient {
       let bytes = 0;
       let stderr = "";
       let settled = false;
+      let headerResponse: GoatHttpResponse | undefined;
       const fail = (error: Error): void => { if (settled) return; settled = true; reject(error); };
       const watchdog = setTimeout(() => {
         child.kill();
@@ -176,27 +241,55 @@ export class GoatHttpClient {
         fail(new RetryableError("GOAT request timed out", { code: "GOAT_TRANSPORT_TIMEOUT" }));
       }, this.#timeoutMs + 2_000);
       child.stdout.on("data", (chunk: Buffer) => {
+        if (headerResponse !== undefined || settled) return;
         bytes += chunk.length;
-        if (bytes > this.#maxBytes + marker.length + 3) {
+        if (bytes > this.#maxBytes + marker.length + 3 + (image === undefined ? 0 : 65536)) {
           child.kill();
           fail(new RetryableError("GOAT response exceeded the configured size limit", { code: "GOAT_RESPONSE_TOO_LARGE" }));
           return;
         }
         chunks.push(chunk);
+        if (image?.headersOnly && !settled) {
+          try {
+            const parsed = parseGoatResponseHeaders(Buffer.concat(chunks));
+            if (parsed !== null) {
+              headerResponse = { status: parsed.status, headers: parsed.headers, body: Buffer.alloc(0) };
+              // Wait for close before returning the client slot/cookie jar to the pool.
+              child.kill();
+            } else if (bytes > 65536) {
+              child.kill();
+              fail(new IntegrationContractError("GOAT image response headers exceeded the size limit"));
+            }
+          } catch (error) {
+            child.kill();
+            fail(error instanceof Error ? error : new Error(String(error)));
+          }
+        }
       });
       child.stderr.on("data", (chunk: Buffer) => { if (stderr.length < 2_000) stderr += chunk.toString("utf8"); });
       child.on("error", (cause) => fail(new RetryableError("Failed to start GOAT curl transport", { code: "GOAT_TRANSPORT", cause })));
       child.on("close", (code) => {
         clearTimeout(watchdog);
         if (settled) return;
+        if (headerResponse !== undefined) { settled = true; resolve(headerResponse); return; }
         if (code !== 0) { fail(new RetryableError(`GOAT curl transport failed with exit code ${String(code)}`, { code: "GOAT_TRANSPORT", cause: sanitizeCurlError(stderr.trim(), proxyCredentialHints(this.#proxy)) })); return; }
         const output = Buffer.concat(chunks);
         const markerBuffer = Buffer.from(marker);
         const markerAt = output.lastIndexOf(markerBuffer);
         if (markerAt < 0) { fail(new RetryableError("GOAT curl response had no status marker", { code: "GOAT_TRANSPORT" })); return; }
         const status = Number(output.subarray(markerAt + markerBuffer.length).toString("ascii"));
-        settled = true;
-        resolve({ status, body: output.subarray(0, markerAt) });
+        const responseOutput = output.subarray(0, markerAt);
+        if (image !== undefined) {
+          try {
+            const parsed = parseGoatResponseHeaders(responseOutput);
+            if (parsed === null || parsed.status !== status) throw new IntegrationContractError("GOAT image response headers are incomplete");
+            settled = true;
+            resolve({ status, headers: parsed.headers, body: responseOutput.subarray(parsed.bodyOffset) });
+          } catch (error) { fail(error instanceof Error ? error : new Error(String(error))); }
+        } else {
+          settled = true;
+          resolve({ status, body: responseOutput });
+        }
       });
     });
   }

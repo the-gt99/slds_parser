@@ -11,6 +11,7 @@ export interface ProcessingEnvironment {
   readonly PARSER_S3_ACCESS_KEY_ID?: string;
   readonly PARSER_S3_SECRET_ACCESS_KEY?: string;
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
+  readonly PARSER_IMAGE_CHECK_INTERVAL_MS?: string;
   readonly PARSER_TRANSLATION_PROVIDER?: string;
   readonly PARSER_OPENROUTER_API_KEY?: string;
   readonly PARSER_OPENROUTER_MODEL?: string;
@@ -140,6 +141,7 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
   } as const;
   return {
     image: {
+      checkIntervalMs: integer(environment.PARSER_IMAGE_CHECK_INTERVAL_MS, 86_400_000, "PARSER_IMAGE_CHECK_INTERVAL_MS", 60_000),
       baseDirectory: environment.PARSER_IMAGE_BASE_DIR?.trim() || "runtime/images",
       publicBaseUrl,
       publicPathPrefix: environment.PARSER_PUBLIC_PATH_PREFIX?.trim() ?? "",

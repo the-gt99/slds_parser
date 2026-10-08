@@ -15,6 +15,8 @@ import { ApplyContentEnrichmentOperation } from "./processing/operations/apply-c
 import { ContentEnrichmentRunner, type ProductContentDonor } from "./application/content-enrichment-runner.js";
 import { hashStableJson } from "./core/utils/index.js";
 import { ShihuoDescriptionDonor } from "./shihuo/description-donor.js";
+import { ProductImageRefreshRunner } from "./application/product-image-refresh-runner.js";
+import { PostgresProductImageRefreshRepository } from "./infrastructure/db/repositories/postgres-product-image-refresh-repository.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
@@ -182,10 +184,18 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const wordpressCatalogSync = wordpress === null
     ? undefined
     : new WordPressCatalogSyncRunner(wordpressCatalog, new WordPressCatalogClient(wordpress));
+  const imageStore = processingConfig.image.storage.type === "s3"
+    ? new S3ImageStore({ ...processingConfig.image, ...processingConfig.image.storage })
+    : new LocalImageStore(processingConfig.image);
+  const imageRefreshes = new ProductImageRefreshRunner(repositories, unitOfWork, adapters, processors,
+    new Map([["goat", new GoatImageDownloader(environment, { concurrency: 1 }, undefined, proxyPool)]]),
+    imageStore, new PostgresProductImageRefreshRepository(pool), exporters,
+    processingConfig.image.checkIntervalMs);
   const wordpressVariationPatches = wordpress === null
     ? undefined
     : new WordPressVariationPatchRunner(wordpressCatalog, repositories.jobs, targetMappings, repositories.contentTemplates,
-      repositories.sources, repositories.sourceProducts, sourceRefresher, new WordPressCatalogClient(wordpress), wordpress, shihuoInventory);
+      repositories.sources, repositories.sourceProducts, sourceRefresher, new WordPressCatalogClient(wordpress), wordpress, shihuoInventory,
+      Date.now, imageRefreshes, options.workerLogError ?? console.error);
   const preflightRunner = wordpress === null
     ? undefined
     : new PreflightRunner(new WordPressPreviewService(
@@ -219,7 +229,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
     wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner,
-    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs, contentEnrichmentRunner);
+    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs, contentEnrichmentRunner, imageRefreshes);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
@@ -235,6 +245,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
         const needsGoatProxy = jobTypes.length === 1
           && (jobTypes[0] === "collect_product" || jobTypes[0] === "collect_wordpress_variation_source"
             || jobTypes[0] === "collect_wordpress_goat_inventory"
+            || jobTypes[0] === "check_product_images" || jobTypes[0] === "refresh_product_images"
             || jobTypes[0] === "refresh_export_source");
         return needsGoatProxy && proxyPool !== undefined
           ? proxyPool.reserveClaim(jobTypes[0] === "collect_wordpress_variation_source" || jobTypes[0] === "collect_wordpress_goat_inventory"

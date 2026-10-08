@@ -15,6 +15,8 @@ import type { WordPressVariationPatchRunner } from "./wordpress-variation-patch-
 import type { ShihuoResolutionRunner } from "./shihuo-resolution-runner.js";
 import type { ContentEnrichmentRunner } from "./content-enrichment-runner.js";
 import { parseCollectProductContentPayload, parseTranslateProductContentPayload } from "./job-payloads.js";
+import { parseProductImageJobPayload } from "./job-payloads.js";
+import type { ProductImageRefreshRunner } from "./product-image-refresh-runner.js";
 
 export interface JobHandler {
   dispatch(job: JobRecord): Promise<RunnerResult>;
@@ -34,10 +36,23 @@ export class JobDispatcher implements JobHandler {
     private readonly exportSourceRefreshes?: ExportSourceRefreshRunner,
     private readonly shihuoResolutions?: ShihuoResolutionRunner,
     private readonly jobs?: JobRepository,
-    private readonly contentEnrichments?: ContentEnrichmentRunner) {}
+    private readonly contentEnrichments?: ContentEnrichmentRunner,
+    private readonly imageRefreshes?: ProductImageRefreshRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
+      case "check_product_images":
+      case "refresh_product_images":
+      case "export_product_images": {
+        if (this.imageRefreshes === undefined) throw new InvalidJobPayloadError("Product image refresh is not configured");
+        const payload = parseProductImageJobPayload(job.payload);
+        if (job.jobType === "check_product_images") return this.imageRefreshes.check(payload);
+        if (job.jobType === "refresh_product_images") return this.imageRefreshes.refresh(payload);
+        return this.imageRefreshes.exportImages(payload, async (submission) => {
+          if (this.jobs === undefined || job.lockedBy === null) throw new InvalidJobPayloadError("Image export submission persistence is not configured");
+          await this.jobs.saveExportSubmission(job.id, job.lockedBy, submission);
+        });
+      }
       case "collect_product_content": {
         if (!this.contentEnrichments) throw new InvalidJobPayloadError("Content enrichment is not configured");
         return this.contentEnrichments.collect(parseCollectProductContentPayload(job.payload));
@@ -120,6 +135,11 @@ export class JobDispatcher implements JobHandler {
 
   async handleTerminalFailure(job: JobRecord, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
+    if (["check_product_images", "refresh_product_images", "export_product_images"].includes(job.jobType)
+      && this.imageRefreshes !== undefined) {
+      await this.imageRefreshes.fail(parseProductImageJobPayload(job.payload), message);
+      return;
+    }
     if (job.jobType === "preflight_product" && this.exportControl !== undefined) {
       const payload = parsePreflightProductPayload(job.payload);
       await this.exportControl.savePreflightError({

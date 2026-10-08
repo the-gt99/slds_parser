@@ -28,6 +28,7 @@ export type {
   ProcessingContext,
   ProductOperationContext,
   ProductImageDTO,
+  ProductImageExportContext,
   ProductClassificationDTO,
   ProductRulesV2DTO,
   ReferenceCandidateDTO,

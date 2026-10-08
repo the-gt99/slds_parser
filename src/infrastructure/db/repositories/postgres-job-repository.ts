@@ -203,7 +203,7 @@ export class PostgresJobRepository implements JobRepository {
   async saveExportSubmission(id: EntityId, workerId: string, submission: import("../../../contracts/index.js").JsonObject): Promise<void> {
     const result = await this.executor.query<DatabaseRow>(
       `UPDATE jobs SET payload = jsonb_set(payload, '{submission}', $3::JSONB), updated_at = NOW()
-       WHERE id = $1 AND locked_by = $2 AND status = 'running' AND job_type = 'export_product'
+       WHERE id = $1 AND locked_by = $2 AND status = 'running' AND job_type IN ('export_product','export_product_images')
          AND (payload->'submission' IS NULL OR payload->'submission' = $3::JSONB)
        RETURNING id`, [id, workerId, JSON.stringify(submission)],
     );

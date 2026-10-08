@@ -20,6 +20,31 @@ export interface ProcessProductPayload {
   readonly force: boolean;
 }
 
+export interface ProductImageJobPayload {
+  readonly sourceProductId: string;
+  readonly targetId: string;
+  readonly externalId: string;
+  readonly submission?: { readonly receipt: import("../contracts/index.js").JsonObject; readonly exportedHash: string; readonly exportFingerprint: string };
+}
+
+export function parseProductImageJobPayload(value: JsonValue): ProductImageJobPayload {
+  if (!isObject(value) || ![value.sourceProductId,value.targetId,value.externalId].every(
+    (id) => typeof id === "string" && /^[1-9]\d*$/u.test(id))) throw new InvalidJobPayloadError("product images");
+  let submission: ProductImageJobPayload["submission"];
+  if (value.submission !== undefined) {
+    const input = value.submission;
+    if (!isObject(input) || !isObject(input.receipt ?? null)
+      || typeof input.exportedHash !== "string" || !/^[a-f0-9]{64}$/u.test(input.exportedHash)
+      || typeof input.exportFingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(input.exportFingerprint)) {
+      throw new InvalidJobPayloadError("product image submission");
+    }
+    submission = { receipt: input.receipt as import("../contracts/index.js").JsonObject,
+      exportedHash: input.exportedHash, exportFingerprint: input.exportFingerprint };
+  }
+  return { sourceProductId: value.sourceProductId as string, targetId: value.targetId as string,
+    externalId: value.externalId as string, ...(submission === undefined ? {} : { submission }) };
+}
+
 export interface ReclassifyProductPayload {
   readonly sourceProductId: string;
 }
