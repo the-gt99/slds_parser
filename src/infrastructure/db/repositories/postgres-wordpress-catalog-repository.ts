@@ -966,6 +966,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              AND NOT EXISTS (
                SELECT 1 FROM jobs failed_job
                WHERE failed_job.job_type = $5 AND failed_job.status = 'failed'
+                 AND failed_job.job_type IN ('collect_wordpress_goat_inventory', 'collect_wordpress_shihuo_inventory')
                  AND failed_job.payload->>'itemId' = item.id::TEXT
                  AND failed_job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')
              )
@@ -983,6 +984,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              AND NOT EXISTS (
                SELECT 1 FROM jobs failed_job
                WHERE failed_job.job_type = $5 AND failed_job.status = 'failed'
+                 AND failed_job.job_type IN ('collect_wordpress_goat_inventory', 'collect_wordpress_shihuo_inventory')
                  AND failed_job.payload->>'itemId' = item.id::TEXT
                  AND failed_job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')
              )
