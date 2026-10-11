@@ -27,6 +27,7 @@ try {
       ('collect_wordpress_goat_inventory','{"runId":"4","itemId":"4"}','pending','active-4',NULL);
   `);
   await db.exec(await readFile(new URL("../../src/infrastructure/db/migrations/108_inventory_failed_job_lookup.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../src/infrastructure/db/migrations/109_job_type_status_statistics.sql", import.meta.url), "utf8"));
   const adapter: SqlPool = { connect: async () => ({ query: (q, values) => db.query(q, values), release() {} }), async end() {} };
   let clock = 1_000;
   const repository = new PostgresWordPressCatalogRepository(adapter, () => clock);
