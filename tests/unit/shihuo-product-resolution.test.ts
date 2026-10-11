@@ -113,8 +113,22 @@ describe("Shihuo product resolution", () => {
     expect(links.savePending).not.toHaveBeenCalled();
   });
 
-  it("allows a new search when the rejected product article changes", async () => {
-    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status: "article_mismatch",
+  it.each(["not_found", "article_mismatch"] as const)("does not repeat a completed %s search for the same normalized article", async (status) => {
+    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status,
+      goodsId: null, styleId: null, lastErrorCode: null }), savePending: vi.fn() };
+    const sessions = { acquire: vi.fn() };
+    const search = { searchAll: vi.fn() };
+    const resolver = new ShihuoProductResolver(sessions as never, search as never, {} as never,
+      links as never, {} as never, 1100);
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "dr0092 001" }))
+      .resolves.toMatchObject({ status });
+    expect(sessions.acquire).not.toHaveBeenCalled();
+    expect(search.searchAll).not.toHaveBeenCalled();
+    expect(links.savePending).not.toHaveBeenCalled();
+  });
+
+  it.each(["not_found", "article_mismatch"] as const)("allows a new search when a %s product article changes", async (status) => {
+    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status,
       lastErrorCode: "SHIHUO_IDENTITY_REJECTED" }), savePending: vi.fn(), saveOutcome: vi.fn() };
     const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
     const search = { searchAll: vi.fn().mockResolvedValue([]) };
@@ -125,6 +139,18 @@ describe("Shihuo product resolution", () => {
       .resolves.toMatchObject({ status: "not_found" });
     expect(search.searchAll).toHaveBeenCalledOnce();
     expect(links.savePending).toHaveBeenCalledWith("1", "NEW-001", "NEW001");
+  });
+
+  it.each(["pending", "failed", "temporarily_blocked"] as const)("retries an unfinished %s resolution", async (status) => {
+    const links = { get: vi.fn().mockResolvedValue({ ...resolvedLink(), status,
+      goodsId: null, styleId: null }), savePending: vi.fn(), saveOutcome: vi.fn() };
+    const lease = { profile: {}, success: vi.fn(), fail: vi.fn() };
+    const search = { searchAll: vi.fn().mockResolvedValue([]) };
+    const resolver = new ShihuoProductResolver({ acquire: vi.fn().mockResolvedValue(lease) } as never,
+      search as never, {} as never, links as never, {} as never, 1100);
+    await expect(resolver.resolveProductByArticle({ sourceProductId: "1", article: "DR0092-001" }))
+      .resolves.toMatchObject({ status: "not_found" });
+    expect(search.searchAll).toHaveBeenCalledOnce();
   });
 
   it("does not fetch a card for an explicitly rejected link", async () => {
