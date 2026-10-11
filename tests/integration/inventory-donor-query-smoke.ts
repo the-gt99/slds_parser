@@ -60,6 +60,19 @@ try {
   assert.ok((await ids()).includes("2101"));
   await db.exec("UPDATE wordpress_catalog_runs SET shihuo_inventory_status='paused'; UPDATE jobs SET status='completed' WHERE status='pending'");
   assert.equal(await repository.enqueueDueInventoryDonorJobs({ ...input, donorCode: "shihuo" }), 0);
+  await db.exec(`ALTER TABLE wordpress_catalog_runs ADD COLUMN wordpress_inventory_status TEXT DEFAULT 'running';
+    ALTER TABLE wordpress_catalog_run_items ADD COLUMN variation_status TEXT DEFAULT 'completed',
+      ADD COLUMN variation_checked_at TIMESTAMPTZ;
+    INSERT INTO wordpress_inventory_donor_states VALUES
+      (1,4,'shihuo',NOW()),(2,4,'shihuo',NOW()),(4,4,'shihuo',NOW()),
+      (2101,4,'goat',NOW()),(2101,4,'shihuo',NOW());
+    UPDATE wordpress_catalog_run_items SET variation_checked_at=NOW()+INTERVAL '1 minute' WHERE id=2;
+    UPDATE wordpress_catalog_run_items SET variation_status='submitted' WHERE id=4;`);
+  assert.equal(await repository.enqueueReadyInventoryMergeJobs("4", 10), 1);
+  assert.equal(await repository.enqueueReadyInventoryMergeJobs("4", 10), 1);
+  const merged = (await db.query(`SELECT payload->>'itemId' AS id FROM jobs
+    WHERE job_type='combine_wordpress_inventory' ORDER BY (payload->>'itemId')::BIGINT`)).rows.map((r: { id: string }) => r.id);
+  assert.deepEqual(merged, ["1", "2101"]);
   await db.exec(`ALTER TABLE jobs ADD COLUMN locked_by TEXT, ADD COLUMN updated_at TIMESTAMPTZ;
     INSERT INTO jobs(id,job_type,payload,status,locked_by) VALUES
       (100,'export_product','{"targetId":"1"}','running','owner');`);

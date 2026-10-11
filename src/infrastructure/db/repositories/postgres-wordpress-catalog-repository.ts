@@ -225,6 +225,7 @@ const runSelect = `
 export class PostgresWordPressCatalogRepository implements WordPressCatalogRepository {
   private readonly missingInventoryProbeAt = new Map<string, number>();
   private readonly missingInventoryCursor = new Map<string, string>();
+  private readonly inventoryMergeCursor = new Map<string, string>();
 
   constructor(private readonly pool: SqlPool, private readonly currentTime: () => number = Date.now) {}
 
@@ -1036,17 +1037,25 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   }
 
   async enqueueReadyInventoryMergeJobs(runId: string, limit: number): Promise<number> {
-    return transaction(this.pool, async (client) => {
+    const result = await transaction(this.pool, async (client) => {
       const active = await client.query<DatabaseRow>(
         `SELECT COUNT(*) AS count FROM jobs
          WHERE job_type = 'combine_wordpress_inventory' AND status IN ('pending','running','retry')
            AND payload->>'runId' = $1`, [runId]);
       const available = Math.max(0, limit - Number(active.rows[0]?.count ?? 0));
-      if (available === 0) return 0;
+      if (available === 0) return { queued: 0 };
       const inserted = await client.query<DatabaseRow>(
-        `WITH selected AS (
+        `WITH candidates AS MATERIALIZED (
+           SELECT item.id
+           FROM wordpress_catalog_run_items item
+           JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.wordpress_inventory_status='running'
+           WHERE item.run_id=$1 AND item.id > $3::BIGINT
+             AND item.match_status='matched' AND item.internal_product_id IS NOT NULL
+           ORDER BY item.id LIMIT 1000
+         ), selected AS (
            SELECT item.id, item.wordpress_product_id
            FROM wordpress_catalog_run_items item
+           JOIN candidates candidate ON candidate.id=item.id
            JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.wordpress_inventory_status='running'
            JOIN wordpress_inventory_donor_states goat
              ON goat.item_id=item.id AND goat.donor_code='goat'
@@ -1062,9 +1071,9 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                  AND active_job.status IN ('pending','running','retry')
                  AND active_job.payload->>'itemId'=item.id::TEXT
              )
-           ORDER BY GREATEST(goat.checked_at,shihuo.checked_at),item.id
+           ORDER BY item.id
            LIMIT $2 FOR UPDATE OF item SKIP LOCKED
-         )
+         ), inserted AS (
          INSERT INTO jobs(job_type,payload,status,unique_key)
          SELECT 'combine_wordpress_inventory',
                 JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',selected.id::TEXT,
@@ -1072,9 +1081,22 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
                 'pending','wordpress-inventory-combine:'||$1::TEXT||':'||selected.id::TEXT
          FROM selected
          ON CONFLICT(job_type,unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
-         RETURNING id`, [runId, available]);
-      return inserted.rows.length;
+         RETURNING id
+         )
+         SELECT (SELECT COUNT(*) FROM inserted) AS queued_count,
+                (SELECT COUNT(*) FROM selected) AS selected_count,
+                (SELECT COUNT(*) FROM candidates) AS scanned_count,
+                (SELECT MAX(id)::TEXT FROM selected) AS selected_cursor,
+                (SELECT MAX(id)::TEXT FROM candidates) AS scanned_cursor`,
+        [runId, available, this.inventoryMergeCursor.get(runId) ?? "0"]);
+      const row = inserted.rows[0];
+      const full = Number(row?.selected_count ?? 0) >= available;
+      return { queued: Number(row?.queued_count ?? 0),
+        cursor: !full && Number(row?.scanned_count ?? 0) < 1000 ? "0"
+          : String((full ? row?.selected_cursor : row?.scanned_cursor) ?? "0") };
     });
+    if (result.cursor !== undefined) this.inventoryMergeCursor.set(runId, result.cursor);
+    return result.queued;
   }
 
   async listVariationSubmissionItems(runId: string, itemIds: readonly string[]): Promise<readonly WordPressCatalogRunItemRecord[]> {

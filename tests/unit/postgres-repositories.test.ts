@@ -250,6 +250,22 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(queries.map((call) => call.values[5])).toEqual([true, true, true]);
   });
 
+  it("walks merge candidates in bounded pages without skipping a full batch", async () => {
+    const executor = new FakeExecutor([
+      [], [{ count: "0" }], [{ queued_count: "0", selected_count: "0", scanned_count: "1000", scanned_cursor: "1000" }], [],
+      [], [{ count: "0" }], [{ queued_count: "100", selected_count: "100", scanned_count: "1000", selected_cursor: "1100" }], [],
+      [], [{ count: "0" }], [{ queued_count: "0", selected_count: "0", scanned_count: "10", scanned_cursor: "2100" }], [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+    expect(await repository.enqueueReadyInventoryMergeJobs("4", 100)).toBe(0);
+    expect(await repository.enqueueReadyInventoryMergeJobs("4", 100)).toBe(100);
+    expect(await repository.enqueueReadyInventoryMergeJobs("4", 100)).toBe(0);
+    const queries = executor.calls.filter((call) => call.text.includes("WITH candidates AS MATERIALIZED"));
+    expect(queries.map((call) => call.values)).toEqual([["4", 100, "0"], ["4", 100, "1000"], ["4", 100, "1100"]]);
+    expect(queries[0]?.text).toContain("goat.checked_at > COALESCE(item.variation_checked_at");
+    expect(queries[0]?.text).toContain("shihuo.checked_at > COALESCE(item.variation_checked_at");
+  });
+
   it("aggregates running campaign jobs only through its selected batches", async () => {
     const executor = new FakeExecutor([[]]);
     const repository = new PostgresExportControlRepository(pool(executor));
