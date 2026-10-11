@@ -2,8 +2,7 @@
 Description=Run SLDS Parser database retention cleanup hourly
 
 [Timer]
-OnBootSec=15min
-OnUnitActiveSec=1h
+OnCalendar=hourly
 RandomizedDelaySec=5min
 Persistent=true
 Unit=slds-parser-cleanup.service
