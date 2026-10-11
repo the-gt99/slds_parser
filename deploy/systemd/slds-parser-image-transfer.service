@@ -1,0 +1,23 @@
+[Unit]
+Description=Transfer verified legacy parser images to object storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slds-parser
+Group=slds-parser
+WorkingDirectory=/srv/slds-parser/app
+EnvironmentFile=/srv/slds-parser/app/.env
+Environment=IMAGE_TRANSFER_DELAY_MS=1000
+ExecStart=/usr/bin/flock --nonblock /srv/slds-parser/state/image-transfer.lock /usr/local/bin/node dist/src/cli/transfer-legacy-images.js
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryMax=384M
+TimeoutStopSec=90
+UMask=0027
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
