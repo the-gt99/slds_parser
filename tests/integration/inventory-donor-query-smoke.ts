@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import type { SqlPool } from "../../src/infrastructure/db/sql-executor.js";
 import { PostgresWordPressCatalogRepository } from "../../src/infrastructure/db/repositories/postgres-wordpress-catalog-repository.js";
@@ -25,6 +26,7 @@ try {
       ('collect_wordpress_goat_inventory','{"runId":"4","itemId":"3"}','failed','failed-3',NOW()),
       ('collect_wordpress_goat_inventory','{"runId":"4","itemId":"4"}','pending','active-4',NULL);
   `);
+  await db.exec(await readFile(new URL("../../src/infrastructure/db/migrations/108_inventory_failed_job_lookup.sql", import.meta.url), "utf8"));
   const adapter: SqlPool = { connect: async () => ({ query: (q, values) => db.query(q, values), release() {} }), async end() {} };
   let clock = 1_000;
   const repository = new PostgresWordPressCatalogRepository(adapter, () => clock);
@@ -44,6 +46,19 @@ try {
   assert.equal(await repository.enqueueDueInventoryDonorJobs(input), 2);
   assert.deepEqual(await ids(), ["2", "6"]);
   assert.equal(await repository.enqueueDueInventoryDonorJobs({ ...input, donorCode: "shihuo" }), 5);
+  await db.exec(`UPDATE jobs SET status='completed' WHERE status='pending';
+    INSERT INTO wordpress_catalog_run_items
+      SELECT id,4,'matched',id,id+10000 FROM generate_series(1001,2101) id;
+    INSERT INTO wordpress_inventory_donor_states
+      SELECT id,4,'goat',NOW() FROM generate_series(1001,2100) id;`);
+  clock += 60_000;
+  // Walk a full page with no missing products; keep stale work flowing and reach the tail.
+  await repository.enqueueDueInventoryDonorJobs(input);
+  await db.exec("UPDATE jobs SET status='completed' WHERE status='pending'");
+  await repository.enqueueDueInventoryDonorJobs(input);
+  assert.ok((await ids()).includes("2101"));
+  await db.exec("UPDATE wordpress_catalog_runs SET shihuo_inventory_status='paused'; UPDATE jobs SET status='completed' WHERE status='pending'");
+  assert.equal(await repository.enqueueDueInventoryDonorJobs({ ...input, donorCode: "shihuo" }), 0);
   await db.exec(`ALTER TABLE jobs ADD COLUMN locked_by TEXT, ADD COLUMN updated_at TIMESTAMPTZ;
     INSERT INTO jobs(id,job_type,payload,status,locked_by) VALUES
       (100,'export_product','{"targetId":"1"}','running','owner');`);

@@ -224,6 +224,7 @@ const runSelect = `
 
 export class PostgresWordPressCatalogRepository implements WordPressCatalogRepository {
   private readonly missingInventoryProbeAt = new Map<string, number>();
+  private readonly missingInventoryCursor = new Map<string, string>();
 
   constructor(private readonly pool: SqlPool, private readonly currentTime: () => number = Date.now) {}
 
@@ -941,11 +942,18 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            SELECT DISTINCT NULLIF(job.payload->>'itemId', '')::BIGINT AS item_id
            FROM jobs job
            WHERE job.job_type = $5
-             AND (job.status IN ('pending','running','retry')
-               OR (job.status = 'failed' AND job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')))
+             AND job.status IN ('pending','running','retry')
+         ), candidates AS MATERIALIZED (
+           SELECT item.id
+           FROM wordpress_catalog_run_items item
+           JOIN active_run run ON run.id = item.run_id
+           WHERE $6::BOOLEAN AND item.run_id = $1 AND item.id > $7::BIGINT
+             AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
+           ORDER BY item.id LIMIT $8
          ), missing AS MATERIALIZED (
            SELECT item.id, item.wordpress_product_id, 0 AS priority
            FROM wordpress_catalog_run_items item
+           JOIN candidates candidate ON candidate.id = item.id
            JOIN active_run run ON run.id = item.run_id
            WHERE $6::BOOLEAN AND item.run_id = $1 AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
              AND NOT EXISTS (
@@ -955,6 +963,12 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              AND NOT EXISTS (
                SELECT 1 FROM blocked WHERE blocked.item_id = item.id
            )
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs failed_job
+               WHERE failed_job.job_type = $5 AND failed_job.status = 'failed'
+                 AND failed_job.payload->>'itemId' = item.id::TEXT
+                 AND failed_job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')
+             )
            ORDER BY item.id
            LIMIT $2 FOR UPDATE OF item SKIP LOCKED
          ), stale AS MATERIALIZED (
@@ -966,6 +980,12 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
              AND state.checked_at <= NOW() - ($4::INTEGER * INTERVAL '1 minute')
              AND item.match_status = 'matched' AND item.internal_product_id IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM blocked WHERE blocked.item_id = item.id)
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs failed_job
+               WHERE failed_job.job_type = $5 AND failed_job.status = 'failed'
+                 AND failed_job.payload->>'itemId' = item.id::TEXT
+                 AND failed_job.finished_at > NOW() - ($4::INTEGER * INTERVAL '1 minute')
+             )
              AND (SELECT COUNT(*) FROM missing) < $2
            ORDER BY state.checked_at, item.id
            LIMIT $2 FOR UPDATE OF item SKIP LOCKED
@@ -975,23 +995,38 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            SELECT * FROM stale
            ORDER BY priority, id
            LIMIT $2
-         )
+         ), inserted AS (
          INSERT INTO jobs (job_type, payload, status, unique_key)
          SELECT $5, JSONB_BUILD_OBJECT('runId',$1::TEXT,'itemId',selected.id::TEXT,
                     'wordpressProductId',selected.wordpress_product_id::TEXT),
                 'pending', 'wordpress-inventory-' || $3 || ':' || $1::TEXT || ':' || selected.id::TEXT
          FROM selected
          ON CONFLICT (job_type, unique_key) WHERE status IN ('pending','running','retry') DO NOTHING
-         RETURNING id, (SELECT COUNT(*) FROM missing) AS missing_count`,
-        [input.runId, available, input.donorCode, input.intervalMinutes, jobType, probeMissing]);
-      return { queued: inserted.rows.length,
-        missingExhausted: probeMissing && Number(inserted.rows[0]?.missing_count ?? 0) < available };
+         RETURNING id
+         )
+         SELECT (SELECT COUNT(*) FROM inserted) AS queued_count,
+                (SELECT COUNT(*) FROM missing) AS missing_count,
+                (SELECT COUNT(*) FROM candidates) AS scanned_count,
+                (SELECT MAX(id)::TEXT FROM candidates) AS scanned_cursor,
+                (SELECT MAX(id)::TEXT FROM missing) AS missing_cursor`,
+        [input.runId, available, input.donorCode, input.intervalMinutes, jobType, probeMissing,
+          this.missingInventoryCursor.get(probeKey) ?? "0", 1_000]);
+      const row = inserted.rows[0];
+      const full = Number(row?.missing_count ?? 0) >= available;
+      const exhausted = probeMissing && !full && Number(row?.scanned_count ?? 0) < 1_000;
+      return { queued: Number(row?.queued_count ?? 0), missingExhausted: exhausted,
+        cursor: !probeMissing ? undefined : exhausted ? "0"
+          : String((full ? row?.missing_cursor : row?.scanned_cursor) ?? "0") };
     });
+    if ("cursor" in result && result.cursor !== undefined) {
+      this.missingInventoryCursor.set(probeKey, result.cursor);
+    }
     if (result.missingExhausted) {
       // Keep stale inventory flowing, but do not rescan the full catalog on every tick.
-      // Newly enrolled products are picked up within at most one minute.
+      // Resume the bounded catalog walk after a minute, while stale inventory keeps flowing.
       if (this.missingInventoryProbeAt.size >= 16 && !this.missingInventoryProbeAt.has(probeKey)) {
         this.missingInventoryProbeAt.clear();
+        this.missingInventoryCursor.clear();
       }
       this.missingInventoryProbeAt.set(probeKey, this.currentTime() + 60_000);
     }

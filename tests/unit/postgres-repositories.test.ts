@@ -194,7 +194,7 @@ describe("PostgreSQL repository mapping and SQL", () => {
   });
 
   it("selects inventory donors from bounded missing and stale queues", async () => {
-    const executor = new FakeExecutor([[], [{ count: "70" }], [{ id: "1" }, { id: "2" }], []]);
+    const executor = new FakeExecutor([[], [{ count: "70" }], [{ queued_count: "2", missing_count: "2", scanned_count: "1000", scanned_cursor: "1000" }], []]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor));
 
     await expect(repository.enqueueDueInventoryDonorJobs({
@@ -205,18 +205,22 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(insert.text).toContain("missing AS MATERIALIZED");
     expect(insert.text).toContain("stale AS MATERIALIZED");
     expect(insert.text).toContain("blocked AS MATERIALIZED");
+    expect(insert.text).toContain("candidates AS MATERIALIZED");
+    expect(insert.text).toContain("item.id > $7::BIGINT");
+    expect(insert.text).toContain("failed_job.payload->>'itemId' = item.id::TEXT");
+    expect(insert.text).not.toContain("OR (job.status = 'failed'");
     expect(insert.text).toContain("ORDER BY priority, id");
     expect(insert.text).not.toContain("LEFT JOIN wordpress_inventory_donor_states state");
-    expect(insert.values).toEqual(["4", 30, "shihuo", 360, "collect_wordpress_shihuo_inventory", true]);
+    expect(insert.values).toEqual(["4", 30, "shihuo", 360, "collect_wordpress_shihuo_inventory", true, "0", 1000]);
   });
 
   it("throttles exhausted missing scans without stopping stale inventory or other donors", async () => {
     let now = 1_000;
     const executor = new FakeExecutor([
-      [], [{ count: "0" }], [{ id: "1", missing_count: "0" }], [],
-      [], [{ count: "0" }], [{ id: "2", missing_count: "0" }], [],
-      [], [{ count: "0" }], [{ id: "3", missing_count: "100" }], [],
-      [], [{ count: "0" }], [{ id: "4", missing_count: "100" }], [],
+      [], [{ count: "0" }], [{ queued_count: "1", missing_count: "0", scanned_count: "20", scanned_cursor: "20" }], [],
+      [], [{ count: "0" }], [{ queued_count: "1", missing_count: "0", scanned_count: "0" }], [],
+      [], [{ count: "0" }], [{ queued_count: "1", missing_count: "100", missing_cursor: "100" }], [],
+      [], [{ count: "0" }], [{ queued_count: "1", missing_count: "100", missing_cursor: "100" }], [],
     ]);
     const repository = new PostgresWordPressCatalogRepository(pool(executor), () => now);
     const input = { runId: "4", donorCode: "goat", limit: 100, intervalMinutes: 30 } as const;
@@ -228,6 +232,22 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const queries = executor.calls.filter((call) => call.text.includes("WITH active_run AS MATERIALIZED"));
     expect(queries.map((call) => call.values[5])).toEqual([true, false, true, true]);
     expect(queries[1]?.text).toContain("stale AS MATERIALIZED");
+  });
+
+  it("advances bounded missing scans even when no jobs were queued", async () => {
+    const executor = new FakeExecutor([
+      [], [{ count: "0" }], [{ queued_count: "0", missing_count: "0", scanned_count: "1000", scanned_cursor: "2000" }], [],
+      [], [{ count: "0" }], [{ queued_count: "100", missing_count: "100", scanned_count: "1000", missing_cursor: "2100" }], [],
+      [], [{ count: "0" }], [{ queued_count: "0", missing_count: "0", scanned_count: "10", scanned_cursor: "3000" }], [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+    const input = { runId: "4", donorCode: "goat", limit: 100, intervalMinutes: 30 } as const;
+    expect(await repository.enqueueDueInventoryDonorJobs(input)).toBe(0);
+    expect(await repository.enqueueDueInventoryDonorJobs(input)).toBe(100);
+    expect(await repository.enqueueDueInventoryDonorJobs(input)).toBe(0);
+    const queries = executor.calls.filter((call) => call.text.includes("WITH active_run"));
+    expect(queries.map((call) => call.values[6])).toEqual(["0", "2000", "2100"]);
+    expect(queries.map((call) => call.values[5])).toEqual([true, true, true]);
   });
 
   it("aggregates running campaign jobs only through its selected batches", async () => {
