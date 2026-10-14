@@ -6,6 +6,15 @@ import type { ObjectStorageClient, S3ImageStoreOptions } from "./s3-image-store.
 
 const checksum = (body: Buffer): string => createHash("sha256").update(body).digest("hex");
 
+export async function transferLegacyImageBatch(transfer: Pick<LegacyImageTransfer, "transfer">,
+  paths: readonly string[], minimumAgeMs: number) {
+  if (new Set(paths).size !== paths.length) throw new Error("Duplicate paths in image transfer batch");
+  return Promise.all(paths.map(async (path) => {
+    try { return { path, result: await transfer.transfer(path, minimumAgeMs) }; }
+    catch { return { path, result: null }; }
+  }));
+}
+
 // Administrative transfer preserves legacy keys and URLs; normal publication stays immutable.
 export class LegacyImageTransfer {
   constructor(private readonly options: S3ImageStoreOptions,

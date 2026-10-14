@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LegacyImageTransfer } from "../../src/infrastructure/media/legacy-image-transfer.js";
+import { LegacyImageTransfer, transferLegacyImageBatch } from "../../src/infrastructure/media/legacy-image-transfer.js";
 
 const roots: string[] = [];
 const body = Buffer.from("RIFF1234WEBPimage-bytes");
@@ -28,6 +28,31 @@ async function fixture(remote?: Buffer) {
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
+  it("overlaps two transfers and waits for both verified outcomes", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => { release = done; });
+    let started = 0;
+    const transfer = { transfer: vi.fn(async () => {
+      if (++started === 2) release();
+      await gate;
+      return { deletedBytes: 10, uploaded: true, skipped: false };
+    }) };
+    const result = await transferLegacyImageBatch(transfer, ["one", "two"], 0);
+    expect(started).toBe(2);
+    expect(result.map((entry) => entry.path)).toEqual(["one", "two"]);
+    expect(result.every((entry) => entry.result?.deletedBytes === 10)).toBe(true);
+  });
+  it("keeps a failed transfer separate from a successful parallel file", async () => {
+    const transfer = { transfer: vi.fn(async (path: string) => {
+      if (path === "failed") throw new Error("failure");
+      return { deletedBytes: 10, uploaded: false, skipped: false };
+    }) };
+    const result = await transferLegacyImageBatch(transfer, ["failed", "ok"], 0);
+    expect(result[0]?.result).toBeNull();
+    expect(result[1]?.result?.deletedBytes).toBe(10);
+    await expect(transferLegacyImageBatch(transfer, ["duplicate", "duplicate"], 0)).rejects.toThrow("Duplicate");
+    expect(transfer.transfer).toHaveBeenCalledTimes(2);
+  });
   it("preserves the legacy key and removes only a storage- and CDN-verified copy", async () => {
     const f = await fixture();
     await expect(f.transfer.transfer(f.relative, 0)).resolves.toEqual({ deletedBytes: body.length, uploaded: true, skipped: false });
