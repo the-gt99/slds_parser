@@ -771,15 +771,19 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
            SELECT JSONB_ARRAY_ELEMENTS_TEXT(payload->'jobIds') AS id FROM jobs
            WHERE status IN ('pending','running','retry') AND payload->>'runId'=$1::TEXT AND job_type='poll_wordpress_variation_patches'
          ), selected AS MATERIALIZED (
+         SELECT item.* FROM candidates candidate
+         JOIN wordpress_catalog_runs run ON run.id=$1::BIGINT AND run.variation_auto_status='running'
+         CROSS JOIN LATERAL (
          SELECT item.id,item.wordpress_product_id,item.wordpress_job_id,item.variation_status,item.variation_source_hash
          FROM wordpress_catalog_run_items item
-         JOIN candidates candidate ON candidate.id=item.id
-         JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.variation_auto_status='running'
          WHERE item.run_id=$1::BIGINT AND item.variation_status IN ('pending','refreshing','submitted')
+           AND item.id=candidate.id
            AND item.updated_at < NOW()-INTERVAL '30 minutes'
            AND item.id::TEXT NOT IN (SELECT id FROM active_items WHERE id IS NOT NULL)
            AND (item.wordpress_job_id IS NULL OR item.wordpress_job_id::TEXT NOT IN (SELECT id FROM active_polls WHERE id IS NOT NULL))
-         ORDER BY item.id LIMIT 100 FOR UPDATE OF item SKIP LOCKED
+         LIMIT 1 FOR UPDATE OF item SKIP LOCKED
+         ) item
+         ORDER BY item.id LIMIT 100
          ), stats AS (
            SELECT COUNT(*) AS scanned_count,MAX(id)::TEXT AS scanned_cursor FROM candidates
          )

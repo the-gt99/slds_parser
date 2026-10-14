@@ -279,6 +279,8 @@ describe("PostgreSQL repository mapping and SQL", () => {
     const queries = executor.calls.filter((call) => call.text.includes("WITH candidates AS MATERIALIZED"));
     expect(queries.map((call) => call.values)).toEqual([["4", "0"], ["4", "2000"], ["4", "0"]]);
     expect(queries[0]?.text).toContain("LIMIT 1000");
+    expect(queries[0]?.text).toContain("CROSS JOIN LATERAL");
+    expect(queries[0]?.text).toContain("LIMIT 1 FOR UPDATE OF item SKIP LOCKED");
     expect(queries[0]?.text).toContain("combine_wordpress_inventory");
     expect(queries[0]?.text).toContain("WHERE id IS NOT NULL");
   });
