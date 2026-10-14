@@ -1,8 +1,9 @@
-import { opendir, mkdir, rename, writeFile } from "node:fs/promises";
+import { readFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { S3Client } from "@aws-sdk/client-s3";
 import { loadProcessingConfig } from "../config/processing-config.js";
 import { LegacyImageTransfer, transferLegacyImageBatch } from "../infrastructure/media/legacy-image-transfer.js";
+import { legacyImageFiles } from "../infrastructure/media/legacy-image-files.js";
 
 function integer(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -23,8 +24,19 @@ const minimumAgeMs = integer("IMAGE_TRANSFER_MINIMUM_AGE_HOURS", 24) * 3_600_000
 const limit = integer("IMAGE_TRANSFER_LIMIT", Number.MAX_SAFE_INTEGER);
 const checkpoint = process.env.IMAGE_TRANSFER_CHECKPOINT ?? join(dirname(config.baseDirectory), "legacy-image-transfer.json");
 const selectedPath = process.env.IMAGE_TRANSFER_RELATIVE_PATH;
+let startDirectory: string | undefined;
+if (!selectedPath) {
+  try {
+    const previous = JSON.parse(await readFile(checkpoint, "utf8")) as { complete?: boolean; lastPath?: unknown };
+    if (previous.complete === false && typeof previous.lastPath === "string" && previous.lastPath !== "") {
+      startDirectory = previous.lastPath.slice(0, previous.lastPath.lastIndexOf("/"));
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+}
 const progress = { startedAt: new Date().toISOString(), updatedAt: "", visited: 0, deleted: 0,
-  deletedBytes: 0, uploaded: 0, skipped: 0, failed: 0, lastPath: "", complete: false };
+  deletedBytes: 0, uploaded: 0, skipped: 0, failed: 0, lastPath: "", startDirectory: startDirectory ?? null, complete: false };
 let consecutiveFailures = 0;
 let lastSaved = 0;
 let stopping = false;
@@ -41,19 +53,7 @@ async function save(): Promise<void> {
 }
 async function* paths(): AsyncGenerator<string> {
   if (selectedPath) { yield selectedPath; return; }
-  const sources = await opendir(config.baseDirectory);
-  for await (const source of sources) {
-    if (!source.isDirectory() || !/^[a-zA-Z0-9_-]+$/u.test(source.name)) continue;
-    const products = await opendir(join(config.baseDirectory, source.name));
-    for await (const product of products) {
-      if (stopping) return;
-      if (!product.isDirectory() || !/^item_[a-zA-Z0-9_-]+$/u.test(product.name)) continue;
-      const files = await opendir(join(config.baseDirectory, source.name, product.name));
-      for await (const file of files) {
-        if (file.isFile() && /^\d+(?:-main)?(?:\.[a-f0-9]{64})?\.webp$/u.test(file.name)) yield `${source.name}/${product.name}/${file.name}`;
-      }
-    }
-  }
+  yield* legacyImageFiles(config.baseDirectory, startDirectory, () => stopping);
 }
 await save();
 async function processBatch(paths: readonly string[]): Promise<void> {
