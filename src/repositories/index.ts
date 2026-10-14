@@ -13,6 +13,7 @@ export type {
   WordPressCatalogPageInput,
   WordPressCatalogRepository,
   WordPressCatalogRunItemRecord,
+  WordPressSubmittedVariationItem,
   WordPressCatalogRunItemSummaryRecord,
   WordPressCatalogRunRecord,
   WordPressCatalogRunStatus,

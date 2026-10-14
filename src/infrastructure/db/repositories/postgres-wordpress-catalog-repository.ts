@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../contracts/index.js";
 import type {
   WordPressCatalogRepository,
   WordPressCatalogRunItemRecord,
+  WordPressSubmittedVariationItem,
   WordPressCatalogRunItemSummaryRecord,
   WordPressCatalogRunRecord,
   WordPressInventoryLastProduct,
@@ -1144,16 +1145,18 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
       [input.itemId, input.wordpressJobId, JSON.stringify(input.result)]);
   }
 
-  async listSubmittedVariationItems(runId: string, wordpressJobIds: readonly string[]): Promise<readonly WordPressCatalogRunItemRecord[]> {
+  async listSubmittedVariationItems(runId: string, wordpressJobIds: readonly string[]): Promise<readonly WordPressSubmittedVariationItem[]> {
     if (wordpressJobIds.length === 0) return [];
     const result = await queryPool<DatabaseRow>(this.pool,
-      `SELECT item.*, snapshot.payload, snapshot.fetched_at
+      `SELECT item.id,item.wordpress_product_id,item.wordpress_job_id,item.variation_notices,item.variation_result
        FROM wordpress_catalog_run_items item
-       JOIN wordpress_catalog_snapshots snapshot ON snapshot.id = item.snapshot_id
        WHERE item.run_id = $1 AND item.wordpress_job_id = ANY($2::BIGINT[]) AND item.variation_status = 'submitted'
        ORDER BY item.wordpress_job_id`,
       [runId, wordpressJobIds]);
-    return result.rows.map(mapItem);
+    return result.rows.map((row) => ({ id: text(row, "id"), wordpressProductId: text(row, "wordpress_product_id"),
+      wordpressJobId: text(row, "wordpress_job_id"),
+      variationNotices: Array.isArray(row.variation_notices) ? row.variation_notices as JsonObject[] : [],
+      variationResult: row.variation_result == null ? null : row.variation_result as JsonObject }));
   }
 
   async saveVariationJobResult(input: Parameters<WordPressCatalogRepository["saveVariationJobResult"]>[0]): Promise<void> {

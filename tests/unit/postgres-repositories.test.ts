@@ -285,6 +285,23 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(queries[0]?.text).toContain("WHERE id IS NOT NULL");
   });
 
+  it("polls WordPress jobs without loading product snapshots or variant payloads", async () => {
+    const executor = new FakeExecutor([[{ id: "7", wordpress_product_id: "100", wordpress_job_id: "55",
+      variation_notices: [{ code: "notice" }], variation_result: null }]]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+    expect(await repository.listSubmittedVariationItems("4", ["55"])).toEqual([{
+      id: "7", wordpressProductId: "100", wordpressJobId: "55", variationNotices: [{ code: "notice" }], variationResult: null,
+    }]);
+    const sql = executor.calls[0]!.text;
+    expect(sql).not.toContain("snapshot");
+    expect(sql).not.toContain("item.*");
+    expect(sql).not.toContain("variation_source_variants");
+    expect(sql).not.toContain("variation_payload");
+    expect(sql).toContain("wordpress_job_id = ANY");
+    expect(await repository.listSubmittedVariationItems("4", [])).toEqual([]);
+    expect(executor.calls).toHaveLength(1);
+  });
+
   it("does not skip remaining recovery candidates when a batch fills", async () => {
     const rows = Array.from({ length: 100 }, (_, index) => ({ id: String(index + 1),
       wordpress_product_id: String(index + 101), wordpress_job_id: null, variation_status: "pending",

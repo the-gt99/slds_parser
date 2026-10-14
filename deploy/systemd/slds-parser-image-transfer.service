@@ -9,7 +9,7 @@ User=slds-parser
 Group=slds-parser
 WorkingDirectory=/srv/slds-parser/app
 EnvironmentFile=/srv/slds-parser/app/.env
-Environment=IMAGE_TRANSFER_DELAY_MS=1000
+Environment=IMAGE_TRANSFER_DELAY_MS=200
 ExecStart=/usr/bin/flock --nonblock /srv/slds-parser/state/image-transfer.lock /usr/local/bin/node dist/src/cli/transfer-legacy-images.js
 Nice=19
 IOSchedulingClass=idle

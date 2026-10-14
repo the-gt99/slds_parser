@@ -536,7 +536,7 @@ export class WordPressVariationPatchRunner {
         metadata: refreshedProduct.discoveryMetadata,
       },
     };
-    const patchPayload = await this.buildPatchPayload(effectiveCandidate, runId, item.variationSourceVariants, true);
+    const patchPayload = await this.buildPatchPayload(effectiveCandidate, runId, candidate.item.variationSourceVariants, true);
     if (patchPayload !== null && !await this.repository.isVariationAutoSyncRunning(runId)) {
       await this.repository.enqueueReadyVariationBatches(runId, 100);
     }

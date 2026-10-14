@@ -146,6 +146,9 @@ export interface WordPressCatalogRunItemRecord {
   readonly updatedAt: string;
 }
 
+export type WordPressSubmittedVariationItem = Pick<WordPressCatalogRunItemRecord,
+  "id" | "wordpressProductId" | "wordpressJobId" | "variationNotices" | "variationResult">;
+
 export interface WordPressCatalogVariationCandidate {
   readonly item: WordPressCatalogRunItemRecord;
   readonly source: SourceDTO;
@@ -289,7 +292,7 @@ export interface WordPressCatalogRepository {
     readonly wordpressJobId: string;
     readonly result: JsonObject;
   }): Promise<void>;
-  listSubmittedVariationItems(runId: EntityId, wordpressJobIds: readonly string[]): Promise<readonly WordPressCatalogRunItemRecord[]>;
+  listSubmittedVariationItems(runId: EntityId, wordpressJobIds: readonly string[]): Promise<readonly WordPressSubmittedVariationItem[]>;
   saveVariationJobResult(input: {
     readonly itemId: EntityId;
     readonly status: "completed" | "failed";

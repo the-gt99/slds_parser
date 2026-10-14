@@ -104,6 +104,39 @@ describe("WordPressVariationPatchRunner preparation safety", () => {
   });
 });
 
+describe("lightweight WordPress polling", () => {
+  const item = { id: "7", wordpressProductId: "100", wordpressJobId: "55", variationNotices: [], variationResult: null };
+  it.each(["running", "done", "error"])("handles %s jobs using only polling fields", async (status) => {
+    const repository = { listSubmittedVariationItems: vi.fn().mockResolvedValue([item]),
+      listVariationCandidates: vi.fn(), saveVariationJobResult: vi.fn() };
+    const jobs = { enqueue: vi.fn() };
+    const client = { readJobs: vi.fn().mockResolvedValue([{ job_id: "55", status, last_error: "ordinary error" }]) };
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), {
+      repository, client, jobs, currentTime: () => 0,
+    }) as WordPressVariationPatchRunner;
+    await expect(runner.poll({ runId: "4", jobIds: ["55"], poll: 0 })).resolves.toEqual({ status: "completed" });
+    expect(repository.listVariationCandidates).not.toHaveBeenCalled();
+    if (status === "running") expect(jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ payload: { runId: "4", jobIds: ["55"], poll: 1 } }));
+    else expect(repository.saveVariationJobResult).toHaveBeenCalledWith(expect.objectContaining({ itemId: "7", status: status === "done" ? "completed" : "failed" }));
+  });
+  it("loads variants only from the fresh candidate when retrying a snapshot conflict", async () => {
+    const variants = [{ sourceVariantKey: "fresh" }];
+    const repository = { listSubmittedVariationItems: vi.fn().mockResolvedValue([item]),
+      listVariationCandidates: vi.fn().mockResolvedValue([{ item: { id: "7", variationSourceVariants: variants }, sourceProduct: { id: "21" } }]),
+      isVariationAutoSyncRunning: vi.fn().mockResolvedValue(true) };
+    const client = { readJobs: vi.fn().mockResolvedValue([{ job_id: "55", status: "error",
+      last_error: "Variation patch permanent [variation_size_changed]: Variation size changed." }]),
+      readProduct: vi.fn().mockResolvedValue({ snapshot: {} }) };
+    const buildPatchPayload = vi.fn().mockResolvedValue({ mode: "upsert_variations" });
+    const runner = Object.assign(Object.create(WordPressVariationPatchRunner.prototype), { repository, client, buildPatchPayload,
+      sourceProducts: { getById: vi.fn().mockResolvedValue({ id: "21", sourceId: "1", sourceKey: "21", externalId: "21", discoveryMetadata: {} }) },
+    }) as WordPressVariationPatchRunner;
+    await runner.poll({ runId: "4", jobIds: ["55"], poll: 0 });
+    expect(repository.listVariationCandidates).toHaveBeenCalledOnce();
+    expect(buildPatchPayload).toHaveBeenCalledWith(expect.anything(), "4", variants, true);
+  });
+});
+
 describe("parseCollectWordPressVariationSourcePayload", () => {
   it("keeps the force flag for a manual canary", () => {
     expect(parseCollectWordPressVariationSourcePayload({

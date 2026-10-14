@@ -36,5 +36,9 @@ try {
   assert.equal(await repository.recoverOrphanedVariationItems("4"), 0);
   assert.equal(await repository.recoverOrphanedVariationItems("4"), 1);
   assert.equal(Number((await db.query("SELECT count(*) AS count FROM jobs WHERE job_type='poll_wordpress_variation_patches' AND status='pending'")).rows[0].count), 1);
-  console.info(JSON.stringify({ passed: true, protectedActiveJobs: true, nullSafe: true, reachedTail: true, recoveredPoll: true }));
+  await db.exec("ALTER TABLE wordpress_catalog_run_items ADD COLUMN variation_result JSONB");
+  const polled = await repository.listSubmittedVariationItems("4", ["55"]);
+  assert.equal(polled.length, 1);
+  assert.deepEqual(Object.keys(polled[0]!).sort(), ["id", "variationNotices", "variationResult", "wordpressJobId", "wordpressProductId"].sort());
+  console.info(JSON.stringify({ passed: true, protectedActiveJobs: true, nullSafe: true, reachedTail: true, recoveredPoll: true, lightweightPoll: true }));
 } finally { await db.close(); }
