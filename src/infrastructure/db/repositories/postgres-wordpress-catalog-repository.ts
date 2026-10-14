@@ -226,6 +226,7 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   private readonly missingInventoryProbeAt = new Map<string, number>();
   private readonly missingInventoryCursor = new Map<string, string>();
   private readonly inventoryMergeCursor = new Map<string, string>();
+  private readonly inventoryRecoveryCursor = new Map<string, string>();
 
   constructor(private readonly pool: SqlPool, private readonly currentTime: () => number = Date.now) {}
 
@@ -753,26 +754,40 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
   }
 
   async recoverOrphanedVariationItems(runId: string): Promise<number> {
-    return transaction(this.pool, async (client) => {
+    const result = await transaction(this.pool, async (client) => {
       const selected = await client.query<DatabaseRow>(
-        `WITH active_items AS MATERIALIZED (
+        `WITH candidates AS MATERIALIZED (
+           SELECT item.id FROM wordpress_catalog_run_items item
+           WHERE item.run_id=$1::BIGINT AND item.id > $2::BIGINT
+             AND item.variation_status IN ('pending','refreshing','submitted')
+             AND item.updated_at < NOW()-INTERVAL '30 minutes'
+           ORDER BY item.id LIMIT 1000
+         ), active_items AS MATERIALIZED (
            SELECT payload->>'itemId' AS id FROM jobs WHERE status IN ('pending','running','retry')
-             AND payload->>'runId'=$1::TEXT AND job_type IN ('collect_wordpress_goat_inventory','collect_wordpress_shihuo_inventory','prepare_wordpress_variation_patch','refresh_wordpress_variation_patch')
+             AND payload->>'runId'=$1::TEXT AND job_type IN ('collect_wordpress_goat_inventory','collect_wordpress_shihuo_inventory','combine_wordpress_inventory','prepare_wordpress_variation_patch','refresh_wordpress_variation_patch')
            UNION ALL SELECT JSONB_ARRAY_ELEMENTS_TEXT(payload->'itemIds') FROM jobs
              WHERE status IN ('pending','running','retry') AND payload->>'runId'=$1::TEXT AND job_type='submit_wordpress_variation_patches'
          ), active_polls AS MATERIALIZED (
            SELECT JSONB_ARRAY_ELEMENTS_TEXT(payload->'jobIds') AS id FROM jobs
            WHERE status IN ('pending','running','retry') AND payload->>'runId'=$1::TEXT AND job_type='poll_wordpress_variation_patches'
-         )
+         ), selected AS MATERIALIZED (
          SELECT item.id,item.wordpress_product_id,item.wordpress_job_id,item.variation_status,item.variation_source_hash
          FROM wordpress_catalog_run_items item
+         JOIN candidates candidate ON candidate.id=item.id
          JOIN wordpress_catalog_runs run ON run.id=item.run_id AND run.variation_auto_status='running'
          WHERE item.run_id=$1::BIGINT AND item.variation_status IN ('pending','refreshing','submitted')
            AND item.updated_at < NOW()-INTERVAL '30 minutes'
-           AND NOT EXISTS(SELECT 1 FROM active_items WHERE active_items.id=item.id::TEXT)
-           AND NOT EXISTS(SELECT 1 FROM active_polls WHERE active_polls.id=item.wordpress_job_id::TEXT)
-         ORDER BY item.id LIMIT 100 FOR UPDATE OF item SKIP LOCKED`, [runId]);
-      for (const row of selected.rows) {
+           AND item.id::TEXT NOT IN (SELECT id FROM active_items WHERE id IS NOT NULL)
+           AND (item.wordpress_job_id IS NULL OR item.wordpress_job_id::TEXT NOT IN (SELECT id FROM active_polls WHERE id IS NOT NULL))
+         ORDER BY item.id LIMIT 100 FOR UPDATE OF item SKIP LOCKED
+         ), stats AS (
+           SELECT COUNT(*) AS scanned_count,MAX(id)::TEXT AS scanned_cursor FROM candidates
+         )
+         SELECT selected.*,stats.scanned_count,stats.scanned_cursor
+         FROM stats LEFT JOIN selected ON TRUE ORDER BY selected.id`,
+        [runId, this.inventoryRecoveryCursor.get(runId) ?? "0"]);
+      const rows = selected.rows.filter((row) => row.id != null);
+      for (const row of rows) {
         const id = text(row,"id");
         if (text(row,"variation_status") === "submitted" && row.wordpress_job_id !== null) {
           await client.query(`INSERT INTO jobs(job_type,payload,status,unique_key)
@@ -791,8 +806,12 @@ export class PostgresWordPressCatalogRepository implements WordPressCatalogRepos
             WHERE id=$1`, [id]);
         }
       }
-      return selected.rows.length;
+      const full = rows.length === 100;
+      return { recovered: rows.length, cursor: full ? text(rows[rows.length - 1]!, "id")
+        : Number(selected.rows[0]?.scanned_count ?? 0) < 1000 ? "0" : String(selected.rows[0]?.scanned_cursor ?? "0") };
     });
+    this.inventoryRecoveryCursor.set(runId, result.cursor);
+    return result.recovered;
   }
 
   async failRun(runId: string, error: string): Promise<void> {

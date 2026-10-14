@@ -266,6 +266,36 @@ describe("PostgreSQL repository mapping and SQL", () => {
     expect(queries[0]?.text).toContain("shihuo.checked_at > COALESCE(item.variation_checked_at");
   });
 
+  it("advances bounded recovery pages even when every candidate has active work", async () => {
+    const executor = new FakeExecutor([
+      [], [{ id: null, scanned_count: "1000", scanned_cursor: "2000" }], [],
+      [], [{ id: null, scanned_count: "20", scanned_cursor: "2100" }], [],
+      [], [{ id: null, scanned_count: "0", scanned_cursor: null }], [],
+    ]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+    expect(await repository.recoverOrphanedVariationItems("4")).toBe(0);
+    expect(await repository.recoverOrphanedVariationItems("4")).toBe(0);
+    expect(await repository.recoverOrphanedVariationItems("4")).toBe(0);
+    const queries = executor.calls.filter((call) => call.text.includes("WITH candidates AS MATERIALIZED"));
+    expect(queries.map((call) => call.values)).toEqual([["4", "0"], ["4", "2000"], ["4", "0"]]);
+    expect(queries[0]?.text).toContain("LIMIT 1000");
+    expect(queries[0]?.text).toContain("combine_wordpress_inventory");
+    expect(queries[0]?.text).toContain("WHERE id IS NOT NULL");
+  });
+
+  it("does not skip remaining recovery candidates when a batch fills", async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => ({ id: String(index + 1),
+      wordpress_product_id: String(index + 101), wordpress_job_id: null, variation_status: "pending",
+      variation_source_hash: null, scanned_count: "1000", scanned_cursor: "1000" }));
+    const executor = new FakeExecutor([[], rows, ...Array.from({ length: 100 }, () => []), [],
+      [], [{ id: null, scanned_count: "0" }], []]);
+    const repository = new PostgresWordPressCatalogRepository(pool(executor));
+    expect(await repository.recoverOrphanedVariationItems("4")).toBe(100);
+    expect(await repository.recoverOrphanedVariationItems("4")).toBe(0);
+    const queries = executor.calls.filter((call) => call.text.includes("WITH candidates AS MATERIALIZED"));
+    expect(queries.map((call) => call.values)).toEqual([["4", "0"], ["4", "100"]]);
+  });
+
   it("aggregates running campaign jobs only through its selected batches", async () => {
     const executor = new FakeExecutor([[]]);
     const repository = new PostgresExportControlRepository(pool(executor));
