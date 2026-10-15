@@ -10,12 +10,12 @@ Group=slds-parser
 WorkingDirectory=/srv/slds-parser/app
 EnvironmentFile=/srv/slds-parser/app/.env
 Environment=IMAGE_TRANSFER_DELAY_MS=50
-Environment=IMAGE_TRANSFER_CONCURRENCY=2
+Environment=IMAGE_TRANSFER_CONCURRENCY=6
 ExecStart=/usr/bin/flock --nonblock /srv/slds-parser/state/image-transfer.lock /usr/local/bin/node dist/src/cli/transfer-legacy-images.js
 Nice=19
 IOSchedulingClass=idle
-CPUQuota=25%
-MemoryMax=384M
+CPUQuota=50%
+MemoryMax=768M
 TimeoutStopSec=90
 UMask=0027
 NoNewPrivileges=true

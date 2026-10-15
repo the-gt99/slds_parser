@@ -28,18 +28,19 @@ async function fixture(remote?: Buffer) {
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
-  it("overlaps two transfers and waits for both verified outcomes", async () => {
+  it.each([2, 6])("overlaps %i transfers and waits for all verified outcomes", async (concurrency) => {
     let release!: () => void;
     const gate = new Promise<void>((done) => { release = done; });
     let started = 0;
     const transfer = { transfer: vi.fn(async () => {
-      if (++started === 2) release();
+      if (++started === concurrency) release();
       await gate;
       return { deletedBytes: 10, uploaded: true, skipped: false };
     }) };
-    const result = await transferLegacyImageBatch(transfer, ["one", "two"], 0);
-    expect(started).toBe(2);
-    expect(result.map((entry) => entry.path)).toEqual(["one", "two"]);
+    const paths = Array.from({ length: concurrency }, (_, index) => `file-${index}`);
+    const result = await transferLegacyImageBatch(transfer, paths, 0);
+    expect(started).toBe(concurrency);
+    expect(result.map((entry) => entry.path)).toEqual(paths);
     expect(result.every((entry) => entry.result?.deletedBytes === 10)).toBe(true);
   });
   it("keeps a failed transfer separate from a successful parallel file", async () => {

@@ -19,7 +19,7 @@ const client = new S3Client({ endpoint: options.endpoint, region: options.region
 const transfer = new LegacyImageTransfer(options, client);
 const delayMs = integer("IMAGE_TRANSFER_DELAY_MS", 1000);
 const concurrency = integer("IMAGE_TRANSFER_CONCURRENCY", 1);
-if (concurrency > 4) throw new Error("IMAGE_TRANSFER_CONCURRENCY must not exceed 4");
+if (concurrency > 6) throw new Error("IMAGE_TRANSFER_CONCURRENCY must not exceed 6");
 const minimumAgeMs = integer("IMAGE_TRANSFER_MINIMUM_AGE_HOURS", 24) * 3_600_000;
 const limit = integer("IMAGE_TRANSFER_LIMIT", Number.MAX_SAFE_INTEGER);
 const checkpoint = process.env.IMAGE_TRANSFER_CHECKPOINT ?? join(dirname(config.baseDirectory), "legacy-image-transfer.json");
