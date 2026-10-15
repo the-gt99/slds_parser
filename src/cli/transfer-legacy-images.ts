@@ -17,12 +17,12 @@ if (config.storage.type !== "s3") throw new Error("Legacy transfer requires S3 s
 const options = { ...config, ...config.storage };
 const client = new S3Client({ endpoint: options.endpoint, region: options.region, forcePathStyle: true,
   maxAttempts: 2, requestHandler: { requestTimeout: 30_000, connectionTimeout: 10_000,
-    httpsAgent: new Agent({ keepAlive: true, maxSockets: 96, maxFreeSockets: 96 }) },
+    httpsAgent: new Agent({ keepAlive: true, maxSockets: 256, maxFreeSockets: 256 }) },
   credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey } });
 const transfer = new LegacyImageTransfer(options, client);
 const delayMs = integer("IMAGE_TRANSFER_DELAY_MS", 1000);
 const concurrency = integer("IMAGE_TRANSFER_CONCURRENCY", 1);
-if (concurrency > 96) throw new Error("IMAGE_TRANSFER_CONCURRENCY must not exceed 96");
+if (concurrency > 256) throw new Error("IMAGE_TRANSFER_CONCURRENCY must not exceed 256");
 const maximumBatchBytes = 64 * 1024 * 1024;
 const minimumAgeMs = integer("IMAGE_TRANSFER_MINIMUM_AGE_HOURS", 24) * 3_600_000;
 const limit = integer("IMAGE_TRANSFER_LIMIT", Number.MAX_SAFE_INTEGER);

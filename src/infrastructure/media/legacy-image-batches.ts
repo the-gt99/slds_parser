@@ -1,6 +1,6 @@
 export async function* legacyImageBatches(paths: AsyncIterable<string>, concurrency: number,
   maximumBytes: number, sizeOf: (path: string) => Promise<number>): AsyncGenerator<string[]> {
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 96
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 256
     || !Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error("Invalid image batch limits");
   let batch: string[] = [];
   let bytes = 0;

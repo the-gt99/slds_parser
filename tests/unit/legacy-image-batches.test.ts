@@ -15,7 +15,7 @@ describe("bounded legacy image batches", () => {
     expect(await batches(5, 96, 10, 4)).toEqual([["0", "1"], ["2", "3"], ["4"]]);
   });
   it("rejects invalid limits and oversized files without yielding them", async () => {
-    await expect(batches(1, 97, 10, 1)).rejects.toThrow("Invalid");
+    await expect(batches(1, 257, 10, 1)).rejects.toThrow("Invalid");
     await expect(batches(1, 6, 10, 11)).rejects.toThrow("retained");
     await expect(batches(1, 6, 10, -1)).rejects.toThrow("retained");
     await expect(batches(1, 6, 10, Number.NaN)).rejects.toThrow("retained");

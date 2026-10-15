@@ -28,7 +28,7 @@ async function fixture(remote?: Buffer) {
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
-  it.each([2, 6, 24, 96])("overlaps %i transfers and waits for all verified outcomes", async (concurrency) => {
+  it.each([2, 6, 24, 96, 192, 256])("overlaps %i transfers and waits for all verified outcomes", async (concurrency) => {
     let release!: () => void;
     const gate = new Promise<void>((done) => { release = done; });
     let started = 0;
