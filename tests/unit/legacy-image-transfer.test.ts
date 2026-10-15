@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LegacyImageTransfer, transferLegacyImageBatch } from "../../src/infrastructure/media/legacy-image-transfer.js";
+import { LegacyImageTransfer, transferLegacyImageBatch, legacyImageFailure } from "../../src/infrastructure/media/legacy-image-transfer.js";
 
 const roots: string[] = [];
 const body = Buffer.from("RIFF1234WEBPimage-bytes");
@@ -28,6 +28,14 @@ async function fixture(remote?: Buffer) {
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
+  it("reports only safe transport codes and HTTP status, without messages or credentials", () => {
+    expect(legacyImageFailure({ name: "SlowDown", $metadata: { httpStatusCode: 503 }, message: "secret" }))
+      .toEqual({ name: "SlowDown", status: 503, code: undefined });
+    expect(legacyImageFailure({ name: "TypeError", cause: { code: "ECONNRESET" } }).code).toBe("ECONNRESET");
+    expect(legacyImageFailure({ name: "https://secret", code: "Bearer secret", status: 999 }))
+      .toEqual({ name: "Error", status: undefined, code: undefined });
+    expect(legacyImageFailure(null).name).toBe("Error");
+  });
   it.each([2, 6, 24, 96, 192, 256])("overlaps %i transfers and waits for all verified outcomes", async (concurrency) => {
     let release!: () => void;
     const gate = new Promise<void>((done) => { release = done; });

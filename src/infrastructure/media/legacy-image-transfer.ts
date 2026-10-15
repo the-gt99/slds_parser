@@ -6,12 +6,21 @@ import type { ObjectStorageClient, S3ImageStoreOptions } from "./s3-image-store.
 
 const checksum = (body: Buffer): string => createHash("sha256").update(body).digest("hex");
 
+export function legacyImageFailure(error: unknown) {
+  const value = error as { name?: unknown; code?: unknown; status?: unknown;
+    $metadata?: { httpStatusCode?: unknown }; cause?: { code?: unknown } } | null;
+  const safeCode = (code: unknown) => typeof code === "string" && /^[A-Za-z0-9_]{1,64}$/u.test(code) ? code : undefined;
+  const status = value?.$metadata?.httpStatusCode ?? value?.status;
+  return { name: safeCode(value?.name) ?? "Error", code: safeCode(value?.code ?? value?.cause?.code),
+    status: typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined };
+}
+
 export async function transferLegacyImageBatch(transfer: Pick<LegacyImageTransfer, "transfer">,
   paths: readonly string[], minimumAgeMs: number) {
   if (new Set(paths).size !== paths.length) throw new Error("Duplicate paths in image transfer batch");
   return Promise.all(paths.map(async (path) => {
     try { return { path, result: await transfer.transfer(path, minimumAgeMs) }; }
-    catch { return { path, result: null }; }
+    catch (error) { return { path, result: null, failure: legacyImageFailure(error) }; }
   }));
 }
 
@@ -51,7 +60,9 @@ export class LegacyImageTransfer {
     if (remote === null || checksum(remote) !== hash) throw new Error("Object storage copy differs; local file retained");
     const url = `${this.options.publicBaseUrl.replace(/\/+$/u, "")}/${key}`;
     const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok || !(response.headers.get("content-type") ?? "").startsWith("image/")) throw new Error("CDN copy unavailable; local file retained");
+    if (!response.ok || !(response.headers.get("content-type") ?? "").startsWith("image/")) {
+      throw Object.assign(new Error("CDN copy unavailable; local file retained"), { code: "CDN_UNAVAILABLE", status: response.status });
+    }
     if (checksum(Buffer.from(await response.arrayBuffer())) !== hash) throw new Error("CDN copy differs; local file retained");
     // Check both identity and content again after remote requests.
     const after = await lstat(path);

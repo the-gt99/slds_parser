@@ -70,7 +70,7 @@ async function processBatch(paths: readonly string[]): Promise<void> {
   progress.lastPath = paths.at(-1) ?? "";
   const outcomes = await transferLegacyImageBatch(transfer, paths, minimumAgeMs);
   let failureLimitReached = false;
-  for (const { path, result } of outcomes) {
+  for (const { path, result, failure } of outcomes) {
     if (result !== null) {
       progress.deletedBytes += result.deletedBytes;
       if (result.skipped) progress.skipped++; else progress.deleted++;
@@ -80,7 +80,7 @@ async function processBatch(paths: readonly string[]): Promise<void> {
       progress.failed++;
       consecutiveFailures++;
       if (consecutiveFailures >= 5) failureLimitReached = true;
-      console.error(JSON.stringify({ path, error: "transfer_failed_local_file_retained" }));
+      console.error(JSON.stringify({ path, error: "transfer_failed_local_file_retained", failure }));
     }
   }
   if (failureLimitReached) throw new Error("Repeated transfer failures; stopped without removing unverified files");
