@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { Agent } from "node:https";
 import { S3Client } from "@aws-sdk/client-s3";
 import { loadProcessingConfig } from "../config/processing-config.js";
-import { LegacyImageTransfer, transferLegacyImageBatch } from "../infrastructure/media/legacy-image-transfer.js";
+import { LegacyImageTransfer, transferLegacyImageBatch, nextLegacyFailedBatchCount } from "../infrastructure/media/legacy-image-transfer.js";
 import { legacyImageFiles } from "../infrastructure/media/legacy-image-files.js";
 import { legacyImageBatches } from "../infrastructure/media/legacy-image-batches.js";
 
@@ -16,7 +16,7 @@ const config = loadProcessingConfig().image;
 if (config.storage.type !== "s3") throw new Error("Legacy transfer requires S3 storage");
 const options = { ...config, ...config.storage };
 const client = new S3Client({ endpoint: options.endpoint, region: options.region, forcePathStyle: true,
-  maxAttempts: 2, requestHandler: { requestTimeout: 30_000, connectionTimeout: 10_000,
+  maxAttempts: 2, requestHandler: { requestTimeout: 30_000, throwOnRequestTimeout: true, connectionTimeout: 10_000,
     httpsAgent: new Agent({ keepAlive: true, maxSockets: 256, maxFreeSockets: 256 }) },
   credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey } });
 const transfer = new LegacyImageTransfer(options, client);
@@ -41,7 +41,7 @@ if (!selectedPath) {
 }
 const progress = { startedAt: new Date().toISOString(), updatedAt: "", visited: 0, deleted: 0,
   deletedBytes: 0, uploaded: 0, skipped: 0, failed: 0, lastPath: "", startDirectory: startDirectory ?? null, complete: false };
-let consecutiveFailures = 0;
+let consecutiveFailedBatches = 0;
 let lastSaved = 0;
 let stopping = false;
 process.on("SIGTERM", () => { stopping = true; });
@@ -69,21 +69,18 @@ async function processBatch(paths: readonly string[]): Promise<void> {
   progress.visited += paths.length;
   progress.lastPath = paths.at(-1) ?? "";
   const outcomes = await transferLegacyImageBatch(transfer, paths, minimumAgeMs);
-  let failureLimitReached = false;
+  consecutiveFailedBatches = nextLegacyFailedBatchCount(consecutiveFailedBatches, outcomes);
   for (const { path, result, failure } of outcomes) {
     if (result !== null) {
       progress.deletedBytes += result.deletedBytes;
       if (result.skipped) progress.skipped++; else progress.deleted++;
       if (result.uploaded) progress.uploaded++;
-      consecutiveFailures = 0;
     } else {
       progress.failed++;
-      consecutiveFailures++;
-      if (consecutiveFailures >= 5) failureLimitReached = true;
       console.error(JSON.stringify({ path, error: "transfer_failed_local_file_retained", failure }));
     }
   }
-  if (failureLimitReached) throw new Error("Repeated transfer failures; stopped without removing unverified files");
+  if (consecutiveFailedBatches >= 5) throw new Error("Five entirely failed transfer batches; stopped without removing unverified files");
   if (Date.now() - lastSaved >= 15_000) await save();
   await new Promise((done) => setTimeout(done, delayMs));
 }

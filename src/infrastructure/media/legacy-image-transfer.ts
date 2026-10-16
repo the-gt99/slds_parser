@@ -6,6 +6,10 @@ import type { ObjectStorageClient, S3ImageStoreOptions } from "./s3-image-store.
 
 const checksum = (body: Buffer): string => createHash("sha256").update(body).digest("hex");
 
+export function nextLegacyFailedBatchCount(previous: number, outcomes: readonly { result: unknown | null }[]): number {
+  return outcomes.length > 0 && outcomes.every((entry) => entry.result === null) ? previous + 1 : 0;
+}
+
 export function legacyImageFailure(error: unknown) {
   const value = error as { name?: unknown; code?: unknown; status?: unknown;
     $metadata?: { httpStatusCode?: unknown }; cause?: { code?: unknown } } | null;

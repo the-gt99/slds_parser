@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LegacyImageTransfer, transferLegacyImageBatch, legacyImageFailure } from "../../src/infrastructure/media/legacy-image-transfer.js";
+import { LegacyImageTransfer, transferLegacyImageBatch, legacyImageFailure, nextLegacyFailedBatchCount } from "../../src/infrastructure/media/legacy-image-transfer.js";
 
 const roots: string[] = [];
 const body = Buffer.from("RIFF1234WEBPimage-bytes");
@@ -28,6 +28,18 @@ async function fixture(remote?: Buffer) {
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
+  it("does not stop a useful batch because failed files are adjacent in path order", () => {
+    const failures = Array.from({ length: 20 }, () => ({ result: null }));
+    expect(nextLegacyFailedBatchCount(4, [...failures, { result: { deletedBytes: 10 } }])).toBe(0);
+    expect(nextLegacyFailedBatchCount(4, [{ result: { deletedBytes: 10 } }, ...failures])).toBe(0);
+  });
+  it("stops only after five entirely failed batches, resetting on progress", () => {
+    let count = 0;
+    for (let index = 0; index < 5; index++) count = nextLegacyFailedBatchCount(count, [{ result: null }]);
+    expect(count).toBe(5);
+    expect(nextLegacyFailedBatchCount(count, [{ result: {} }])).toBe(0);
+    expect(nextLegacyFailedBatchCount(count, [])).toBe(0);
+  });
   it("reports only safe transport codes and HTTP status, without messages or credentials", () => {
     expect(legacyImageFailure({ name: "SlowDown", $metadata: { httpStatusCode: 503 }, message: "secret" }))
       .toEqual({ name: "SlowDown", status: 503, code: undefined });
