@@ -1,6 +1,6 @@
 import { GetObjectCommand, PutObjectCommand, S3Client, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
-import { rename, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { posix } from "node:path";
 
 import type { ImageStore, StoredImageAsset } from "../../processing/media/index.js";
@@ -46,7 +46,7 @@ export class S3ImageStore implements ImageStore {
     return {
       ...this.#local.fingerprint(),
       storage: "s3",
-      storageVersion: 2,
+      storageVersion: 3,
       endpoint: this.options.endpoint,
       region: this.options.region,
       bucket: this.options.bucket,
@@ -101,10 +101,11 @@ export class S3ImageStore implements ImageStore {
       return localPath;
     }
     const converted = await this.#local.convertToWebp(localPath);
-    const binary = await this.#local.read(converted);
+    const binary = await this.read(converted);
     const hash = createHash("sha256").update(binary).digest("hex");
     const immutablePath = converted.slice(0, -5) + `.${hash}.webp`;
-    await rename(this.#local.resolvePath(converted), this.#local.resolvePath(immutablePath));
+    await this.#local.writeAtomic(this.#local.resolvePath(immutablePath), binary);
+    await rm(this.#local.resolvePath(converted), { force: true });
     return immutablePath;
   }
 

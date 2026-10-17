@@ -9,6 +9,25 @@ import { describe, expect, it, vi } from "vitest";
 import { S3ImageStore, type ObjectStorageClient } from "../../src/infrastructure/media/index.js";
 
 describe("S3 image store", () => {
+  it("reuses a legacy WebP from S3 after its local staging file was removed", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "slds-s3-legacy-"));
+    const binary = await sharp({ create: { width: 2, height: 3, channels: 3, background: "white" } }).webp().toBuffer();
+    const client: ObjectStorageClient = { send: vi.fn(async (command) => {
+      expect(command).toBeInstanceOf(GetObjectCommand);
+      expect(command.input.Key).toBe("parser/goat/item_2/01-main.webp");
+      return { Body: { transformToByteArray: async () => binary }, ContentLength: binary.length };
+    }) };
+    const store = new S3ImageStore({ baseDirectory: directory, publicBaseUrl: "https://cdn.example.test",
+      publicPathPrefix: "parser", webpQuality: 85, endpoint: "https://storage.example.test",
+      region: "test", bucket: "test", accessKeyId: "test", secretAccessKey: "test" }, client);
+    try {
+      const path = await store.convertToWebp("goat/item_2/01-main.webp");
+      expect(path).toMatch(/01-main\.[a-f0-9]{64}\.webp$/u);
+      await expect(store.read(path)).resolves.toEqual(binary);
+      expect(client.send).toHaveBeenCalledTimes(1);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   it("uploads the converted WebP under the public object key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "slds-s3-images-"));
     const commands: (PutObjectCommand | GetObjectCommand)[] = [];
