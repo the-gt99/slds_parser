@@ -54,7 +54,7 @@ export interface MirrorClient {
 export function createMirrorClient(options: MirrorStorageOptions): MirrorClient {
   return new S3Client({ endpoint: options.endpoint, region: options.region, forcePathStyle: true,
     credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
-    requestHandler: { connectionTimeout: 15_000, requestTimeout: 90_000 }, maxAttempts: 3 });
+    requestHandler: { connectionTimeout: 15_000, requestTimeout: 90_000, throwOnRequestTimeout: true }, maxAttempts: 3 });
 }
 
 function httpStatus(error: unknown): number | undefined {

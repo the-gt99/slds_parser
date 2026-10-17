@@ -11,6 +11,17 @@ async function setup(error?: unknown, attempts = 0) {
 }
 
 describe("Worker", () => {
+  it.each([true, false])("claims mirror jobs only when its durable storage configuration is enabled (%s)", async (enabled) => {
+    const store = new MemoryStore(); const jobs = new MemoryJobRepository(store);
+    const job = await jobs.enqueue({ jobType: "mirror_image", payload: {}, uniqueKey: "mirror-lane" });
+    const controller = new AbortController();
+    const dispatch = vi.fn(async () => { controller.abort(); return { status: "completed" as const }; });
+    const claim = vi.spyOn(jobs, "claimNext");
+    await new Worker(jobs, { dispatch, handleTerminalFailure: vi.fn() },
+      { ...options, role: "pipeline", imageMirrorEnabled: enabled }, async () => { controller.abort(); }).run(controller.signal);
+    expect(claim.mock.calls.some((call) => call[2]?.includes("mirror_image"))).toBe(enabled);
+    expect(store.jobs.get(job.id)?.status).toBe(enabled ? "completed" : "pending");
+  });
   it("retries mirror outages with a bounded long policy without changing pipeline retries", async () => {
     const store = new MemoryStore(); const jobs = new MemoryJobRepository(store);
     const job = await jobs.enqueue({ jobType: "mirror_image", payload: {}, uniqueKey: "mirror" });
