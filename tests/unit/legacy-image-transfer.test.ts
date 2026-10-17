@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LegacyImageTransfer, transferLegacyImageBatch, legacyImageFailure, nextLegacyFailedBatchCount } from "../../src/infrastructure/media/legacy-image-transfer.js";
+import type { ImageMirrorQueue } from "../../src/infrastructure/media/image-mirror.js";
+import { createHash } from "node:crypto";
 
 const roots: string[] = [];
 const body = Buffer.from("RIFF1234WEBPimage-bytes");
-async function fixture(remote?: Buffer) {
+async function fixture(remote?: Buffer, mirror?: ImageMirrorQueue) {
   const root = await mkdtemp(join(tmpdir(), "slds-legacy-images-")); roots.push(root);
   const relative = "goat/item_2/01-main.webp";
   const path = join(root, relative);
@@ -23,11 +25,38 @@ async function fixture(remote?: Buffer) {
     new Response(new Uint8Array(body), { headers: { "content-type": "image/webp" } }));
   const transfer = new LegacyImageTransfer({ baseDirectory: root, publicBaseUrl: "https://cdn.example.test",
     publicPathPrefix: "parser", webpQuality: 85, endpoint: "https://s3.example.test", region: "test",
-    bucket: "test", accessKeyId: "test", secretAccessKey: "test" }, { send }, fetchImpl);
+    bucket: "test", accessKeyId: "test", secretAccessKey: "test" }, { send }, fetchImpl, mirror);
   return { root, path, relative, transfer, send, fetchImpl };
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 describe("legacy image transfer", () => {
+  it.each([undefined, body])("persists the same mirror intent before removing a verified legacy file", async (remote) => {
+    const mirror = { destinationId: "mirror", enqueue: vi.fn(async () => {}) };
+    const f = await fixture(remote, mirror);
+    mirror.enqueue.mockImplementation(async () => {
+      expect(f.send.mock.calls.some(([command]) => command instanceof PutObjectCommand)).toBe(false);
+      await expect(access(f.path)).resolves.toBeUndefined();
+    });
+    await f.transfer.transfer(f.relative, 0);
+    expect(mirror.enqueue).toHaveBeenCalledExactlyOnceWith({ key: "parser/goat/item_2/01-main.webp",
+      sha256: createHash("sha256").update(body).digest("hex"), size: body.length });
+    await expect(access(f.path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("retains a legacy file when its durable mirror request cannot be saved", async () => {
+    const mirror = { destinationId: "mirror", enqueue: vi.fn().mockRejectedValue(new Error("Queue unavailable")) };
+    const f = await fixture(undefined, mirror);
+    await expect(f.transfer.transfer(f.relative, 0)).rejects.toThrow("Queue unavailable");
+    await expect(readFile(f.path)).resolves.toEqual(body);
+    expect(f.send.mock.calls.some(([command]) => command instanceof PutObjectCommand)).toBe(false);
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+  });
+  it("does not schedule conflicting primary content for mirroring", async () => {
+    const mirror = { destinationId: "mirror", enqueue: vi.fn(async () => {}) };
+    const f = await fixture(Buffer.from("different"), mirror);
+    await expect(f.transfer.transfer(f.relative, 0)).rejects.toThrow("differs");
+    expect(mirror.enqueue).not.toHaveBeenCalled();
+    await expect(access(f.path)).resolves.toBeUndefined();
+  });
   it("does not stop a useful batch because failed files are adjacent in path order", () => {
     const failures = Array.from({ length: 20 }, () => ({ result: null }));
     expect(nextLegacyFailedBatchCount(4, [...failures, { result: { deletedBytes: 10 } }])).toBe(0);

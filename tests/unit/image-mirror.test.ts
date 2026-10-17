@@ -22,6 +22,11 @@ function setup() {
 }
 
 describe("durable image mirroring", () => {
+  it("preserves a legacy object key without adding a hash or changing its directory", async () => {
+    const s = setup(); const key = "parser/goat/item_2/01-main.webp";
+    await s.runner.copy({ ...payload, key });
+    expect((s.destination.send.mock.calls[1]![0] as PutObjectCommand).input.Key).toBe(key);
+  });
   it("copies the same key with metadata, transfer checksum and an atomic no-overwrite condition", async () => {
     const s = setup(); await expect(s.runner.copy(payload)).resolves.toEqual({ status: "completed" });
     const put = s.destination.send.mock.calls[1]![0] as PutObjectCommand;

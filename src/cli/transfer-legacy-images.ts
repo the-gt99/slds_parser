@@ -6,6 +6,8 @@ import { loadProcessingConfig } from "../config/processing-config.js";
 import { LegacyImageTransfer, transferLegacyImageBatch, nextLegacyFailedBatchCount } from "../infrastructure/media/legacy-image-transfer.js";
 import { legacyImageFiles } from "../infrastructure/media/legacy-image-files.js";
 import { legacyImageBatches } from "../infrastructure/media/legacy-image-batches.js";
+import { createPostgresPool } from "../infrastructure/db/index.js";
+import { createImageMirrorQueue } from "../bootstrap.js";
 
 function integer(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -19,7 +21,9 @@ const client = new S3Client({ endpoint: options.endpoint, region: options.region
   maxAttempts: 2, requestHandler: { requestTimeout: 30_000, throwOnRequestTimeout: true, connectionTimeout: 10_000,
     httpsAgent: new Agent({ keepAlive: true, maxSockets: 256, maxFreeSockets: 256 }) },
   credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey } });
-const transfer = new LegacyImageTransfer(options, client);
+const mirrorPool = options.mirror === undefined ? undefined : createPostgresPool();
+const transfer = new LegacyImageTransfer(options, client, undefined,
+  mirrorPool === undefined ? undefined : createImageMirrorQueue(mirrorPool));
 const delayMs = integer("IMAGE_TRANSFER_DELAY_MS", 1000);
 const concurrency = integer("IMAGE_TRANSFER_CONCURRENCY", 1);
 if (concurrency > 256) throw new Error("IMAGE_TRANSFER_CONCURRENCY must not exceed 256");
@@ -92,6 +96,6 @@ try {
   }
   progress.complete = !stopping && progress.visited < limit;
 } finally {
-  await save();
-  client.destroy();
+  try { await save(); }
+  finally { client.destroy(); await mirrorPool?.end(); }
 }

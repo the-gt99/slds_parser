@@ -3,6 +3,7 @@ import { lstat, readFile, realpath, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { GetObjectCommand, PutObjectCommand, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import type { ObjectStorageClient, S3ImageStoreOptions } from "./s3-image-store.js";
+import type { ImageMirrorQueue } from "./image-mirror.js";
 
 const checksum = (body: Buffer): string => createHash("sha256").update(body).digest("hex");
 
@@ -31,7 +32,8 @@ export async function transferLegacyImageBatch(transfer: Pick<LegacyImageTransfe
 // Administrative transfer preserves legacy keys and URLs; normal publication stays immutable.
 export class LegacyImageTransfer {
   constructor(private readonly options: S3ImageStoreOptions,
-    private readonly client: ObjectStorageClient, private readonly fetchImpl: typeof fetch = fetch) {}
+    private readonly client: ObjectStorageClient, private readonly fetchImpl: typeof fetch = fetch,
+    private readonly mirror?: ImageMirrorQueue) {}
 
   async transfer(relativePath: string, minimumAgeMs: number): Promise<{ deletedBytes: number; uploaded: boolean; skipped: boolean }> {
     if (!/^[a-zA-Z0-9_-]+\/item_[a-zA-Z0-9_-]+\/\d+(?:-main)?(?:\.[a-f0-9]{64})?\.webp$/u.test(relativePath)) {
@@ -53,6 +55,8 @@ export class LegacyImageTransfer {
     const key = prefix ? `${prefix}/${relativePath}` : relativePath;
     let uploaded = false;
     let remote = await this.remote(key);
+    if (remote !== null && checksum(remote) !== hash) throw new Error("Object storage copy differs; local file retained");
+    await this.mirror?.enqueue({ key, sha256: hash, size: body.length });
     if (remote === null) {
       await this.client.send(new PutObjectCommand({ Bucket: this.options.bucket, Key: key, Body: body,
         ContentLength: body.length, ContentType: "image/webp", IfNoneMatch: "*",
