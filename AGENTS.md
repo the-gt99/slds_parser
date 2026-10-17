@@ -127,7 +127,8 @@
 
 ## Production и безопасность
 
-- Новый parser: MCP `ssh_slamdunk_parser`, `/srv/slds-parser/app`.
+- Действующий parser: MCP `ssh_slamdunk_parser2`, `186.246.44.157`, `/srv/slds-parser/app`, публичный адрес `https://parser.slamdunk.shop`.
+- Предыдущий parser: MCP `ssh_slamdunk_parser`, `9a9f7857687f.vps.myjino.ru`. Сохранён для отката; его API, workers и таймеры должны оставаться остановленными при работе нового сервера.
 - WordPress production: MCP `ssh_slamdunk_prod`, `/var/www/u0347517/data/www/slamdunk.shop`.
 - Старый parser: MCP `ssh_parser`, использовать только как read-only источник поведения и данных.
 - Локальный WordPress source: `C:\Users\gt99\Downloads\slds\Git\slamdunk`.
