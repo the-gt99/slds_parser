@@ -11,6 +11,18 @@ async function setup(error?: unknown, attempts = 0) {
 }
 
 describe("Worker", () => {
+  it("retries mirror outages with a bounded long policy without changing pipeline retries", async () => {
+    const store = new MemoryStore(); const jobs = new MemoryJobRepository(store);
+    const job = await jobs.enqueue({ jobType: "mirror_image", payload: {}, uniqueKey: "mirror" });
+    store.jobs.set(job.id, { ...job, attempts: 3 });
+    const handler = { dispatch: vi.fn().mockRejectedValue(new RetryableError("unavailable", { code: "IMAGE_MIRROR_UNAVAILABLE" })), handleTerminalFailure: vi.fn() };
+    const worker = new Worker(jobs, handler, options, async () => {}, () => Date.parse("2026-01-01T00:00:00Z"));
+    await worker.processNext(["mirror_image"]);
+    expect(store.jobs.get(job.id)).toMatchObject({ status: "retry", availableAt: "2026-01-01T00:08:00.000Z" });
+    store.jobs.set(job.id, { ...job, status: "pending", attempts: 11 });
+    await worker.processNext(["mirror_image"]);
+    expect(store.jobs.get(job.id)?.status).toBe("failed");
+  });
   it("runs exactly one content lane without claiming processing, inventory or exports", async () => {
     const store = new MemoryStore(); const jobs = new MemoryJobRepository(store);
     const content = await jobs.enqueue({ jobType: "collect_product_content",payload: { sourceProductId: "2",donorCode: "shihuo" },uniqueKey: "content" });

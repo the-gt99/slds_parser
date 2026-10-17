@@ -5,6 +5,7 @@ import { posix } from "node:path";
 
 import type { ImageStore, StoredImageAsset } from "../../processing/media/index.js";
 import { LocalImageStore, type LocalImageStoreOptions } from "./local-image-store.js";
+import type { ImageMirrorQueue } from "./image-mirror.js";
 
 export interface S3ImageStoreOptions extends LocalImageStoreOptions {
   readonly endpoint: string;
@@ -28,7 +29,7 @@ export class S3ImageStore implements ImageStore {
   readonly #local: LocalImageStore;
   readonly #client: ObjectStorageClient;
 
-  constructor(private readonly options: S3ImageStoreOptions, client?: ObjectStorageClient) {
+  constructor(private readonly options: S3ImageStoreOptions, client?: ObjectStorageClient, private readonly mirror?: ImageMirrorQueue) {
     this.#local = new LocalImageStore(options);
     this.#client = client ?? new S3Client({
       endpoint: options.endpoint,
@@ -49,6 +50,7 @@ export class S3ImageStore implements ImageStore {
       endpoint: this.options.endpoint,
       region: this.options.region,
       bucket: this.options.bucket,
+      ...(this.mirror === undefined ? {} : { mirrorVersion: 1, mirrorDestination: this.mirror.destinationId }),
     };
   }
 
@@ -116,6 +118,9 @@ export class S3ImageStore implements ImageStore {
     if (expectedHash !== createHash("sha256").update(body).digest("hex")) {
       throw new Error("Published image must use its content checksum in the path");
     }
+    // Persist intent before publishing. A crash after the primary PUT cannot lose the mirror request.
+    await this.mirror?.enqueue({ key: objectKey(this.options.publicPathPrefix, localPath),
+      sha256: expectedHash, size: body.length });
     await this.#client.send(new PutObjectCommand({
       Bucket: this.options.bucket,
       Key: objectKey(this.options.publicPathPrefix, localPath),

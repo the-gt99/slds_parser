@@ -30,6 +30,7 @@ export interface WorkerOptions {
   readonly inventoryPrepareConcurrency?: number;
   readonly inventorySubmitConcurrency?: number;
   readonly shihuoConcurrency?: number;
+  readonly imageMirrorEnabled?: boolean;
 }
 
 export interface WorkerConcurrency {
@@ -172,13 +173,13 @@ export class Worker {
       return;
     }
     const wordpressPolicy = usesWordPressRetryPolicy(job, error);
-    const maxAttempts = wordpressPolicy
+    const maxAttempts = job.jobType === "mirror_image" ? 12 : wordpressPolicy
       ? (this.options.wordpressMaxJobAttempts ?? this.options.maxJobAttempts)
       : this.options.maxJobAttempts;
-    const retryBaseMs = wordpressPolicy
+    const retryBaseMs = job.jobType === "mirror_image" ? 60_000 : wordpressPolicy
       ? (this.options.wordpressRetryBaseMs ?? this.options.retryBaseMs)
       : this.options.retryBaseMs;
-    const retryMaxMs = wordpressPolicy
+    const retryMaxMs = job.jobType === "mirror_image" ? 3_600_000 : wordpressPolicy
       ? (this.options.wordpressRetryMaxMs ?? this.options.retryMaxMs)
       : this.options.retryMaxMs;
     if (error instanceof RetryableError && error.code === "SHIHUO_NO_SESSION") {
@@ -308,6 +309,8 @@ export class Worker {
         ...(role === "content-enrichment" ? [this.runLane(controller.signal,
           ["collect_product_content","translate_product_content"], `${this.options.workerId}:content`)] : []),
         ...(runPipeline ? [
+          ...(this.options.imageMirrorEnabled === true
+            ? [this.runLane(controller.signal, ["mirror_image"], `${this.options.workerId}:image-mirror`)] : []),
         this.runLane(controller.signal, ["refresh_product_images"], `${this.options.workerId}:image-refresh`),
         this.runLane(controller.signal, ["export_product_images"], `${this.options.workerId}:image-export`),
         this.runLane(controller.signal, discoveryJobTypes, `${this.options.workerId}:discovery`),

@@ -4,7 +4,7 @@ import { RulesV2PreviewService } from "../services/rules-v2-preview.js";
 import { RulesExecution } from "../infrastructure/db/rules-execution.js";
 
 import { loadAdminApiConfig, loadHttpConfig, loadMcpConfig, loadShihuoConfig, loadTelegramNotificationConfig, loadWordPressTargetConfig } from "../config/index.js";
-import { registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
+import { createImageMirrorQueue, registerProductOperations, registerSourceProcessors } from "../bootstrap.js";
 import { ProductOperationRegistry, SourceProcessorRegistry, TargetExporterRegistry } from "../core/registry/index.js";
 import { createHttpServer } from "../http/index.js";
 import {
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
       currentProcessorVersions,
     );
     const operations = new ProductOperationRegistry();
-    registerProductOperations(operations);
+    registerProductOperations(operations, process.env, undefined, undefined, undefined, createImageMirrorQueue(pool));
     const exporters = new TargetExporterRegistry();
     if (wordpress !== null) exporters.register(new WordPressExporter(wordpress));
     const targetDictionaries = new TargetDictionaryService(

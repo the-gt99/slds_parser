@@ -77,6 +77,7 @@ export class DatabaseRetentionService {
         `WITH expired AS MATERIALIZED (
            SELECT id FROM jobs
            WHERE status = 'failed' AND COALESCE(finished_at, updated_at) < $1::TIMESTAMPTZ
+             AND job_type <> 'mirror_image'
            ORDER BY COALESCE(finished_at, updated_at), id
            LIMIT $2
          )

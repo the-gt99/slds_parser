@@ -17,12 +17,23 @@ import { hashStableJson } from "./core/utils/index.js";
 import { ShihuoDescriptionDonor } from "./shihuo/description-donor.js";
 import { ProductImageRefreshRunner } from "./application/product-image-refresh-runner.js";
 import { PostgresProductImageRefreshRepository } from "./infrastructure/db/repositories/postgres-product-image-refresh-repository.js";
+import { createMirrorClient, ImageMirrorRunner, PostgresImageMirrorQueue, type ImageMirrorQueue } from "./infrastructure/media/image-mirror.js";
+import type { SqlExecutor } from "./infrastructure/db/sql-executor.js";
 
 export type PipelineEnvironment = ProcessingEnvironment & GoatHttpEnvironment & WordPressTargetEnvironment & GoatProxyPoolEnvironment;
 export type ApplicationEnvironment = PoolEnvironment & WorkerEnvironment & PipelineEnvironment & TelegramNotificationEnvironment & ShihuoEnvironment;
 
 export interface ApplicationOptions {
   readonly workerLogError?: (message: string) => void;
+}
+
+export function createImageMirrorQueue(db: SqlExecutor, environment: ProcessingEnvironment = process.env) {
+  const storage = loadProcessingConfig(environment).image.storage;
+  if (storage.type !== "s3" || storage.mirror === undefined) return undefined;
+  return new PostgresImageMirrorQueue(db, hashStableJson({
+    source: { endpoint: storage.endpoint, bucket: storage.bucket },
+    destination: { endpoint: storage.mirror.endpoint, region: storage.mirror.region, bucket: storage.mirror.bucket },
+  }));
 }
 
 function proxyPoolEnabled(environment: GoatProxyPoolEnvironment): boolean {
@@ -38,10 +49,13 @@ function inventoryProxyHeadroom(environment: GoatProxyPoolEnvironment): number {
   return parsed;
 }
 
-export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation): void {
+export function registerProductOperations(registry: ProductOperationRegistry, environment: ProcessingEnvironment & GoatHttpEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation, mirror?: ImageMirrorQueue): void {
   const processing = loadProcessingConfig(environment);
+  if (processing.image.storage.type === "s3" && processing.image.storage.mirror !== undefined && mirror === undefined) {
+    throw new Error("Configured image mirror requires a durable queue");
+  }
   const imageStore = processing.image.storage.type === "s3"
-    ? new S3ImageStore({ ...processing.image, ...processing.image.storage })
+    ? new S3ImageStore({ ...processing.image, ...processing.image.storage }, undefined, mirror)
     : new LocalImageStore(processing.image);
   const configuredTranslationProvider = createTranslationProvider(processing.translation);
   const translationProvider = translationCache === undefined
@@ -77,10 +91,10 @@ export function registerPipelineComponents(registries: {
   readonly processors: SourceProcessorRegistry;
   readonly operations: ProductOperationRegistry;
   readonly exporters: TargetExporterRegistry;
-}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation): void {
+}, environment: PipelineEnvironment = process.env, proxyPool?: GoatProxyPool, translationCache?: TranslationCacheRepository, enrichment?: ApplyContentEnrichmentOperation, mirror?: ImageMirrorQueue): void {
   registries.adapters.register(GoatSourceAdapter.create(environment, proxyPool));
   registerSourceProcessors(registries.processors);
-  registerProductOperations(registries.operations, environment, proxyPool, translationCache, enrichment);
+  registerProductOperations(registries.operations, environment, proxyPool, translationCache, enrichment, mirror);
   const wordpress = loadWordPressTargetConfig(environment);
   if (wordpress !== null) registries.exporters.register(new WordPressExporter(wordpress));
 }
@@ -88,6 +102,11 @@ export function registerPipelineComponents(registries: {
 export function createApplication(environment: ApplicationEnvironment = process.env, options: ApplicationOptions = {}) {
   const pool = createPostgresPool(environment);
   const repositories = createPostgresRepositories(pool);
+  const storage = loadProcessingConfig(environment).image.storage;
+  const mirrorOptions = storage.type === "s3" ? storage.mirror : undefined;
+  const mirrorQueue = createImageMirrorQueue(pool, environment);
+  const imageMirror = storage.type !== "s3" || mirrorOptions === undefined || mirrorQueue === undefined ? undefined
+    : new ImageMirrorRunner(mirrorQueue, storage.bucket, mirrorOptions.bucket, createMirrorClient(storage), createMirrorClient(mirrorOptions));
   const proxyPool = proxyPoolEnabled(environment)
     ? new GoatProxyPool(new PostgresGoatProxyRepository(pool), environment)
     : undefined;
@@ -101,7 +120,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const contentDonors = new Map<string, ProductContentDonor>();
   registerPipelineComponents({ adapters, processors, operations, exporters }, environment, proxyPool, translationCache,
     new ApplyContentEnrichmentOperation(contentEnrichments, async (product,record) =>
-      await contentDonors.get(record.donorCode)?.validate(product,record) ?? false));
+      await contentDonors.get(record.donorCode)?.validate(product,record) ?? false), mirrorQueue);
   const targetDictionary = new PostgresTargetDictionaryRepository(pool);
   const titleBrandAssignments = new WordPressTitleBrandAssignmentResolver(targetDictionary);
   const rulesExecution = new RulesExecution(pool, repositories.classifications, titleBrandAssignments);
@@ -185,7 +204,7 @@ export function createApplication(environment: ApplicationEnvironment = process.
     ? undefined
     : new WordPressCatalogSyncRunner(wordpressCatalog, new WordPressCatalogClient(wordpress));
   const imageStore = processingConfig.image.storage.type === "s3"
-    ? new S3ImageStore({ ...processingConfig.image, ...processingConfig.image.storage })
+    ? new S3ImageStore({ ...processingConfig.image, ...processingConfig.image.storage }, undefined, mirrorQueue)
     : new LocalImageStore(processingConfig.image);
   const imageRefreshes = new ProductImageRefreshRunner(repositories, unitOfWork, adapters, processors,
     new Map([["goat", new GoatImageDownloader(environment, { concurrency: 1 }, undefined, proxyPool)]]),
@@ -229,11 +248,11 @@ export function createApplication(environment: ApplicationEnvironment = process.
   const dispatcher = new JobDispatcher(collectionRunner, processingRunner, exportRunner, repositories.sourceRuns,
     preflightRunner, exportControl, classificationSyncRunner, classificationApplyRunner, wordpressCatalogSync,
     wordpressVariationPatches, retranslationRunner, exportSourceRefreshRunner,
-    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs, contentEnrichmentRunner, imageRefreshes);
+    shihuoResolver === undefined ? undefined : new ShihuoResolutionRunner(shihuoResolver), repositories.jobs, contentEnrichmentRunner, imageRefreshes, imageMirror);
   const worker = new Worker(
     repositories.jobs,
     dispatcher,
-    { ...workerOptions, shihuoConcurrency: shihuoConfig?.concurrency ?? 0 },
+    { ...workerOptions, shihuoConcurrency: shihuoConfig?.concurrency ?? 0, imageMirrorEnabled: imageMirror !== undefined },
     undefined,
     Date.now,
     options.workerLogError ?? console.error,

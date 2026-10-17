@@ -17,6 +17,7 @@ import type { ContentEnrichmentRunner } from "./content-enrichment-runner.js";
 import { parseCollectProductContentPayload, parseTranslateProductContentPayload } from "./job-payloads.js";
 import { parseProductImageJobPayload } from "./job-payloads.js";
 import type { ProductImageRefreshRunner } from "./product-image-refresh-runner.js";
+import type { ImageMirrorRunner } from "../infrastructure/media/image-mirror.js";
 
 export interface JobHandler {
   dispatch(job: JobRecord): Promise<RunnerResult>;
@@ -37,10 +38,15 @@ export class JobDispatcher implements JobHandler {
     private readonly shihuoResolutions?: ShihuoResolutionRunner,
     private readonly jobs?: JobRepository,
     private readonly contentEnrichments?: ContentEnrichmentRunner,
-    private readonly imageRefreshes?: ProductImageRefreshRunner) {}
+    private readonly imageRefreshes?: ProductImageRefreshRunner,
+    private readonly imageMirror?: ImageMirrorRunner) {}
 
   async dispatch(job: JobRecord): Promise<RunnerResult> {
     switch (job.jobType) {
+      case "mirror_image": {
+        if (this.imageMirror === undefined) throw new InvalidJobPayloadError("Image mirror is not configured");
+        return this.imageMirror.copy(job.payload);
+      }
       case "check_product_images":
       case "refresh_product_images":
       case "export_product_images": {

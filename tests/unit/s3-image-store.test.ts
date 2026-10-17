@@ -14,6 +14,7 @@ describe("S3 image store", () => {
     const commands: (PutObjectCommand | GetObjectCommand)[] = [];
     let stored: Buffer | undefined;
     let failUpload = false;
+    const mirror = { destinationId: "mirror", enqueue: vi.fn(async () => {}) };
     const client: ObjectStorageClient = {
       send: vi.fn(async (command) => {
         commands.push(command);
@@ -22,6 +23,7 @@ describe("S3 image store", () => {
           Body: { transformToByteArray: async () => stored! }, ContentLength: stored!.length,
         };
         if (failUpload) throw new Error("Upload rejected");
+        expect(mirror.enqueue).toHaveBeenCalled();
         stored = command.input.Body as Buffer;
         return {};
       }),
@@ -36,7 +38,7 @@ describe("S3 image store", () => {
       bucket: "slamdunk",
       accessKeyId: "access-key",
       secretAccessKey: "secret-key",
-    }, client);
+    }, client, mirror);
 
     try {
       await expect(store.read("goat/item_2/missing.webp")).rejects.toMatchObject({ code: "ENOENT" });
@@ -59,6 +61,8 @@ describe("S3 image store", () => {
       });
       expect((commands[0] as PutObjectCommand).input.Body).toBeInstanceOf(Buffer);
       expect(webpPath).toMatch(/01-main\.[a-f0-9]{64}\.webp$/u);
+      expect(mirror.enqueue).toHaveBeenCalledWith({ key: `products/${webpPath}`,
+        sha256: /\.([a-f0-9]{64})\.webp$/u.exec(webpPath)![1], size: stored!.length });
       await expect(access(join(directory, webpPath))).rejects.toMatchObject({ code: "ENOENT" });
       await expect(store.read(webpPath)).resolves.toEqual(stored);
       await expect(store.convertToWebp(webpPath)).resolves.toBe(webpPath);
@@ -68,6 +72,12 @@ describe("S3 image store", () => {
       const nextWebp = await store.convertToWebp(next.localPath);
       failUpload = true;
       await expect(store.publish(nextWebp)).rejects.toThrow("Upload rejected");
+      await expect(access(join(directory, nextWebp))).resolves.toBeUndefined();
+      failUpload = false;
+      mirror.enqueue.mockRejectedValueOnce(new Error("Queue unavailable"));
+      const count = commands.length;
+      await expect(store.publish(nextWebp)).rejects.toThrow("Queue unavailable");
+      expect(commands).toHaveLength(count);
       await expect(access(join(directory, nextWebp))).resolves.toBeUndefined();
       await expect(store.read("../outside.webp")).rejects.toThrow("leaves");
       await rm(join(directory, nextWebp));

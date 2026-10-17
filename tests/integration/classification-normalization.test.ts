@@ -120,6 +120,7 @@ integration("classification observation normalization migration", () => {
 
   it("applies target assignment schema and runs repository queries", async () => {
     await client.query(await readFile(path.join(migrationsDirectory, "038_target_assignment_rules.sql"), "utf8"));
+    await client.query(await readFile(path.join(migrationsDirectory, "058_normalize_target_assignment_rules.sql"), "utf8"));
     const target = (await client.query(
       "INSERT INTO targets (code, name, exporter_code, enabled) VALUES ('assignment-test', 'Assignment test', 'test', FALSE) RETURNING id::TEXT",
     )).rows[0]!;
@@ -148,7 +149,7 @@ integration("classification observation normalization migration", () => {
     } satisfies SqlPool);
     const draft = {
       targetId: String(target.id), name: "Special sandals", groupCode: "sandal_leaf", priority: 300,
-      conditionGroups: [{ conditions: [{ field: "resolved.model", operator: "equals" as const, values: ["500"] }] }],
+      conditionGroups: [{ conditions: [{ field: "product.title", operator: "equals" as const, values: ["Special sandals"] }] }],
       actions: [{ targetScope: "product.category", dictionaryValueId: String(dictionary.id), mode: "replace" as const }],
     };
 

@@ -14,6 +14,7 @@ export type Timestamp = string;
 export type SourceRunStatus = "running" | "completed" | "failed";
 export type MappingStatus = "confirmed" | "suggested" | "rejected";
 export type JobType =
+  | "mirror_image"
   | "discover_source"
   | "collect_product"
   | "process_product"

@@ -4,6 +4,15 @@ import { loadProcessingConfig } from "../../src/config/index.js";
 import { PermanentError } from "../../src/core/errors/index.js";
 
 describe("processing config", () => {
+  it("requires complete mirror settings and primary S3 storage", () => {
+    const base = { PARSER_PUBLIC_BASE_URL: "https://cdn.example", PARSER_IMAGE_STORAGE: "s3",
+      PARSER_S3_BUCKET: "primary", PARSER_S3_ACCESS_KEY_ID: "key", PARSER_S3_SECRET_ACCESS_KEY: "secret" };
+    expect(() => loadProcessingConfig({ ...base, PARSER_S3_MIRROR_BUCKET: "mirror" })).toThrow("PARSER_S3_MIRROR_ENDPOINT");
+    const mirror = { PARSER_S3_MIRROR_ENDPOINT: "https://s3.example", PARSER_S3_MIRROR_REGION: "spb",
+      PARSER_S3_MIRROR_BUCKET: "mirror", PARSER_S3_MIRROR_ACCESS_KEY_ID: "mirror-key", PARSER_S3_MIRROR_SECRET_ACCESS_KEY: "mirror-secret" };
+    expect(loadProcessingConfig({ ...base, ...mirror }).image.storage).toMatchObject({ mirror: { bucket: "mirror" } });
+    expect(() => loadProcessingConfig({ ...base, ...mirror, PARSER_IMAGE_STORAGE: "local" })).toThrow("primary S3");
+  });
   it("loads only explicit excluded routes and deduplicates them", () => {
     const base = { PARSER_PUBLIC_BASE_URL: "https://parser.example/images", PARSER_TRANSLATION_PROVIDER: "openrouter", PARSER_OPENROUTER_API_KEY: "key" };
     expect(loadProcessingConfig(base).translation).toMatchObject({ ignoredProviders: [] });

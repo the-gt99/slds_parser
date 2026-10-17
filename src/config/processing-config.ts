@@ -10,6 +10,11 @@ export interface ProcessingEnvironment {
   readonly PARSER_S3_BUCKET?: string;
   readonly PARSER_S3_ACCESS_KEY_ID?: string;
   readonly PARSER_S3_SECRET_ACCESS_KEY?: string;
+  readonly PARSER_S3_MIRROR_ENDPOINT?: string;
+  readonly PARSER_S3_MIRROR_REGION?: string;
+  readonly PARSER_S3_MIRROR_BUCKET?: string;
+  readonly PARSER_S3_MIRROR_ACCESS_KEY_ID?: string;
+  readonly PARSER_S3_MIRROR_SECRET_ACCESS_KEY?: string;
   readonly GOAT_IMAGE_DOWNLOAD_CONCURRENCY?: string;
   readonly PARSER_IMAGE_CHECK_INTERVAL_MS?: string;
   readonly PARSER_TRANSLATION_PROVIDER?: string;
@@ -114,6 +119,16 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
   }
   const selectedTranslationProvider = translationProvider(environment.PARSER_TRANSLATION_PROVIDER);
   const selectedImageStorage = imageStorage(environment.PARSER_IMAGE_STORAGE);
+  const mirrorKeys = [environment.PARSER_S3_MIRROR_ENDPOINT, environment.PARSER_S3_MIRROR_REGION,
+    environment.PARSER_S3_MIRROR_BUCKET, environment.PARSER_S3_MIRROR_ACCESS_KEY_ID, environment.PARSER_S3_MIRROR_SECRET_ACCESS_KEY];
+  const mirror = mirrorKeys.some((value) => (value?.trim() ?? "") !== "") ? {
+    endpoint: httpsUrl(required(environment.PARSER_S3_MIRROR_ENDPOINT, "PARSER_S3_MIRROR_ENDPOINT"), "", "PARSER_S3_MIRROR_ENDPOINT"),
+    region: required(environment.PARSER_S3_MIRROR_REGION, "PARSER_S3_MIRROR_REGION"),
+    bucket: required(environment.PARSER_S3_MIRROR_BUCKET, "PARSER_S3_MIRROR_BUCKET"),
+    accessKeyId: required(environment.PARSER_S3_MIRROR_ACCESS_KEY_ID, "PARSER_S3_MIRROR_ACCESS_KEY_ID"),
+    secretAccessKey: required(environment.PARSER_S3_MIRROR_SECRET_ACCESS_KEY, "PARSER_S3_MIRROR_SECRET_ACCESS_KEY"),
+  } : undefined;
+  if (mirror !== undefined && selectedImageStorage !== "s3") throw new Error("Image mirror requires primary S3 storage");
   const imageStorageConfig = selectedImageStorage === "s3"
     ? {
         type: "s3" as const,
@@ -122,6 +137,7 @@ export function loadProcessingConfig(environment: ProcessingEnvironment = proces
         bucket: required(environment.PARSER_S3_BUCKET, "PARSER_S3_BUCKET"),
         accessKeyId: required(environment.PARSER_S3_ACCESS_KEY_ID, "PARSER_S3_ACCESS_KEY_ID"),
         secretAccessKey: required(environment.PARSER_S3_SECRET_ACCESS_KEY, "PARSER_S3_SECRET_ACCESS_KEY"),
+        ...(mirror === undefined ? {} : { mirror }),
       }
     : { type: "local" as const };
   const translationApiKey = environment.PARSER_DEEPL_API_KEY?.trim() ?? "";
